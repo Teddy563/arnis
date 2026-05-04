@@ -1292,12 +1292,14 @@ static DEFINED_COLORS: &[ColorBlockMapping] = &[
     ((191, 147, 42), &[SMOOTH_SANDSTONE, SANDSTONE, SMOOTH_STONE]),
 ];
 
-// Function to randomly select building wall block with alternatives
+// Function to randomly select building wall block with alternatives.
+// Non-deterministic — uses thread_rng. Kept for any caller that wants
+// upstream-style random palette per call. Building rendering uses the
+// `_seeded` variant below so adjacent tiles agree on the same block.
 pub fn get_building_wall_block_for_color(color: RGBTuple) -> Block {
     use rand::Rng;
     let mut rng = rand::rng();
 
-    // Find the closest color match
     let closest_color = DEFINED_COLORS
         .iter()
         .min_by_key(|(defined_color, _)| crate::colors::rgb_distance(&color, defined_color));
@@ -1305,63 +1307,96 @@ pub fn get_building_wall_block_for_color(color: RGBTuple) -> Block {
     if let Some((_, options)) = closest_color {
         options[rng.random_range(0..options.len())]
     } else {
-        // This should never happen, but fallback just in case
         get_fallback_building_block()
     }
 }
 
-// Function to get a random fallback building block when no color attribute is specified
+/// Deterministic variant of `get_building_wall_block_for_color`. Pulls
+/// the random index from a caller-provided seeded RNG so a building
+/// straddling two tiles picks the same block in both renders.
+pub fn get_building_wall_block_for_color_seeded<R: rand::Rng>(
+    color: RGBTuple,
+    rng: &mut R,
+) -> Block {
+    let closest_color = DEFINED_COLORS
+        .iter()
+        .min_by_key(|(defined_color, _)| crate::colors::rgb_distance(&color, defined_color));
+
+    if let Some((_, options)) = closest_color {
+        options[rng.random_range(0..options.len())]
+    } else {
+        get_fallback_building_block_seeded(rng)
+    }
+}
+
+// Non-deterministic fallback — see `_seeded` variant for tile-invariant use.
 pub fn get_fallback_building_block() -> Block {
     use rand::Rng;
     let mut rng = rand::rng();
-
-    let fallback_options = [
-        BLACKSTONE,
-        BLACK_TERRACOTTA,
-        BRICK,
-        BROWN_CONCRETE,
-        BROWN_TERRACOTTA,
-        DEEPSLATE_BRICKS,
-        END_STONE_BRICKS,
-        GRAY_CONCRETE,
-        GRAY_TERRACOTTA,
-        LIGHT_BLUE_TERRACOTTA,
-        LIGHT_GRAY_CONCRETE,
-        MUD_BRICKS,
-        NETHER_BRICK,
-        POLISHED_ANDESITE,
-        POLISHED_BLACKSTONE,
-        POLISHED_BLACKSTONE_BRICKS,
-        POLISHED_DEEPSLATE,
-        POLISHED_GRANITE,
-        QUARTZ_BLOCK,
-        QUARTZ_BRICKS,
-        SANDSTONE,
-        SMOOTH_SANDSTONE,
-        SMOOTH_STONE,
-        STONE_BRICKS,
-        WHITE_CONCRETE,
-        WHITE_TERRACOTTA,
-    ];
+    let fallback_options = FALLBACK_BUILDING_OPTIONS;
     fallback_options[rng.random_range(0..fallback_options.len())]
 }
 
-// Function to get a random castle wall block
+/// Deterministic variant of `get_fallback_building_block`.
+pub fn get_fallback_building_block_seeded<R: rand::Rng>(rng: &mut R) -> Block {
+    let fallback_options = FALLBACK_BUILDING_OPTIONS;
+    fallback_options[rng.random_range(0..fallback_options.len())]
+}
+
+// Non-deterministic — see `_seeded` variant.
 pub fn get_castle_wall_block() -> Block {
     use rand::Rng;
     let mut rng = rand::rng();
-
-    let castle_wall_options = [
-        STONE_BRICKS,
-        CHISELED_STONE_BRICKS,
-        CRACKED_STONE_BRICKS,
-        COBBLESTONE,
-        MOSSY_COBBLESTONE,
-        DEEPSLATE_BRICKS,
-        POLISHED_ANDESITE,
-        ANDESITE,
-        SMOOTH_STONE,
-        BRICK,
-    ];
+    let castle_wall_options = CASTLE_WALL_OPTIONS;
     castle_wall_options[rng.random_range(0..castle_wall_options.len())]
 }
+
+/// Deterministic variant of `get_castle_wall_block`.
+pub fn get_castle_wall_block_seeded<R: rand::Rng>(rng: &mut R) -> Block {
+    let castle_wall_options = CASTLE_WALL_OPTIONS;
+    castle_wall_options[rng.random_range(0..castle_wall_options.len())]
+}
+
+// Shared option arrays so deterministic + non-deterministic variants
+// stay in lockstep.
+const FALLBACK_BUILDING_OPTIONS: [Block; 26] = [
+    BLACKSTONE,
+    BLACK_TERRACOTTA,
+    BRICK,
+    BROWN_CONCRETE,
+    BROWN_TERRACOTTA,
+    DEEPSLATE_BRICKS,
+    END_STONE_BRICKS,
+    GRAY_CONCRETE,
+    GRAY_TERRACOTTA,
+    LIGHT_BLUE_TERRACOTTA,
+    LIGHT_GRAY_CONCRETE,
+    MUD_BRICKS,
+    NETHER_BRICK,
+    POLISHED_ANDESITE,
+    POLISHED_BLACKSTONE,
+    POLISHED_BLACKSTONE_BRICKS,
+    POLISHED_DEEPSLATE,
+    POLISHED_GRANITE,
+    QUARTZ_BLOCK,
+    QUARTZ_BRICKS,
+    SANDSTONE,
+    SMOOTH_SANDSTONE,
+    SMOOTH_STONE,
+    STONE_BRICKS,
+    WHITE_CONCRETE,
+    WHITE_TERRACOTTA,
+];
+
+const CASTLE_WALL_OPTIONS: [Block; 10] = [
+    STONE_BRICKS,
+    CHISELED_STONE_BRICKS,
+    CRACKED_STONE_BRICKS,
+    COBBLESTONE,
+    MOSSY_COBBLESTONE,
+    DEEPSLATE_BRICKS,
+    POLISHED_ANDESITE,
+    ANDESITE,
+    SMOOTH_STONE,
+    BRICK,
+];
