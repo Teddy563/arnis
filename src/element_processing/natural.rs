@@ -55,18 +55,25 @@ pub fn generate_natural(
                         "broadleaved" => {
                             trees_ok_to_generate.push(TreeType::Oak);
                             trees_ok_to_generate.push(TreeType::Birch);
+                            trees_ok_to_generate.push(TreeType::TallOak);
                         }
-                        "needleleaved" => trees_ok_to_generate.push(TreeType::Spruce),
+                        "needleleaved" => {
+                            trees_ok_to_generate.push(TreeType::Spruce);
+                            trees_ok_to_generate.push(TreeType::Pine);
+                        }
                         _ => {
                             trees_ok_to_generate.push(TreeType::Oak);
                             trees_ok_to_generate.push(TreeType::Spruce);
                             trees_ok_to_generate.push(TreeType::Birch);
+                            trees_ok_to_generate.push(TreeType::TallOak);
+                            trees_ok_to_generate.push(TreeType::Pine);
                         }
                     }
                 } else {
                     trees_ok_to_generate.push(TreeType::Oak);
                     trees_ok_to_generate.push(TreeType::Spruce);
                     trees_ok_to_generate.push(TreeType::Birch);
+                    trees_ok_to_generate.push(TreeType::TallOak);
                 }
 
                 if trees_ok_to_generate.is_empty() {
@@ -181,18 +188,31 @@ pub fn generate_natural(
                             "broadleaved" => {
                                 trees.push(TreeType::Oak);
                                 trees.push(TreeType::Birch);
+                                trees.push(TreeType::TallOak);
+                                trees.push(TreeType::Bush);
+                                trees.push(TreeType::AzaleaBush);
                             }
-                            "needleleaved" => trees.push(TreeType::Spruce),
+                            "needleleaved" => {
+                                trees.push(TreeType::Spruce);
+                                trees.push(TreeType::Pine);
+                            }
                             _ => {
                                 trees.push(TreeType::Oak);
                                 trees.push(TreeType::Spruce);
                                 trees.push(TreeType::Birch);
+                                trees.push(TreeType::TallOak);
+                                trees.push(TreeType::Pine);
+                                trees.push(TreeType::Bush);
+                                trees.push(TreeType::AzaleaBush);
                             }
                         }
                     } else {
                         trees.push(TreeType::Oak);
                         trees.push(TreeType::Spruce);
                         trees.push(TreeType::Birch);
+                        trees.push(TreeType::TallOak);
+                        trees.push(TreeType::Bush);
+                        trees.push(TreeType::AzaleaBush);
                     }
                     trees
                 };
@@ -213,6 +233,10 @@ pub fn generate_natural(
                     WATER,
                 ];
 
+                // v2.8.7 F1 — collect wetland WATER puddle cells; post-pass
+                // paints MOSS_BLOCK at 8-neighbour ring + COARSE_DIRT at
+                // Chebyshev-distance 2 ring. Replaces v2.8.6 noise MOSSY.
+                let mut wetland_puddles: Vec<(i32, i32)> = Vec::new();
                 for &(x, z) in filled_area.iter() {
                     // Don't overwrite road/path blocks with natural ground
                     if !editor.check_for_block(x, 0, z, Some(protected_blocks)) {
@@ -309,8 +333,11 @@ pub fn generate_natural(
                             if !editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                                 continue;
                             }
+                            let density = crate::ground_generation::value_noise_01(x, z, 32);
+                            let tree_threshold = ((60.0 - density * 45.0) as i32).max(5);
+                            let spawn_tree = rng.random_range(0..tree_threshold) == 0;
                             let random_choice: i32 = rng.random_range(0..30);
-                            if random_choice == 0 {
+                            if spawn_tree {
                                 let tree_type = *trees_ok_to_generate
                                     .choose(&mut rng)
                                     .unwrap_or(&TreeType::Oak);
@@ -351,12 +378,13 @@ pub fn generate_natural(
                                     editor.set_block(GRASS, x, 1, z, None, None);
                                     continue;
                                 }
-                                // arnis-update-290 G3 wetland puddles —
-                                // noise-driven WATER + MOSS_BLOCK ring +
-                                // COARSE_DIRT patches. Spatially coherent
-                                // ~28-block lake patches replace upstream's
-                                // 30% per-cell RNG (which produced fizzy
-                                // single-block puddles).
+                                // v2.8.3 — full source-water G3 port.
+                                //   * `has_static` region gate (scale 28) creates
+                                //     a wet/dry mosaic across the wetland
+                                //   * Wet cells: WATER puddle / MOSS ring / COARSE_DIRT
+                                //   * Dry cells: stay as GRASS_BLOCK overlay (40% chance)
+                                //   * MOSS ring widened to 8-neighbour (diagonals)
+                                //   * COARSE_DIRT threshold 0.62 -> 0.55 (denser mud)
                                 let region_noise =
                                     crate::ground_generation::value_noise_01(x + 11, z + 7, 28);
                                 if region_noise > 0.55 {
@@ -371,13 +399,22 @@ pub fn generate_natural(
                                             Some(&[MUD, GRASS_BLOCK]),
                                             None,
                                         );
+                                        wetland_puddles.push((x, z));
                                         continue;
                                     }
                                     // MOSS_BLOCK ring around puddles —
-                                    // 4-cardinal check for WATER already
-                                    // placed by an earlier cell this pass.
+                                    // 8-neighbour widened scan for visibly thicker rings.
                                     let mut near_water = false;
-                                    for &(dx, dz) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                                    for &(dx, dz) in &[
+                                        (-1i32, 0i32),
+                                        (1, 0),
+                                        (0, -1),
+                                        (0, 1),
+                                        (-1, -1),
+                                        (1, -1),
+                                        (-1, 1),
+                                        (1, 1),
+                                    ] {
                                         if editor.check_for_block(x + dx, 0, z + dz, Some(&[WATER]))
                                         {
                                             near_water = true;
@@ -388,14 +425,13 @@ pub fn generate_natural(
                                         editor.set_block(MOSS_BLOCK, x, 0, z, Some(&[MUD]), None);
                                     } else {
                                         // COARSE_DIRT patches via separate
-                                        // noise. Whitelist MUD so the MOSS
-                                        // ring above isn't overwritten.
+                                        // noise. Whitelist MUD so MOSS ring stays.
                                         let cd_noise = crate::ground_generation::value_noise_01(
                                             x + 53,
                                             z + 71,
                                             8,
                                         );
-                                        if cd_noise > 0.62 {
+                                        if cd_noise > 0.55 {
                                             editor.set_block(
                                                 COARSE_DIRT,
                                                 x,
@@ -406,35 +442,136 @@ pub fn generate_natural(
                                             );
                                         }
                                     }
+                                } else {
+                                    // Dry zone — wetland edges read as a
+                                    // wet/dry mosaic instead of uniform wet.
+                                    if rng.random_bool(0.4) {
+                                        editor.set_block(GRASS_BLOCK, x, 0, z, Some(&[MUD]), None);
+                                    }
                                 }
                                 if !editor.check_for_block(
                                     x,
                                     0,
                                     z,
-                                    Some(&[MUD, MOSS_BLOCK, COARSE_DIRT]),
+                                    Some(&[MUD, MOSS_BLOCK, COARSE_DIRT, GRASS_BLOCK, DIRT]),
                                 ) {
                                     continue;
                                 }
+                                // v2.8.8 F6 — match arnis-source-water structure:
+                                // per-subtype branch, NOT a unified 8-bin roll.
+                                // Cattail uses 1/2/3/4 candle state (v2.8.7 F9
+                                // candle ID hijack stays). MOSSY_COBBLESTONE noise
+                                // dropped — puddle-ring MOSS post-pass handles it.
+                                let place_cattail = |editor: &mut WorldEditor,
+                                                     rng: &mut rand_chacha::ChaCha8Rng| {
+                                    let tier = rng.random_range(0..100);
+                                    let candle_block = if tier < 25 {
+                                        BROWN_CANDLE
+                                    } else if tier < 60 {
+                                        BROWN_CANDLE_2
+                                    } else if tier < 85 {
+                                        BROWN_CANDLE_3
+                                    } else {
+                                        BROWN_CANDLE_4
+                                    };
+                                    if rng.random_bool(0.5) {
+                                        editor.set_block(GRASS, x, 1, z, None, None);
+                                        editor.set_block(candle_block, x, 2, z, None, None);
+                                    } else {
+                                        editor.set_block(
+                                            TALL_GRASS_BOTTOM,
+                                            x,
+                                            1,
+                                            z,
+                                            None,
+                                            None,
+                                        );
+                                        editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                                        editor.set_block(candle_block, x, 3, z, None, None);
+                                    }
+                                };
+                                // v2.8.9 — reduced grass/tall_grass overuse.
+                                // User: "remove the overuse of grass and tallgrass".
+                                // try_place_grass_or_tall now caps at ~25% veg
+                                // chance (was ~65%). All subtypes drop frequencies
+                                // to leave more visible bare MUD/GRASS_BLOCK.
+                                let try_place_grass_or_tall =
+                                    |editor: &mut WorldEditor,
+                                     rng: &mut rand_chacha::ChaCha8Rng| {
+                                        let r = rng.random_range(0..100);
+                                        if r < 10 {
+                                            // 10% tall_grass
+                                            editor.set_block(
+                                                TALL_GRASS_BOTTOM,
+                                                x,
+                                                1,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                            editor.set_block(
+                                                TALL_GRASS_TOP,
+                                                x,
+                                                2,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                        } else if r < 25 {
+                                            // 15% short grass
+                                            editor.set_block(GRASS, x, 1, z, None, None);
+                                        }
+                                        // else 75% bare
+                                    };
+
                                 match wetland_type.as_str() {
                                     "reedbed" => {
-                                        editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
-                                        editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                                        // 30% tall_grass, 15% cattail, 55% bare
+                                        let r = rng.random_range(0..100);
+                                        if r < 30 {
+                                            editor.set_block(
+                                                TALL_GRASS_BOTTOM,
+                                                x,
+                                                1,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                            editor.set_block(
+                                                TALL_GRASS_TOP,
+                                                x,
+                                                2,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                        } else if r < 45 {
+                                            place_cattail(editor, &mut rng);
+                                        }
                                     }
                                     "swamp" | "mangrove" => {
-                                        // TODO implement mangrove
-                                        let random_choice: i32 = rng.random_range(0..40);
-                                        if random_choice == 0 {
-                                            Tree::create(
+                                        let r: i32 = rng.random_range(0..40);
+                                        if r == 0 {
+                                            let tree_type = if wetland_type == "mangrove" {
+                                                TreeType::Mangrove
+                                            } else if rng.random_bool(0.6) {
+                                                TreeType::Willow
+                                            } else {
+                                                TreeType::Mangrove
+                                            };
+                                            Tree::create_of_type(
                                                 editor,
                                                 (x, 1, z),
+                                                tree_type,
                                                 Some(building_footprints),
                                             );
-                                        } else if random_choice < 35 {
-                                            editor.set_block(GRASS, x, 1, z, None, None);
+                                        } else if r < 15 {
+                                            // dropped from <35 → <15 (was over-grassy)
+                                            try_place_grass_or_tall(editor, &mut rng);
                                         }
                                     }
                                     "bog" => {
-                                        if rng.random_bool(0.2) {
+                                        if rng.random_bool(0.20) {
                                             editor.set_block(
                                                 MOSS_BLOCK,
                                                 x,
@@ -444,15 +581,65 @@ pub fn generate_natural(
                                                 None,
                                             );
                                         }
-                                        if rng.random_bool(0.15) {
-                                            editor.set_block(GRASS, x, 1, z, None, None);
+                                        if rng.random_bool(0.08) {
+                                            // dropped 0.15 → 0.08
+                                            try_place_grass_or_tall(editor, &mut rng);
+                                        } else if rng.random_bool(0.02) {
+                                            place_cattail(editor, &mut rng);
                                         }
                                     }
                                     "tidalflat" => {
-                                        continue; // No vegetation here
+                                        // bare
                                     }
                                     _ => {
-                                        editor.set_block(GRASS, x, 1, z, None, None);
+                                        // generic typed
+                                        if rng.random_bool(0.03) {
+                                            place_cattail(editor, &mut rng);
+                                        } else {
+                                            try_place_grass_or_tall(editor, &mut rng);
+                                        }
+                                    }
+                                }
+                                // v2.8.5 — SUGAR_CANE near wetland water-edge.
+                                // Per source-water reference (block_definitions.rs:1099,
+                                // data_processing.rs:614/622). Gates: base block must be
+                                // GRASS_BLOCK/MUD/DIRT/COARSE_DIRT, AND a cardinal water
+                                // neighbour exists, AND a 20% RNG. age=15 set via NBT
+                                // side-table so MC doesn't keep growing it.
+                                if rng.random_bool(0.20)
+                                    && editor.check_for_block(
+                                        x,
+                                        0,
+                                        z,
+                                        Some(&[GRASS_BLOCK, MUD, DIRT, COARSE_DIRT]),
+                                    )
+                                {
+                                    let mut edge = false;
+                                    for &(dx, dz) in
+                                        &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
+                                    {
+                                        if editor.check_for_block(
+                                            x + dx,
+                                            0,
+                                            z + dz,
+                                            Some(&[WATER]),
+                                        ) {
+                                            edge = true;
+                                            break;
+                                        }
+                                    }
+                                    if edge {
+                                        let h = rng.random_range(1..=3);
+                                        for y in 1..=h {
+                                            editor.set_block(
+                                                SUGAR_CANE,
+                                                x,
+                                                y,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                        }
                                     }
                                 }
                             } else {
@@ -466,6 +653,7 @@ pub fn generate_natural(
                                         crate::ground_generation::value_noise_01(x + 31, z + 17, 6);
                                     if cell_var > 0.78 {
                                         editor.set_block(WATER, x, 0, z, Some(&[MUD]), None);
+                                        wetland_puddles.push((x, z));
                                         continue;
                                     }
                                     let mut near_water = false;
@@ -496,7 +684,56 @@ pub fn generate_natural(
                                         }
                                     }
                                 }
-                                editor.set_block(GRASS, x, 1, z, None, None);
+                                // v2.8.9 — generic wetland (no `wetland=` tag).
+                                // Reduce overuse: 5% cattail, 15% grass, 80% bare.
+                                let r = rng.random_range(0..100);
+                                if r < 5 {
+                                    // cattail with state-stacked candle 1/2/3/4
+                                    let tier = rng.random_range(0..100);
+                                    let cb = if tier < 25 {
+                                        BROWN_CANDLE
+                                    } else if tier < 60 {
+                                        BROWN_CANDLE_2
+                                    } else if tier < 85 {
+                                        BROWN_CANDLE_3
+                                    } else {
+                                        BROWN_CANDLE_4
+                                    };
+                                    editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
+                                    editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                                    editor.set_block(cb, x, 3, z, None, None);
+                                } else if r < 20 {
+                                    editor.set_block(GRASS, x, 1, z, None, None);
+                                }
+                                // else 80% bare
+                                // v2.8.5 — SUGAR_CANE near generic wetland water-edge
+                                if rng.random_bool(0.20)
+                                    && editor.check_for_block(
+                                        x,
+                                        0,
+                                        z,
+                                        Some(&[GRASS_BLOCK, MUD, DIRT, COARSE_DIRT]),
+                                    )
+                                {
+                                    let mut edge = false;
+                                    for &(dx, dz) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                                        if editor.check_for_block(
+                                            x + dx,
+                                            0,
+                                            z + dz,
+                                            Some(&[WATER]),
+                                        ) {
+                                            edge = true;
+                                            break;
+                                        }
+                                    }
+                                    if edge {
+                                        let h = rng.random_range(1..=3);
+                                        for y in 1..=h {
+                                            editor.set_block(SUGAR_CANE, x, y, z, None, None);
+                                        }
+                                    }
+                                }
                             }
                         }
                         "mountain_range" => {
@@ -682,6 +919,40 @@ pub fn generate_natural(
                             // 35% chance for bare grass block
                         }
                         _ => {}
+                    }
+                }
+                // v2.8.7 F1 post-pass — paint puddle rings deterministically.
+                // 8-neighbour ring (Chebyshev 1) = MOSS_BLOCK,
+                // ring at Chebyshev distance 2 = COARSE_DIRT.
+                for &(px, pz) in &wetland_puddles {
+                    for dx in -2i32..=2i32 {
+                        for dz in -2i32..=2i32 {
+                            if dx == 0 && dz == 0 {
+                                continue;
+                            }
+                            let d_ch = dx.abs().max(dz.abs());
+                            let nx = px + dx;
+                            let nz = pz + dz;
+                            if d_ch == 1 {
+                                editor.set_block(
+                                    MOSS_BLOCK,
+                                    nx,
+                                    0,
+                                    nz,
+                                    Some(&[MUD, GRASS_BLOCK, DIRT, COARSE_DIRT]),
+                                    None,
+                                );
+                            } else if d_ch == 2 {
+                                editor.set_block(
+                                    COARSE_DIRT,
+                                    nx,
+                                    0,
+                                    nz,
+                                    Some(&[MUD, GRASS_BLOCK, DIRT]),
+                                    None,
+                                );
+                            }
+                        }
                     }
                 }
             }
