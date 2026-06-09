@@ -2,6 +2,11 @@
 
 All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [1.8.5] — 2026-06-09
+
+### Fixed
+- **Tile-invariant water depth (kills the cell-border water seam).** Underwater carve depth was scaled by the per-cell `component_max` (the connected water component's max distance-transform), which sets both the shore-to-deep `span` and the max depth. That value is a global property of the water body, but each tile only measures the part it can see, so two adjacent tiles compute a different `span`/`local_max` for the same body and carve a different depth at the shared border. After the canonical-region merge butts the two halves together, that shows as a straight step in the sea/lake floor (worst on wide water, where a larger seam buffer cannot help because it still cannot measure the body's full width). Under `--seed` / `--master-origin` (i.e. external schedulers like Meld), depth is now an **absolute** function of distance-from-shore that saturates at `MAX_WATER_DEPTH` within a fixed span, with no dependence on body width. Because the gradient saturates well inside the seam buffer, two tiles always agree on distance-to-shore where it matters, so they carve identical depth at the border. Single-world generation (no `--seed`) is unchanged. Adds a regression test that the tile-invariant profile is body-width-independent.
+
 ## [1.8.4] — 2026-06-09
 
 ### Fixed
