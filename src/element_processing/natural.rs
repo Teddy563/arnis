@@ -537,14 +537,7 @@ pub fn generate_natural(
                                                 None,
                                                 None,
                                             );
-                                            editor.set_block(
-                                                TALL_GRASS_TOP,
-                                                x,
-                                                2,
-                                                z,
-                                                None,
-                                                None,
-                                            );
+                                            editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
                                         } else if r < 45 {
                                             place_cattail(editor, &mut rng);
                                         }
@@ -615,15 +608,9 @@ pub fn generate_natural(
                                     )
                                 {
                                     let mut edge = false;
-                                    for &(dx, dz) in
-                                        &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
-                                    {
-                                        if editor.check_for_block(
-                                            x + dx,
-                                            0,
-                                            z + dz,
-                                            Some(&[WATER]),
-                                        ) {
+                                    for &(dx, dz) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                                        if editor.check_for_block(x + dx, 0, z + dz, Some(&[WATER]))
+                                        {
                                             edge = true;
                                             break;
                                         }
@@ -631,14 +618,7 @@ pub fn generate_natural(
                                     if edge {
                                         let h = rng.random_range(1..=3);
                                         for y in 1..=h {
-                                            editor.set_block(
-                                                SUGAR_CANE,
-                                                x,
-                                                y,
-                                                z,
-                                                None,
-                                                None,
-                                            );
+                                            editor.set_block(SUGAR_CANE, x, y, z, None, None);
                                         }
                                     }
                                 }
@@ -717,12 +697,8 @@ pub fn generate_natural(
                                 {
                                     let mut edge = false;
                                     for &(dx, dz) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
-                                        if editor.check_for_block(
-                                            x + dx,
-                                            0,
-                                            z + dz,
-                                            Some(&[WATER]),
-                                        ) {
+                                        if editor.check_for_block(x + dx, 0, z + dz, Some(&[WATER]))
+                                        {
                                             edge = true;
                                             break;
                                         }

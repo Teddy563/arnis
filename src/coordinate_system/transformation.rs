@@ -234,7 +234,10 @@ mod test {
         let lng = llbbox.min().lng() + (llbbox.max().lng() - llbbox.min().lng()) * 0.5;
         let a = transformer.transform_point(LLPoint::new(llbbox.min().lat(), lng).unwrap());
         let b = transformer.transform_point(LLPoint::new(llbbox.max().lat(), lng).unwrap());
-        assert_eq!(a.x, b.x, "longitude must map to one block-X regardless of latitude");
+        assert_eq!(
+            a.x, b.x,
+            "longitude must map to one block-X regardless of latitude"
+        );
     }
 
     // this ensures that invalid inputs can be handled correctly

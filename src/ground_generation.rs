@@ -17,11 +17,11 @@ use crate::args::Args;
 use crate::block_definitions::{
     AIR, ANDESITE, BEDROCK, BLACK_CONCRETE, BLUE_FLOWER, BRICK, BROWN_CANDLE, BROWN_CANDLE_2,
     BROWN_CANDLE_3, BROWN_CANDLE_4, CARROTS, CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE,
-    CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND,
-    GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE,
-    LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES, OAK_PLANKS, POTATOES, RED_FLOWER, SAND,
-    SANDSTONE, SMOOTH_STONE, STONE, STONE_BRICKS, SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP,
-    TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
+    CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH,
+    FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE,
+    LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES, OAK_PLANKS, POTATOES, RED_FLOWER,
+    SAND, SANDSTONE, SMOOTH_STONE, STONE, STONE_BRICKS, SUGAR_CANE, TALL_GRASS_BOTTOM,
+    TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::tree;
@@ -745,10 +745,7 @@ pub fn generate_ground_layer(
                             // WATER neighbour). coord_hash gives deterministic
                             // placement per cell.
                             if shore_distance > 0
-                                && matches!(
-                                    surface_block,
-                                    SAND | DIRT | COARSE_DIRT | GRASS_BLOCK
-                                )
+                                && matches!(surface_block, SAND | DIRT | COARSE_DIRT | GRASS_BLOCK)
                                 && !editor.block_exists_absolute(x, ground_y + 1, z)
                             {
                                 let pick = land_cover::coord_hash(x + 113, z + 47) % 1000;
@@ -805,9 +802,8 @@ pub fn generate_ground_layer(
                                         );
                                     }
                                 } else if pick < 30 {
-                                    let edge = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
-                                        .iter()
-                                        .any(|(dx, dz)| {
+                                    let edge = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)].iter().any(
+                                        |(dx, dz)| {
                                             editor.check_for_block_absolute(
                                                 x + dx,
                                                 ground_y,
@@ -815,7 +811,8 @@ pub fn generate_ground_layer(
                                                 Some(&[WATER]),
                                                 None,
                                             )
-                                        });
+                                        },
+                                    );
                                     if edge {
                                         let h = (pick % 3) + 1;
                                         for y_off in 1..=h as i32 {

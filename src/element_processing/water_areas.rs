@@ -453,9 +453,8 @@ fn scanline_fill_water(
                 // in water_depth::carve_lc_water_pass) so OSM water polygons
                 // also get the clean under-bridge bed treatment.
                 let near_bridge = (-2..=2).any(|dx: i32| {
-                    (-2..=2).any(|dz: i32| {
-                        !(dx == 0 && dz == 0) && road_mask.contains(x + dx, z + dz)
-                    })
+                    (-2..=2)
+                        .any(|dz: i32| !(dx == 0 && dz == 0) && road_mask.contains(x + dx, z + dz))
                 });
                 // v2.8.6 F2 — body_max via 7x7 BWF sample for dune amplitude.
                 let mut body_max = 0;

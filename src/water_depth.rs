@@ -1,8 +1,8 @@
 //! Per-cell water depth carving from a chamfer-3-4 distance transform over the LC_WATER mask.
 
 use crate::block_definitions::{
-    AIR, BLACK_CONCRETE, BLUE_FLOWER, BROWN_CANDLE, BROWN_CANDLE_2, BROWN_CANDLE_3, BROWN_CANDLE_4,
-    Block, CLAY, COARSE_DIRT, CYAN_TERRACOTTA, DIRT, GRASS, GRAVEL, GRAY_CONCRETE,
+    Block, AIR, BLACK_CONCRETE, BLUE_FLOWER, BROWN_CANDLE, BROWN_CANDLE_2, BROWN_CANDLE_3,
+    BROWN_CANDLE_4, CLAY, COARSE_DIRT, CYAN_TERRACOTTA, DIRT, GRASS, GRAVEL, GRAY_CONCRETE,
     GRAY_CONCRETE_POWDER, KELP, KELP_PLANT, LIGHT_GRAY_CONCRETE, MAGMA_BLOCK, RED_FLOWER, SAND,
     SEAGRASS, SEA_PICKLE, SOUL_SAND, STONE, SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP,
     TALL_SEAGRASS_BOTTOM, TALL_SEAGRASS_TOP, WATER, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
@@ -738,9 +738,7 @@ pub fn carve_lc_water_pass(
             // the "shadow" zone under causeways stays clean GRAVEL/SAND
             // with no DIRT strips peeking out at the bridge edges.
             let near_bridge = (-2..=2).any(|dx: i32| {
-                (-2..=2).any(|dz: i32| {
-                    !(dx == 0 && dz == 0) && road_mask.contains(x + dx, z + dz)
-                })
+                (-2..=2).any(|dz: i32| !(dx == 0 && dz == 0) && road_mask.contains(x + dx, z + dz))
             });
             // v2.8.6 F2 — body_max via 7x7 BWF sample (proxy for body width).
             let mut body_max = 0;
@@ -769,11 +767,7 @@ pub fn carve_lc_water_pass(
 /// sugar_cane) placed BEFORE water/road overlays. Scans every bbox cell:
 /// if ground-level block is WATER or the cell is in road_mask, AIR-out
 /// any veg cells y=1..=5 above it.
-pub fn sweep_floating_veg(
-    editor: &mut WorldEditor,
-    xzbbox: &XZBBox,
-    road_mask: &RoadMaskBitmap,
-) {
+pub fn sweep_floating_veg(editor: &mut WorldEditor, xzbbox: &XZBBox, road_mask: &RoadMaskBitmap) {
     let min_x = xzbbox.min_x();
     let max_x = xzbbox.max_x();
     let min_z = xzbbox.min_z();
@@ -803,8 +797,7 @@ pub fn sweep_floating_veg(
     for z in min_z..=max_z {
         for x in min_x..=max_x {
             let gy = editor.get_ground_level(x, z);
-            let is_water =
-                editor.check_for_block_absolute(x, gy, z, Some(&[WATER]), None);
+            let is_water = editor.check_for_block_absolute(x, gy, z, Some(&[WATER]), None);
             let is_road_ground = road_mask.contains(x, z)
                 || editor.check_for_block_absolute(x, gy, z, Some(road_blocks), None);
             if !(is_water || is_road_ground) {
