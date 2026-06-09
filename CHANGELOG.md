@@ -2,6 +2,11 @@
 
 All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [1.8.4] — 2026-06-09
+
+### Fixed
+- **Cross-tile coordinate drift under `--master-origin-lat/lng`.** `transform_point` derived metres-per-degree-longitude from `avg_lat = (point_lat + origin_lat) / 2`, so the **same longitude mapped to a different block-X depending on the point's latitude** — the grid sheared like a fan instead of a rectangle. Invisible in a single world, but for external schedulers that stitch adjacent bboxes into one Minecraft world (Meld) it pushed each tile off the shared 512-block region grid by an amount that **grows with distance from the origin**, leaving flat-grass **"unrendered" strips at tile seams** that widen toward the far corners. Now anchored at `origin_lat` so a longitude maps to **one** block-X project-wide, matching the latitude axis (which already uses the constant `METERS_PER_DEG_LAT`). Plain single-world generation (no master origin) is byte-identical. Adds a latitude-invariance regression test.
+
 ## [1.8.3] — 2026-06-02
 
 ### Added

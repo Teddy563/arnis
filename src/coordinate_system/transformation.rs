@@ -80,8 +80,15 @@ impl CoordTransformer {
         if let (Some(origin_lat), Some(origin_lng)) =
             (self.master_origin_lat, self.master_origin_lng)
         {
-            let avg_lat = (llpoint.lat() + origin_lat) / 2.0;
-            let mpd_lon = METERS_PER_DEG_LAT * avg_lat.to_radians().cos();
+            // metres-per-degree-longitude MUST be a single project-wide constant
+            // anchored at the master-origin latitude — NOT the point's own latitude
+            // or an average. Using avg_lat made the same longitude map to a
+            // different block-X by latitude, shearing each tile off the region grid
+            // an external scheduler (Meld) assumes — flat-grass "unrendered" strips
+            // at cell seams that widen away from the origin. Anchoring at origin_lat
+            // makes a longitude map to ONE block-X project-wide, matching the
+            // latitude path (constant METERS_PER_DEG_LAT).
+            let mpd_lon = METERS_PER_DEG_LAT * origin_lat.to_radians().cos();
 
             let dx_m = (llpoint.lng() - origin_lng) * mpd_lon;
             let dz_m = (origin_lat - llpoint.lat()) * METERS_PER_DEG_LAT;
@@ -210,6 +217,24 @@ mod test {
         test_llxztransform_one_scale_one_factor(10.0, -1.2, 2.0);
         test_llxztransform_one_scale_one_factor(0.4, 0.3, -0.2);
         test_llxztransform_one_scale_one_factor(0.1, 0.2, 0.7);
+    }
+
+    // Regression: under a master origin, a fixed longitude must map to ONE block-X
+    // regardless of the point's latitude. Before the origin-anchored mpd_lon fix
+    // this failed (avg_lat made block-X latitude-dependent), shearing cell content
+    // off the region grid and producing unrendered grass strips at seams.
+    #[test]
+    pub fn test_master_origin_longitude_is_latitude_invariant() {
+        use crate::coordinate_system::geographic::LLPoint;
+        let llbbox = get_llbbox_arnis();
+        let olat = llbbox.min().lat();
+        let olng = llbbox.min().lng();
+        let (transformer, _xz) =
+            CoordTransformer::llbbox_to_xzbbox(&llbbox, 1.0, Some(olat), Some(olng)).unwrap();
+        let lng = llbbox.min().lng() + (llbbox.max().lng() - llbbox.min().lng()) * 0.5;
+        let a = transformer.transform_point(LLPoint::new(llbbox.min().lat(), lng).unwrap());
+        let b = transformer.transform_point(LLPoint::new(llbbox.max().lat(), lng).unwrap());
+        assert_eq!(a.x, b.x, "longitude must map to one block-X regardless of latitude");
     }
 
     // this ensures that invalid inputs can be handled correctly

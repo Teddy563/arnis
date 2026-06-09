@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "arnis"
-version = "1.8.3"
+version = "1.8.4"
 dependencies = [
  "base64 0.22.1",
  "bedrockrs_level",
