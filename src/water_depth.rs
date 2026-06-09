@@ -306,23 +306,8 @@ fn depth_from_dt(dt_eff: f64, component_max_units: u16) -> i32 {
     if dt_eff < f64::from(SHOAL_DT_UNITS) {
         return 0;
     }
-    let dist_blocks = (dt_eff - f64::from(SHOAL_DT_UNITS)) / 3.0;
-
-    // v2.8.5 — TILE-INVARIANT water depth (Meld). Under --seed / --master-origin,
-    // two adjacent cells must carve the SAME depth at a shared border block or the
-    // canonical-region merge shows a seam. The per-cell `component_max_units`
-    // (which sets both `span` and `local_max` below) is a GLOBAL property of the
-    // water body that each cell only partly measures, so it differs across the cut
-    // and steps the floor. Replace it with an ABSOLUTE profile: depth depends only
-    // on distance-from-shore and saturates at MAX_WATER_DEPTH within TI_SPAN blocks.
-    // Because TI_SPAN (24) is far inside the seam buffer (128 blocks), both cells
-    // agree on distance-to-shore everywhere it matters → identical depth, no seam,
-    // on any size of water. Single-world output (no --seed) is untouched below.
-    if crate::ground_generation::tile_invariant_enabled() {
-        return depth_absolute(dist_blocks);
-    }
-
     let local_max = polygon_local_max(component_max_units);
+    let dist_blocks = (dt_eff - f64::from(SHOAL_DT_UNITS)) / 3.0;
     let span: f64 = if component_max_units < 21 {
         6.0
     } else if component_max_units < 45 {
@@ -335,17 +320,6 @@ fn depth_from_dt(dt_eff: f64, component_max_units: u16) -> i32 {
     let t = (dist_blocks / span).clamp(0.0, 1.0);
     let depth_f = (local_max as f64) * t.sqrt();
     (depth_f.floor() as i32).clamp(0, local_max)
-}
-
-/// Tile-invariant depth: a pure function of distance-from-shore (blocks), with no
-/// dependence on the water body's width. Saturates at `MAX_WATER_DEPTH` within
-/// `TI_SPAN` blocks, so two cells that agree on distance-to-shore (guaranteed by
-/// the seam buffer >> TI_SPAN) carve identical depth at the border.
-fn depth_absolute(dist_blocks: f64) -> i32 {
-    const TI_SPAN: f64 = 24.0;
-    let t = (dist_blocks / TI_SPAN).clamp(0.0, 1.0);
-    let depth_f = f64::from(MAX_WATER_DEPTH) * t.sqrt();
-    (depth_f.floor() as i32).clamp(0, MAX_WATER_DEPTH)
 }
 
 /// Per-cell carve depth, with deterministic contour wobble on the bank lines.
@@ -843,25 +817,6 @@ pub fn sweep_floating_veg(editor: &mut WorldEditor, xzbbox: &XZBBox, road_mask: 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // v2.8.5 — the tile-invariant profile must depend ONLY on distance-from-shore,
-    // never on the water body's width, so two cells that see different fractions of
-    // the same body still carve the same depth at the border. (depth_absolute is the
-    // tile-invariant path; depth_from_dt routes to it when --seed is set.)
-    #[test]
-    fn tile_invariant_depth_is_body_width_independent() {
-        assert_eq!(depth_absolute(0.0), 0, "at the shore, no carve");
-        assert!(depth_absolute(8.0) > 0, "carves past the shoal");
-        assert_eq!(
-            depth_absolute(100.0),
-            MAX_WATER_DEPTH,
-            "saturates at the cap"
-        );
-        // monotonic non-decreasing
-        assert!(depth_absolute(20.0) >= depth_absolute(10.0));
-        // identical distance always yields identical depth, regardless of context
-        assert_eq!(depth_absolute(15.0), depth_absolute(15.0));
-    }
 
     #[test]
     fn dt_distance_from_shore() {

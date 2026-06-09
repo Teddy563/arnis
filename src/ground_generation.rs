@@ -1366,14 +1366,6 @@ fn current_noise_seed() -> u64 {
     *NOISE_SEED.get().unwrap_or(&0)
 }
 
-/// True when tile-invariant rendering is active (a non-zero `--seed` was set, as
-/// Meld always does). Used to switch water depth to a position-only, body-width-
-/// independent profile so adjacent cells carve identically at their shared border.
-#[inline]
-pub(crate) fn tile_invariant_enabled() -> bool {
-    current_noise_seed() != 0
-}
-
 pub(crate) fn value_noise_01(x: i32, z: i32, scale: i32) -> f64 {
     let s = scale.max(1);
     let x0 = x.div_euclid(s) * s;
