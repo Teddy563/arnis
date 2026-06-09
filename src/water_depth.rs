@@ -650,6 +650,7 @@ fn place_underwater_vegetation(
 /// `body_max` is the BWF-derived max depth of the water body (7x7 sample
 /// from caller). Wider bodies (DT_max >= 8) get full 3-4 cell amplitude
 /// for visible vanilla-MC-style rolling waves; narrow rivers stay flat.
+#[allow(clippy::too_many_arguments)]
 fn place_underwater_dunes(
     editor: &mut WorldEditor,
     x: i32,

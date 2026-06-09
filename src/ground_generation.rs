@@ -751,7 +751,7 @@ pub fn generate_ground_layer(
                                 let pick = land_cover::coord_hash(x + 113, z + 47) % 1000;
                                 if pick < 20 {
                                     // v2.8.7 F9b — max 2 stalks + 1/2/3/4 candle state.
-                                    let double_stalk = pick % 2 == 0;
+                                    let double_stalk = pick.is_multiple_of(2);
                                     let candle_block = match pick % 4 {
                                         0 => BROWN_CANDLE,
                                         1 => BROWN_CANDLE_2,
