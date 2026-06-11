@@ -18,10 +18,16 @@ const MAX_ZOOM: u8 = 15;
 /// Maximum concurrent tile downloads to be respectful to AWS
 const MAX_CONCURRENT_DOWNLOADS: usize = 8;
 
-/// Maximum number of retry attempts for tile downloads
-const TILE_DOWNLOAD_MAX_RETRIES: u32 = 3;
-/// Base delay in milliseconds for exponential backoff between retries
-const TILE_DOWNLOAD_RETRY_BASE_DELAY_MS: u64 = 500;
+/// Maximum number of retry attempts for tile downloads.
+///
+/// Raised from 3 → 6: under Meld up to 8 cell processes fetch in parallel
+/// (8 threads each ≈ 64 concurrent S3 requests on a cold cache), so a tile
+/// can be rate-limited through several attempts before it lands. A tile lost
+/// here becomes a NaN grid cell, which the AWS path silently NaN-fills into a
+/// flat region — so it is worth retrying hard.
+const TILE_DOWNLOAD_MAX_RETRIES: u32 = 6;
+/// Base delay in milliseconds for exponential backoff between retries.
+const TILE_DOWNLOAD_RETRY_BASE_DELAY_MS: u64 = 600;
 
 /// RGB image buffer type for elevation tiles
 type TileImage = image::ImageBuffer<image::Rgb<u8>, Vec<u8>>;
@@ -77,29 +83,70 @@ impl ElevationProvider for AwsTerrain {
             .build()
             .map_err(|e| format!("Failed to create thread pool: {e}"))?;
 
-        let downloaded_tiles: Vec<TileDownloadResult> = thread_pool.install(|| {
-            tiles
-                .par_iter()
-                .map(|(tile_x, tile_y)| {
-                    let tile_path = tile_cache_dir.join(format!("z{zoom}_x{tile_x}_y{tile_y}.png"));
-                    let rgb_img = fetch_or_load_tile(&client, *tile_x, *tile_y, zoom, &tile_path)?;
-                    Ok(((*tile_x, *tile_y), rgb_img))
-                })
-                .collect()
-        });
-
-        // Collect tiles into a HashMap for random access during grid sampling
+        // Collect tiles into a HashMap for random access during grid sampling.
+        //
+        // A missing tile becomes a NaN grid cell, and the AWS path skips the
+        // regional NaN-ratio re-fetch guard, so a handful of tiles lost to a
+        // transient rate-limit used to silently flatten a whole region (the
+        // staircase seam between a fetched cell and a flat one). So instead of
+        // accepting whatever the first pass returns, retry the *still-missing*
+        // tiles in additional rounds with backoff before we sample. This is the
+        // key reliability fix for parallel multi-cell (Meld) generation.
         let mut tile_map: std::collections::HashMap<(u32, u32), TileImage> =
             std::collections::HashMap::new();
-        for result in downloaded_tiles {
-            match result {
-                Ok((key, img)) => {
-                    tile_map.insert(key, img);
-                }
-                Err(e) => {
-                    eprintln!("Warning: Failed to download tile: {e}");
+        let mut pending: Vec<(u32, u32)> = tiles.clone();
+        const MAX_FETCH_ROUNDS: u32 = 4;
+        for round in 0..MAX_FETCH_ROUNDS {
+            if pending.is_empty() {
+                break;
+            }
+            if round > 0 {
+                let delay_ms = 800u64 * (1 << (round - 1));
+                eprintln!(
+                    "AWS elevation: {} tile(s) still missing, retry round {}/{} after {}ms...",
+                    pending.len(),
+                    round,
+                    MAX_FETCH_ROUNDS - 1,
+                    delay_ms
+                );
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+
+            let results: Vec<TileDownloadResult> = thread_pool.install(|| {
+                pending
+                    .par_iter()
+                    .map(|(tile_x, tile_y)| {
+                        let tile_path =
+                            tile_cache_dir.join(format!("z{zoom}_x{tile_x}_y{tile_y}.png"));
+                        let rgb_img =
+                            fetch_or_load_tile(&client, *tile_x, *tile_y, zoom, &tile_path)?;
+                        Ok(((*tile_x, *tile_y), rgb_img))
+                    })
+                    .collect()
+            });
+
+            // `par_iter().map().collect()` preserves order, so results[i] maps
+            // back to pending[i]; rebuild the missing set for the next round.
+            let mut still_missing: Vec<(u32, u32)> = Vec::new();
+            for (result, coord) in results.into_iter().zip(pending.iter()) {
+                match result {
+                    Ok((key, img)) => {
+                        tile_map.insert(key, img);
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to download tile {coord:?}: {e}");
+                        still_missing.push(*coord);
+                    }
                 }
             }
+            pending = still_missing;
+        }
+        if !pending.is_empty() {
+            eprintln!(
+                "Warning: {} of {num_tiles} AWS elevation tiles could not be fetched after \
+                 {MAX_FETCH_ROUNDS} rounds; affected cells will be NaN-filled (may show as flat).",
+                pending.len(),
+            );
         }
 
         println!(
@@ -255,7 +302,14 @@ fn download_tile(
 
     for attempt in 0..TILE_DOWNLOAD_MAX_RETRIES {
         if attempt > 0 {
-            let delay_ms = TILE_DOWNLOAD_RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
+            // Deterministic per-tile jitter de-synchronises the ~64 parallel
+            // requests Meld can launch, so retries don't all wake at the same
+            // instant and re-collide with S3 rate limiting.
+            let jitter = ((tile_x.wrapping_mul(73_856_093)
+                ^ tile_y.wrapping_mul(19_349_663)
+                ^ attempt.wrapping_mul(83_492_791))
+                % 500) as u64;
+            let delay_ms = TILE_DOWNLOAD_RETRY_BASE_DELAY_MS * (1 << (attempt - 1)) + jitter;
             eprintln!(
                 "Retry attempt {}/{} for tile x={},y={},z={} after {}ms delay",
                 attempt,
@@ -297,7 +351,15 @@ fn download_tile_once(
     response.error_for_status_ref().map_err(|e| e.to_string())?;
     let bytes = response.bytes().map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-    std::fs::write(tile_path, &bytes).map_err(|e| e.to_string())?;
+    // Atomic cache write: stage to a unique temp file then rename into place.
+    // Meld runs several cell processes in parallel against ONE shared cache
+    // dir, so a plain `fs::write` let a sibling process read a half-written
+    // PNG → decode garbage → NaN grid cell → a flat-terrain region at the
+    // seam. A rename is atomic on the same volume, so readers only ever see a
+    // complete tile.
+    let tmp_path = tile_path.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::write(&tmp_path, &bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_path, tile_path).map_err(|e| e.to_string())?;
     Ok(img.to_rgb8())
 }
 

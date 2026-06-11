@@ -82,11 +82,25 @@ pub fn generate_leisure(
         if corner_addup != (0, 0, 0) {
             let filled_area = flood_fill_cache.get_or_compute(element, args.timeout.as_ref());
 
-            // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-            let mut rng = element_rng(element.id);
+            // Single-world: one id-seeded stream. Tile mode (Meld): reseed a
+            // position-only RNG per tile. The scatter below draws the RNG inside a
+            // terrain gate (check_for_block(GRASS_BLOCK)); with a shared stream, a
+            // tile that's grass in one cell but a path in its neighbour consumes the
+            // stream in only one cell, desyncing it and cascading a different scatter
+            // across the whole area at the seam. A per-tile RNG can't cascade.
+            let mut stream_rng = element_rng(element.id);
+            let tile_inv = crate::ground_generation::tile_invariant_enabled();
 
             for &(x, z) in filled_area.iter() {
                 editor.set_block(block_type, x, 0, z, Some(&[GRASS_BLOCK]), None);
+
+                let mut tile_rng;
+                let rng = if tile_inv {
+                    tile_rng = crate::deterministic_rng::coord_rng(x, z, element.id);
+                    &mut tile_rng
+                } else {
+                    &mut stream_rng
+                };
 
                 // Add decorative elements for parks and gardens
                 if matches!(leisure_type.as_str(), "park" | "garden" | "nature_reserve")

@@ -174,6 +174,33 @@ impl<'a> WorldEditor<'a> {
         Ok(())
     }
 
+    /// Latitude that drives the temperature-based biome (taiga/forest/jungle) for a
+    /// chunk, and therefore its grass and leaf tint.
+    ///
+    /// Single-world (no `--seed`): the cell's bbox-CENTRE latitude, as before.
+    ///
+    /// Tile-invariant (`--seed`/Meld): each chunk's latitude is derived from its
+    /// absolute world Z using this cell's own `llbbox`<->`xzbbox` mapping. Because the
+    /// origin-anchored coordinate fix makes `lat(block_z)` a single global straight
+    /// line, every cell reconstructs the SAME line from its two endpoints, so two
+    /// adjacent cells agree on a shared chunk's latitude. That removes the per-cell
+    /// biome step (and the grass/leaf-colour seam it caused) at cell borders.
+    fn biome_lat_for_chunk(&self, abs_chunk_z: i32, center_lat: f64) -> f64 {
+        if !crate::ground_generation::tile_invariant_enabled() {
+            return center_lat;
+        }
+        let min_z = self.xzbbox.min_z() as f64;
+        let max_z = self.xzbbox.max_z() as f64;
+        if max_z <= min_z {
+            return center_lat;
+        }
+        let north_lat = self.llbbox.max().lat(); // +Z is south, so min_z is the north edge
+        let south_lat = self.llbbox.min().lat();
+        let world_z = f64::from(abs_chunk_z * 16 + 8); // chunk-centre block Z
+        let t = (world_z - min_z) / (max_z - min_z);
+        north_lat + t * (south_lat - north_lat)
+    }
+
     /// Saves a single region to disk.
     ///
     /// Optimized for new world creation, writes chunks directly without reading existing data.
@@ -210,8 +237,10 @@ impl<'a> WorldEditor<'a> {
                 let biome_value = crate::biome::build_chunk_biome_nbt(
                     abs_chunk_x,
                     abs_chunk_z,
+                    self.xzbbox.min_x(),
+                    self.xzbbox.min_z(),
                     ground_ref,
-                    center_lat,
+                    self.biome_lat_for_chunk(abs_chunk_z, center_lat),
                 );
                 let chunk_nbt = create_chunk_nbt(&chunk, self.bake_lighting, &biome_value);
                 ser_buffer.clear();
@@ -234,8 +263,10 @@ impl<'a> WorldEditor<'a> {
                     let biome_value = crate::biome::build_chunk_biome_nbt(
                         abs_chunk_x,
                         abs_chunk_z,
+                        self.xzbbox.min_x(),
+                        self.xzbbox.min_z(),
                         ground_ref,
-                        center_lat,
+                        self.biome_lat_for_chunk(abs_chunk_z, center_lat),
                     );
                     let ser_buffer = Self::create_base_chunk(
                         abs_chunk_x,
@@ -1014,7 +1045,7 @@ mod tests {
     }
 
     fn plains_biome() -> Value {
-        crate::biome::build_chunk_biome_nbt(0, 0, None, 0.0)
+        crate::biome::build_chunk_biome_nbt(0, 0, 0, 0, None, 0.0)
     }
 
     #[test]

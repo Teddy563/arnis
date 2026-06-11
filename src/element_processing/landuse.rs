@@ -20,8 +20,11 @@ pub fn generate_landuse(
     let binding: String = "".to_string();
     let landuse_tag: &String = element.tags.get("landuse").unwrap_or(&binding);
 
-    // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-    let mut rng = element_rng(element.id);
+    // Single-world: one id-seeded stream. Tile mode (Meld): reseeded per tile in
+    // the fill loop below so terrain-gated scatter can't desync a shared stream
+    // across cells and cascade at the seam.
+    let mut stream_rng = element_rng(element.id);
+    let tile_inv = crate::ground_generation::tile_invariant_enabled();
 
     let block_type = match landuse_tag.as_str() {
         "greenfield" | "meadow" | "grass" | "orchard" | "forest" => GRASS_BLOCK,
@@ -96,6 +99,18 @@ pub fn generate_landuse(
     };
 
     for &(x, z) in floor_area.iter() {
+        // Per-tile RNG: in tile mode use a position-only coord_rng so the scatter
+        // arms below (which draw the RNG inside terrain gates like
+        // check_for_block(GRASS_BLOCK)) can't desync a shared id stream across
+        // cells and cascade a different scatter across the whole area at every
+        // seam. Single-world keeps the id-seeded stream → byte-identical.
+        let mut tile_rng;
+        let rng = if tile_inv {
+            tile_rng = crate::deterministic_rng::coord_rng(x, z, element.id);
+            &mut tile_rng
+        } else {
+            &mut stream_rng
+        };
         // Apply per-block randomness for certain landuse types
         let actual_block = if landuse_tag == "industrial" {
             // Industrial: primarily stone, with some stone bricks and smooth stone
@@ -194,12 +209,14 @@ pub fn generate_landuse(
                 }
             }
             "forest" if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) => {
-                // Density-modulated spawn: thickets in some patches, clearings in others.
+                // Density-modulated spawn: thickets in some patches, clearings in
+                // others. Uses the loop's per-tile `rng` (position-only in tile
+                // mode), so the same world tile resolves identically in any cell.
                 let density = crate::ground_generation::value_noise_01(x, z, 32);
                 let tree_threshold = ((60.0 - density * 45.0) as i32).max(5);
                 if rng.random_range(0..tree_threshold) == 0 {
                     let tree_type = *trees_ok_to_generate
-                        .choose(&mut rng)
+                        .choose(&mut *rng)
                         .unwrap_or(&TreeType::Oak);
                     Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints));
                 } else {

@@ -240,6 +240,32 @@ mod test {
         );
     }
 
+    // Regression: under a master origin the elevation/land-cover grid MUST be
+    // sized with the same origin-anchored metres-per-degree the world uses, so
+    // the grid extent equals the xzbbox block extent exactly. If it drifts back
+    // to geo_distance (haversine, avg-lat) the grid stretches ~0.1% and terrain
+    // slides 1-3 blocks off the OSM features mid-cell + seams across tiles.
+    #[test]
+    pub fn test_grid_dims_match_world_extent_under_master_origin() {
+        let llbbox = get_llbbox_arnis();
+        let olat = llbbox.min().lat();
+        let olng = llbbox.min().lng();
+        let (_t, xz) =
+            CoordTransformer::llbbox_to_xzbbox(&llbbox, 1.0, Some(olat), Some(olng)).unwrap();
+        let (world_w, world_h, _gw, _gh) =
+            crate::elevation::compute_grid_dims(&llbbox, 1.0, Some(olat), Some(olng));
+        assert_eq!(
+            world_w as i32,
+            xz.max_x() - xz.min_x() + 1,
+            "elevation grid width must equal the world block extent under master origin"
+        );
+        assert_eq!(
+            world_h as i32,
+            xz.max_z() - xz.min_z() + 1,
+            "elevation grid height must equal the world block extent under master origin"
+        );
+    }
+
     // this ensures that invalid inputs can be handled correctly
     #[test]
     pub fn test_invalid_construct() {

@@ -47,6 +47,8 @@ pub type ChunkBiomeNbt = Value;
 pub fn build_chunk_biome_nbt(
     chunk_x: i32,
     chunk_z: i32,
+    origin_x: i32,
+    origin_z: i32,
     ground: Option<&Ground>,
     center_lat_deg: f64,
 ) -> ChunkBiomeNbt {
@@ -55,9 +57,19 @@ pub fn build_chunk_biome_nbt(
     if let Some(g) = ground {
         for zi in 0..4i32 {
             for xi in 0..4i32 {
-                let world_x = chunk_x * 16 + xi * 4 + 2;
-                let world_z = chunk_z * 16 + zi * 4 + 2;
-                let coord = XZPoint::new(world_x, world_z);
+                // cover_class / water_distance index a CELL-LOCAL land-cover
+                // grid (coord / world_width, clamped 0..1). Convert the absolute
+                // chunk world coord to cell-local by subtracting the cell's
+                // xzbbox origin — exactly as every other Ground caller does
+                // (e.g. world_editor::get_ground_level). Under master-origin
+                // tiling origin_x/_z are nonzero and differ per cell, so without
+                // this the lookup clamps to the grid's edge column and each tile
+                // picks a different (wrong) biome → hard vertical seam at the
+                // cell border. Single-world has origin = (0,0) → no-op,
+                // byte-identical.
+                let local_x = chunk_x * 16 + xi * 4 + 2 - origin_x;
+                let local_z = chunk_z * 16 + zi * 4 + 2 - origin_z;
+                let coord = XZPoint::new(local_x, local_z);
                 let lc = g.cover_class(coord);
                 let wd = g.water_distance(coord);
                 names[(zi * 4 + xi) as usize] = biome_for_class(lc, center_lat_deg, wd);
@@ -175,7 +187,7 @@ mod tests {
 
     #[test]
     fn no_ground_yields_plains_palette() {
-        let nbt = build_chunk_biome_nbt(0, 0, None, 0.0);
+        let nbt = build_chunk_biome_nbt(0, 0, 0, 0, None, 0.0);
         match nbt {
             Value::Compound(map) => {
                 assert!(map.contains_key("palette"));

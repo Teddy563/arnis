@@ -224,6 +224,93 @@ pub fn compute_node_bounds(nodes: &[ProcessedNode]) -> Option<(i32, i32, i32, i3
     Some((min_x, max_x, min_z, max_z))
 }
 
+/// Whether a feature with these unclipped block bounds `(min_x, max_x, min_z,
+/// max_z)` should render UNCLIPPED in tile-invariant (master-origin) mode.
+///
+/// Two conditions, shared by the standalone-way path (here) and the
+/// relation-ring path (`buildings.rs`) so the guard can never drift between
+/// them — if it did, trees and buildings would un-clip under different rules:
+///  1. the feature overlaps this cell's bbox at all, and
+///  2. its bbox area is under half the flood-fill cap, so `flood_fill_area`
+///     cannot hit the cap and return EMPTY (feature vanishes) and the
+///     wall-clock timeout cannot diverge per cell. Oversized features keep the
+///     clip instead.
+pub fn tile_unclip_within_cap(bounds: (i32, i32, i32, i32), xzbbox: &XZBBox) -> bool {
+    let (bx0, bx1, bz0, bz1) = bounds;
+    let overlaps = bx1 >= xzbbox.min_x()
+        && bx0 <= xzbbox.max_x()
+        && bz1 >= xzbbox.min_z()
+        && bz0 <= xzbbox.max_z();
+    let area = (bx1 as i64 - bx0 as i64 + 1) * (bz1 as i64 - bz0 as i64 + 1);
+    overlaps && area < crate::floodfill::MAX_FLOOD_FILL_AREA / 2
+}
+
+/// Areas that scatter per-tile content (trees/plants/decoration) over their
+/// flood-filled interior, which must render UNCLIPPED in tile mode so adjacent
+/// cells match at the seam (a clipped polygon flood-fills a different interior in
+/// each cell, so the per-tile scatter lands differently on each side).
+///
+/// Excluded on purpose: water (own ring-clip path in `water_areas.rs`), and
+/// pure-ground landuse (residential/industrial/farmland — uniform fill, no
+/// per-tile scatter, often huge, so kept clipped to bound flood-fill cost).
+pub fn is_scatter_area_tags(tags: &HashMap<String, String>) -> bool {
+    // Water is handled by the dedicated water-area ring clipper; never un-clip here.
+    if is_water_element(tags) {
+        return false;
+    }
+    // Buildings: footprint must stay whole across the seam.
+    if tags.contains_key("building") || tags.contains_key("building:part") {
+        return true;
+    }
+    // Any leisure area (park/garden/nature_reserve/…) scatters trees & plants.
+    if tags.contains_key("leisure") {
+        return true;
+    }
+    // Natural areas: only the ones whose processor already uses a POSITION-pure
+    // per-tile RNG (wood / tree_row). The other natural subtypes (scrub, heath,
+    // grassland, wetland, …) still consume a shared id-seeded stream in flood-fill
+    // order, so un-clipping them would make that stream traverse the full polygon
+    // in both cells and AMPLIFY any terrain-gate desync across the whole area at
+    // every seam. Until those arms are converted to coord_rng (like leisure/landuse
+    // here), keep them CLIPPED so the desync stays localized rather than cascading.
+    if let Some(n) = tags.get("natural") {
+        if matches!(n.as_str(), "wood" | "tree_row") {
+            return true;
+        }
+    }
+    // Vegetation / recreation landuse that scatters features. Pure-ground landuse
+    // is intentionally omitted (see doc comment).
+    if let Some(l) = tags.get("landuse") {
+        if matches!(
+            l.as_str(),
+            "forest"
+                | "meadow"
+                | "grass"
+                | "grassland"
+                | "greenfield"
+                | "village_green"
+                | "recreation_ground"
+                | "cemetery"
+                | "orchard"
+                | "vineyard"
+                | "allotments"
+                | "plant_nursery"
+                | "flowerbed"
+        ) {
+            return true;
+        }
+    }
+    // Cemetery as an amenity (older tagging) scatters graves/trees too.
+    if tags
+        .get("amenity")
+        .map(|a| a == "grave_yard")
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    false
+}
+
 /// Shoelace polygon area (in cells²) over the unclipped node ring.
 /// Returns `None` when fewer than 3 nodes are present. Used together with
 /// `compute_node_bounds` so building roof-type / diagonality decisions are
@@ -383,18 +470,31 @@ pub fn parse_osm_data(
         });
         ways_map.insert(element.id, Arc::clone(&way));
 
-        // Clip way nodes for standalone way processing (not relations)
-        let clipped_nodes = clip_way_to_bbox(&way.nodes, &xzbbox);
-
-        // Skip ways that are completely outside the bbox (empty after clipping)
-        if clipped_nodes.is_empty() {
-            continue;
-        }
+        // Standalone way: in tile mode, render scatter areas + building footprints
+        // UNCLIPPED so adjacent cells produce identical geometry at the seam (clip
+        // seals each half with a wall → half a building / cut trees). set_block
+        // still clamps writes to the cell bbox, so the clip was only redundant
+        // safety. Cap-guarded (oversized → keep clip so it can't vanish); non-
+        // scatter ways and single-world keep the upstream clip byte-for-byte.
+        let tile_unclip = tile_invariant_rendering.is_some() && is_scatter_area_tags(&way.tags);
+        let want_unclip =
+            tile_unclip && unclipped_bounds.is_some_and(|b| tile_unclip_within_cap(b, &xzbbox));
+        let nodes_for_processing = if want_unclip {
+            way.nodes.clone()
+        } else {
+            // Clip way nodes for standalone way processing (not relations)
+            let clipped_nodes = clip_way_to_bbox(&way.nodes, &xzbbox);
+            // Skip ways completely outside the bbox (empty after clipping)
+            if clipped_nodes.is_empty() {
+                continue;
+            }
+            clipped_nodes
+        };
 
         let processed: ProcessedWay = ProcessedWay {
             id: element.id,
             tags: way.tags.clone(),
-            nodes: clipped_nodes,
+            nodes: nodes_for_processing,
             unclipped_bounds,
             unclipped_polygon_area,
         };
@@ -426,6 +526,16 @@ pub fn parse_osm_data(
             || tags.contains_key("building:part"))
             && relation_type == Some("multipolygon");
         let keep_unclipped = is_water_relation || is_building_multipolygon;
+
+        // Scatter-area multipolygons: the way-path un-clip above never runs for
+        // relation members, so they stayed clipped per-cell and didn't meld. Each
+        // outer member is flood-filled individually (no ring assembly), so keep it
+        // unclipped (cap-guarded per member, below). Buildings excluded — their
+        // rings are handled in buildings.rs. Single-world keeps the clip.
+        let scatter_unclip = relation_type == Some("multipolygon")
+            && tile_invariant_rendering.is_some()
+            && !is_building_multipolygon
+            && is_scatter_area_tags(tags);
 
         let members: Vec<ProcessedMember> = element
             .members
@@ -468,9 +578,16 @@ pub fn parse_osm_data(
                     }
                 };
 
-                // If keep_unclipped is true (e.g., certain water or building multipolygon
-                // relations), keep member ways unclipped for ring merging; otherwise clip now.
-                let final_way = if keep_unclipped {
+                // Keep member ways unclipped when:
+                //  - keep_unclipped (water / building multipolygons, for ring merging), or
+                //  - tree-area relation in tile mode AND this member's full bbox is under
+                //    the flood-fill cap (so its individual flood fill melds across cells).
+                let keep_member_unclipped = keep_unclipped
+                    || (scatter_unclip
+                        && way
+                            .unclipped_bounds
+                            .is_some_and(|b| tile_unclip_within_cap(b, &xzbbox)));
+                let final_way = if keep_member_unclipped {
                     way
                 } else {
                     let clipped_nodes = clip_way_to_bbox(&way.nodes, &xzbbox);

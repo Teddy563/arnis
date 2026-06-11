@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 /// Maximum bounding box area (in blocks) for flood fill.
 /// Polygons exceeding this are skipped to prevent excessive memory allocations.
 /// 25 million blocks ≈ 5000×5000; bitmap uses only ~3 MB at this size.
-const MAX_FLOOD_FILL_AREA: i64 = 25_000_000;
+pub const MAX_FLOOD_FILL_AREA: i64 = 25_000_000;
 
 /// A compact bitmap for visited-coordinate tracking during flood fill.
 ///

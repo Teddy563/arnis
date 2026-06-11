@@ -63,12 +63,15 @@ impl Ground {
         elevation_min: Option<f64>,
         elevation_max: Option<f64>,
         aws_only: bool,
+        master_origin_lat: Option<f64>,
+        master_origin_lng: Option<f64>,
     ) -> Self {
         // Fetch land cover FIRST so we can feed it into the elevation
         // post-processing pipeline for land-cover-aware artifact repair.
-        // The elevation grid is built from the same (bbox, scale) so both
+        // The elevation grid is built from the same (bbox, scale, origin) so both
         // grids share dimensions (both use compute_grid_dims).
-        let (world_w, world_h, grid_w, grid_h) = compute_grid_dims(bbox, scale);
+        let (world_w, world_h, grid_w, grid_h) =
+            compute_grid_dims(bbox, scale, master_origin_lat, master_origin_lng);
         let mut land_cover = if fetch_land_cover {
             let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h);
             if lc.is_some() {
@@ -101,6 +104,8 @@ impl Ground {
             elevation_min,
             elevation_max,
             aws_only,
+            master_origin_lat,
+            master_origin_lng,
         ) {
             Ok(elevation_data) => Self {
                 elevation_enabled: true,
@@ -597,6 +602,8 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             args.elevation_min,
             args.elevation_max,
             args.aws_only_elevation,
+            args.master_origin_lat,
+            args.master_origin_lng,
         );
         if args.debug {
             ground.save_debug_image("elevation_debug");

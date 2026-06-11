@@ -75,11 +75,34 @@ pub const MAX_ELEVATION_GRID_DIM: usize = 16384;
 /// same dimensions as the elevation grid before elevation fetch starts.
 ///
 /// Returns `(world_width, world_height, grid_width, grid_height)`.
-pub fn compute_grid_dims(bbox: &LLBBox, scale: f64) -> (usize, usize, usize, usize) {
-    let (base_scale_z, base_scale_x) = geo_distance(bbox.min(), bbox.max());
-    // Apply same floor() and scale operations as CoordTransformer.llbbox_to_xzbbox()
-    let scale_factor_z: f64 = base_scale_z.floor() * scale;
-    let scale_factor_x: f64 = base_scale_x.floor() * scale;
+pub fn compute_grid_dims(
+    bbox: &LLBBox,
+    scale: f64,
+    master_origin_lat: Option<f64>,
+    master_origin_lng: Option<f64>,
+) -> (usize, usize, usize, usize) {
+    let (scale_factor_x, scale_factor_z) =
+        if let (Some(olat), Some(olng)) = (master_origin_lat, master_origin_lng) {
+            // Master-origin (Meld) path: size the grid with the SAME flat,
+            // origin-anchored metres-per-degree that `transform_point` lays the
+            // world out with. Using geo_distance (haversine, avg-lat) instead
+            // stretches the grid ~0.1% vs the world, sliding terrain/land-cover
+            // 1-3 blocks off the OSM features and disagreeing across tiles.
+            const METERS_PER_DEG_LAT: f64 = 111_320.0;
+            let mpd_lon = METERS_PER_DEG_LAT * olat.to_radians().cos();
+            let min_x = (((bbox.min().lng() - olng) * mpd_lon) * scale).floor();
+            let max_x = (((bbox.max().lng() - olng) * mpd_lon) * scale).floor();
+            // +Z is south, so the north edge (max lat) is the smaller Z.
+            let min_z = (((olat - bbox.max().lat()) * METERS_PER_DEG_LAT) * scale).floor();
+            let max_z = (((olat - bbox.min().lat()) * METERS_PER_DEG_LAT) * scale).floor();
+            (max_x - min_x, max_z - min_z)
+        } else {
+            // Single-world path. Match `CoordTransformer::llbbox_to_xzbbox`'s
+            // non-origin branch exactly (it also uses `geo_distance().floor()`),
+            // so the grid and the world share dimensions and never drift.
+            let (base_scale_z, base_scale_x) = geo_distance(bbox.min(), bbox.max());
+            (base_scale_x.floor() * scale, base_scale_z.floor() * scale)
+        };
     // World block positions span 0..=scale_factor (inclusive), so there are
     // scale_factor+1 distinct positions.
     let world_width: usize = scale_factor_x as usize + 1;
@@ -112,8 +135,11 @@ pub fn fetch_elevation_data(
     elevation_min: Option<f64>,
     elevation_max: Option<f64>,
     aws_only: bool,
+    master_origin_lat: Option<f64>,
+    master_origin_lng: Option<f64>,
 ) -> Result<ElevationData, Box<dyn std::error::Error>> {
-    let (world_width, world_height, grid_width, grid_height) = compute_grid_dims(bbox, scale);
+    let (world_width, world_height, grid_width, grid_height) =
+        compute_grid_dims(bbox, scale, master_origin_lat, master_origin_lng);
 
     // Select the best provider for this region. When `aws_only` is set the
     // user opted out of the regional high-res providers in favor of a faster
@@ -175,7 +201,15 @@ pub fn fetch_elevation_data(
 
     // Shared post-processing pipeline
     let mut height_grid = raw.heights_meters;
-    filter_elevation_outliers(&mut height_grid);
+    // Skip the global outlier filter in tile mode (Meld). It rejects cells using an
+    // IQR over the WHOLE cell's grid, so two neighbouring tiles compute a different
+    // reject band and a border cell gets dropped in one tile but kept in the other —
+    // a vertical step at the seam (worst on coastal bathymetry). The bounded MAD
+    // repair below already removes local spikes, so single-world keeps the filter
+    // (byte-identical) and tile mode doesn't need it.
+    if master_origin_lat.is_none() {
+        filter_elevation_outliers(&mut height_grid);
+    }
     repair_terrain_anomalies(&mut height_grid);
     // Safety net: fill any remaining NaN from tile gaps or partial provider coverage
     fill_nan_values(&mut height_grid);

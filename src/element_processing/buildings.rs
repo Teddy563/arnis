@@ -4024,6 +4024,26 @@ pub fn generate_buildings(
         return;
     }
 
+    // Skip buildings whose footprint is mostly water (OSM sometimes tags piers /
+    // flooded parcels as building=*). The floor Y is max-ground-over-footprint
+    // with no water check, so the later water carve floods the house. Grid-indexed
+    // by world position → deterministic. A ≥60% threshold keeps shoreline buildings.
+    if args.terrain {
+        if let Some(ground) = editor.get_ground() {
+            let (off_x, off_z) = editor.get_min_coords();
+            let water_cells = cached_floor_area
+                .iter()
+                .filter(|&&(x, z)| {
+                    ground.cover_class(XZPoint::new(x - off_x, z - off_z))
+                        == crate::land_cover::LC_WATER
+                })
+                .count();
+            if water_cells * 100 >= clipped_footprint_size * 60 {
+                return;
+            }
+        }
+    }
+
     // For style-resolution we want a tile-invariant size signal: a building
     // that straddles a tile bbox would otherwise see different
     // `cached_floor_area.len()` in each tile, switch RNG branches in
@@ -6790,13 +6810,36 @@ pub fn generate_building_from_relation(
 
         super::merge_way_segments(&mut outer_rings);
 
-        // Clip assembled rings to the world bounding box.  Because member ways
-        // were kept unclipped during parsing (to allow ring assembly), the
-        // merged rings may extend beyond the requested area.  Clipping prevents
-        // oversized flood fills and unnecessary block placement.
+        // Relation building rings that straddle a cell boundary must NOT be
+        // clipped: clip_way_to_bbox seals each tile's half with a synthetic
+        // Sutherland-Hodgman wall (the same defect the single-way path already
+        // fixes in osm_parser). In tile-invariant (master-origin) mode keep the
+        // FULL merged ring so every overlapping cell draws its owned half and
+        // the union reconstructs the whole building; set_block clamps each write
+        // to the cell bbox. Guarded by the flood-fill cap: an oversized ring
+        // (bbox area >= cap) would make flood_fill_area return EMPTY and the
+        // building would VANISH, so those fall back to the clip. Rings fully
+        // outside this cell clip to empty and are dropped by the len>=4 filter.
+        // Single-world (ti=false) always clips → byte-identical to upstream.
+        let ti = crate::ground_generation::tile_invariant_enabled();
+        let maybe_clip_ring = |ring: Vec<ProcessedNode>| -> Vec<ProcessedNode> {
+            if ti {
+                if let Some(bounds) = crate::osm_parser::compute_node_bounds(&ring) {
+                    // Same cap-guarded predicate as the standalone-way path.
+                    if crate::osm_parser::tile_unclip_within_cap(bounds, xzbbox) {
+                        return ring;
+                    }
+                }
+            }
+            clip_way_to_bbox(&ring, xzbbox)
+        };
+
+        // Member ways were kept unclipped during parsing (for ring assembly), so
+        // merged rings may extend beyond the requested area; maybe_clip_ring
+        // keeps building seams whole in tile mode and clips everything else.
         outer_rings = outer_rings
             .into_iter()
-            .map(|ring| clip_way_to_bbox(&ring, xzbbox))
+            .map(&maybe_clip_ring)
             .filter(|ring| ring.len() >= 4)
             .collect();
 
@@ -6838,7 +6881,7 @@ pub fn generate_building_from_relation(
 
         inner_rings = inner_rings
             .into_iter()
-            .map(|ring| clip_way_to_bbox(&ring, xzbbox))
+            .map(&maybe_clip_ring)
             .filter(|ring| ring.len() >= 4)
             .collect();
 

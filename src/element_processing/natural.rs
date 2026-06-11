@@ -335,11 +335,23 @@ pub fn generate_natural(
                             }
                             let density = crate::ground_generation::value_noise_01(x, z, 32);
                             let tree_threshold = ((60.0 - density * 45.0) as i32).max(5);
-                            let spawn_tree = rng.random_range(0..tree_threshold) == 0;
-                            let random_choice: i32 = rng.random_range(0..30);
+                            // Tile-invariant (--seed / Meld): position-seeded RNG
+                            // so the same world tile decides identically in any
+                            // cell (the shared stream is consumed in per-cell
+                            // flood order → border tree mismatch). Single-world
+                            // keeps the shared stream — byte-identical.
+                            let mut tile_rng;
+                            let r = if crate::ground_generation::tile_invariant_enabled() {
+                                tile_rng = crate::deterministic_rng::coord_rng(x, z, way.id);
+                                &mut tile_rng
+                            } else {
+                                &mut rng
+                            };
+                            let spawn_tree = r.random_range(0..tree_threshold) == 0;
+                            let random_choice: i32 = r.random_range(0..30);
                             if spawn_tree {
                                 let tree_type = *trees_ok_to_generate
-                                    .choose(&mut rng)
+                                    .choose(&mut *r)
                                     .unwrap_or(&TreeType::Oak);
                                 Tree::create_of_type(
                                     editor,
@@ -348,7 +360,7 @@ pub fn generate_natural(
                                     Some(building_footprints),
                                 );
                             } else if random_choice == 1 {
-                                let flower_block = match rng.random_range(1..=4) {
+                                let flower_block = match r.random_range(1..=4) {
                                     1 => RED_FLOWER,
                                     2 => BLUE_FLOWER,
                                     3 => YELLOW_FLOWER,
