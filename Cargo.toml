@@ -1,6 +1,6 @@
 [package]
 name = "arnis"
-version = "1.8.4"
+version = "2.8.5"
 edition = "2021"
 description = "Arnis - Generate real life cities in Minecraft"
 homepage = "https://github.com/louis-e/arnis"
