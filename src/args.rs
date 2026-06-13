@@ -186,12 +186,29 @@ pub struct Args {
     /// (Voxy/Chunky) without visiting them. Slower; off by default.
     #[arg(long, default_value_t = false)]
     pub bake_lighting: bool,
+
+    /// Download OSM data to --save-json-file and exit, skipping world generation.
+    /// Lets an external scheduler (Meld) pre-fetch a whole region's OSM in ONE
+    /// request and feed it to many cells via --file, instead of each parallel cell
+    /// querying Overpass (which trips the public per-IP rate limit). Requires
+    /// --save-json-file. Purely additive: when omitted, behaviour is unchanged.
+    #[arg(long = "download-only", default_value_t = false)]
+    pub download_only: bool,
 }
 
 /// Validates CLI arguments after parsing.
 /// For Java Edition: `--path` is required. If the directory doesn't exist, it will be created.
 /// For Bedrock Edition (`--bedrock`): `--path` is optional (defaults to Desktop output).
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // Download-only just fetches OSM to a file; no world is created, so the
+    // --output-dir requirement (and the rest) does not apply.
+    if args.download_only {
+        if args.save_json_file.is_none() {
+            return Err("--download-only requires --save-json-file <path>.".to_string());
+        }
+        return Ok(());
+    }
+
     if args.bedrock && args.luanti {
         return Err("Cannot use --bedrock and --luanti together.".to_string());
     }

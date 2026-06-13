@@ -102,6 +102,33 @@ fn run_cli() {
         std::process::exit(1);
     }
 
+    // Download-only mode: fetch OSM to --save-json-file and exit, before any world
+    // creation. Lets Meld pre-fetch a whole region's OSM once and feed it to every
+    // cell via --file (one serial request instead of N parallel ones that rate-limit).
+    if args.download_only {
+        let out = args
+            .save_json_file
+            .as_deref()
+            .expect("validate_args guarantees --save-json-file is set with --download-only");
+        match retrieve_data::fetch_data_from_overpass(
+            args.bbox,
+            args.debug,
+            args.downloader.as_str(),
+            Some(out),
+            &args.overpass_url,
+            &args.road_detail,
+        ) {
+            Ok(_) => {
+                println!("Download-only: OSM data saved to {out}");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Determine world format and output path
     let world_format = if args.bedrock {
         world_editor::WorldFormat::BedrockMcWorld
