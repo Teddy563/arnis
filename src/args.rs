@@ -194,6 +194,15 @@ pub struct Args {
     /// --save-json-file. Purely additive: when omitted, behaviour is unchanged.
     #[arg(long = "download-only", default_value_t = false)]
     pub download_only: bool,
+
+    /// Download/warm the AWS terrain (elevation) tiles for --bbox into the shared tile
+    /// cache and exit, skipping world generation. Lets an external scheduler (Meld)
+    /// pre-warm a whole region's elevation tiles in ONE single-process pass (8 concurrent
+    /// requests) instead of many parallel cell processes hammering S3 at once (which
+    /// rate-limits and returns truncated tiles -> flat terrain seams). Companion to
+    /// --download-only (OSM). Purely additive: when omitted, behaviour is unchanged.
+    #[arg(long = "download-terrain-only", default_value_t = false)]
+    pub download_terrain_only: bool,
 }
 
 /// Validates CLI arguments after parsing.
@@ -206,6 +215,12 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         if args.save_json_file.is_none() {
             return Err("--download-only requires --save-json-file <path>.".to_string());
         }
+        return Ok(());
+    }
+
+    // Terrain-only just warms the elevation tile cache for --bbox; no world is created,
+    // and --bbox is always parsed, so nothing else is required.
+    if args.download_terrain_only {
         return Ok(());
     }
 

@@ -249,6 +249,82 @@ fn sample_tile_pixel(
     Some(height)
 }
 
+/// Pre-warm the AWS terrain tile cache for `bbox` in ONE process (8 concurrent), so a
+/// later parallel multi-cell run hits the cache instead of bursting S3 with ~64 concurrent
+/// requests (which rate-limits and truncates tiles -> NaN -> flat terrain seams). Reuses the
+/// exact per-tile download + validate + retry path as a real fetch, but does NOT sample a
+/// grid, so a country-sized bbox stays cheap on RAM. Returns (tiles_ok, tiles_failed).
+pub fn prefetch_tiles(bbox: &LLBBox) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+    let zoom: u8 = calculate_zoom_level(bbox);
+    let tiles: Vec<(u32, u32)> = get_tile_coordinates(bbox, zoom);
+    let tile_cache_dir = get_cache_dir("aws");
+    if !tile_cache_dir.exists() {
+        std::fs::create_dir_all(&tile_cache_dir)?;
+    }
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(concat!(
+            "Arnis/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://github.com/louis-e/arnis)"
+        ))
+        .build()?;
+
+    let num_tiles = tiles.len();
+    println!(
+        "Terrain prefetch: warming {num_tiles} elevation tiles (zoom {zoom}, up to {MAX_CONCURRENT_DOWNLOADS} concurrent)..."
+    );
+
+    let thread_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(MAX_CONCURRENT_DOWNLOADS)
+        .build()
+        .map_err(|e| format!("Failed to create thread pool: {e}"))?;
+
+    let mut pending: Vec<(u32, u32)> = tiles;
+    let mut ok_count: usize = 0;
+    const MAX_FETCH_ROUNDS: u32 = 4;
+    for round in 0..MAX_FETCH_ROUNDS {
+        if pending.is_empty() {
+            break;
+        }
+        if round > 0 {
+            let delay_ms = 800u64 * (1 << (round - 1));
+            eprintln!(
+                "Terrain prefetch: {} tile(s) still missing, retry round {}/{} after {}ms...",
+                pending.len(),
+                round,
+                MAX_FETCH_ROUNDS - 1,
+                delay_ms
+            );
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        }
+
+        let results: Vec<Result<(u32, u32), String>> = thread_pool.install(|| {
+            pending
+                .par_iter()
+                .map(|(tile_x, tile_y)| -> Result<(u32, u32), String> {
+                    let tile_path =
+                        tile_cache_dir.join(format!("z{zoom}_x{tile_x}_y{tile_y}.png"));
+                    fetch_or_load_tile(&client, *tile_x, *tile_y, zoom, &tile_path)?;
+                    Ok((*tile_x, *tile_y))
+                })
+                .collect()
+        });
+
+        let mut still_missing: Vec<(u32, u32)> = Vec::new();
+        for (result, coord) in results.into_iter().zip(pending.iter()) {
+            match result {
+                Ok(_) => ok_count += 1,
+                Err(e) => {
+                    eprintln!("Warning: terrain tile {coord:?} failed: {e}");
+                    still_missing.push(*coord);
+                }
+            }
+        }
+        pending = still_missing;
+    }
+    Ok((ok_count, pending.len()))
+}
+
 fn calculate_zoom_level(bbox: &LLBBox) -> u8 {
     let lat_diff: f64 = (bbox.max().lat() - bbox.min().lat()).abs();
     let lng_diff: f64 = (bbox.max().lng() - bbox.min().lng()).abs();

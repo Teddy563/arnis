@@ -129,6 +129,23 @@ fn run_cli() {
         }
     }
 
+    // Terrain-only mode: warm the AWS elevation tile cache for --bbox in ONE process
+    // (8 concurrent) and exit, before any world creation. Lets Meld pre-warm a region's
+    // terrain serially so the later parallel cells hit the cache instead of bursting S3
+    // with ~64 concurrent requests (which rate-limits and truncates tiles -> flat seams).
+    if args.download_terrain_only {
+        match elevation::providers::aws_terrain::prefetch_tiles(&args.bbox) {
+            Ok((ok, fail)) => {
+                println!("Terrain prefetch: {ok} tile(s) cached, {fail} failed.");
+                std::process::exit(if fail == 0 { 0 } else { 2 });
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Determine world format and output path
     let world_format = if args.bedrock {
         world_editor::WorldFormat::BedrockMcWorld

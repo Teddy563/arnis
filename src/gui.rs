@@ -1116,6 +1116,7 @@ fn gui_start_generation(
                 tile_invariant_rendering: tile_invariant_seed,
                 bake_lighting: false,
                 download_only: false,
+                download_terrain_only: false,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data
