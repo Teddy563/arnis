@@ -56,3 +56,6 @@ gen/
 # Local-only: stray diff + Teddy fork clone (must never be committed)
 /diff.diff
 /teddy-arnis/
+
+# Local backups of the original upstream art (replaced by the Meld fork art)
+*-arnis-original.png

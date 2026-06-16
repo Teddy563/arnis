@@ -332,12 +332,25 @@ pub fn prefetch_tiles(bbox: &LLBBox) -> Result<(usize, usize), Box<dyn std::erro
     Ok((ok_count, pending.len()))
 }
 
+/// Meld override: when `ARNIS_ELEV_ZOOM` is set it CAPS the terrain zoom, so a whole generation
+/// can use a coarser, lighter zoom that still carries all the real ~30 m signal (z13 ≈ 13.5 m/px is
+/// lossless vs the SRTM source at 1/16 the tiles, and sidesteps the z14/z15 no-data holes). Clamped
+/// to the valid [MIN_ZOOM, MAX_ZOOM] band; absent or unparsable -> the default MAX_ZOOM. Meld's cells
+/// are small enough that the computed zoom always wants MAX, so the cap fixes the effective zoom.
+fn effective_max_zoom() -> u8 {
+    std::env::var("ARNIS_ELEV_ZOOM")
+        .ok()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+        .map(|z| z.clamp(MIN_ZOOM, MAX_ZOOM))
+        .unwrap_or(MAX_ZOOM)
+}
+
 fn calculate_zoom_level(bbox: &LLBBox) -> u8 {
     let lat_diff: f64 = (bbox.max().lat() - bbox.min().lat()).abs();
     let lng_diff: f64 = (bbox.max().lng() - bbox.min().lng()).abs();
     let max_diff: f64 = lat_diff.max(lng_diff);
     let zoom: u8 = (-max_diff.log2() + 20.0) as u8;
-    zoom.clamp(MIN_ZOOM, MAX_ZOOM)
+    zoom.clamp(MIN_ZOOM, effective_max_zoom())
 }
 
 fn lat_lng_to_tile(lat: f64, lng: f64, zoom: u8) -> (u32, u32) {
@@ -454,16 +467,6 @@ fn fetch_or_load_tile(
     tile_path: &Path,
 ) -> Result<TileImage, String> {
     if tile_path.exists() {
-        let file_size = std::fs::metadata(tile_path).map(|m| m.len()).unwrap_or(0);
-        if file_size < 1000 {
-            eprintln!(
-                "Warning: Cached tile at {} is too small ({file_size} bytes). Re-downloading...",
-                tile_path.display(),
-            );
-            let _ = std::fs::remove_file(tile_path);
-            return download_tile(client, tile_x, tile_y, zoom, tile_path);
-        }
-
         match image::open(tile_path) {
             Ok(img) => {
                 println!(
@@ -473,6 +476,15 @@ fn fetch_or_load_tile(
                 Ok(img.to_rgb8())
             }
             Err(e) => {
+                // Offline mode: a corrupt cached tile must not trigger a network
+                // re-download. Return an error so Arnis's existing fallback turns
+                // this cell into flat/NaN ground instead of hitting S3.
+                if std::env::var_os("ARNIS_OFFLINE").is_some() {
+                    return Err(format!(
+                        "offline: tile z{}_x{}_y{} cached copy is corrupt and re-download is disabled",
+                        zoom, tile_x, tile_y
+                    ));
+                }
                 eprintln!(
                     "Cached tile at {} is corrupted or invalid: {}. Re-downloading...",
                     tile_path.display(),
@@ -497,6 +509,14 @@ fn fetch_or_load_tile(
             }
         }
     } else {
+        // Offline mode: a cache MISS must not hit the network. Return an error so
+        // Arnis's existing fallback turns this cell into flat/NaN ground.
+        if std::env::var_os("ARNIS_OFFLINE").is_some() {
+            return Err(format!(
+                "offline: tile z{}_x{}_y{} not cached",
+                zoom, tile_x, tile_y
+            ));
+        }
         download_tile(client, tile_x, tile_y, zoom, tile_path)
     }
 }

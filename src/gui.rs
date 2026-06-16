@@ -1141,6 +1141,7 @@ fn gui_start_generation(
                 bake_lighting: false,
                 download_only: false,
                 download_terrain_only: false,
+                offline: false,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data

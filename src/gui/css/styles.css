@@ -660,6 +660,10 @@ button:hover {
   margin: 15px 0;
 }
 
+#buildings-toggle {
+  accent-color: #fecc44;
+}
+
 #roof-toggle {
   accent-color: #fecc44;
 }

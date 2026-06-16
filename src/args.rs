@@ -214,6 +214,14 @@ pub struct Args {
     /// --download-only (OSM). Purely additive: when omitted, behaviour is unchanged.
     #[arg(long = "download-terrain-only", default_value_t = false)]
     pub download_terrain_only: bool,
+
+    /// Hard offline mode for elevation: never hit the network for terrain tiles
+    /// or regional elevation providers. Cache hits are served as usual; a cache
+    /// MISS returns an error, and Arnis's existing fallbacks turn that into
+    /// flat/NaN ground. Sets the ARNIS_OFFLINE env var for the elevation
+    /// providers. Purely additive: when omitted, behaviour is unchanged.
+    #[arg(long = "offline", visible_alias = "elevation-cache-only", default_value_t = false)]
+    pub offline: bool,
 }
 
 /// Validates CLI arguments after parsing.

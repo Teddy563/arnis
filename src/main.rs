@@ -103,6 +103,13 @@ fn run_cli() {
     // Parse input arguments
     let args: Args = Args::parse();
 
+    // Hard offline mode for elevation: signal the elevation providers (which run
+    // deep in the call stack and don't see `args`) via a process-wide env var.
+    // When the flag is absent, this is never set and every offline gate is a no-op.
+    if args.offline {
+        std::env::set_var("ARNIS_OFFLINE", "1");
+    }
+
     // Age out stale cached elevation tiles (best-effort; throttled to once/day + swept on a
     // background thread inside). Skipped entirely in Meld tile-mode (master-origin set) and the
     // download-only / terrain-only fast paths — Meld manages the shared cache and spawns this

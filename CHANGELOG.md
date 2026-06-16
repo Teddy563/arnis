@@ -1,22 +1,58 @@
-# Changelog — Meld fork
+# Changelog - Meld fork
 
 All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
-## [1.8.4] — 2026-06-09
+Starting with this release the fork tracks the upstream Arnis version number (2.9.0); earlier entries used an internal 1.8.x sequence.
 
-### Fixed
-- **Cross-tile coordinate drift under `--master-origin-lat/lng`.** `transform_point` derived metres-per-degree-longitude from `avg_lat = (point_lat + origin_lat) / 2`, so the **same longitude mapped to a different block-X depending on the point's latitude** — the grid sheared like a fan instead of a rectangle. Invisible in a single world, but for external schedulers that stitch adjacent bboxes into one Minecraft world (Meld) it pushed each tile off the shared 512-block region grid by an amount that **grows with distance from the origin**, leaving flat-grass **"unrendered" strips at tile seams** that widen toward the far corners. Now anchored at `origin_lat` so a longitude maps to **one** block-X project-wide, matching the latitude axis (which already uses the constant `METERS_PER_DEG_LAT`). Plain single-world generation (no master origin) is byte-identical. Adds a latitude-invariance regression test.
+## [2.9.0] - 2026-06-16
 
-## [1.8.3] — 2026-06-02
+A fork of louis-e/arnis 2.9.0 tuned for large parallel "Meld" generation: one orchestrator slices a region into many adjacent cells and bakes them into a single Minecraft world. This release pulls the fork up to the upstream 2.9.0 line (53 merged commits, in-process tile parallelization, stream-to-disk eviction) and adds the cross-tile machinery (shared origin, global elevation band, seam-free buildings, parallel-safe terrain fetch) that keeps those cells lining up block for block.
 
 ### Added
-- 9 new Block IDs (256–265, u16 widening): `MAGMA_BLOCK`, `SUGAR_CANE`, `KELP`, `TALL_SEAGRASS_BOTTOM/TOP`, `SEA_PICKLE`, `BROWN_CANDLE_{2,3,4}`, `SOUL_SAND`, each with correct NBT side-table arms.
-- Per-cell underwater bed picker with domain-warped noise — organic vanilla-MC-style patches (CLAY/SAND/DIRT/COARSE_DIRT) on a GRAVEL background.
-- Rare 5–13 cell MAGMA + SOUL_SAND vents at depth ≥ 5 (bubble columns in MC).
-- Underwater dunes: width-aware amplitude 2–4 blocks, domain-warped, prominent waves.
+
+- **`--no-buildings` (alias `--no-structures`).** Drops all OSM buildings plus building-adjacent features (man_made, power, barriers, doors, advertising, historic, emergency, tourism) while keeping roads, rail, water, land cover and terrain, for a roads-and-ground-only Meld base layer; parking and some leisure/surface features are deliberately kept. Usage: `arnis --output-dir ./world --bbox <bbox> --no-buildings`.
+- **`--tile-invariant-rendering` (alias `--seed`).** Makes a building that straddles two adjacent tiles render byte-identical in both, by reading pre-clip bounds and mixing the seed into every RNG stream. Bare flag means seed 1; omitting it keeps upstream behaviour. Usage: `arnis --output-dir ./world --bbox <cell-bbox> --seed 42`.
+- **`--road-detail max|clean|compact`.** Trades road detail for legibility at low scale where footways, crossings and lane dividers stack into checker noise. `max` (default) is upstream-exact, `clean` is a cleanup pass for scale >= 0.7, `compact` keeps vehicle roads only and caps lanes to 2. Gates both the Overpass query and per-element render. Usage: `arnis --output-dir ./world --bbox <bbox> --scale 0.1 --road-detail compact`.
+- **`--overpass-url`.** Overrides the Overpass endpoint(s) with a comma-separated, priority-ordered list that replaces the built-in public mirror pool, so a self-hosted instance can absorb large parallel batches without per-IP rate limits. Usage: `arnis --output-dir ./world --bbox <bbox> --overpass-url http://localhost:12345/api/interpreter`.
+- **`--download-only` plus `--save-json-file`.** Fetches the OSM data for `--bbox` to a JSON file and exits, so a scheduler can pull a whole region's OSM once and feed it to many cells via `--file` instead of each cell tripping the public Overpass limit. Honours `--overpass-url` and `--road-detail`. Usage: `arnis --bbox <region-bbox> --download-only --save-json-file region.json`.
+- **`--download-terrain-only`.** Warms the AWS terrain (elevation) tile cache for `--bbox` in one single-process pass (8 concurrent) and exits, so later parallel cells hit the cache instead of bursting S3. Requires only `--bbox`; exits 0 if all tiles cached, 2 if any failed. Usage: `arnis --bbox <region-bbox> --download-terrain-only`.
+- **`--offline` (alias `--elevation-cache-only`).** Hard offline elevation: cache hits serve as usual, but a cache miss or corrupt tile returns an error instead of re-downloading (Arnis then falls back to flat ground), so a batch run never quietly hammers S3 or regional providers. Pair it with a prior `--download-terrain-only`. Usage: `arnis --output-dir ./world --bbox <bbox> --terrain --offline`.
+- **`ARNIS_ELEV_ZOOM` env var.** Caps the terrain tile zoom for the whole run (clamped to the valid band) so elevation stays lighter and hole-free; a coarser zoom such as z13 still carries the full roughly 30 m signal while sidestepping the z14/z15 no-data holes and downloading far fewer tiles. No CLI flag. Usage (bash): `ARNIS_ELEV_ZOOM=13 arnis --output-dir ./world --bbox <bbox> --terrain` (PowerShell: `$env:ARNIS_ELEV_ZOOM='13'`).
+- **`--master-origin-lat` / `--master-origin-lng` (tile mode).** Anchors the projection and the elevation/land-cover grid to one global lat/lng so every cell shares a single Minecraft XZ ruler and lines up block for block; also flips Arnis into "tile mode" (skips the per-run stale-tile cache cleanup and the global outlier-filter pass) and fixes the roughly 0.1% avg-lat haversine stretch. Both must be passed together. Usage: `arnis --output-dir ./world --bbox <cell-bbox> --master-origin-lat 52.5200 --master-origin-lng 13.4050`.
+- **`--elevation-min` / `--elevation-max` (global band).** Pins one shared real-world min/max in metres so every tile maps height to Y identically, instead of each tile picking its own range and meeting neighbours at a vertical staircase. Both required together; set alongside `--master-origin`. Usage: `arnis ... --master-origin-lat <lat> --master-origin-lng <lng> --elevation-min 0 --elevation-max 1200`.
+- **Automatic flat low-scale bridges.** At `--scale 0.3` or lower, every bridge becomes a flat 1-block deck that hugs the terrain (Beam style forced, no arch), because at 1:3 or smaller a rising arch with columns and clearance collapses into noise and overshoots the tiny span. Not a flag; triggered purely by `--scale`. Usage (implicit): `arnis --output-dir ./world --bbox <bbox> --scale 0.1`.
+- **Big water / shore / wetland system plus 9 new block IDs.** A large multi-pass water, underwater, shore and wetland system (flat per-component water surface, single-cell SAND shore swap, depth-tiered bed palette, water carving under bridges, stoney-shore ring, thin-land drown) that resolves the long-running stepped-water, double-slope, AIR-hole and stray-sand artifacts. Adds 9 new block IDs (256 to 265) and widens `Block::id()` from u8 to u16. Automatic when `--terrain` is on; shore and water noise respond to the `--seed` value, with no dedicated flag.
+
+### Changed / Engine
+
+- **Merged 53 upstream louis-e/arnis commits.** Brings in-process tile parallelization, stream-to-disk region eviction, the mimalloc allocator, the large-area warning, and the GUI ETA, while keeping the cross-tile seam intact (0 of 1024 chunks differ in verification). The `transformation.rs` Local plus master-origin path is the seam crux.
+- **Product renamed to "Arnis Meld Fork".**
+- **GUI footer now credits louis-e and Teddy563.**
+
+### Fixed
+
+- **Parallel-safe terrain tile fetch.** Under Meld's roughly 64 concurrent fetches, cells were getting rate-limited and truncated tiles that became flat seams. Fetch now uses 6 retries with exponential backoff, a deterministic per-tile jitter, an atomic temp-then-rename cache write, and retry-missing rounds, killing the staircase seam at the build center.
+- **i32 corner-sum overflow panic on far-from-origin master coordinates.**
+- **Cross-tile coordinate drift under master-origin.** `transform_point` derived metres-per-degree-longitude from `avg_lat`, shearing the grid like a fan so cells slid off the shared 512-block region grid by an amount that grows with distance from the origin, leaving flat-grass strips at tile seams; now anchored at `origin_lat` so a longitude maps to one block-X project-wide. Plain single-world generation is byte-identical.
+- **Tree trunk apex cap.**
+- **Minecraft 1.21.4 to 26.1.x datapack schema overlays.**
+- **GUI disk-probe false-block fixes.**
+
+## [1.8.4] - 2026-06-09
+
+### Fixed
+- **Cross-tile coordinate drift under `--master-origin-lat/lng`.** `transform_point` derived metres-per-degree-longitude from `avg_lat = (point_lat + origin_lat) / 2`, so the **same longitude mapped to a different block-X depending on the point's latitude** - the grid sheared like a fan instead of a rectangle. Invisible in a single world, but for external schedulers that stitch adjacent bboxes into one Minecraft world (Meld) it pushed each tile off the shared 512-block region grid by an amount that **grows with distance from the origin**, leaving flat-grass **"unrendered" strips at tile seams** that widen toward the far corners. Now anchored at `origin_lat` so a longitude maps to **one** block-X project-wide, matching the latitude axis (which already uses the constant `METERS_PER_DEG_LAT`). Plain single-world generation (no master origin) is byte-identical. Adds a latitude-invariance regression test.
+
+## [1.8.3] - 2026-06-02
+
+### Added
+- 9 new Block IDs (256-265, u16 widening): `MAGMA_BLOCK`, `SUGAR_CANE`, `KELP`, `TALL_SEAGRASS_BOTTOM/TOP`, `SEA_PICKLE`, `BROWN_CANDLE_{2,3,4}`, `SOUL_SAND`, each with correct NBT side-table arms.
+- Per-cell underwater bed picker with domain-warped noise - organic vanilla-MC-style patches (CLAY/SAND/DIRT/COARSE_DIRT) on a GRAVEL background.
+- Rare 5-13 cell MAGMA + SOUL_SAND vents at depth ≥ 5 (bubble columns in MC).
+- Underwater dunes: width-aware amplitude 2-4 blocks, domain-warped, prominent waves.
 - SEAGRASS meadow mix (short + tall + sea pickle); KELP min-3-cell variable-height columns.
 - Wetland post-pass: MOSS_BLOCK ring + COARSE_DIRT 2-ring around water puddles.
-- Tiered cattail: 1–2 stalks + single `candles=1/2/3/4` BROWN_CANDLE block.
+- Tiered cattail: 1-2 stalks + single `candles=1/2/3/4` BROWN_CANDLE block.
 - Shore-land rare cattail (2%) + sugar_cane (1%) on SAND/DIRT/COARSE/GRASS at water-edge.
 - `sweep_floating_veg` post-pass: removes cattail/grass/candles/sugar_cane/flowers over water cells + roads; trees (LOG/LEAVES) explicitly excluded.
 - `--seed` (alias of `--tile-invariant-rendering`) now drives global noise seed → identical seed reproduces identical bed/dune/shore patterns.
@@ -42,14 +78,14 @@ All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https
 ### Internal
 - `value_noise_01` reads from `OnceLock<NOISE_SEED>` set by `ground_generation::set_noise_seed`, called once at the top of `generate_world_with_options`.
 - New helpers: `dune_bump_at`, `sweep_floating_veg`.
-- `Block::id()` return type widened `u8` → `u16` (required for IDs 256–265).
+- `Block::id()` return type widened `u8` → `u16` (required for IDs 256-265).
 
 ---
 
-## [2.8.1] — 2026-05-21 (Teddy563)
+## [2.8.1] - 2026-05-21 (Teddy563)
 
 Previous Meld release. Voxelize / 3DMR work + Meld scheduler + tile-invariant rendering + road-detail palette improvements.
 
-## [v2.8.0] — 2026-05-19 (louis-e upstream)
+## [v2.8.0] - 2026-05-19 (louis-e upstream)
 
 Base upstream release inherited by Meld v1.8.3. Adds the BigWaterField depth carve + initial wetland G3 + universal LC_WATER carve pass.

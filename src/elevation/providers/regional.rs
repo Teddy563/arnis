@@ -221,6 +221,13 @@ pub(super) fn fetch_or_cache(
         let _ = std::fs::remove_file(cache_path);
     }
 
+    // Offline mode: a cache miss (or invalidated cache file) must not hit the
+    // network. Return an error so Arnis's existing elevation fallback turns this
+    // into flat/NaN ground instead of fetching from a regional provider.
+    if std::env::var_os("ARNIS_OFFLINE").is_some() {
+        return Err(format!("offline: regional elevation not cached for {url}").into());
+    }
+
     let owned_client;
     let client = match client {
         Some(c) => c,
