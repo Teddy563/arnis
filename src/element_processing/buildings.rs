@@ -4025,9 +4025,7 @@ pub fn generate_buildings(
         // tile editors, unlike get_min_coords), so pass WORLD coords directly.
         let water_cells = cached_floor_area
             .iter()
-            .filter(|&&(x, z)| {
-                editor.cover_class_at(x, z) == Some(crate::land_cover::LC_WATER)
-            })
+            .filter(|&&(x, z)| editor.cover_class_at(x, z) == Some(crate::land_cover::LC_WATER))
             .count();
         if water_cells * 100 >= clipped_footprint_size * 60 {
             return;

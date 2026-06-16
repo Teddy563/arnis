@@ -407,7 +407,12 @@ pub fn generate_amenities(
 
                         // Add light posts at parking space outline corners (vertical prop -> skip
                         // under --no-buildings; the flat pavement above still draws).
-                        if args.buildings && local_x == 0 && local_z == 0 && zone_x % 3 == 0 && zone_z % 2 == 0 {
+                        if args.buildings
+                            && local_x == 0
+                            && local_z == 0
+                            && zone_x % 3 == 0
+                            && zone_z % 2 == 0
+                        {
                             // Light posts at regular intervals on parking space corners
                             editor.set_block(COBBLESTONE_WALL, x, 1, z, None, None);
                             for dy in 2..=4 {

@@ -126,7 +126,8 @@ fn process_element(
                 highways::generate_aeroway(editor, way, args);
             } else if way.tags.get("service").map(String::as_str) == Some("siding") {
                 highways::generate_siding(editor, way, bridge_surface);
-            } else if args.buildings && way.tags.get("tomb").map(String::as_str) == Some("pyramid") {
+            } else if args.buildings && way.tags.get("tomb").map(String::as_str) == Some("pyramid")
+            {
                 historic::generate_pyramid(editor, way, args, flood_fill_cache);
             } else if args.buildings && way.tags.contains_key("man_made") {
                 man_made::generate_man_made(editor, element, args);
@@ -137,7 +138,9 @@ fn process_element(
             }
         }
         ProcessedElement::Node(node) => {
-            if args.buildings && (node.tags.contains_key("door") || node.tags.contains_key("entrance")) {
+            if args.buildings
+                && (node.tags.contains_key("door") || node.tags.contains_key("entrance"))
+            {
                 doors::generate_doors(editor, node);
             } else if node.tags.get("natural").map(String::as_str) == Some("tree") {
                 natural::generate_natural(

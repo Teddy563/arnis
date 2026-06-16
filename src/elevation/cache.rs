@@ -196,11 +196,15 @@ pub fn cleanup_old_cached_files() {
     let stamp = base_dir.join(".last_cleanup");
     let throttle = std::time::Duration::from_secs(24 * 60 * 60);
     if let Ok(modified) = std::fs::metadata(&stamp).and_then(|m| m.modified()) {
-        if now.duration_since(modified).map(|d| d < throttle).unwrap_or(false) {
-            return;   // swept recently — skip the expensive walk entirely
+        if now
+            .duration_since(modified)
+            .map(|d| d < throttle)
+            .unwrap_or(false)
+        {
+            return; // swept recently — skip the expensive walk entirely
         }
     }
-    let _ = std::fs::write(&stamp, b"");   // claim the 24h window before sweeping
+    let _ = std::fs::write(&stamp, b""); // claim the 24h window before sweeping
 
     // Sweep on a detached background thread so even the once-a-day run never blocks first
     // work. Best-effort: if the process exits first the sweep just resumes next time.
@@ -208,7 +212,13 @@ pub fn cleanup_old_cached_files() {
         let max_age = std::time::Duration::from_secs(TILE_CACHE_MAX_AGE_DAYS * 24 * 60 * 60);
         let mut deleted_count = 0;
         let mut error_count = 0;
-        cleanup_dir_recursive(&base_dir, max_age, now, &mut deleted_count, &mut error_count);
+        cleanup_dir_recursive(
+            &base_dir,
+            max_age,
+            now,
+            &mut deleted_count,
+            &mut error_count,
+        );
         if deleted_count > 0 {
             println!(
                 "Cleaned up {deleted_count} old cached elevation files (older than {TILE_CACHE_MAX_AGE_DAYS} days)"

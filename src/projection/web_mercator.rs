@@ -1,3 +1,6 @@
+// Kept from upstream but unused in the Meld fork (Local + master-origin path is the default).
+#![allow(dead_code)]
+
 use super::Projection;
 
 /// Mean Earth radius in meters (WGS84 spherical approximation).

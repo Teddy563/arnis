@@ -315,7 +315,14 @@ fn write_region_to_disk(
                 ground_origin_x,
                 ground_origin_z,
                 ground,
-                biome_lat_for_chunk(abs_chunk_z, center_lat, xz_min_z, xz_max_z, north_lat, south_lat),
+                biome_lat_for_chunk(
+                    abs_chunk_z,
+                    center_lat,
+                    xz_min_z,
+                    xz_max_z,
+                    north_lat,
+                    south_lat,
+                ),
             );
             let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value);
             ser_buffer.clear();

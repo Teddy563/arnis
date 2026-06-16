@@ -295,7 +295,8 @@ impl BridgeStructureMap {
 
             let mut clearance = if low_detail {
                 0
-            } else if dip < FLAT_TERRAIN_DIP_THRESHOLD && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS {
+            } else if dip < FLAT_TERRAIN_DIP_THRESHOLD && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS
+            {
                 max_layer * LAYER_HEIGHT_STEP
             } else {
                 0

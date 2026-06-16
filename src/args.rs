@@ -220,7 +220,11 @@ pub struct Args {
     /// MISS returns an error, and Arnis's existing fallbacks turn that into
     /// flat/NaN ground. Sets the ARNIS_OFFLINE env var for the elevation
     /// providers. Purely additive: when omitted, behaviour is unchanged.
-    #[arg(long = "offline", visible_alias = "elevation-cache-only", default_value_t = false)]
+    #[arg(
+        long = "offline",
+        visible_alias = "elevation-cache-only",
+        default_value_t = false
+    )]
     pub offline: bool,
 }
 

@@ -1,3 +1,8 @@
+// The Web Mercator projection path is kept from upstream but unused in the Meld fork: generation
+// runs on the Local + master-origin path (transform_point early-returns before the projection match),
+// so these items are intentionally dead here. Allow it rather than delete upstream code.
+#![allow(dead_code, unused_imports)]
+
 pub mod web_mercator;
 
 pub use web_mercator::WebMercatorProjection;

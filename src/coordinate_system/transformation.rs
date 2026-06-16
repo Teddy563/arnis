@@ -103,6 +103,9 @@ impl CoordTransformer {
     /// The bounding box is computed by projecting all four corners of the
     /// `llbbox` and taking the axis-aligned envelope. The returned `XZBBox`
     /// represents the Minecraft world extents for the projected area.
+    ///
+    /// Unused in the Meld fork (Local + master-origin path is the default); kept from upstream.
+    #[allow(dead_code)]
     pub fn with_projection(
         llbbox: &LLBBox,
         scale: f64,
