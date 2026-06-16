@@ -18,7 +18,7 @@ pub fn generate_leisure(
 ) {
     if let Some(leisure_type) = element.tags.get("leisure") {
         let mut previous_node: Option<(i32, i32)> = None;
-        let mut corner_addup: (i32, i32, i32) = (0, 0, 0);
+        let mut corner_count: i32 = 0;
         let mut current_leisure: Vec<(i32, i32)> = vec![];
 
         // Determine block type based on leisure type
@@ -71,15 +71,13 @@ pub fn generate_leisure(
                 }
 
                 current_leisure.push((node.x, node.z));
-                corner_addup.0 += node.x;
-                corner_addup.1 += node.z;
-                corner_addup.2 += 1;
+                corner_count += 1;
             }
             previous_node = Some((node.x, node.z));
         }
 
         // Flood-fill the interior of the leisure area using cache
-        if corner_addup != (0, 0, 0) {
+        if corner_count > 0 {
             let filled_area = flood_fill_cache.get_or_compute(element, args.timeout.as_ref());
 
             // Single-world: one id-seeded stream. Tile mode (Meld): reseed a
@@ -142,7 +140,9 @@ pub fn generate_leisure(
                     let random_choice: i32 = rng.random_range(0..5000);
 
                     match random_choice {
-                        0..10 => {
+                        // swing set + slide are vertical playground equipment -> skip under
+                        // --no-buildings (the sandpit below is ground, so it stays).
+                        0..10 if args.buildings => {
                             // Swing set
                             for y in 1..=3 {
                                 editor.set_block(OAK_FENCE, x - 1, y, z, None, None);
@@ -153,7 +153,7 @@ pub fn generate_leisure(
                             editor.set_block(OAK_PLANKS, x + 1, 4, z, None, None);
                             editor.set_block(STONE_BLOCK_SLAB, x, 2, z, None, None);
                         }
-                        10..20 => {
+                        10..20 if args.buildings => {
                             // Slide
                             editor.set_block(OAK_SLAB, x, 1, z, None, None);
                             editor.set_block(OAK_SLAB, x + 1, 2, z, None, None);

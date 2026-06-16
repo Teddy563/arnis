@@ -137,7 +137,9 @@ pub fn fetch_elevation_data(
     aws_only: bool,
     master_origin_lat: Option<f64>,
     master_origin_lng: Option<f64>,
+    benchmark: bool,
 ) -> Result<ElevationData, Box<dyn std::error::Error>> {
+    let mut bench = crate::bench::Bench::new(benchmark);
     let (world_width, world_height, grid_width, grid_height) =
         compute_grid_dims(bbox, scale, master_origin_lat, master_origin_lng);
 
@@ -148,7 +150,7 @@ pub fn fetch_elevation_data(
     let provider_name = provider.name();
     let is_fallback = provider_name == "aws";
 
-    emit_gui_progress_update(16.0, "Fetching elevation...");
+    emit_gui_progress_update(10.0, "Fetching elevation...");
 
     // Fetch raw elevation data in meters, falling back to AWS on regional provider failure
     let raw = match provider.fetch_raw(bbox, grid_width, grid_height) {
@@ -191,13 +193,14 @@ pub fn fetch_elevation_data(
                 ),
             );
             let fallback = providers::aws_terrain::AwsTerrain;
-            emit_gui_progress_update(16.0, "Regional provider failed, fetching from AWS...");
+            emit_gui_progress_update(10.0, "Regional provider failed, fetching from AWS...");
             fallback.fetch_raw(bbox, grid_width, grid_height)?
         }
         Err(e) => return Err(e),
     };
 
-    emit_gui_progress_update(17.0, "Processing elevation...");
+    bench.mark("elev_raw_fetch");
+    emit_gui_progress_update(12.0, "Processing elevation...");
 
     // Shared post-processing pipeline
     let mut height_grid = raw.heights_meters;
@@ -210,9 +213,15 @@ pub fn fetch_elevation_data(
     if master_origin_lat.is_none() {
         filter_elevation_outliers(&mut height_grid);
     }
+    // Fire the benchmark mark unconditionally (outside the tile gate) so the
+    // benchmark label set stays stable across single-world and tile modes.
+    bench.mark("elev_filter_outliers");
     repair_terrain_anomalies(&mut height_grid);
+    bench.mark("elev_repair_anomalies");
+    emit_gui_progress_update(14.0, "Processing elevation...");
     // Safety net: fill any remaining NaN from tile gaps or partial provider coverage
     fill_nan_values(&mut height_grid);
+    bench.mark("elev_fill_nan");
 
     // Land-cover-aware repair: built-up Gaussian smoothing targets urban
     // LiDAR/DSM classification errors, coastal pull-down flattens the
@@ -248,13 +257,18 @@ pub fn fetch_elevation_data(
     };
 
     if let Some(lc) = land_cover {
+        // The land-cover Gaussian is the slowest elevation step on big areas;
+        // animate the bar across 14->16% as it runs instead of freezing.
         apply_land_cover_repair(
             &mut height_grid,
             lc,
             built_up_sigma_cells,
             coastal_pull_cells,
+            &|f| emit_gui_progress_update(14.0 + f * 2.0, "Processing elevation..."),
         );
     }
+    bench.mark("elev_landcover_repair");
+    emit_gui_progress_update(16.0, "Processing elevation...");
 
     let mc_heights = scale_to_minecraft(
         &height_grid,
@@ -265,6 +279,7 @@ pub fn fetch_elevation_data(
         elevation_min,
         elevation_max,
     );
+    bench.mark("elev_scale_to_mc");
 
     // Log min/max block heights
     let mut min_block_height = f64::MAX;
@@ -286,6 +301,8 @@ pub fn fetch_elevation_data(
         .into_iter()
         .map(|row| row.into_iter().map(|v| v as f32).collect())
         .collect();
+    bench.mark("elev_downcast");
+    emit_gui_progress_update(18.0, "Processing elevation...");
 
     Ok(ElevationData {
         heights: mc_heights_f32,

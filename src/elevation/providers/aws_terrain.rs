@@ -159,9 +159,16 @@ impl ElevationProvider for AwsTerrain {
         let n = 2.0_f64.powi(zoom as i32);
         let mut height_grid: Vec<Vec<f64>> = vec![vec![f64::NAN; grid_width]; grid_height];
 
-        // Iterate over target grid and bilinearly sample from tiles
+        // Iterate over target grid and bilinearly sample from tiles.
+        //
+        // The outer loop over grid rows is parallelised with rayon: `tile_map`
+        // is read through a shared immutable `&`, each row owns a disjoint
+        // `&mut [f64]` slot (`row`), and every cell writes only its own
+        // `row[gx]`. There is no cross-row dependency, so the result is
+        // byte-identical to the serial version (same math, same per-cell write)
+        // and free of data races. `enumerate()` recovers the original `gy`.
         #[allow(clippy::needless_range_loop)]
-        for gy in 0..grid_height {
+        height_grid.par_iter_mut().enumerate().for_each(|(gy, row)| {
             for gx in 0..grid_width {
                 // Map grid cell to geographic coordinates
                 let lat = bbox.max().lat()
@@ -203,10 +210,10 @@ impl ElevationProvider for AwsTerrain {
                 if let (Some(v00), Some(v10), Some(v01), Some(v11)) = (v00, v10, v01, v11) {
                     let lerp_top = v00 + (v10 - v00) * dx;
                     let lerp_bot = v01 + (v11 - v01) * dx;
-                    height_grid[gy][gx] = lerp_top + (lerp_bot - lerp_top) * dy;
+                    row[gx] = lerp_top + (lerp_bot - lerp_top) * dy;
                 }
             }
-        }
+        });
 
         Ok(RawElevationGrid {
             heights_meters: height_grid,

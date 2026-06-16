@@ -149,7 +149,7 @@ pub fn fetch_land_cover_data(
     grid_height: usize,
 ) -> Option<LandCoverData> {
     println!("Fetching land cover data (ESA WorldCover 2021)...");
-    emit_gui_progress_update(18.0, "Fetching land cover...");
+    emit_gui_progress_update(9.0, "Detecting surface types...");
 
     let cache_dir = get_cache_dir();
     if !cache_dir.exists() {
@@ -237,6 +237,13 @@ pub fn fetch_land_cover_data(
 // ─── Cache helpers ────────────────────────────────────────────────────────
 
 fn get_cache_dir() -> PathBuf {
+    // ARNIS_CACHE_ROOT (set by Meld) wins so the ESA cache lives in the shared project-local
+    // cache folder alongside terrain + OSM; else the OS-standard cache dir.
+    if let Some(root) = std::env::var_os("ARNIS_CACHE_ROOT") {
+        if !root.is_empty() {
+            return PathBuf::from(root).join(LAND_COVER_CACHE_DIR);
+        }
+    }
     if let Some(cache_dir) = dirs::cache_dir() {
         cache_dir.join(LAND_COVER_CACHE_DIR)
     } else {

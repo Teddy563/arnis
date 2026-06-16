@@ -714,13 +714,37 @@ pub fn carve_lc_water_pass(
     bwf: &BigWaterField,
     road_mask: &RoadMaskBitmap,
 ) {
-    let off_x = xzbbox.min_x();
-    let off_z = xzbbox.min_z();
-    // Only the water sub-rect can hold LC_WATER cells; skip the rest of the world.
     let x1 = bwf.min_x + bwf.width as i32 - 1;
     let z1 = bwf.min_z + bwf.height as i32 - 1;
-    for z in bwf.min_z..=z1 {
-        for x in bwf.min_x..=x1 {
+    carve_lc_water_region(
+        editor, ground, xzbbox, bwf, road_mask, bwf.min_x, x1, bwf.min_z, z1,
+    );
+}
+
+/// `carve_lc_water_pass` restricted to the inclusive `[iter_min..=iter_max]` block
+/// range (intersected with the water sub-rect). Per-tile callers pass strict tile
+/// bounds; writes are vertical-only so output is identical regardless of tiling.
+#[allow(clippy::too_many_arguments)]
+pub fn carve_lc_water_region(
+    editor: &mut WorldEditor,
+    ground: &Ground,
+    xzbbox: &XZBBox,
+    bwf: &BigWaterField,
+    road_mask: &RoadMaskBitmap,
+    iter_min_x: i32,
+    iter_max_x: i32,
+    iter_min_z: i32,
+    iter_max_z: i32,
+) {
+    let off_x = xzbbox.min_x();
+    let off_z = xzbbox.min_z();
+    // Only the water sub-rect can hold LC_WATER cells; intersect it with the range.
+    let x0 = bwf.min_x.max(iter_min_x);
+    let x1 = (bwf.min_x + bwf.width as i32 - 1).min(iter_max_x);
+    let z0 = bwf.min_z.max(iter_min_z);
+    let z1 = (bwf.min_z + bwf.height as i32 - 1).min(iter_max_z);
+    for z in z0..=z1 {
+        for x in x0..=x1 {
             // Keep road/bridge surfaces (causeways, decks).
             if road_mask.contains(x, z) {
                 continue;
@@ -769,10 +793,32 @@ pub fn carve_lc_water_pass(
 /// if ground-level block is WATER or the cell is in road_mask, AIR-out
 /// any veg cells y=1..=5 above it.
 pub fn sweep_floating_veg(editor: &mut WorldEditor, xzbbox: &XZBBox, road_mask: &RoadMaskBitmap) {
-    let min_x = xzbbox.min_x();
-    let max_x = xzbbox.max_x();
-    let min_z = xzbbox.min_z();
-    let max_z = xzbbox.max_z();
+    sweep_floating_veg_region(
+        editor,
+        road_mask,
+        xzbbox.min_x(),
+        xzbbox.max_x(),
+        xzbbox.min_z(),
+        xzbbox.max_z(),
+    );
+}
+
+/// Region variant of [`sweep_floating_veg`] over strict bounds
+/// `[g_min_x..=g_max_x] x [g_min_z..=g_max_z]`. Used per-tile (inside the
+/// parallel tile closure) so the sweep is eviction-safe: regions freed to disk
+/// under stream-to-disk never reach the post-merge full-bbox sweep.
+pub fn sweep_floating_veg_region(
+    editor: &mut WorldEditor,
+    road_mask: &RoadMaskBitmap,
+    g_min_x: i32,
+    g_max_x: i32,
+    g_min_z: i32,
+    g_max_z: i32,
+) {
+    let min_x = g_min_x;
+    let max_x = g_max_x;
+    let min_z = g_min_z;
+    let max_z = g_max_z;
     let veg_set: &[Block] = &[
         TALL_GRASS_BOTTOM,
         TALL_GRASS_TOP,

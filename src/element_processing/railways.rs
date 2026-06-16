@@ -55,6 +55,7 @@ pub fn generate_railways(
     subway_points: &mut Vec<(i32, i32)>,
     rail_bridge_internal_endpoints: &RailBridgeInternalEndpoints,
     bridge_outlines: &BridgeOutlineIndex,
+    scale: f64,
 ) {
     let Some(railway_type) = element.tags.get("railway") else {
         return;
@@ -95,6 +96,7 @@ pub fn generate_railways(
             element,
             rail_bridge_internal_endpoints,
             bridge_outlines,
+            scale,
         );
     } else {
         generate_at_grade_rail(editor, element);
@@ -240,12 +242,20 @@ fn generate_rail_bridge(
     way: &ProcessedWay,
     internal_endpoints: &RailBridgeInternalEndpoints,
     bridge_outlines: &BridgeOutlineIndex,
+    scale: f64,
 ) {
     if way.nodes.len() < 2 {
         return;
     }
 
-    let style = resolve_bridge_style_with_outline(way, bridge_outlines);
+    // Low-detail / downscaled worlds (<= 0.3): flat 1-block deck, no arch curve/clearance, plain
+    // Beam style so the spandrel + tall decorations never draw.
+    let low_detail = scale <= 0.3;
+    let style = if low_detail {
+        BridgeStyle::Beam
+    } else {
+        resolve_bridge_style_with_outline(way, bridge_outlines)
+    };
 
     let mut all_points: Vec<(i32, i32)> = Vec::new();
     for window in way.nodes.windows(2) {
@@ -272,8 +282,11 @@ fn generate_rail_bridge(
         min_y = min_y.min(y);
     }
     let dip = max_y - min_y;
-    // Arch needs vertical room for its curve on flat terrain.
-    let flat_clearance = if style == BridgeStyle::Arch {
+    // Arch needs vertical room for its curve on flat terrain. Low-detail worlds stay flat (deck
+    // hugs terrain, 1 block tall).
+    let flat_clearance = if low_detail {
+        0
+    } else if style == BridgeStyle::Arch {
         RAIL_BRIDGE_FLAT_CLEARANCE.max(8)
     } else {
         RAIL_BRIDGE_FLAT_CLEARANCE

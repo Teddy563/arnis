@@ -39,6 +39,11 @@ pub fn generate_amenities(
             .nodes()
             .map(|n: &crate::osm_parser::ProcessedNode| XZPoint::new(n.x, n.z))
             .next();
+        // --no-buildings keeps only the parking-lot ground surface (flat pavement); every other
+        // amenity is a vertical prop (bench, fountain, shelter, vending machine, …) so skip it.
+        if !args.buildings && amenity_type != "parking" {
+            return;
+        }
         match amenity_type.as_str() {
             "recycling" => {
                 let is_container = element
@@ -400,8 +405,9 @@ pub fn generate_amenities(
                             );
                         }
 
-                        // Add light posts at parking space outline corners
-                        if local_x == 0 && local_z == 0 && zone_x % 3 == 0 && zone_z % 2 == 0 {
+                        // Add light posts at parking space outline corners (vertical prop -> skip
+                        // under --no-buildings; the flat pavement above still draws).
+                        if args.buildings && local_x == 0 && local_z == 0 && zone_x % 3 == 0 && zone_z % 2 == 0 {
                             // Light posts at regular intervals on parking space corners
                             editor.set_block(COBBLESTONE_WALL, x, 1, z, None, None);
                             for dy in 2..=4 {

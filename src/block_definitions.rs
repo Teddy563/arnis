@@ -63,6 +63,12 @@ pub struct Block {
     id: u16,
 }
 
+/// Upper bound (exclusive) on `Block::id()`, for fixed-size id-indexed lookup
+/// tables. Upstream assumes u8 ids (256); our fork widened `id` to u16 and uses
+/// 256.. for Meld blocks (highest is currently 265), so any array indexed by
+/// `block.id()` MUST be sized to this, not 256, or it panics on a Meld block.
+pub const BLOCK_ID_CEILING: usize = 512;
+
 /// Block with NBT properties shared via Arc so identical compounds reuse one allocation.
 #[derive(Clone, Debug)]
 pub struct BlockWithProperties {

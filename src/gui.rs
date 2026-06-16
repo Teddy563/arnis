@@ -4,6 +4,7 @@ use crate::coordinate_system::geographic::{LLBBox, LLPoint};
 use crate::coordinate_system::transformation::CoordTransformer;
 use crate::data_processing::{self, GenerationOptions};
 use crate::ground::{self, Ground};
+use crate::map_preview;
 use crate::map_transformation;
 use crate::osm_parser;
 use crate::overture;
@@ -841,6 +842,7 @@ fn gui_start_generation(
     skip_osm_objects: bool,
     interior_enabled: bool,
     roof_enabled: bool,
+    buildings_enabled: bool,
     fillground_enabled: bool,
     land_cover_enabled: bool, // renamed from city_boundaries_enabled
     use_3d_enabled: bool,
@@ -1085,10 +1087,12 @@ fn gui_start_generation(
                 luanti: world_format == WorldFormat::LuantiWorld,
                 downloader: "requests".to_string(),
                 scale: world_scale,
+                projection: crate::projection::ProjectionKind::Local,
                 ground_level,
                 terrain: terrain_enabled,
                 interior: interior_enabled,
                 roof: roof_enabled,
+                buildings: buildings_enabled,
                 fillground: fillground_enabled,
                 land_cover: land_cover_enabled,
                 use_3d: use_3d_enabled,
@@ -1150,11 +1154,9 @@ fn gui_start_generation(
 
                 // Start map preview generation silently in background (Java only)
                 if world_format == WorldFormat::JavaAnvil {
-                    let preview_info = data_processing::MapPreviewInfo::new(
-                        generation_options.path.clone(),
-                        &xzbbox,
-                    );
-                    data_processing::start_map_preview_generation(preview_info);
+                    let preview_info =
+                        map_preview::MapPreviewInfo::new(generation_options.path.clone(), &xzbbox);
+                    map_preview::start_map_preview_generation(preview_info);
                 }
 
                 return Ok(());
@@ -1255,11 +1257,11 @@ fn gui_start_generation(
 
                     // Start map preview generation silently in background (Java only)
                     if world_format == WorldFormat::JavaAnvil {
-                        let preview_info = data_processing::MapPreviewInfo::new(
+                        let preview_info = map_preview::MapPreviewInfo::new(
                             generation_options.path.clone(),
                             &xzbbox,
                         );
-                        data_processing::start_map_preview_generation(preview_info);
+                        map_preview::start_map_preview_generation(preview_info);
                     }
 
                     Ok(())

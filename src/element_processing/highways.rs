@@ -692,7 +692,14 @@ fn generate_highways_internal(
             let bridge_ramp = bridge_structures.lookup_ramp(way.id);
             let is_bridge_member = bridge_member.is_some();
             let is_bridge_ramp = bridge_ramp.is_some();
-            let bridge_style = bridge_member.map(|m| m.style).unwrap_or(BridgeStyle::Beam);
+            // Low-detail / downscaled worlds (<= 0.3): force the plain flat Beam deck so the arch
+            // spandrel curve and tall truss/suspension/cable decorations never draw (paired with
+            // the flat clearance=0 deck from BridgeStructureMap::build).
+            let bridge_style = if args.scale <= 0.3 {
+                BridgeStyle::Beam
+            } else {
+                bridge_member.map(|m| m.style).unwrap_or(BridgeStyle::Beam)
+            };
             let bridge_start_is_boundary = bridge_member
                 .map(|m| m.start_is_group_boundary)
                 .unwrap_or(true);

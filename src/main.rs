@@ -2,6 +2,7 @@
 
 mod args;
 mod bedrock_block_map;
+mod bench;
 mod biome;
 mod block_definitions;
 mod bresenham;
@@ -21,6 +22,7 @@ mod land_cover;
 mod land_cover_bridge_repair;
 mod land_cover_osm_water_override;
 mod luanti_block_map;
+mod map_preview;
 mod map_renderer;
 mod map_transformation;
 mod models_3d;
@@ -29,11 +31,13 @@ mod osm_parser;
 mod overture;
 #[cfg(feature = "gui")]
 mod progress;
+mod projection;
 mod retrieve_data;
 #[cfg(feature = "gui")]
 mod telemetry;
 #[cfg(test)]
 mod test_utilities;
+mod tile;
 mod version_check;
 mod water_depth;
 mod world_editor;
@@ -45,6 +49,11 @@ use colored::*;
 use std::path::PathBuf;
 use std::{env, fs, io::Write};
 
+// mimalloc scales far better than the system allocator under the concurrent
+// 4 KiB section-vec / hashmap churn of tile-parallel processing.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(feature = "gui")]
 mod gui;
 
@@ -53,6 +62,7 @@ mod gui;
 mod progress {
     pub fn emit_gui_error(_message: &str) {}
     pub fn emit_gui_progress_update(_progress: f64, _message: &str) {}
+    pub fn emit_gui_progress_update_ex(_progress: f64, _message: &str, _streaming: bool) {}
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
     pub fn is_running_with_gui() -> bool {
@@ -65,9 +75,6 @@ use windows::Win32::System::Console::{AttachConsole, FreeConsole, ATTACH_PARENT_
 fn run_cli() {
     // Configure thread pool with 90% CPU cap to keep system responsive
     floodfill_cache::configure_rayon_thread_pool(0.9);
-
-    // Clean up old cached elevation tiles on startup
-    elevation_data::cleanup_old_cached_tiles();
 
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
@@ -95,6 +102,14 @@ fn run_cli() {
 
     // Parse input arguments
     let args: Args = Args::parse();
+
+    // Age out stale cached elevation tiles (best-effort; throttled to once/day + swept on a
+    // background thread inside). Skipped entirely in Meld tile-mode (master-origin set) and the
+    // download-only / terrain-only fast paths — Meld manages the shared cache and spawns this
+    // per cell, so even the throttle-stat is pointless N times per run.
+    if args.master_origin_lat.is_none() && !args.download_only && !args.download_terrain_only {
+        elevation_data::cleanup_old_cached_tiles();
+    }
 
     // Validate arguments (path requirements differ between Java and Bedrock)
     if let Err(e) = args::validate_args(&args) {
@@ -143,6 +158,28 @@ fn run_cli() {
                 eprintln!("{}: {}", "Error".red().bold(), e);
                 std::process::exit(1);
             }
+        }
+    }
+
+    // Heads-up for very large areas: generation is long and memory-heavy, and big
+    // requests load the public OpenStreetMap / elevation servers. Non-blocking.
+    // Placed after the Meld download-only / terrain-only early-exits so a prefetch
+    // call never trips the warning.
+    {
+        const MAX_RECOMMENDED_AREA_KM2: f64 = 250.0;
+        let b = &args.bbox;
+        let mid_lat = ((b.min().lat() + b.max().lat()) / 2.0).to_radians();
+        let width_m = (b.max().lng() - b.min().lng()) * 111_320.0 * mid_lat.cos();
+        let height_m = (b.max().lat() - b.min().lat()) * 111_320.0;
+        let area_km2 = (width_m * height_m).abs() / 1_000_000.0;
+        if area_km2 > MAX_RECOMMENDED_AREA_KM2 {
+            eprintln!(
+                "{} Large area selected (~{:.0} km²). Generation may take a long time and \
+                 use many GB of memory, and places heavy load on public OpenStreetMap and \
+                 elevation servers. Use a smaller area if this was unintended.",
+                "Note:".yellow().bold(),
+                area_km2
+            );
         }
     }
 
@@ -215,6 +252,10 @@ fn run_cli() {
         (world_path, None)
     };
 
+    // Top-level phase timer (active only under --benchmark). generate_world has
+    // its own internal Bench for the block-placement phases.
+    let mut bench = bench::Bench::new(args.benchmark);
+
     // Fetch data
     let raw_data = match &args.file {
         Some(file) => retrieve_data::fetch_data_from_file(file),
@@ -228,8 +269,10 @@ fn run_cli() {
         ),
     }
     .expect("Failed to fetch data");
+    bench.mark("osm_fetch");
 
     let mut ground = ground::generate_ground_data(&args);
+    bench.mark("terrain_total");
 
     // Parse raw data
     let (mut parsed_elements, mut xzbbox, outline_suppression) = osm_parser::parse_osm_data(
@@ -241,6 +284,7 @@ fn run_cli() {
         args.master_origin_lng,
         args.tile_invariant_rendering,
     ); /* Option<u64> already */
+    bench.mark("parse_osm");
 
     // Fetch supplementary building data from Overture Maps
     {
@@ -251,6 +295,7 @@ fn run_cli() {
             args.debug,
             args.tile_invariant_rendering,
         );
+        bench.mark("overture_fetch");
         if !overture_elements.is_empty() {
             let before_count = parsed_elements.len();
             let unique_overture =
@@ -268,6 +313,7 @@ fn run_cli() {
 
     parsed_elements
         .sort_by_key(|element: &osm_parser::ProcessedElement| osm_parser::get_priority(element));
+    bench.mark("sort_priority");
 
     // OSM water override first, then bridge repair handles remaining bridge-shadow cells.
     ground.apply_osm_water_override(&parsed_elements, &xzbbox);
@@ -278,6 +324,7 @@ fn run_cli() {
     if args.debug {
         ground.save_land_cover_debug_image("landcover_debug_post_bridge_repair");
     }
+    bench.mark("landcover_osm_repair");
 
     // Write the parsed OSM data to a file for inspection
     if args.debug {
@@ -298,6 +345,7 @@ fn run_cli() {
 
     // Transform map (parsed_elements). Operations are defined in a json file
     map_transformation::transform_map(&mut parsed_elements, &mut xzbbox, &mut ground);
+    bench.mark("transform_map");
 
     // Apply rotation if specified
     if args.rotation.abs() > f64::EPSILON {

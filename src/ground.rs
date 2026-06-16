@@ -7,7 +7,6 @@ use crate::elevation::compute_grid_dims;
 use crate::elevation_data::{fetch_elevation_data, ElevationData};
 use crate::land_cover::{self, LandCoverData};
 use crate::osm_parser::ProcessedElement;
-use crate::progress::emit_gui_progress_update;
 #[cfg(feature = "gui")]
 use crate::telemetry::{send_log, LogLevel};
 use colored::Colorize;
@@ -65,7 +64,9 @@ impl Ground {
         aws_only: bool,
         master_origin_lat: Option<f64>,
         master_origin_lng: Option<f64>,
+        benchmark: bool,
     ) -> Self {
+        let mut bench = crate::bench::Bench::new(benchmark);
         // Fetch land cover FIRST so we can feed it into the elevation
         // post-processing pipeline for land-cover-aware artifact repair.
         // The elevation grid is built from the same (bbox, scale, origin) so both
@@ -83,6 +84,7 @@ impl Ground {
         } else {
             None
         };
+        bench.mark("elev_landcover_fetch");
 
         // Raise the floor for the deepest water carve (elevation path only).
         let water_floor = match &land_cover {
@@ -106,6 +108,7 @@ impl Ground {
             aws_only,
             master_origin_lat,
             master_origin_lng,
+            benchmark,
         ) {
             Ok(elevation_data) => Self {
                 elevation_enabled: true,
@@ -591,7 +594,6 @@ impl Ground {
 pub fn generate_ground_data(args: &Args) -> Ground {
     if args.terrain {
         println!("{} Fetching elevation...", "[3/7]".bold());
-        emit_gui_progress_update(15.0, "Fetching elevation...");
         let ground = Ground::new_enabled(
             &args.bbox,
             args.scale,
@@ -604,6 +606,7 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             args.aws_only_elevation,
             args.master_origin_lat,
             args.master_origin_lng,
+            args.benchmark,
         );
         if args.debug {
             ground.save_debug_image("elevation_debug");

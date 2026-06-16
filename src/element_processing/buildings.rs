@@ -3,7 +3,6 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::clipping::clip_way_to_bbox;
 use crate::colors::color_text_to_rgb_tuple;
-use crate::coordinate_system::cartesian::XZPoint;
 use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::historic;
 use crate::element_processing::subprocessor::buildings_interior::generate_building_interior;
@@ -1209,27 +1208,25 @@ fn calculate_start_y_offset(
         // every tile that touches the building, so the .max() reduction is
         // tile-invariant. Fall back to clipped nodes only when bounds aren't
         // populated (synthetic ways missing it).
-        let (off_x, off_z) = editor.get_min_coords();
-        let sample_points: Vec<XZPoint> =
+        //
+        // Points are kept in WORLD coords; `editor.terrain_level` subtracts
+        // the ground origin internally (correct in tile editors, unlike
+        // get_min_coords), so we must NOT pre-subtract it here.
+        let sample_points: Vec<(i32, i32)> =
             if let Some((min_x, max_x, min_z, max_z)) = element.unclipped_bounds {
                 vec![
-                    XZPoint::new(min_x - off_x, min_z - off_z),
-                    XZPoint::new(max_x - off_x, min_z - off_z),
-                    XZPoint::new(min_x - off_x, max_z - off_z),
-                    XZPoint::new(max_x - off_x, max_z - off_z),
+                    (min_x, min_z),
+                    (max_x, min_z),
+                    (min_x, max_z),
+                    (max_x, max_z),
                 ]
             } else {
-                element
-                    .nodes
-                    .iter()
-                    .map(|n| XZPoint::new(n.x - off_x, n.z - off_z))
-                    .collect()
+                element.nodes.iter().map(|n| (n.x, n.z)).collect()
             };
 
         let mut max_ground_level = args.ground_level;
-        for point in &sample_points {
-            if let Some(ground) = editor.get_ground() {
-                let level = ground.level(*point);
+        for &(px, pz) in &sample_points {
+            if let Some(level) = editor.terrain_level(px, pz) {
                 max_ground_level = max_ground_level.max(level);
             }
         }
@@ -1766,9 +1763,10 @@ fn build_wall_ring(
     args: &Args,
     has_sloped_roof: bool,
     building_passages: &CoordinateBitmap,
-) -> (Vec<(i32, i32)>, (i32, i32, i32)) {
+) -> (Vec<(i32, i32)>, i32) {
     let mut previous_node: Option<(i32, i32)> = None;
-    let mut corner_addup: (i32, i32, i32) = (0, 0, 0);
+    // Count of generated wall coordinates; the caller only needs to know the ring is non-empty.
+    let mut corner_count: i32 = 0;
     let mut current_building: Vec<(i32, i32)> = Vec::new();
 
     let passage_height = BUILDING_PASSAGE_HEIGHT.min(config.building_height);
@@ -1795,14 +1793,8 @@ fn build_wall_ring(
 
                 // Foundation pillars below terrain. Skipped in passage zones.
                 if args.terrain && config.is_ground_level && !is_passage {
-                    let local_ground_level = if let Some(ground) = editor.get_ground() {
-                        ground.level(XZPoint::new(
-                            bx - editor.get_min_coords().0,
-                            bz - editor.get_min_coords().1,
-                        ))
-                    } else {
-                        args.ground_level
-                    };
+                    let local_ground_level =
+                        editor.terrain_level(bx, bz).unwrap_or(args.ground_level);
 
                     for y in local_ground_level..config.start_y_offset + 1 {
                         let block = apply_block_variety(config.wall_block, bx, y, bz, config);
@@ -1885,14 +1877,14 @@ fn build_wall_ring(
                 }
 
                 current_building.push((bx, bz));
-                corner_addup = (corner_addup.0 + bx, corner_addup.1 + bz, corner_addup.2 + 1);
+                corner_count += 1;
             }
         }
 
         previous_node = Some((x, z));
     }
 
-    (current_building, corner_addup)
+    (current_building, corner_count)
 }
 
 /// Generates special doors for garages (double door) and sheds (single door)
@@ -4029,18 +4021,16 @@ pub fn generate_buildings(
     // with no water check, so the later water carve floods the house. Grid-indexed
     // by world position → deterministic. A ≥60% threshold keeps shoreline buildings.
     if args.terrain {
-        if let Some(ground) = editor.get_ground() {
-            let (off_x, off_z) = editor.get_min_coords();
-            let water_cells = cached_floor_area
-                .iter()
-                .filter(|&&(x, z)| {
-                    ground.cover_class(XZPoint::new(x - off_x, z - off_z))
-                        == crate::land_cover::LC_WATER
-                })
-                .count();
-            if water_cells * 100 >= clipped_footprint_size * 60 {
-                return;
-            }
+        // `cover_class_at` subtracts the ground origin internally (correct in
+        // tile editors, unlike get_min_coords), so pass WORLD coords directly.
+        let water_cells = cached_floor_area
+            .iter()
+            .filter(|&&(x, z)| {
+                editor.cover_class_at(x, z) == Some(crate::land_cover::LC_WATER)
+            })
+            .count();
+        if water_cells * 100 >= clipped_footprint_size * 60 {
+            return;
         }
     }
 
@@ -4239,7 +4229,7 @@ pub fn generate_buildings(
             config.condition,
             BuildingCondition::Construction | BuildingCondition::Ruined
         );
-    let (wall_outline, corner_addup) = build_wall_ring(
+    let (wall_outline, corner_count) = build_wall_ring(
         editor,
         &element.nodes,
         &config,
@@ -4300,7 +4290,7 @@ pub fn generate_buildings(
     };
 
     // Generate floors and ceilings
-    if corner_addup != (0, 0, 0) {
+    if corner_count > 0 {
         generate_floors_and_ceilings(
             editor,
             &cached_floor_area,

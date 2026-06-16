@@ -98,7 +98,12 @@ impl BridgeStructureMap {
         elements: &[ProcessedElement],
         editor: &WorldEditor,
         outlines: &BridgeOutlineIndex,
+        scale: f64,
     ) -> Self {
+        // Low-detail / downscaled worlds (<= 0.3, e.g. 1:10): bridges become a flat 1-block deck
+        // that hugs the terrain — no rising arch/clearance (and highways.rs forces Beam style so
+        // the arch curve + tall decorations never draw).
+        let low_detail = scale <= 0.3;
         let mut bridge_ways: Vec<&ProcessedWay> = Vec::new();
         let mut other_highway_ways: Vec<&ProcessedWay> = Vec::new();
         for elem in elements {
@@ -288,13 +293,15 @@ impl BridgeStructureMap {
             // Style first so arches can force flat-terrain clearance for the curve to show.
             let group_style = majority_style(group_indices, &bridge_ways, outlines);
 
-            let mut clearance =
-                if dip < FLAT_TERRAIN_DIP_THRESHOLD && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS {
-                    max_layer * LAYER_HEIGHT_STEP
-                } else {
-                    0
-                };
-            if group_style == BridgeStyle::Arch
+            let mut clearance = if low_detail {
+                0
+            } else if dip < FLAT_TERRAIN_DIP_THRESHOLD && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS {
+                max_layer * LAYER_HEIGHT_STEP
+            } else {
+                0
+            };
+            if !low_detail
+                && group_style == BridgeStyle::Arch
                 && dip < FLAT_TERRAIN_DIP_THRESHOLD
                 && total_length >= SHORT_BRIDGE_LENGTH_BLOCKS
             {

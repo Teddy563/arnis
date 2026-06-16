@@ -61,6 +61,7 @@
             <div class="progress-row">
               <div class="progress-bar-container">
                 <div class="progress-bar" id="progress-bar"></div>
+                <span id="progress-eta" class="progress-eta-overlay" dir="ltr"></span>
               </div>
               <span id="progress-detail">0%</span>
             </div>
@@ -93,6 +94,17 @@
               <option value="geo-only" data-localize="mode_geo_only">Objects only</option>
               <option value="terrain-only" data-localize="mode_terrain_only">Terrain only</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Buildings Toggle Button -->
+        <div class="settings-row">
+          <label for="buildings-toggle">
+            <span data-localize="buildings">Buildings</span>
+            <span class="tooltip-icon" data-tooltip="Generate OSM buildings. Turn off for a roads + land-cover only world (roads, bridges, railways and terrain are kept).">?</span>
+          </label>
+          <div class="settings-control">
+            <input type="checkbox" id="buildings-toggle" name="buildings-toggle" checked>
           </div>
         </div>
 

@@ -43,32 +43,6 @@ fn get_base_chunk_sections() -> &'static [Section] {
 use crate::telemetry::{send_log, LogLevel};
 
 impl<'a> WorldEditor<'a> {
-    /// Creates a region file for the given region coordinates.
-    pub(super) fn create_region(
-        &self,
-        region_x: i32,
-        region_z: i32,
-    ) -> Result<Region<File>, Box<dyn std::error::Error + Send + Sync>> {
-        let region_dir = self.world_dir.join("region");
-        let out_path = region_dir.join(format!("r.{}.{}.mca", region_x, region_z));
-
-        // Ensure region directory exists before creating region files
-        std::fs::create_dir_all(&region_dir)?;
-
-        const REGION_TEMPLATE: &[u8] = include_bytes!("../../assets/minecraft/region.template");
-
-        let mut region_file: File = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&out_path)?;
-
-        region_file.write_all(REGION_TEMPLATE)?;
-
-        Ok(Region::from_stream(region_file)?)
-    }
-
     /// Helper function to create a base chunk with grass blocks at Y -62
     /// Uses cached sections for efficiency - only serialization happens per chunk
     pub(super) fn create_base_chunk(
@@ -117,7 +91,29 @@ impl<'a> WorldEditor<'a> {
             return Ok(());
         }
 
-        let total_regions = self.world.regions.len() as u64;
+        // Compute region bounds from original bbox to skip halo regions.
+        // A region at (rx, rz) covers blocks [rx*512 .. rx*512+511] × [rz*512 .. rz*512+511].
+        let min_region_x = self.xzbbox.min_x().div_euclid(512);
+        let max_region_x = self.xzbbox.max_x().div_euclid(512);
+        let min_region_z = self.xzbbox.min_z().div_euclid(512);
+        let max_region_z = self.xzbbox.max_z().div_euclid(512);
+
+        let total_regions = self
+            .world
+            .regions
+            .keys()
+            .filter(|(rx, rz)| {
+                *rx >= min_region_x
+                    && *rx <= max_region_x
+                    && *rz >= min_region_z
+                    && *rz <= max_region_z
+            })
+            .count() as u64;
+
+        if total_regions == 0 {
+            return Ok(());
+        }
+
         let save_pb = ProgressBar::new(total_regions);
         save_pb.set_style(
             ProgressStyle::default_bar()
@@ -129,7 +125,6 @@ impl<'a> WorldEditor<'a> {
         );
 
         let regions_processed = AtomicU64::new(0);
-        // AtomicBool for a lock-free fast-path stop check; the Mutex only stores the error value.
         let should_stop = std::sync::atomic::AtomicBool::new(false);
         let first_error: Mutex<Option<Box<dyn std::error::Error + Send + Sync>>> = Mutex::new(None);
 
@@ -137,6 +132,15 @@ impl<'a> WorldEditor<'a> {
             .regions
             .par_iter()
             .for_each(|((region_x, region_z), region_to_modify)| {
+                // Skip halo regions outside the original bbox.
+                if *region_x < min_region_x
+                    || *region_x > max_region_x
+                    || *region_z < min_region_z
+                    || *region_z > max_region_z
+                {
+                    return;
+                }
+
                 // Fast-path: bail out without locking once an error has been recorded.
                 if should_stop.load(Ordering::Acquire) {
                     return;
@@ -147,7 +151,6 @@ impl<'a> WorldEditor<'a> {
                     if guard.is_none() {
                         *guard = Some(e);
                     }
-                    // Signal other workers to stop without re-acquiring the mutex.
                     should_stop.store(true, Ordering::Release);
                     return;
                 }
@@ -155,7 +158,6 @@ impl<'a> WorldEditor<'a> {
                 // Update progress
                 let regions_done = regions_processed.fetch_add(1, Ordering::SeqCst) + 1;
 
-                // Update progress at regular intervals (every ~10% or at least every 10 regions)
                 let update_interval = (total_regions / 10).max(1);
                 if regions_done.is_multiple_of(update_interval) || regions_done == total_regions {
                     let progress = 90.0 + (regions_done as f64 / total_regions as f64) * 9.0;
@@ -174,33 +176,6 @@ impl<'a> WorldEditor<'a> {
         Ok(())
     }
 
-    /// Latitude that drives the temperature-based biome (taiga/forest/jungle) for a
-    /// chunk, and therefore its grass and leaf tint.
-    ///
-    /// Single-world (no `--seed`): the cell's bbox-CENTRE latitude, as before.
-    ///
-    /// Tile-invariant (`--seed`/Meld): each chunk's latitude is derived from its
-    /// absolute world Z using this cell's own `llbbox`<->`xzbbox` mapping. Because the
-    /// origin-anchored coordinate fix makes `lat(block_z)` a single global straight
-    /// line, every cell reconstructs the SAME line from its two endpoints, so two
-    /// adjacent cells agree on a shared chunk's latitude. That removes the per-cell
-    /// biome step (and the grass/leaf-colour seam it caused) at cell borders.
-    fn biome_lat_for_chunk(&self, abs_chunk_z: i32, center_lat: f64) -> f64 {
-        if !crate::ground_generation::tile_invariant_enabled() {
-            return center_lat;
-        }
-        let min_z = self.xzbbox.min_z() as f64;
-        let max_z = self.xzbbox.max_z() as f64;
-        if max_z <= min_z {
-            return center_lat;
-        }
-        let north_lat = self.llbbox.max().lat(); // +Z is south, so min_z is the north edge
-        let south_lat = self.llbbox.min().lat();
-        let world_z = f64::from(abs_chunk_z * 16 + 8); // chunk-centre block Z
-        let t = (world_z - min_z) / (max_z - min_z);
-        north_lat + t * (south_lat - north_lat)
-    }
-
     /// Saves a single region to disk.
     ///
     /// Optimized for new world creation, writes chunks directly without reading existing data.
@@ -211,75 +186,238 @@ impl<'a> WorldEditor<'a> {
         region_z: i32,
         region_to_modify: &super::common::RegionToModify,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut region = self.create_region(region_x, region_z)?;
-        let mut ser_buffer = Vec::with_capacity(8192);
+        write_region_to_disk(
+            &self.world_dir,
+            &self.llbbox,
+            self.ground_origin_x,
+            self.ground_origin_z,
+            self.xzbbox.min_z(),
+            self.xzbbox.max_z(),
+            self.ground.as_deref(),
+            self.bake_lighting,
+            region_x,
+            region_z,
+            region_to_modify,
+        )
+    }
+}
 
-        // World-center latitude drives temperature-based biome variants (taiga
-        // vs forest vs jungle) at chunk-build time. Cheap to recompute.
-        let center_lat = (self.llbbox.min().lat() + self.llbbox.max().lat()) * 0.5;
-        let ground_ref = self.ground.as_deref();
+/// Latitude that drives the temperature-based biome (taiga/forest/jungle) for a
+/// chunk, and therefore its grass and leaf tint.
+///
+/// Single-world (no `--seed`): the cell's bbox-CENTRE latitude, as before.
+///
+/// Tile-invariant (`--seed`/Meld): each chunk's latitude is derived from its
+/// absolute world Z using this cell's own `llbbox`<->`xzbbox` mapping. Because the
+/// origin-anchored coordinate fix makes `lat(block_z)` a single global straight
+/// line, every cell reconstructs the SAME line from its two endpoints, so two
+/// adjacent cells agree on a shared chunk's latitude. That removes the per-cell
+/// biome step (and the grass/leaf-colour seam it caused) at cell borders.
+fn biome_lat_for_chunk(
+    abs_chunk_z: i32,
+    center_lat: f64,
+    xz_min_z: i32,
+    xz_max_z: i32,
+    north_lat: f64,
+    south_lat: f64,
+) -> f64 {
+    if !crate::ground_generation::tile_invariant_enabled() {
+        return center_lat;
+    }
+    if xz_max_z <= xz_min_z {
+        return center_lat;
+    }
+    let min_z = f64::from(xz_min_z);
+    let max_z = f64::from(xz_max_z);
+    let world_z = f64::from(abs_chunk_z * 16 + 8); // chunk-centre block Z
+    let t = (world_z - min_z) / (max_z - min_z);
+    north_lat + t * (south_lat - north_lat)
+}
 
-        // First pass: write all chunks that have content
-        for (&(chunk_x, chunk_z), chunk_to_modify) in &region_to_modify.chunks {
-            if !chunk_to_modify.sections.is_empty() || !chunk_to_modify.other.is_empty() {
-                let abs_chunk_x = chunk_x + (region_x * 32);
-                let abs_chunk_z = chunk_z + (region_z * 32);
-                // Create chunk directly, we're writing to a fresh region file
-                // so there's no existing data to preserve
-                let chunk = Chunk {
-                    sections: chunk_to_modify.sections().collect(),
-                    x_pos: abs_chunk_x,
-                    z_pos: abs_chunk_z,
-                    is_light_on: 0,
-                    other: chunk_to_modify.other.clone(),
-                };
+/// Open (truncating) a fresh `r.X.Z.mca` under `world_dir/region`.
+fn create_region_file(
+    world_dir: &std::path::Path,
+    region_x: i32,
+    region_z: i32,
+) -> Result<Region<File>, Box<dyn std::error::Error + Send + Sync>> {
+    let region_dir = world_dir.join("region");
+    let out_path = region_dir.join(format!("r.{}.{}.mca", region_x, region_z));
+    std::fs::create_dir_all(&region_dir)?;
 
-                let biome_value = crate::biome::build_chunk_biome_nbt(
-                    abs_chunk_x,
-                    abs_chunk_z,
-                    self.xzbbox.min_x(),
-                    self.xzbbox.min_z(),
-                    ground_ref,
-                    self.biome_lat_for_chunk(abs_chunk_z, center_lat),
-                );
-                let chunk_nbt = create_chunk_nbt(&chunk, self.bake_lighting, &biome_value);
-                ser_buffer.clear();
-                fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
-                region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
+    const REGION_TEMPLATE: &[u8] = include_bytes!("../../assets/minecraft/region.template");
+    let mut region_file: File = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&out_path)?;
+    region_file.write_all(REGION_TEMPLATE)?;
+    Ok(Region::from_stream(region_file)?)
+}
+
+/// Serialize one region's chunks to its `.mca`. Shared by the synchronous save
+/// path and the background flush worker (hence free-standing, not `&self`).
+///
+/// `ground_origin_x/z` is the MAIN world's origin (tile editors override it via
+/// `set_ground_origin`) so biome land-cover lookups index the shared global grid;
+/// `xz_min_z/xz_max_z` is THIS cell's own bbox z-extent, used to reconstruct the
+/// global latitude line per chunk for tile-invariant (`--seed`/Meld) rendering.
+#[allow(clippy::too_many_arguments)]
+fn write_region_to_disk(
+    world_dir: &std::path::Path,
+    llbbox: &crate::coordinate_system::geographic::LLBBox,
+    ground_origin_x: i32,
+    ground_origin_z: i32,
+    xz_min_z: i32,
+    xz_max_z: i32,
+    ground: Option<&crate::ground::Ground>,
+    bake_lighting: bool,
+    region_x: i32,
+    region_z: i32,
+    region_to_modify: &super::common::RegionToModify,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut region = create_region_file(world_dir, region_x, region_z)?;
+    let mut ser_buffer = Vec::with_capacity(8192);
+
+    // World-center latitude drives temperature-based biome variants (taiga
+    // vs forest vs jungle) at chunk-build time. Cheap to recompute.
+    let center_lat = (llbbox.min().lat() + llbbox.max().lat()) * 0.5;
+    let north_lat = llbbox.max().lat(); // +Z is south, so max lat is the north edge
+    let south_lat = llbbox.min().lat();
+
+    // First pass: write all chunks that have content
+    for (&(chunk_x, chunk_z), chunk_to_modify) in &region_to_modify.chunks {
+        if !chunk_to_modify.sections.is_empty() || !chunk_to_modify.other.is_empty() {
+            let abs_chunk_x = chunk_x + (region_x * 32);
+            let abs_chunk_z = chunk_z + (region_z * 32);
+            // Correctness fix H2: dedup block-entity / entity compound lists by
+            // coordinate before serializing. Tile halos cause the same boundary
+            // banner/sign/chest to be merged into `other` 2+ times (common.rs
+            // does an `extend` with no dedup); writing them verbatim would
+            // duplicate the block entity in-game.
+            let mut other = chunk_to_modify.other.clone();
+            for key in ["block_entities", "entities"] {
+                if let Some(Value::List(list)) = other.get_mut(key) {
+                    *list = dedup_compound_list(list);
+                }
             }
-        }
+            let chunk = Chunk {
+                sections: chunk_to_modify.sections().collect(),
+                x_pos: abs_chunk_x,
+                z_pos: abs_chunk_z,
+                is_light_on: 0,
+                other,
+            };
 
-        // Second pass: ensure all chunks exist (fill with base layer if not)
+            let biome_value = crate::biome::build_chunk_biome_nbt(
+                abs_chunk_x,
+                abs_chunk_z,
+                ground_origin_x,
+                ground_origin_z,
+                ground,
+                biome_lat_for_chunk(abs_chunk_z, center_lat, xz_min_z, xz_max_z, north_lat, south_lat),
+            );
+            let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value);
+            ser_buffer.clear();
+            fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
+            region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
+        }
+    }
+
+    // Second pass: ensure all chunks exist (fill with base layer if not).
+    // Skip entirely when region already has all 1024 chunks (common after ground gen).
+    if region_to_modify.chunks.len() < 1024 {
         for chunk_x in 0..32 {
             for chunk_z in 0..32 {
-                let abs_chunk_x = chunk_x + (region_x * 32);
-                let abs_chunk_z = chunk_z + (region_z * 32);
-
-                // Check if chunk exists in our modifications
-                let chunk_exists = region_to_modify.chunks.contains_key(&(chunk_x, chunk_z));
-
-                // If chunk doesn't exist, create it with base layer
-                if !chunk_exists {
+                if !region_to_modify.chunks.contains_key(&(chunk_x, chunk_z)) {
+                    let abs_chunk_x = chunk_x + (region_x * 32);
+                    let abs_chunk_z = chunk_z + (region_z * 32);
                     let biome_value = crate::biome::build_chunk_biome_nbt(
                         abs_chunk_x,
                         abs_chunk_z,
-                        self.xzbbox.min_x(),
-                        self.xzbbox.min_z(),
-                        ground_ref,
-                        self.biome_lat_for_chunk(abs_chunk_z, center_lat),
+                        ground_origin_x,
+                        ground_origin_z,
+                        ground,
+                        biome_lat_for_chunk(
+                            abs_chunk_z,
+                            center_lat,
+                            xz_min_z,
+                            xz_max_z,
+                            north_lat,
+                            south_lat,
+                        ),
                     );
-                    let ser_buffer = Self::create_base_chunk(
+                    let ser_buffer = WorldEditor::create_base_chunk(
                         abs_chunk_x,
                         abs_chunk_z,
-                        self.bake_lighting,
+                        bake_lighting,
                         &biome_value,
                     )?;
                     region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
                 }
             }
         }
+    }
 
-        Ok(())
+    Ok(())
+}
+
+/// Owned, `Send` context for writing regions off the main thread (background flush).
+/// Mirrors the fields `write_region_to_disk` needs from a `WorldEditor`.
+pub(crate) struct RegionWriteCtx {
+    world_dir: std::path::PathBuf,
+    llbbox: crate::coordinate_system::geographic::LLBBox,
+    ground_origin_x: i32,
+    ground_origin_z: i32,
+    xz_min_z: i32,
+    xz_max_z: i32,
+    ground: Option<std::sync::Arc<crate::ground::Ground>>,
+    bake_lighting: bool,
+}
+
+impl RegionWriteCtx {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        world_dir: std::path::PathBuf,
+        llbbox: crate::coordinate_system::geographic::LLBBox,
+        ground_origin_x: i32,
+        ground_origin_z: i32,
+        xz_min_z: i32,
+        xz_max_z: i32,
+        ground: Option<std::sync::Arc<crate::ground::Ground>>,
+        bake_lighting: bool,
+    ) -> Self {
+        Self {
+            world_dir,
+            llbbox,
+            ground_origin_x,
+            ground_origin_z,
+            xz_min_z,
+            xz_max_z,
+            ground,
+            bake_lighting,
+        }
+    }
+
+    pub(crate) fn write(
+        &self,
+        region_x: i32,
+        region_z: i32,
+        region_to_modify: &super::common::RegionToModify,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        write_region_to_disk(
+            &self.world_dir,
+            &self.llbbox,
+            self.ground_origin_x,
+            self.ground_origin_z,
+            self.xz_min_z,
+            self.xz_max_z,
+            self.ground.as_deref(),
+            self.bake_lighting,
+            region_x,
+            region_z,
+            region_to_modify,
+        )
     }
 }
 
@@ -309,6 +447,40 @@ fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32)>
     };
 
     Some((x, y, z))
+}
+
+/// Correctness fix H2: dedup a block-entity / entity compound list by coordinate.
+///
+/// Ways and relations are assigned to every tile their AABB+halo overlaps, so a
+/// boundary banner/sign/chest gets emitted by 2+ tile editors. The merge in
+/// `common.rs` does `self_list.extend(other_list)` with no coordinate dedup, so
+/// the same block entity ends up in `chunk.other["block_entities"]` more than
+/// once and is written verbatim to the `.mca`, producing an in-game duplicate.
+/// (Bedrock already dedups via its own `dedup_compound_list`; Java did not.)
+///
+/// Keys on the absolute `(x, y, z)` int tags inside each compound (block
+/// entities store absolute coords; entities use a `Pos` list — both handled by
+/// `get_entity_coords`). On a coordinate collision the FIRST compound in
+/// tile-merge order is kept, which is deterministic and safe because duplicates
+/// for the same coordinate carry identical content. Non-compound values and
+/// compounds without coordinates are passed through untouched.
+fn dedup_compound_list(values: &[Value]) -> Vec<Value> {
+    let mut seen: std::collections::HashSet<(i32, i32, i32)> = std::collections::HashSet::new();
+    let mut deduped: Vec<Value> = Vec::with_capacity(values.len());
+
+    for value in values {
+        if let Value::Compound(map) = value {
+            if let Some(coords) = get_entity_coords(map) {
+                if !seen.insert(coords) {
+                    // Already kept a compound at this coordinate: drop the duplicate.
+                    continue;
+                }
+            }
+        }
+        deduped.push(value.clone());
+    }
+
+    deduped
 }
 
 // Reads a string blockstate property, if present.
@@ -661,6 +833,33 @@ fn compute_lighting(
     out
 }
 
+/// Cached air block_states value shared by all empty sections.
+static AIR_BLOCK_STATES: OnceLock<Value> = OnceLock::new();
+
+fn get_air_block_states() -> &'static Value {
+    AIR_BLOCK_STATES.get_or_init(|| {
+        Value::Compound(HashMap::from([(
+            "palette".to_string(),
+            Value::List(vec![Value::Compound(HashMap::from([(
+                "Name".to_string(),
+                Value::String("minecraft:air".to_string()),
+            )]))]),
+        )]))
+    })
+}
+
+/// Cached structures value shared by all chunks.
+static STRUCTURES_VALUE: OnceLock<Value> = OnceLock::new();
+
+fn get_structures_value() -> &'static Value {
+    STRUCTURES_VALUE.get_or_init(|| {
+        Value::Compound(HashMap::from([
+            ("References".to_string(), Value::Compound(HashMap::new())),
+            ("starts".to_string(), Value::Compound(HashMap::new())),
+        ]))
+    })
+}
+
 /// Creates modern chunk NBT data (post-1.18 format, no Level wrapper).
 ///
 /// Writes all required fields for server compatibility:
@@ -709,16 +908,7 @@ fn create_chunk_nbt(
                 // Empty air section
                 HashMap::from([
                     ("Y".to_string(), Value::Byte(y)),
-                    (
-                        "block_states".to_string(),
-                        Value::Compound(HashMap::from([(
-                            "palette".to_string(),
-                            Value::List(vec![Value::Compound(HashMap::from([(
-                                "Name".to_string(),
-                                Value::String("minecraft:air".to_string()),
-                            )]))]),
-                        )])),
-                    ),
+                    ("block_states".to_string(), get_air_block_states().clone()),
                 ])
             };
             section_nbt.insert("biomes".to_string(), biome_value.clone());
@@ -759,13 +949,7 @@ fn create_chunk_nbt(
         ("LastUpdate".to_string(), Value::Long(0)),
         ("sections".to_string(), Value::List(sections)),
         ("Heightmaps".to_string(), heightmaps),
-        (
-            "structures".to_string(),
-            Value::Compound(HashMap::from([
-                ("References".to_string(), Value::Compound(HashMap::new())),
-                ("starts".to_string(), Value::Compound(HashMap::new())),
-            ])),
-        ),
+        ("structures".to_string(), get_structures_value().clone()),
         ("PostProcessing".to_string(), Value::List(post_processing)),
         ("block_ticks".to_string(), Value::List(vec![])),
         ("fluid_ticks".to_string(), Value::List(vec![])),

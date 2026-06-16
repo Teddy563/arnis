@@ -40,6 +40,12 @@ pub struct Args {
     #[arg(long, default_value_t = 1.0)]
     pub scale: f64,
 
+    /// Projection mode for coordinate mapping
+    /// local: each generation starts at Minecraft (0,0) (default)
+    /// web_mercator: global projection for multi-generation worlds
+    #[arg(long, default_value = "local")]
+    pub projection: crate::projection::ProjectionKind,
+
     /// Ground level to use in the Minecraft world
     #[arg(long, default_value_t = -62)]
     pub ground_level: i32,
@@ -70,6 +76,11 @@ pub struct Args {
     /// Disable fetching 3D models from external sources (3DMR + Wikimedia).
     #[arg(long = "no-3d", default_value_t = true, action = ArgAction::SetFalse)]
     pub use_3d: bool,
+
+    /// Skip OSM buildings. Keeps everything else (roads, bridges, railways, land cover,
+    /// water, natural, terrain) - useful for a roads-and-ground-only world.
+    #[arg(long = "no-buildings", visible_alias = "no-structures", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
 
     /// Enable debug mode (optional)
     #[arg(long)]

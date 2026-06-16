@@ -45,7 +45,7 @@ fn download_with_reqwest(
 
     match response {
         Ok(resp) => {
-            emit_gui_progress_update(3.0, "Downloading data...");
+            emit_gui_progress_update(3.0, "");
             if resp.status().is_success() {
                 let text = resp.text()?;
                 if text.is_empty() {
@@ -131,7 +131,7 @@ pub fn fetch_data_from_overpass(
     road_detail: &str,
 ) -> Result<OsmData, Box<dyn std::error::Error>> {
     println!("{} Fetching data...", "[1/7]".bold());
-    emit_gui_progress_update(1.0, "Fetching data...");
+    emit_gui_progress_update(1.0, "Downloading map data...");
 
     // List of Overpass API servers. When `override_urls` is non-empty
     // the caller has supplied an explicit pool (typically a self-hosted
