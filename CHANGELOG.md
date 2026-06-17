@@ -28,6 +28,12 @@ A fork of louis-e/arnis 2.9.0 tuned for large parallel "Meld" generation: one or
 - **Merged 53 upstream louis-e/arnis commits.** Brings in-process tile parallelization, stream-to-disk region eviction, the mimalloc allocator, the large-area warning, and the GUI ETA, while keeping the cross-tile seam intact (0 of 1024 chunks differ in verification). The `transformation.rs` Local plus master-origin path is the seam crux.
 - **Product renamed to "Arnis Meld Fork".**
 - **GUI footer now credits louis-e and Teddy563.**
+- **Upstream parity follow-ups.** Ported the low-risk genuinely-new commits from the upstream 2.9.0
+  line: the progress-bar sheen animation, a clearer extend-build-height tooltip, leisure=marina maps
+  to water, and a corrected u16 block-id note. The CI was also brought green (rustfmt plus a dead-code
+  allow on the unused Web Mercator path). Heavier upstream changes that clash with the fork's rewrites
+  (the one-byte block storage split, road-width-by-lanes, the snow line, upstream water beds) are
+  tracked for a focused follow-up rather than rushed in.
 
 ### Fixed
 

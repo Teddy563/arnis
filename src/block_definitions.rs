@@ -372,8 +372,8 @@ impl Block {
             265 => "soul_sand",
             _ => panic!("Invalid id"),
         }
-        // Note: If you want to add more blocks, please find unused ID
-        // slots below 255 so we don't need to update to u16 or higher.
+        // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
+        // extra blocks. To add a block, take the next free id below BLOCK_ID_CEILING.
     }
 
     pub fn properties(&self) -> Option<Value> {
