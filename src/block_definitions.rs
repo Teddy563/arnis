@@ -370,6 +370,7 @@ impl Block {
             263 => "brown_candle",
             264 => "brown_candle",
             265 => "soul_sand",
+            266 => "snow",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -1103,6 +1104,8 @@ pub const BROWN_CANDLE_2: Block = Block::new(262);
 pub const BROWN_CANDLE_3: Block = Block::new(263);
 pub const BROWN_CANDLE_4: Block = Block::new(264);
 pub const SOUL_SAND: Block = Block::new(265);
+// Snow-line cap (upstream uses id 257; that slot is SUGAR_CANE in this fork, so snow is at 266).
+pub const SNOW_LAYER: Block = Block::new(266);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

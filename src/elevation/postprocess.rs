@@ -1204,7 +1204,7 @@ pub fn scale_to_minecraft(
     extended_max_y: i32,
     elevation_min_override: Option<f64>,
     elevation_max_override: Option<f64>,
-) -> Vec<Vec<f64>> {
+) -> (Vec<Vec<f64>>, f64, f64) {
     // When global overrides are provided (from --elevation-min/--elevation-max),
     // use them directly so all tiles share the same Y reference frame.
     // Otherwise derive min/max from this tile's data (original per-tile behaviour).
@@ -1234,7 +1234,16 @@ pub fn scale_to_minecraft(
 
     let (min_height, _max_height, height_range) =
         if !min_height.is_finite() || !max_height.is_finite() || min_height >= max_height {
-            (0.0_f64, 0.0_f64, 0.0_f64)
+            // Zero-relief/degenerate: keep the real min height (the snow line needs it)
+            // but flatten the range so every cell maps to ground_level. `min <= max`
+            // distinguishes true flat terrain from an all-NaN grid, whose reduce leaves
+            // min = f64::MAX (finite but bogus) -> use 0.
+            let real_min = if min_height.is_finite() && min_height <= max_height {
+                min_height
+            } else {
+                0.0
+            };
+            (real_min, real_min, 0.0_f64)
         } else {
             (min_height, max_height, max_height - min_height)
         };
@@ -1286,12 +1295,41 @@ pub fn scale_to_minecraft(
         })
         .collect();
 
-    mc_heights
+    // Affine params so a real-world elevation (e.g. the snow line) maps back to a Y threshold.
+    let blocks_per_meter = if height_range > 0.0 {
+        scaled_range / height_range
+    } else {
+        0.0
+    };
+    (mc_heights, min_height, blocks_per_meter)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scale_flat_terrain_keeps_real_min_height() {
+        // Zero-relief terrain must still report its true elevation so the snow
+        // line can tell a high plateau from a low one.
+        let grid = vec![vec![4500.0_f64; 4]; 4];
+        let (mc, min_m, blocks_per_meter) =
+            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None);
+        assert_eq!(min_m, 4500.0);
+        assert_eq!(blocks_per_meter, 0.0);
+        // Every cell flattens to ground level.
+        assert!(mc.iter().flatten().all(|&y| (y - 64.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn scale_all_nan_grid_min_height_zero() {
+        // No finite samples must not leak the f64::MAX reduce sentinel as min.
+        let grid = vec![vec![f64::NAN; 4]; 4];
+        let (_mc, min_m, blocks_per_meter) =
+            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None);
+        assert_eq!(min_m, 0.0);
+        assert_eq!(blocks_per_meter, 0.0);
+    }
 
     #[test]
     fn test_fill_nan_values() {
