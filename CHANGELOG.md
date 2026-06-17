@@ -22,18 +22,30 @@ A fork of louis-e/arnis 2.9.0 tuned for large parallel "Meld" generation: one or
 - **`--elevation-min` / `--elevation-max` (global band).** Pins one shared real-world min/max in metres so every tile maps height to Y identically, instead of each tile picking its own range and meeting neighbours at a vertical staircase. Both required together; set alongside `--master-origin`. Usage: `arnis ... --master-origin-lat <lat> --master-origin-lng <lng> --elevation-min 0 --elevation-max 1200`.
 - **Automatic flat low-scale bridges.** At `--scale 0.3` or lower, every bridge becomes a flat 1-block deck that hugs the terrain (Beam style forced, no arch), because at 1:3 or smaller a rising arch with columns and clearance collapses into noise and overshoots the tiny span. Not a flag; triggered purely by `--scale`. Usage (implicit): `arnis --output-dir ./world --bbox <bbox> --scale 0.1`.
 - **Big water / shore / wetland system plus 9 new block IDs.** A large multi-pass water, underwater, shore and wetland system (flat per-component water surface, single-cell SAND shore swap, depth-tiered bed palette, water carving under bridges, stoney-shore ring, thin-land drown) that resolves the long-running stepped-water, double-slope, AIR-hole and stray-sand artifacts. Adds 9 new block IDs (256 to 265) and widens `Block::id()` from u8 to u16. Automatic when `--terrain` is on; shore and water noise respond to the `--seed` value, with no dedicated flag.
+- **Snow-capped terrain above the real-world snow line.** Terrain above the latitude-derived climatic snow line gets a thin snow layer (a new `SNOW_LAYER` block at id 266), with a 6-block noise jitter so the edge is not a hard contour. It honours the `--elevation-min/--elevation-max` lock so the cap lands at the same Y on both sides of a tile seam, and it skips water and shore (gated on the same water-blend isoline the shore uses). Automatic when `--terrain` is on.
+- **Parking lots rendered like roads.** Parking areas use a speckled asphalt mix (honouring `surface=*`) with white `WHITE_CONCRETE` space markings and a slim metal lamp post, instead of flat gray concrete. The lamp post is gated behind buildings, so `--no-buildings` draws only the flat pavement, no posts.
 
 ### Changed / Engine
 
 - **Merged 53 upstream louis-e/arnis commits.** Brings in-process tile parallelization, stream-to-disk region eviction, the mimalloc allocator, the large-area warning, and the GUI ETA, while keeping the cross-tile seam intact (0 of 1024 chunks differ in verification). The `transformation.rs` Local plus master-origin path is the seam crux.
 - **Product renamed to "Arnis Meld Fork".**
 - **GUI footer now credits louis-e and Teddy563.**
-- **Upstream parity follow-ups.** Ported the low-risk genuinely-new commits from the upstream 2.9.0
-  line: the progress-bar sheen animation, a clearer extend-build-height tooltip, leisure=marina maps
-  to water, and a corrected u16 block-id note. The CI was also brought green (rustfmt plus a dead-code
-  allow on the unused Web Mercator path). Heavier upstream changes that clash with the fork's rewrites
-  (the one-byte block storage split, road-width-by-lanes, the snow line, upstream water beds) are
-  tracked for a focused follow-up rather than rushed in.
+- **Upstream sync.** Ported the genuinely-new commits from the upstream 2.9.0 line that compose with
+  the fork: the progress-bar sheen animation, a clearer extend-build-height tooltip, leisure=marina
+  maps to water, a corrected u16 block-id note, the snow line, the parking visual upgrade, and the
+  one-byte section storage split (see Added and Performance). The CI was also brought green (rustfmt
+  plus a dead-code allow on the unused Web Mercator path). Upstream changes that fight the fork's
+  design were deliberately skipped: road-width-by-lanes (our `--road-detail` already caps lanes in
+  compact mode), and the upstream water beds (the fork's water rewrite is already a superset).
+
+### Performance
+
+- **One byte per cell for the common section.** Widening `Block` to u16 had doubled every full
+  section's backing vector (a roughly 70% peak-memory jump on a dense city). Section storage now uses
+  `Full(Vec<u8>)` for the overwhelmingly common case where every block id fits in a byte, and
+  `FullWide(Vec<Block>)` only for the rare sections that hold an id of 256 or more. Reads, writes,
+  iteration and the seam-merge content hash are representation-independent (a section hashes
+  identically either way), verified by a round-trip plus a Full-versus-FullWide canary test.
 
 ### Fixed
 
