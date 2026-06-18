@@ -323,7 +323,7 @@ fn fill_polygon_scanline(
 
         // Safety net: a malformed/clipped ring can leave an ODD crossing count on a row; pairing them
         // even-odd would mis-bound a span and paint a wedge. Skip such rows instead of guessing.
-        if outer_x_world.len() % 2 != 0 {
+        if !outer_x_world.len().is_multiple_of(2) {
             continue;
         }
         let row = &mut grid[gz];

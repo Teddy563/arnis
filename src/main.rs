@@ -173,7 +173,10 @@ fn run_cli() {
     // (a data-pack-style download) so the later parallel cells read ranges from disk instead of each
     // doing a cold fetch. Reuses the exact range cache the cells read, so it is always compatible.
     if args.prewarm_overture {
-        println!("{} Pre-warming Overture building cache for bbox…", "  [+]".bold());
+        println!(
+            "{} Pre-warming Overture building cache for bbox…",
+            "  [+]".bold()
+        );
         let n = overture::fetch_overture_buildings(
             &args.bbox,
             args.scale,
