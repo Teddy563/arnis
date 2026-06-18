@@ -168,6 +168,23 @@ fn run_cli() {
         }
     }
 
+    // Overture pre-warm mode: fetch + cache the Overture building byte-ranges overlapping --bbox in
+    // ONE process and exit, before any world creation. Lets Meld warm a region's buildings up front
+    // (a data-pack-style download) so the later parallel cells read ranges from disk instead of each
+    // doing a cold fetch. Reuses the exact range cache the cells read, so it is always compatible.
+    if args.prewarm_overture {
+        println!("{} Pre-warming Overture building cache for bbox…", "  [+]".bold());
+        let n = overture::fetch_overture_buildings(
+            &args.bbox,
+            args.scale,
+            args.debug,
+            args.tile_invariant_rendering,
+        )
+        .len();
+        println!("Overture prewarm: ranges cached for bbox ({n} buildings in range)");
+        std::process::exit(0);
+    }
+
     // Heads-up for very large areas: generation is long and memory-heavy, and big
     // requests load the public OpenStreetMap / elevation servers. Non-blocking.
     // Placed after the Meld download-only / terrain-only early-exits so a prefetch
@@ -264,9 +281,12 @@ fn run_cli() {
     let mut bench = bench::Bench::new(args.benchmark);
 
     // Fetch data
-    let raw_data = match &args.file {
-        Some(file) => retrieve_data::fetch_data_from_file(file),
-        None => retrieve_data::fetch_data_from_overpass(
+    let raw_data = match (&args.osm_tile_dir, &args.file) {
+        // Meld grid path: read the cell's slippy tiles straight from the cache dir,
+        // no pre-merged clump file required.
+        (Some(dir), _) => osm_parser::OsmData::from_tile_dir(dir, args.bbox, args.osm_tile_z),
+        (None, Some(file)) => retrieve_data::fetch_data_from_file(file),
+        (None, None) => retrieve_data::fetch_data_from_overpass(
             args.bbox,
             args.debug,
             args.downloader.as_str(),
@@ -293,8 +313,11 @@ fn run_cli() {
     ); /* Option<u64> already */
     bench.mark("parse_osm");
 
-    // Fetch supplementary building data from Overture Maps
-    {
+    // Fetch supplementary building data from Overture Maps — ONLY when buildings are enabled.
+    // This is a per-run network fetch (STAC index + partition reads) and, measured, the single
+    // dominant per-cell cost (~93% of a cell's wall time). With --no-buildings the buildings are
+    // discarded anyway, so fetching them is pure waste: skip it entirely.
+    if args.buildings {
         println!("{} Fetching Overture Maps data...", "  [+]".bold());
         let overture_elements = overture::fetch_overture_buildings(
             &args.bbox,

@@ -3,6 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::bresenham::bresenham_line;
+use crate::clipping::clip_water_ring_to_bbox;
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::land_cover::{compute_water_distance, LandCoverData, LC_WATER};
 use crate::osm_parser::{
@@ -59,7 +60,14 @@ pub fn apply_osm_water_override(
                     if !is_ring_closed(&way.nodes) {
                         continue;
                     }
-                    let outer: Vec<(i32, i32)> = way.nodes.iter().map(|n| (n.x, n.z)).collect();
+                    // Clip to the cell bbox before filling (same wedge guard as the relation path):
+                    // a closed lake/reservoir way that spills past the cell would otherwise clamp-flood
+                    // to the edge. None = ring wholly outside this cell → skip.
+                    let clipped = match clip_water_ring_to_bbox(&way.nodes, xzbbox) {
+                        Some(r) => r,
+                        None => continue,
+                    };
+                    let outer: Vec<(i32, i32)> = clipped.iter().map(|n| (n.x, n.z)).collect();
                     changed += fill_polygon_scanline(
                         &mut land_cover.grid,
                         &[outer.as_slice()],
@@ -114,6 +122,22 @@ pub fn apply_osm_water_override(
                 // Members are often fragments; stitch into closed rings.
                 crate::element_processing::merge_way_segments(&mut outer_nodes);
                 crate::element_processing::merge_way_segments(&mut inner_nodes);
+                // Clip each assembled ring to the cell bbox BEFORE filling (mirrors water_areas.rs:67).
+                // A relation whose members straddle the cell (some member ways may not be loaded, for
+                // example when a cell reads only its own grid tiles via --osm-tile-dir) yields a ring
+                // reaching far outside the bbox. The fill below computes crossings from the UNCLIPPED
+                // ring then clamps each span to max_x, so an in-cell crossing gets paired with one past
+                // the edge and the clamp floods a straight-edged TRIANGLE of water to the cell corner
+                // (the wedge). SH-clipping re-closes the ring along the bbox edges so every crossing is
+                // in-range, and an open ring (a broken outline) is dropped by clip_water_ring_to_bbox.
+                outer_nodes = outer_nodes
+                    .into_iter()
+                    .filter_map(|ring| clip_water_ring_to_bbox(&ring, xzbbox))
+                    .collect();
+                inner_nodes = inner_nodes
+                    .into_iter()
+                    .filter_map(|ring| clip_water_ring_to_bbox(&ring, xzbbox))
+                    .collect();
                 outer_nodes.retain(|ring| is_ring_closed(ring));
                 inner_nodes.retain(|ring| is_ring_closed(ring));
                 if outer_nodes.is_empty() {
@@ -297,6 +321,11 @@ fn fill_polygon_scanline(
             inner_x_world.sort_by(|a, b| a.partial_cmp(b).unwrap());
         }
 
+        // Safety net: a malformed/clipped ring can leave an ODD crossing count on a row; pairing them
+        // even-odd would mis-bound a span and paint a wedge. Skip such rows instead of guessing.
+        if outer_x_world.len() % 2 != 0 {
+            continue;
+        }
         let row = &mut grid[gz];
         let mut i = 0;
         while i + 1 < outer_x_world.len() {

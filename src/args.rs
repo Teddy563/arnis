@@ -15,6 +15,16 @@ pub struct Args {
     #[arg(long, group = "location")]
     pub file: Option<String>,
 
+    /// Directory of OSM grid tiles (osm_g1_z{Z}_{X}_{Y}.json) to read the cell's tiles from DIRECTLY
+    /// instead of one merged --file. Meld fills this dir; Arnis computes the tiles overlapping --bbox,
+    /// loads + dedups them — so there is NO per-cell merge step. Mutually exclusive with --file.
+    #[arg(long = "osm-tile-dir", group = "location")]
+    pub osm_tile_dir: Option<String>,
+
+    /// Zoom of the OSM grid tiles in --osm-tile-dir (Meld's OSM_GRID_Z; default 11).
+    #[arg(long = "osm-tile-z", default_value_t = 11)]
+    pub osm_tile_z: u8,
+
     /// JSON file to save OSM data to (optional)
     #[arg(long, group = "location")]
     pub save_json_file: Option<String>,
@@ -81,6 +91,12 @@ pub struct Args {
     /// water, natural, terrain) - useful for a roads-and-ground-only world.
     #[arg(long = "no-buildings", visible_alias = "no-structures", default_value_t = true, action = ArgAction::SetFalse)]
     pub buildings: bool,
+
+    /// Pre-warm the Overture building cache for --bbox (fetch + cache the byte ranges) and exit,
+    /// before any world creation. Lets Meld download a region's Overture data once, up front, so the
+    /// later parallel cells read it from disk instead of each stalling on a cold fetch.
+    #[arg(long = "prewarm-overture", default_value_t = false)]
+    pub prewarm_overture: bool,
 
     /// Enable debug mode (optional)
     #[arg(long)]
@@ -244,6 +260,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     // Terrain-only just warms the elevation tile cache for --bbox; no world is created,
     // and --bbox is always parsed, so nothing else is required.
     if args.download_terrain_only {
+        return Ok(());
+    }
+
+    // Overture pre-warm just fetches + caches Overture ranges for --bbox; no world is created.
+    if args.prewarm_overture {
         return Ok(());
     }
 

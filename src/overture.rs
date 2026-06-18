@@ -20,6 +20,8 @@ use parquet::file::serialized_reader::SerializedFileReader;
 use parquet::record::Row;
 use reqwest::blocking::Client;
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -38,8 +40,15 @@ const OVERTURE_ID_HIGH_BIT: u64 = 0x8000_0000_0000_0000;
 /// Maximum number of Overture buildings to add (safety limit for huge areas)
 const MAX_OVERTURE_BUILDINGS: usize = 100_000;
 
-/// HTTP client timeout for Overture data fetching
-const HTTP_TIMEOUT_SECS: u64 = 120;
+/// HTTP client timeout for Overture data fetching. Kept short: every request is now a small range
+/// read (footer or one row group), so a healthy fetch is sub-second; a stalled/dead connection should
+/// fail fast and let that row group be skipped rather than hang the cell.
+const HTTP_TIMEOUT_SECS: u64 = 30;
+
+/// Disk cache folder for Overture data (under ARNIS_CACHE_ROOT, alongside terrain/landcover/OSM).
+const OVERTURE_CACHE_DIR: &str = "arnis-overture-cache";
+/// Re-download the cached STAC index after this many seconds (Overture publishes ~monthly).
+const STAC_INDEX_TTL_SECS: u64 = 7 * 24 * 3600;
 
 // ─── Internal data types ─────────────────────────────────────────────────
 
@@ -311,18 +320,36 @@ fn list_partition_files(
     bbox: &LLBBox,
     debug: bool,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    // Resolve the current release dynamically; old releases are retired and 404.
-    let stac_url = resolve_stac_url(client);
-    let response = client.get(&stac_url).send()?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "STAC catalog download failed with status {} (url: {stac_url})",
-            response.status()
-        )
-        .into());
-    }
-
-    let stac_bytes = response.bytes()?;
+    // Cache the STAC index (collections.parquet, ~230 KB) on disk: every cell of a region needs the
+    // SAME index, so download it once (refresh weekly) instead of once per cell, and skip the
+    // /catalog.json resolve too when the cached copy is fresh.
+    let idx_path = get_overture_cache_dir().join("stac_index.parquet");
+    let fresh = file_age_secs(&idx_path)
+        .map(|a| a < STAC_INDEX_TTL_SECS)
+        .unwrap_or(false);
+    let stac_bytes: bytes::Bytes = if fresh {
+        bytes::Bytes::from(fs::read(&idx_path)?)
+    } else {
+        // Resolve the current release dynamically; old releases are retired and 404.
+        let stac_url = resolve_stac_url(client);
+        let response = client.get(&stac_url).send()?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "STAC catalog download failed with status {} (url: {stac_url})",
+                response.status()
+            )
+            .into());
+        }
+        let b = response.bytes()?;
+        if let Some(parent) = idx_path.parent() {
+            let _ = fs::create_dir_all(parent);
+            let tmp = idx_path.with_extension(format!("{}.tmp", std::process::id()));
+            if fs::write(&tmp, &b).is_ok() {
+                let _ = fs::rename(&tmp, &idx_path); // atomic publish
+            }
+        }
+        b
+    };
     let reader = SerializedFileReader::new(stac_bytes)?;
 
     let target_min_lng = bbox.min().lng();
@@ -450,18 +477,11 @@ fn process_partition_file(
     bbox: &LLBBox,
     debug: bool,
 ) -> Result<Vec<OvertureBuilding>, Box<dyn std::error::Error>> {
-    // Step 1: Get file size via HEAD request
-    let head_resp = client.head(url).send()?;
-    if !head_resp.status().is_success() {
-        return Err(format!("HEAD request failed: {}", head_resp.status()).into());
-    }
-
-    let file_size: u64 = head_resp
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .ok_or("Missing Content-Length header")?;
+    // Step 1: file size — cached per partition (one HEAD, then a sidecar). Every range read below goes
+    // through the per-RANGE cache (fetch_range_cached): only the bytes this cell uses are fetched, and
+    // they are reused by every later cell. No whole-partition download, no lock — so a slow/dead link
+    // can never freeze the build.
+    let file_size: u64 = partition_size_cached(client, url)?;
 
     if file_size < 12 {
         return Err("File too small to be valid Parquet".into());
@@ -470,7 +490,7 @@ fn process_partition_file(
     // Step 2: Read the Parquet footer.
     // Parquet files end with: [footer bytes] [4-byte footer length (LE)] [4-byte magic "PAR1"]
     // First, read the last 8 bytes to get the footer length.
-    let tail = fetch_range(client, url, file_size - 8, 8)?;
+    let tail = fetch_range_cached(client, url, file_size - 8, 8)?;
     if tail.len() < 8 {
         return Err(format!(
             "Truncated Parquet tail: expected 8 bytes, got {}",
@@ -489,7 +509,7 @@ fn process_partition_file(
 
     // Read the footer bytes
     let footer_start = file_size - 8 - footer_len;
-    let footer_bytes = fetch_range(client, url, footer_start, footer_len)?;
+    let footer_bytes = fetch_range_cached(client, url, footer_start, footer_len)?;
 
     // Parse the footer using the parquet crate
     let metadata = parquet::file::metadata::ParquetMetaDataReader::decode_metadata(&footer_bytes)?;
@@ -523,7 +543,7 @@ fn process_partition_file(
     let mut downloaded_bytes: u64 = footer_len + 8;
     for &rg_idx in &matching_groups {
         let (rg_offset, rg_len) = row_group_byte_range(&metadata, rg_idx);
-        match fetch_range(client, url, rg_offset, rg_len) {
+        match fetch_range_cached(client, url, rg_offset, rg_len) {
             Ok(rg_data) => {
                 downloaded_bytes += rg_len;
                 sparse.add_range(rg_offset, bytes::Bytes::from(rg_data));
@@ -1387,6 +1407,103 @@ fn row_group_byte_range(metadata: &ParquetMetaData, rg_idx: usize) -> (u64, u64)
 }
 
 /// Fetch a byte range from a URL via HTTP Range request.
+/// Cache root for Overture data: ARNIS_CACHE_ROOT (set by Meld) wins so it lives in the shared
+/// project-local cache next to terrain/landcover/OSM; else the OS cache dir.
+fn get_overture_cache_dir() -> PathBuf {
+    if let Some(root) = std::env::var_os("ARNIS_CACHE_ROOT") {
+        if !root.is_empty() {
+            return PathBuf::from(root).join(OVERTURE_CACHE_DIR);
+        }
+    }
+    if let Some(c) = dirs::cache_dir() {
+        c.join(OVERTURE_CACHE_DIR)
+    } else {
+        PathBuf::from(format!("./{OVERTURE_CACHE_DIR}"))
+    }
+}
+
+/// Stable short id for a URL, used as a cache filename.
+fn url_hash(url: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+/// Seconds since a file was last modified, if it exists.
+fn file_age_secs(p: &Path) -> Option<u64> {
+    fs::metadata(p)
+        .ok()?
+        .modified()
+        .ok()?
+        .elapsed()
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+/// Cached size of a partition: one HEAD per partition, then served from a tiny sidecar so every later
+/// cell skips that round trip.
+fn partition_size_cached(client: &Client, url: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    let path = get_overture_cache_dir()
+        .join("ranges")
+        .join(format!("{}.size", url_hash(url)));
+    if let Ok(s) = fs::read_to_string(&path) {
+        if let Ok(n) = s.trim().parse::<u64>() {
+            if n >= 12 {
+                return Ok(n);
+            }
+        }
+    }
+    let head = client.head(url).send()?;
+    if !head.status().is_success() {
+        return Err(format!("HEAD request failed: {}", head.status()).into());
+    }
+    let size: u64 = head
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+        .ok_or("Missing Content-Length header")?;
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+        let _ = fs::write(&path, size.to_string());
+    }
+    Ok(size)
+}
+
+/// Read a byte range, served from a small per-RANGE cache file when present, else ONE HTTP Range
+/// request that is then cached. Keyed by (url, offset, length): a parquet footer or row group has a
+/// FIXED byte range, so every cell that needs it after the first reads it from local disk.
+///
+/// This replaced an earlier version that downloaded the whole ~580 MB partition under a
+/// global `.lock`, so on a slow link one stalled download froze the entire build (every cell polled the
+/// lock). The per-range cache instead downloads ONLY the few MB a cell actually uses, uses NO lock, and
+/// because each range goes through the client's request timeout, a dead connection just times out
+/// and that one row group is skipped, never stalling the build. Concurrent identical fetches race
+/// harmlessly (atomic publish, last writer wins).
+fn fetch_range_cached(
+    client: &Client,
+    url: &str,
+    start: u64,
+    length: u64,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let dir = get_overture_cache_dir().join("ranges");
+    let path = dir.join(format!("{}_{}_{}.bin", url_hash(url), start, length));
+    if let Ok(b) = fs::read(&path) {
+        if b.len() as u64 == length {
+            return Ok(b); // valid cached range
+        }
+    }
+    let data = fetch_range(client, url, start, length)?;
+    if fs::create_dir_all(&dir).is_ok() {
+        let tmp = path.with_extension(format!("{}.{}.tmp", std::process::id(), start));
+        if fs::write(&tmp, &data).is_ok() {
+            let _ = fs::rename(&tmp, &path); // atomic publish
+        }
+    }
+    Ok(data)
+}
+
 fn fetch_range(
     client: &Client,
     url: &str,

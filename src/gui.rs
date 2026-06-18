@@ -1097,6 +1097,8 @@ fn gui_start_generation(
             let args: Args = Args {
                 bbox,
                 file: None,
+                osm_tile_dir: None,
+                osm_tile_z: 11,
                 save_json_file: None,
                 path: Some(if world_format == WorldFormat::JavaAnvil {
                     generation_path.clone()
@@ -1113,6 +1115,7 @@ fn gui_start_generation(
                 interior: interior_enabled,
                 roof: roof_enabled,
                 buildings: buildings_enabled,
+                prewarm_overture: false,
                 fillground: fillground_enabled,
                 land_cover: land_cover_enabled,
                 use_3d: use_3d_enabled,

@@ -6,6 +6,8 @@ use crate::progress::emit_gui_progress_update;
 use colored::Colorize;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::BufReader;
 use std::sync::Arc;
 
 // Tags Arnis never reads. Filtered at parse time to save memory.
@@ -101,6 +103,78 @@ impl OsmData {
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
+
+    /// Load OSM directly from Meld's stable slippy-tile grid cache instead of a
+    /// single merged `--file`. Computes the z`zoom` tiles overlapping `bbox`,
+    /// reads each `osm_g1_z{zoom}_{x}_{y}.json`, and concats + dedups elements by
+    /// (type, id) — producing the exact same OsmData a pre-merged clump file would,
+    /// with NO per-cell merge step on Meld's side. Missing tiles are skipped
+    /// (so an un-baked edge tile just contributes nothing, same as a sparse clump).
+    pub fn from_tile_dir(
+        dir: &str,
+        bbox: LLBBox,
+        zoom: u8,
+    ) -> Result<OsmData, Box<dyn std::error::Error>> {
+        println!("{} Loading OSM grid tiles from dir...", "[1/7]".bold());
+        emit_gui_progress_update(1.0, "Loading OSM grid tiles...");
+
+        let (xa, ya) = slippy_tile(bbox.max().lat(), bbox.min().lng(), zoom); // NW corner
+        let (xb, yb) = slippy_tile(bbox.min().lat(), bbox.max().lng(), zoom); // SE corner
+        let (xlo, xhi) = (xa.min(xb), xa.max(xb));
+        let (ylo, yhi) = (ya.min(yb), ya.max(yb));
+
+        let mut seen: HashSet<(String, u64)> = HashSet::new();
+        let mut elements: Vec<OsmElement> = Vec::new();
+        let (mut tiles_read, mut tiles_missing) = (0u32, 0u32);
+
+        for x in xlo..=xhi {
+            for y in ylo..=yhi {
+                let path = format!("{dir}/osm_g1_z{zoom}_{x}_{y}.json");
+                let file = match File::open(&path) {
+                    Ok(f) => f,
+                    Err(_) => {
+                        tiles_missing += 1;
+                        continue;
+                    }
+                };
+                let mut de = serde_json::Deserializer::from_reader(BufReader::new(file));
+                let data = match OsmData::deserialize(&mut de) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("  [osm-tile-dir] skip unreadable tile {path}: {e}");
+                        continue;
+                    }
+                };
+                tiles_read += 1;
+                for el in data.elements {
+                    if seen.insert((el.r#type.clone(), el.id)) {
+                        elements.push(el);
+                    }
+                }
+            }
+        }
+
+        println!(
+            "  [osm-tile-dir] {tiles_read} tile(s) read, {tiles_missing} missing → {} unique element(s)",
+            elements.len()
+        );
+        Ok(OsmData {
+            elements,
+            remark: None,
+        })
+    }
+}
+
+/// Standard web-mercator slippy-tile index for (lat, lon) at `zoom`, matching
+/// Meld's `survey._lat_lng_to_tile` (and so the filenames it writes). Clamped to
+/// the valid `[0, 2^zoom)` tile range.
+fn slippy_tile(lat: f64, lon: f64, zoom: u8) -> (i64, i64) {
+    let n = 2f64.powi(zoom as i32);
+    let x = ((lon + 180.0) / 360.0 * n).floor() as i64;
+    let lat_rad = lat.to_radians();
+    let y = ((1.0 - lat_rad.tan().asinh() / std::f64::consts::PI) / 2.0 * n).floor() as i64;
+    let max_idx = n as i64 - 1;
+    (x.clamp(0, max_idx), y.clamp(0, max_idx))
 }
 
 struct SplitOsmData {

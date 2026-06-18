@@ -77,6 +77,26 @@ pub fn clip_water_ring_to_bbox(
         return None;
     }
 
+    // A water RING must already be a closed loop. A fragment left OPEN by ring assembly —
+    // typically because a multipolygon relation's member way wasn't loaded (its grid tile is
+    // outside the cell's covering set under --osm-tile-dir) — must NOT be filled: the
+    // "ensure closed" step below implicitly connects last->first with a CHORD, so the
+    // Sutherland-Hodgman clip turns a broken fragment into a chord-closed polygon that the
+    // downstream closure guards (verify_closed_rings / is_ring_closed) then accept and flood
+    // as a straight-edged triangle/rectangle water wedge. Drop the open fragment here instead
+    // (its sibling rings that ARE closed still render — partial water, never a wedge). Closure
+    // matches merge_way_segments: same node id, or endpoints within one block.
+    if ring.len() < 3 {
+        return None;
+    }
+    let first = &ring[0];
+    let last = &ring[ring.len() - 1];
+    let ring_closed =
+        first.id == last.id || ((first.x - last.x).abs() <= 1 && (first.z - last.z).abs() <= 1);
+    if !ring_closed {
+        return None;
+    }
+
     let min_x = xzbbox.min_x() as f64;
     let min_z = xzbbox.min_z() as f64;
     let max_x = xzbbox.max_x() as f64;

@@ -4,6 +4,24 @@ All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https
 
 Starting with this release the fork tracks the upstream Arnis version number (2.9.0); earlier entries used an internal 1.8.x sequence.
 
+## [2.9.1] - 2026-06-18
+
+A maintenance release on top of 2.9.0. It lets a Meld orchestrator feed each cell its own slice of a shared OSM tile cache directly (no per-cell merge step), removes a water rendering artifact that could flood a triangle of a cell, and makes the Overture building fetch skip work it does not need.
+
+### Added
+
+- **`--osm-tile-dir <DIR>` plus `--osm-tile-z <Z>` (tile mode).** Reads OSM for `--bbox` straight from a directory of stable web mercator grid tiles (`osm_g1_z{Z}_{X}_{Y}.json`, default Z 11) instead of one merged `--file`. Arnis computes the tiles that overlap `--bbox`, loads each, and de-duplicates elements by (type, id), so an orchestrator can fill the directory once and hand the same directory to every cell with zero per-cell assembly. Mutually exclusive with `--file`; a missing tile is skipped. Usage: `arnis --output-dir ./world --bbox <cell-bbox> --osm-tile-dir ./cache/osm --osm-tile-z 11`.
+- **`--prewarm-overture`.** Fetches and caches the Overture building partitions and STAC index for `--bbox`, then exits, so later parallel cells read the buildings from disk instead of each refetching them. Requires only `--bbox`. Usage: `arnis --bbox <region-bbox> --prewarm-overture`.
+
+### Fixed
+
+- **Triangle and rectangle water floods (the "wedge").** A water multipolygon whose member ways were not all present (for example a lake that extends beyond the loaded tiles) left its outer ring open. The bbox clip then closed that open ring with a straight chord and the scanline fill flooded the whole side of it with water, drawing a hard diagonal edge across the cell. `clip_water_ring_to_bbox` now rejects an open input ring (first node not matching last by id or within one block) and returns nothing, so a broken outline is dropped rather than closed with a fake edge. Sibling rings that are properly closed still render, so legitimate water is preserved. Verified on real data: a wedge cell dropped from 135,600 to 4,555 water blocks (triangle gone, real river kept) while a clean river cell was byte identical.
+
+### Changed / Engine
+
+- **Overture buildings gated on `--no-buildings`.** The Overture Maps building fetch and render now run only when buildings are enabled, so a `--no-buildings` run no longer downloads building partitions it will not use (measured: a roads-and-ground cell dropped from about 28.8 s to about 4.2 s).
+- **Overture disk cache.** The STAC index is cached locally with a 7 day TTL, and per request byte ranges are cached under the Arnis cache root, so repeated cells over an area read the buildings from disk with no extra network. The earlier full partition lock that could stall a whole batch on one slow download was removed.
+
 ## [2.9.0] - 2026-06-16
 
 A fork of louis-e/arnis 2.9.0 tuned for large parallel "Meld" generation: one orchestrator slices a region into many adjacent cells and bakes them into a single Minecraft world. This release pulls the fork up to the upstream 2.9.0 line (53 merged commits, in-process tile parallelization, stream-to-disk eviction) and adds the cross-tile machinery (shared origin, global elevation band, seam-free buildings, parallel-safe terrain fetch) that keeps those cells lining up block for block.
