@@ -34,6 +34,12 @@ pub struct Args {
     #[arg(long = "output-dir", alias = "path")]
     pub path: Option<PathBuf>,
 
+    /// Directory of tree schematic packs (.schem, grouped by species sub-folder) to
+    /// stamp instead of procedural trees. Optional; unset keeps procedural trees.
+    /// Lets anyone drop in their own tree pack later without a rebuild.
+    #[arg(long = "tree-pack", value_name = "DIR")]
+    pub tree_pack: Option<PathBuf>,
+
     /// Generate a Bedrock Edition world (.mcworld) instead of Java Edition
     #[arg(long)]
     pub bedrock: bool,

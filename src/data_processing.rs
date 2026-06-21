@@ -306,6 +306,15 @@ pub fn generate_world_with_options(
     let ground = Arc::new(ground);
     let mut bench = crate::bench::Bench::new(args.benchmark);
 
+    // Optional tree schematic pack: load + report the size breakdown (the UI numbers).
+    // Placement is wired in a later step; for now this validates the pack and surfaces stats.
+    if let Some(pack) = &args.tree_pack {
+        match crate::tree_library::TreeLibrary::load(pack) {
+            Ok(lib) => lib.report(),
+            Err(e) => eprintln!("Warning: {e}"),
+        }
+    }
+
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
     let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox, args.scale);
 

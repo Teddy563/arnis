@@ -1105,6 +1105,7 @@ fn gui_start_generation(
                 } else {
                     world_path
                 }),
+                tree_pack: None,
                 bedrock: world_format == WorldFormat::BedrockMcWorld,
                 luanti: world_format == WorldFormat::LuantiWorld,
                 downloader: "requests".to_string(),

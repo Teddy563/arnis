@@ -33,11 +33,13 @@ mod overture;
 mod progress;
 mod projection;
 mod retrieve_data;
+mod schematic;
 #[cfg(feature = "gui")]
 mod telemetry;
 #[cfg(test)]
 mod test_utilities;
 mod tile;
+mod tree_library;
 mod version_check;
 mod water_depth;
 mod world_editor;
