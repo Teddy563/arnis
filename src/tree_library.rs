@@ -1,7 +1,7 @@
 #![allow(dead_code)] // entries/index/candidates consumed by tree placement in a later step.
 //! Tree schematic library. Loads a `--tree-pack` directory of Sponge `.schem` files
 //! (grouped by species sub-folder), buckets each tree by height into small/medium/big,
-//! and applies the curation discard list (pale garden, tall pines, giant mushrooms).
+//! and applies the curation discard list (pale garden + giant mushrooms only).
 //! Exposes a total + size breakdown for the UI.
 
 use std::collections::HashMap;
@@ -75,19 +75,19 @@ pub struct TreeLibrary {
     index: HashMap<(String, TreeSize), Vec<usize>>,
 }
 
-/// True if a (folder, file stem) should be skipped by curation.
-fn is_discarded(folder: &str, file_stem: &str) -> bool {
+/// True if a (folder, file stem) should be skipped by curation. Drops ONLY the pale garden
+/// (pale-oak trees) and giant mushrooms; everything else is used, including the tall pines
+/// (the earlier `pinus` exclusion was reverted so high-elevation conifers are available).
+fn is_discarded(folder: &str, _file_stem: &str) -> bool {
     let f = folder.to_ascii_lowercase();
-    let s = file_stem.to_ascii_lowercase();
     f.contains("pale") // pale garden (pale oak)
         || f.contains("mushroom") // giant mushrooms
-        || s.contains("pinus") // tall old-growth pines (keep spruce / Picea)
 }
 
 /// Normalise a species folder name to a stable key.
 fn species_key(folder: &str) -> String {
     match folder.trim().to_ascii_lowercase().as_str() {
-        "taiga" => "spruce".to_string(), // taiga keeps Picea (spruce); Pinus discarded
+        "taiga" => "spruce".to_string(), // taiga = conifers (Picea + Pinus) -> spruce bucket
         "swamp" => "swamp_oak".to_string(),
         other => other.replace(' ', "_"),
     }
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn curation_discards() {
         assert!(is_discarded("pale oak", "Quercus_alba1"));
-        assert!(is_discarded("taiga", "Pinus_piceoides3")); // tall pine
+        assert!(!is_discarded("taiga", "Pinus_piceoides3")); // tall pine now KEPT
         assert!(!is_discarded("taiga", "Picea_generica1")); // spruce kept
         assert!(!is_discarded("oak", "Quercus_generica1"));
         assert!(is_discarded("giant mushrooms", "x"));

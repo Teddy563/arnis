@@ -503,16 +503,40 @@ impl Tree {
         // schematic inherits Arnis's exact coverage and avoidance; the blacklist keeps it from
         // cutting buildings/water.
         if let Some((lib, scale)) = SCHEMATIC_PACK.get() {
+            // Snap to the trunk-spacing slot so wide schematic trees never touch trunks
+            // (>= 1 block gap), and seed every pick on the slot so all Arnis spawns inside the
+            // same cell collapse to the identical tree (idempotent, seam-safe).
+            let (sx, sz) = crate::schematic::trunk_slot(x, z);
+            // The slot can be up to ~2 blocks from (x,z); re-check it is not on a road/water
+            // surface (the top-of-function check ran at the un-snapped point).
+            if editor.check_for_block(
+                sx,
+                0,
+                sz,
+                Some(&[
+                    BLACK_CONCRETE,
+                    GRAY_CONCRETE_POWDER,
+                    CYAN_TERRACOTTA,
+                    GRAY_CONCRETE,
+                    LIGHT_GRAY_CONCRETE,
+                    DIRT_PATH,
+                    SMOOTH_STONE,
+                    WATER,
+                ]),
+            ) {
+                return;
+            }
+            let slot_base_y = editor.get_absolute_y(sx, y, sz);
             let species = species_for_tree_type(tree_type);
-            let size = crate::tree_library::pick_size(x, z, *scale);
-            if let Some(idx) = lib.pick_variant(species, size, x, z) {
-                let rot = (crate::land_cover::coord_hash(x ^ 0x5bd1, z ^ 0x9e37) % 4) as u8;
+            let size = crate::tree_library::pick_size(sx, sz, *scale);
+            if let Some(idx) = lib.pick_variant(species, size, sx, sz) {
+                let rot = (crate::land_cover::coord_hash(sx ^ 0x5bd1, sz ^ 0x9e37) % 4) as u8;
                 crate::schematic::place_schematic_tree(
                     editor,
                     &lib.entries[idx].schem,
-                    x,
-                    z,
-                    base_y,
+                    sx,
+                    sz,
+                    slot_base_y,
                     rot,
                     &blacklist,
                     building_footprints,

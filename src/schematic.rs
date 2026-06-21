@@ -52,6 +52,35 @@ pub fn map_block(name: &str) -> Option<Block> {
         "cherry_leaves" => CHERRY_LEAVES,
         "mangrove_leaves" => MANGROVE_LEAVES,
         "azalea_leaves" | "flowering_azalea_leaves" => AZALEA_LEAVES,
+        // Stripped trunks: the regional schems use stripped logs as trunk wood. We have no
+        // stripped block ids, so fall back to the matching base log (fills the trunk; the
+        // bark/strip tint is lost). Remapping here keeps trunks solid instead of holed.
+        "stripped_oak_log" | "stripped_oak_wood" => OAK_LOG,
+        "stripped_birch_log" | "stripped_birch_wood" => BIRCH_LOG,
+        "stripped_spruce_log" | "stripped_spruce_wood" => SPRUCE_LOG,
+        "stripped_dark_oak_log" | "stripped_dark_oak_wood" => DARK_OAK_LOG,
+        "stripped_jungle_log" | "stripped_jungle_wood" => JUNGLE_LOG,
+        "stripped_acacia_log" | "stripped_acacia_wood" => ACACIA_LOG,
+        "stripped_cherry_log" | "stripped_cherry_wood" => CHERRY_LOG,
+        "stripped_mangrove_log" | "stripped_mangrove_wood" => MANGROVE_LOG,
+        // Pale-oak wood is used as a pale trunk/foliage in real regional trees (baobab,
+        // eucalyptus, birch-likes), NOT the pale garden. The pale-garden *trees* are excluded
+        // at the file level (curation); the pale *blocks* map to the palest stand-ins we have.
+        "pale_oak_log" | "pale_oak_wood" | "stripped_pale_oak_log" | "stripped_pale_oak_wood" => {
+            BIRCH_LOG
+        }
+        "pale_oak_leaves" => BIRCH_LEAVES,
+        // Mangrove prop-roots / propagules.
+        "mangrove_roots" | "muddy_mangrove_roots" => MANGROVE_LOG,
+        "mangrove_propagule" => MANGROVE_LEAVES,
+        // Bamboo clusters: no bamboo id, use the closest woody stand-in.
+        "bamboo_block" | "stripped_bamboo_block" => JUNGLE_LOG,
+        // Rare warped trunks (a few desert/exotic schems) -> dark trunk stand-in.
+        "warped_stem" | "stripped_warped_stem" | "warped_hyphae" | "stripped_warped_hyphae" => {
+            SPRUCE_LOG
+        }
+        // Everything else (air, ground cover, vines, cocoa, fences, and the pale-garden markers
+        // creaking_heart / eyeblossom / pale_moss / pale_hanging_moss) is intentionally dropped.
         _ => return None,
     };
     Some(block)
@@ -187,6 +216,22 @@ pub fn rotate_xz(x: i32, z: i32, w: i32, l: i32, k: u8) -> (i32, i32) {
     }
 }
 
+/// Trunk-spacing grid. Snap `(x, z)` to the single designated trunk slot of its 3-block cell.
+/// Every tree Arnis tries to spawn inside a cell collapses onto that one slot, so wide schematic
+/// trees never stack trunks: at most one trunk per cell and any two trunks stay >= 1 empty block
+/// apart (canopies still overlap, so a forest still closes). The jitter is restricted to `{0,1}`
+/// so neighbouring slots stay >= 2 blocks apart. Pure function of `(x, z)` => identical from any
+/// tile, so it never introduces a seam.
+pub fn trunk_slot(x: i32, z: i32) -> (i32, i32) {
+    const S: i32 = 3;
+    let cx = x.div_euclid(S);
+    let cz = z.div_euclid(S);
+    let h = crate::land_cover::coord_hash(cx.wrapping_mul(0x1f1f) + 17, cz.wrapping_mul(0x2b2b) + 91);
+    let jx = (h & 1) as i32;
+    let jz = ((h >> 1) & 1) as i32;
+    (cx * S + jx, cz * S + jz)
+}
+
 /// Stamp a schematic into the world with its footprint centred on `(anchor_x, anchor_z)`,
 /// the base row (`y = 0`) at `base_y`, rotated by `rot` quarter-turns. Writes only into
 /// AIR via place-if-absent, so it never overwrites buildings, roads, water, or terrain;
@@ -264,17 +309,42 @@ mod tests {
         assert!(map_block("minecraft:spruce_leaves[distance=7,persistent=false]").is_some());
         assert!(map_block("oak_wood").is_some());
         assert!(map_block("minecraft:flowering_azalea_leaves").is_some());
+        // Regional trunk vocabulary now maps to stand-ins instead of leaving holes.
+        assert!(map_block("minecraft:stripped_jungle_log").is_some());
+        assert!(map_block("minecraft:pale_oak_log").is_some()); // pale *wood* in real trees
+        assert!(map_block("minecraft:mangrove_roots").is_some());
+        assert!(map_block("minecraft:bamboo_block").is_some());
     }
 
     #[test]
     fn block_mapping_drops_unwanted() {
         assert!(map_block("minecraft:air").is_none());
-        assert!(map_block("minecraft:pale_oak_log").is_none());
+        // Pale-garden *markers* are still dropped (only the pale wood blocks remap).
         assert!(map_block("minecraft:creaking_heart").is_none());
         assert!(map_block("minecraft:open_eyeblossom").is_none());
+        assert!(map_block("minecraft:pale_hanging_moss").is_none());
         assert!(map_block("minecraft:short_grass").is_none());
         assert!(map_block("minecraft:vine").is_none());
         assert!(map_block("minecraft:cocoa[age=2]").is_none());
+    }
+
+    #[test]
+    fn trunk_slots_stay_at_least_one_block_apart() {
+        // Collect the distinct slots over a patch and assert no two are within 1 block
+        // (Chebyshev) of each other -> trunks always have a >= 1 block gap.
+        let mut slots = std::collections::HashSet::new();
+        for x in -30..30 {
+            for z in -30..30 {
+                slots.insert(trunk_slot(x, z));
+            }
+        }
+        let v: Vec<(i32, i32)> = slots.into_iter().collect();
+        for i in 0..v.len() {
+            for j in (i + 1)..v.len() {
+                let (dx, dz) = ((v[i].0 - v[j].0).abs(), (v[i].1 - v[j].1).abs());
+                assert!(dx.max(dz) >= 2, "slots {:?} and {:?} touch", v[i], v[j]);
+            }
+        }
     }
 
     #[test]
