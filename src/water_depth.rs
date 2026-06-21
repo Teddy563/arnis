@@ -36,6 +36,15 @@ const PUDDLE_DT_THRESHOLD: u8 = 9;
 /// A 5x5 cell body (~25 m^2 at ESA 10 m/cell) is a puddle by any sane def.
 const PUDDLE_CELL_THRESHOLD: usize = 25;
 
+/// Scale below which the per-body bowl model replaces the tiered/sqrt depth, so that
+/// narrow, few-block-wide rivers and pools still carve instead of rendering flat.
+/// At or above this scale the original model runs unchanged (byte-identical).
+const SMALL_SCALE_THRESHOLD: f64 = 0.5;
+
+/// Small-scale carve cap, in blocks. The bowl tops out here; kept under
+/// `MAX_WATER_DEPTH` so the carve clamp and debug-assert always hold.
+const SMALL_SCALE_MAX_DEPTH: i32 = 5;
+
 #[inline]
 fn nibble_get(buf: &[u8], i: usize) -> u8 {
     let byte = buf[i >> 1];
@@ -124,7 +133,7 @@ pub(crate) fn grid_span_to_block_span(
 }
 
 /// Run a chamfer DT over the LC_WATER mask and bake per-cell carve depth.
-pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterField {
+pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox, scale: f64) -> BigWaterField {
     let min_x = xzbbox.min_x();
     let max_x = xzbbox.max_x();
     let min_z = xzbbox.min_z();
@@ -171,6 +180,13 @@ pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterFiel
     let mut depth = vec![0u8; total.div_ceil(2)];
     let mut visited = vec![0u64; total.div_ceil(64)];
     let mut comp: Vec<u32> = Vec::new();
+    // Small-scale maps shrink real rivers/lakes to a few blocks; relax the puddle
+    // gate so narrow bodies still carve instead of being dropped as puddles.
+    let (puddle_dt, puddle_cells) = if scale < SMALL_SCALE_THRESHOLD {
+        (3u8, 8usize)
+    } else {
+        (PUDDLE_DT_THRESHOLD, PUDDLE_CELL_THRESHOLD)
+    };
     for start in 0..total {
         if dt[start] == 0 || bit_get(&visited, start) {
             continue;
@@ -209,7 +225,7 @@ pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterFiel
         // shoal-band reach OR whose cell count is tiny stay surface-only
         // (depth nibbles stay 0; carve_water_column paints the WATER+SAND
         // shoal stack with no carve below water_y).
-        if comp_max < PUDDLE_DT_THRESHOLD || comp.len() < PUDDLE_CELL_THRESHOLD {
+        if comp_max < puddle_dt || comp.len() < puddle_cells {
             continue;
         }
         let cm = u16::from(comp_max);
@@ -217,7 +233,7 @@ pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterFiel
             let idx = c as usize;
             let x = smin_x + (idx % sw) as i32;
             let z = smin_z + (idx / sw) as i32;
-            let d = ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm);
+            let d = ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm, scale);
             nibble_set(&mut depth, idx, d as u8);
         }
     }
@@ -323,12 +339,53 @@ fn depth_from_dt(dt_eff: f64, component_max_units: u16) -> i32 {
 }
 
 /// Per-cell carve depth, with deterministic contour wobble on the bank lines.
-fn ocean_depth_for_cell(x: i32, z: i32, dt_units: u16, component_max_units: u16) -> i32 {
+fn ocean_depth_for_cell(
+    x: i32,
+    z: i32,
+    dt_units: u16,
+    component_max_units: u16,
+    scale: f64,
+) -> i32 {
     if dt_units == 0 {
         return 0;
     }
+    if scale < SMALL_SCALE_THRESHOLD {
+        return bowl_depth_small_scale(x, z, dt_units, component_max_units, scale);
+    }
     let wobble = (crate::ground_generation::value_noise_01(x, z, 12) - 0.5) * 4.0;
     depth_from_dt(f64::from(dt_units) + wobble, component_max_units)
+}
+
+/// Linear unit-step "bowl" step count from a (block) distance-from-shore and a body
+/// half-width, both in blocks. Depth rises one block per inward block past the shoal,
+/// and `target_max` is capped by the horizontal run so the bank can never need to
+/// climb more than one block per block (no cliffs). Capped at `SMALL_SCALE_MAX_DEPTH`.
+fn bowl_steps(d_blocks: f64, hw_blocks: f64) -> i32 {
+    const SHOAL_BLOCKS: f64 = 1.0;
+    let run = (hw_blocks - SHOAL_BLOCKS).max(0.0);
+    let target_max =
+        (((hw_blocks * 0.7).round()).min(run.floor()) as i32).clamp(0, SMALL_SCALE_MAX_DEPTH);
+    let steps = (d_blocks - SHOAL_BLOCKS).floor() as i32;
+    steps.clamp(0, target_max)
+}
+
+/// Small-scale (`scale` < `SMALL_SCALE_THRESHOLD`) per-cell carve depth: a linear
+/// unit-step bowl keyed to each water body's own half-width, so narrow rivers and
+/// pools carve a sloped channel instead of rendering flat. The bank meander wobble is
+/// scaled down so it never dominates a body that is only a few blocks wide.
+fn bowl_depth_small_scale(
+    x: i32,
+    z: i32,
+    dt_units: u16,
+    component_max_units: u16,
+    scale: f64,
+) -> i32 {
+    let s = scale.min(1.0);
+    let wl = (12.0 / s).round().max(12.0) as i32;
+    let wobble = (crate::ground_generation::value_noise_01(x, z, wl) - 0.5) * (4.0 * s);
+    let d_blocks = (f64::from(dt_units) + wobble) / 3.0;
+    let hw_blocks = f64::from(component_max_units) / 3.0;
+    bowl_steps(d_blocks, hw_blocks)
 }
 
 /// Safe upper bound on a map's deepest carve, from the pre-repair water mask.
@@ -336,6 +393,7 @@ pub fn estimate_max_carve_depth(
     lc_grid: &[Vec<u8>],
     world_width: usize,
     world_height: usize,
+    scale: f64,
 ) -> i32 {
     let gh = lc_grid.len();
     let gw = lc_grid.first().map_or(0, Vec::len);
@@ -354,6 +412,11 @@ pub fn estimate_max_carve_depth(
     }
     if !any_water {
         return 0;
+    }
+    // Small-scale uses the bowl model (cap SMALL_SCALE_MAX_DEPTH); return that as the
+    // upper bound so the reserved world floor always covers the deepest carve.
+    if scale < SMALL_SCALE_THRESHOLD {
+        return SMALL_SCALE_MAX_DEPTH;
     }
     chamfer_3_4_dt(&mut dt, gw, gh);
     let grid_max_dt = dt.iter().copied().max().unwrap_or(0);
@@ -881,28 +944,63 @@ mod tests {
 
     #[test]
     fn depth_zero_inside_shoal_and_on_land() {
-        assert_eq!(ocean_depth_for_cell(0, 0, 0, 0), 0);
-        assert_eq!(ocean_depth_for_cell(10, 10, 3, 200), 0);
+        assert_eq!(ocean_depth_for_cell(0, 0, 0, 0, 1.0), 0);
+        assert_eq!(ocean_depth_for_cell(10, 10, 3, 200, 1.0), 0);
     }
 
     #[test]
     fn depth_clamps_to_tier_max() {
-        assert_eq!(ocean_depth_for_cell(5, 5, u16::from(DT_MAX), 200), 6);
+        assert_eq!(ocean_depth_for_cell(5, 5, u16::from(DT_MAX), 200, 1.0), 6);
         assert_eq!(polygon_local_max(10), 2);
         assert_eq!(polygon_local_max(60), 4);
         assert_eq!(polygon_local_max(100), 6);
     }
 
     #[test]
+    fn small_scale_bowl_no_cliff_and_capped() {
+        // 7-block-wide river: center DT 12 -> hw 4.0 blocks, target 3.
+        assert_eq!(bowl_steps(1.0, 4.0), 0, "shoal edge is flat");
+        assert_eq!(bowl_steps(2.0, 4.0), 1);
+        assert_eq!(bowl_steps(3.0, 4.0), 2);
+        assert_eq!(bowl_steps(4.0, 4.0), 3, "center reaches target");
+        // Wide body clamps to the small-scale cap.
+        assert_eq!(bowl_steps(100.0, 20.0), SMALL_SCALE_MAX_DEPTH);
+        // Adjacent integer distances never jump more than one block (no cliffs).
+        for d in 1..16 {
+            let a = bowl_steps(d as f64, 8.0);
+            let b = bowl_steps((d + 1) as f64, 8.0);
+            assert!((a - b).abs() <= 1, "cliff at d={d}: {a}->{b}");
+        }
+        // A narrow 3-block stream (center DT 6 -> hw 2.0) still carves, not flat.
+        assert_eq!(bowl_steps(1.0, 2.0), 0);
+        assert_eq!(
+            bowl_steps(2.0, 2.0),
+            1,
+            "3-wide stream carves a 1-deep notch"
+        );
+    }
+
+    #[test]
+    fn small_scale_estimate_returns_cap() {
+        let grid = vec![vec![LC_WATER; 32]; 32];
+        assert_eq!(
+            estimate_max_carve_depth(&grid, 32, 32, 0.2),
+            SMALL_SCALE_MAX_DEPTH
+        );
+        let empty = vec![vec![0u8; 16]; 16];
+        assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2), 0);
+    }
+
+    #[test]
     fn estimate_no_water_is_zero() {
         let grid = vec![vec![0u8; 16]; 16];
-        assert_eq!(estimate_max_carve_depth(&grid, 16, 16), 0);
+        assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0), 0);
     }
 
     #[test]
     fn estimate_large_open_water_reaches_max() {
         let grid = vec![vec![LC_WATER; 32]; 32];
-        assert_eq!(estimate_max_carve_depth(&grid, 32, 32), 6);
+        assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0), 6);
     }
 
     #[test]

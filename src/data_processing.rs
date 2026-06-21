@@ -307,7 +307,7 @@ pub fn generate_world_with_options(
     let mut bench = crate::bench::Bench::new(args.benchmark);
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
-    let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+    let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox, args.scale);
 
     println!("{} Processing data...", "[4/7]".bold());
 

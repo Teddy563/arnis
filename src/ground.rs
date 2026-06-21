@@ -122,7 +122,7 @@ impl Ground {
         let water_floor = match &land_cover {
             Some(lc) => {
                 let max_depth =
-                    crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h);
+                    crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h, scale);
                 ground_level.max(crate::world_editor::MIN_Y + max_depth + 2)
             }
             None => ground_level,
