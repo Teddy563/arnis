@@ -1,12 +1,37 @@
 use crate::block_definitions::*;
+use crate::coordinate_system::cartesian::XZPoint;
 use crate::deterministic_rng::coord_rng;
 use crate::floodfill_cache::BuildingFootprintBitmap;
+use crate::ground::Ground;
+use crate::land_cover::LC_WATER;
 use crate::world_editor::WorldEditor;
 use rand::Rng;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::region::{Habitat, RegionLibrary};
 use crate::tree_library::TreeLibrary;
+
+/// The ESA land-cover water mask (+ the master bbox origin it is indexed against). Set once per
+/// generation. Trees are skipped on `LC_WATER` cells so they never root where water will be carved
+/// later (the carve runs after tree placement). This is the canonical "is this a water cell" test;
+/// it lets us drop the old destructive sweep that stripped every leaf over water (which also ate
+/// the overhanging canopy of bank trees).
+static WATER_MASK: OnceLock<(Arc<Ground>, i32, i32)> = OnceLock::new();
+
+/// Provide the water mask (called once per generation from data_processing).
+pub fn set_water_mask(ground: Arc<Ground>, origin_x: i32, origin_z: i32) {
+    let _ = WATER_MASK.set((ground, origin_x, origin_z));
+}
+
+/// True if `(x, z)` is an ESA land-cover water cell (lake/river/ocean). False when no mask is set.
+fn in_water_mask(x: i32, z: i32) -> bool {
+    match WATER_MASK.get() {
+        Some((ground, ox, oz)) => {
+            ground.cover_class(XZPoint::new(x - ox, z - oz)) == LC_WATER
+        }
+        None => false,
+    }
+}
 
 type Coord = (i32, i32, i32);
 
@@ -483,6 +508,13 @@ impl Tree {
             }
         }
 
+        // Skip ESA water cells: the water carve runs after tree placement, so a tree placed on a
+        // water cell would end up rooted in the lake/river. Gating on the mask here means trees
+        // never root in water, so we no longer need to strip them back out over water.
+        if in_water_mask(x, z) {
+            return;
+        }
+
         // Skip road/path/water surfaces.
         if editor.check_for_block(
             x,
@@ -528,21 +560,23 @@ impl Tree {
         // spacing + road/water guard as the plain pack below.
         if let Some(region) = REGION_PACK.get() {
             let (sx, sz) = crate::schematic::trunk_slot(x, z);
-            if editor.check_for_block(
-                sx,
-                0,
-                sz,
-                Some(&[
-                    BLACK_CONCRETE,
-                    GRAY_CONCRETE_POWDER,
-                    CYAN_TERRACOTTA,
-                    GRAY_CONCRETE,
-                    LIGHT_GRAY_CONCRETE,
-                    DIRT_PATH,
-                    SMOOTH_STONE,
-                    WATER,
-                ]),
-            ) {
+            if in_water_mask(sx, sz)
+                || editor.check_for_block(
+                    sx,
+                    0,
+                    sz,
+                    Some(&[
+                        BLACK_CONCRETE,
+                        GRAY_CONCRETE_POWDER,
+                        CYAN_TERRACOTTA,
+                        GRAY_CONCRETE,
+                        LIGHT_GRAY_CONCRETE,
+                        DIRT_PATH,
+                        SMOOTH_STONE,
+                        WATER,
+                    ]),
+                )
+            {
                 return;
             }
             let hint = habitat_for_tree_type(tree_type);
@@ -569,21 +603,23 @@ impl Tree {
             let (sx, sz) = crate::schematic::trunk_slot(x, z);
             // The slot can be up to ~2 blocks from (x,z); re-check it is not on a road/water
             // surface (the top-of-function check ran at the un-snapped point).
-            if editor.check_for_block(
-                sx,
-                0,
-                sz,
-                Some(&[
-                    BLACK_CONCRETE,
-                    GRAY_CONCRETE_POWDER,
-                    CYAN_TERRACOTTA,
-                    GRAY_CONCRETE,
-                    LIGHT_GRAY_CONCRETE,
-                    DIRT_PATH,
-                    SMOOTH_STONE,
-                    WATER,
-                ]),
-            ) {
+            if in_water_mask(sx, sz)
+                || editor.check_for_block(
+                    sx,
+                    0,
+                    sz,
+                    Some(&[
+                        BLACK_CONCRETE,
+                        GRAY_CONCRETE_POWDER,
+                        CYAN_TERRACOTTA,
+                        GRAY_CONCRETE,
+                        LIGHT_GRAY_CONCRETE,
+                        DIRT_PATH,
+                        SMOOTH_STONE,
+                        WATER,
+                    ]),
+                )
+            {
                 return;
             }
             let slot_base_y = editor.get_absolute_y(sx, y, sz);

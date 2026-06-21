@@ -306,6 +306,16 @@ pub fn generate_world_with_options(
     let ground = Arc::new(ground);
     let mut bench = crate::bench::Bench::new(args.benchmark);
 
+    // Hand the ESA water mask to the tree spawner so trees are never placed on water cells (the
+    // carve runs after placement). With this gate, in-water trees never exist, so the floating-veg
+    // sweep no longer has to strip leaves over water - which is what was eating the overhanging
+    // canopy of trees standing on the bank.
+    crate::element_processing::tree::set_water_mask(
+        ground.clone(),
+        xzbbox.min_x(),
+        xzbbox.min_z(),
+    );
+
     // Optional tree schematic pack: load + report the breakdown (the UI numbers). Held for the
     // schematic tree placement pass after ground generation. Prefer the region loader (a realm
     // dir with region.json -> realm/community 85/12/3 blend); fall back to the plain

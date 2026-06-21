@@ -1,14 +1,12 @@
 //! Per-cell water depth carving from a chamfer-3-4 distance transform over the LC_WATER mask.
 
 use crate::block_definitions::{
-    Block, ACACIA_LEAVES, ACACIA_LOG, AIR, AZALEA_LEAVES, BIRCH_LEAVES, BIRCH_LOG, BLACK_CONCRETE,
-    BLUE_FLOWER, BROWN_CANDLE, BROWN_CANDLE_2, BROWN_CANDLE_3, BROWN_CANDLE_4, CHERRY_LEAVES,
-    CHERRY_LOG, CLAY, COARSE_DIRT, CYAN_TERRACOTTA, DARK_OAK_LEAVES, DARK_OAK_LOG, DEAD_BUSH, DIRT,
-    FERN, GRASS, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, JUNGLE_LEAVES, JUNGLE_LOG, KELP,
-    KELP_PLANT, LARGE_FERN_LOWER, LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, MAGMA_BLOCK,
-    MANGROVE_LEAVES, MANGROVE_LOG, OAK_LEAVES, OAK_LOG, RED_FLOWER, SAND, SEAGRASS, SEA_PICKLE,
-    SOUL_SAND, SPRUCE_LEAVES, SPRUCE_LOG, STONE, SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP,
-    TALL_SEAGRASS_BOTTOM, TALL_SEAGRASS_TOP, WATER, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
+    Block, AIR, BLACK_CONCRETE, BLUE_FLOWER, BROWN_CANDLE, BROWN_CANDLE_2, BROWN_CANDLE_3,
+    BROWN_CANDLE_4, CLAY, COARSE_DIRT, CYAN_TERRACOTTA, DEAD_BUSH, DIRT, FERN, GRASS, GRAVEL,
+    GRAY_CONCRETE, GRAY_CONCRETE_POWDER, KELP, KELP_PLANT, LARGE_FERN_LOWER, LARGE_FERN_UPPER,
+    LIGHT_GRAY_CONCRETE, MAGMA_BLOCK, RED_FLOWER, SAND, SEAGRASS, SEA_PICKLE, SOUL_SAND, STONE,
+    SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TALL_SEAGRASS_BOTTOM, TALL_SEAGRASS_TOP, WATER,
+    WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::floodfill_cache::RoadMaskBitmap;
@@ -914,27 +912,6 @@ pub fn sweep_floating_veg_region(
         WHITE_CONCRETE,
         CYAN_TERRACOTTA,
     ];
-    // Tree logs/leaves to strip from above water: kills trees standing in a lake/river and
-    // any canopy overhanging it. NOT applied over roads, so street trees keep their canopy.
-    let tree_set: &[Block] = &[
-        OAK_LOG,
-        SPRUCE_LOG,
-        BIRCH_LOG,
-        DARK_OAK_LOG,
-        JUNGLE_LOG,
-        ACACIA_LOG,
-        CHERRY_LOG,
-        MANGROVE_LOG,
-        OAK_LEAVES,
-        SPRUCE_LEAVES,
-        BIRCH_LEAVES,
-        DARK_OAK_LEAVES,
-        JUNGLE_LEAVES,
-        ACACIA_LEAVES,
-        CHERRY_LEAVES,
-        MANGROVE_LEAVES,
-        AZALEA_LEAVES,
-    ];
     for z in min_z..=max_z {
         for x in min_x..=max_x {
             let gy = editor.get_ground_level(x, z);
@@ -944,21 +921,14 @@ pub fn sweep_floating_veg_region(
             if !(is_water || is_road_ground) {
                 continue;
             }
-            // Loose ground veg (flowers/grass) over water or roads, low.
+            // Loose ground veg (flowers/grass/ferns) over water or roads, low. Trees are NOT
+            // stripped here any more: tree placement now skips water cells up front
+            // (`in_water_mask`), so nothing roots in the water, and the canopy that remains over
+            // water is legitimate overhang from a bank tree - which we want to keep.
             for dy in 1..=5 {
                 let y = gy + dy;
                 if editor.check_for_block_absolute(x, y, z, Some(veg_set), None) {
                     editor.set_block_absolute(AIR, x, y, z, None, None);
-                }
-            }
-            // Trees over WATER only, full height (the carve runs after tree placement, so this
-            // is what actually removes trees/leaves left standing in or overhanging the water).
-            if is_water {
-                for dy in 1..=20 {
-                    let y = gy + dy;
-                    if editor.check_for_block_absolute(x, y, z, Some(tree_set), None) {
-                        editor.set_block_absolute(AIR, x, y, z, None, None);
-                    }
                 }
             }
         }
