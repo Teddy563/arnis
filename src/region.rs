@@ -44,16 +44,20 @@ impl Habitat {
 // ---- region.json manifest (serde) ----
 #[derive(Deserialize)]
 struct MSpecies {
-    // `name` is present in the JSON but unused at runtime (serde ignores it).
-    files: Vec<String>,
-    /// Wide-trunk variants of this species, kept but drawn rarely.
+    // `name` is present in the JSON but unused at runtime (serde ignores it). Variants are split by
+    // trunk-width class: w1 = thin (1-wide solid trunk), w2 = 2-wide, w3 = 3-wide. >3 is excluded.
     #[serde(default)]
-    wide: Vec<String>,
+    w1: Vec<String>,
+    #[serde(default)]
+    w2: Vec<String>,
+    #[serde(default)]
+    w3: Vec<String>,
 }
 
-/// Percent chance a tree is a wide-trunk variant (when the chosen species has any). Wide trees
-/// look heavy, so they stay an occasional accent, not the norm.
-const WIDE_PCT: u64 = 12;
+/// Cumulative width-class weights (percent): most trees are thin (1-wide), 2-wide occasional,
+/// 3-wide rare. So heavy trunks never dominate. W1=78, then +18 to 96 for W2, rest (4) for W3.
+const WIDTH_W1: u64 = 78;
+const WIDTH_W2: u64 = 96;
 #[derive(Deserialize)]
 struct MCommunity {
     name: String,
@@ -90,7 +94,7 @@ impl Pack {
 
 pub struct RegionLibrary {
     realm: String,
-    entries: Vec<(Schematic, TreeSize, bool)>, // schem, size, is_wide (realm + vanilla)
+    entries: Vec<(Schematic, TreeSize, u8)>, // schem, size, is_wide (realm + vanilla)
     realm_pack: Pack,
     vanilla_pack: Pack, // sprinkle; may be empty (then the 12% slice falls back to realm)
     scale: f64,
@@ -105,13 +109,13 @@ const MONTANE_METRES: f64 = 450.0;
 
 /// Load every file of a manifest into `entries`, returning the built `Pack`. Files are resolved
 /// relative to `dir`. Empty species/communities are dropped.
-fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, bool)>) -> Pack {
+fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, u8)>) -> Pack {
     let mut communities: Vec<Community> = Vec::new();
     for mc in &m.communities {
         let mut species: Vec<Vec<usize>> = Vec::new();
         for sp in &mc.species {
             let mut idxs: Vec<usize> = Vec::new();
-            for (rels, is_wide) in [(&sp.files, false), (&sp.wide, true)] {
+            for (rels, wclass) in [(&sp.w1, 1u8), (&sp.w2, 2u8), (&sp.w3, 3u8)] {
                 for rel in rels {
                     let path = dir.join(rel);
                     let Ok(bytes) = std::fs::read(&path) else {
@@ -120,7 +124,7 @@ fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, bo
                     if let Ok(schem) = load_schem(&bytes) {
                         if !schem.voxels.is_empty() {
                             let size = size_for_height(schem.height);
-                            entries.push((schem, size, is_wide));
+                            entries.push((schem, size, wclass));
                             idxs.push(entries.len() - 1);
                         }
                     }
@@ -167,7 +171,7 @@ impl RegionLibrary {
     /// plain vanilla loader).
     pub fn load(dir: &Path, scale: f64, ground_level: i32) -> Result<RegionLibrary, String> {
         let m = read_manifest(dir)?;
-        let mut entries: Vec<(Schematic, TreeSize, bool)> = Vec::new();
+        let mut entries: Vec<(Schematic, TreeSize, u8)> = Vec::new();
         let realm_pack = load_pack(dir, &m, &mut entries);
         if realm_pack.is_empty() {
             return Err(format!("region: no usable trees under {}", dir.display()));
@@ -303,8 +307,7 @@ impl RegionLibrary {
             r -= w;
         }
         let want = self.size_pick(x, z);
-        // Allowed-size variants of the chosen species, split normal vs wide-trunk. Wide trees stay
-        // an occasional accent (WIDE_PCT), never the norm.
+        // Allowed-size variants of the chosen species.
         let allowed: Vec<usize> = chosen
             .iter()
             .copied()
@@ -313,18 +316,33 @@ impl RegionLibrary {
         if allowed.is_empty() {
             return None;
         }
-        let wide: Vec<usize> = allowed.iter().copied().filter(|&i| self.entries[i].2).collect();
-        let normal: Vec<usize> = allowed.iter().copied().filter(|&i| !self.entries[i].2).collect();
-        let use_wide =
-            !wide.is_empty() && (normal.is_empty() || coord_hash(x + 5, z + 11) % 100 < WIDE_PCT);
-        let group: &[usize] = if use_wide { &wide } else { &normal };
+        // Roll a trunk-width class (mostly thin), then take that class - falling back to a thinner
+        // class if empty - so 2/3-wide trunks stay rare and 1-wide dominates.
+        let roll = coord_hash(x + 5, z + 11) % 100;
+        let target_wc: u8 = if roll < WIDTH_W1 {
+            1
+        } else if roll < WIDTH_W2 {
+            2
+        } else {
+            3
+        };
+        let mut group: Vec<usize> = Vec::new();
+        for wc in (1..=target_wc).rev() {
+            group = allowed.iter().copied().filter(|&i| self.entries[i].2 == wc).collect();
+            if !group.is_empty() {
+                break;
+            }
+        }
+        if group.is_empty() {
+            group = allowed;
+        }
         // within the chosen group, prefer the wanted size tier
         let of_want: Vec<usize> = group
             .iter()
             .copied()
             .filter(|&i| self.entries[i].1 == want)
             .collect();
-        let pool: &[usize] = if of_want.is_empty() { group } else { &of_want };
+        let pool: &[usize] = if of_want.is_empty() { &group } else { &of_want };
         if pool.is_empty() {
             return None;
         }
