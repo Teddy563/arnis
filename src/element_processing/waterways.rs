@@ -1,6 +1,7 @@
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::osm_parser::ProcessedWay;
+use crate::water_depth::SMALL_SCALE_MAX_DEPTH;
 use crate::world_editor::WorldEditor;
 
 pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay) {
@@ -102,7 +103,16 @@ fn create_water_channel(
                 };
 
                 if let Some(water_y) = water_y {
-                    editor.set_block_absolute(WATER, x, water_y, z, None, None);
+                    // Channel bowl: deeper toward the centreline so a river/stream has a real bed
+                    // instead of a flat one-block ribbon. Depth = how far in from the bank this
+                    // cell is (sloped 1 block per block, no cliffs), capped. Place-if-absent down
+                    // the column so overlapping segments union to the deepest; ground generation
+                    // then seals terrain below the water (its skip_existing fill leaves it intact).
+                    let inner = half_width - distance_from_center; // 0 at the bank, max at centre
+                    let depth = inner.clamp(0, SMALL_SCALE_MAX_DEPTH);
+                    for dy in 0..=depth {
+                        editor.set_block_absolute(WATER, x, water_y - dy, z, None, None);
+                    }
 
                     // Clear vegetation above the water
                     editor.set_block_absolute(

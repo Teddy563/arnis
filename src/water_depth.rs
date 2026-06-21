@@ -43,8 +43,9 @@ const PUDDLE_CELL_THRESHOLD: usize = 25;
 const SMALL_SCALE_THRESHOLD: f64 = 0.5;
 
 /// Small-scale carve cap, in blocks. The bowl tops out here; kept under
-/// `MAX_WATER_DEPTH` so the carve clamp and debug-assert always hold.
-const SMALL_SCALE_MAX_DEPTH: i32 = 5;
+/// `MAX_WATER_DEPTH` so the carve clamp and debug-assert always hold. Also the cap for the
+/// line-waterway channel bowl (`element_processing::waterways`).
+pub const SMALL_SCALE_MAX_DEPTH: i32 = 5;
 
 #[inline]
 fn nibble_get(buf: &[u8], i: usize) -> u8 {
