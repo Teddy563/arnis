@@ -5,6 +5,7 @@ use crate::world_editor::WorldEditor;
 use rand::Rng;
 use std::sync::OnceLock;
 
+use crate::region::{Habitat, RegionLibrary};
 use crate::tree_library::TreeLibrary;
 
 type Coord = (i32, i32, i32);
@@ -14,9 +15,30 @@ type Coord = (i32, i32, i32);
 /// schematic trees inherit Arnis's coverage, density, and water/road/building checks.
 static SCHEMATIC_PACK: OnceLock<(TreeLibrary, f64)> = OnceLock::new();
 
+/// The loaded region pack (realm communities + vanilla sprinkle), set once per generation. Takes
+/// priority over `SCHEMATIC_PACK`: when present, tree spawns pick a schematic by realm/community
+/// (the 85/12/3 blend) instead of by the plain species folder.
+static REGION_PACK: OnceLock<RegionLibrary> = OnceLock::new();
+
 /// Provide the schematic pack (called once per generation when a `--tree-pack` is loaded).
 pub fn set_schematic_pack(lib: TreeLibrary, scale: f64) {
     let _ = SCHEMATIC_PACK.set((lib, scale));
+}
+
+/// Provide the region pack (called once per generation when `--tree-pack` resolves a realm).
+pub fn set_region_pack(lib: RegionLibrary) {
+    let _ = REGION_PACK.set(lib);
+}
+
+/// Map Arnis's chosen `TreeType` to a habitat hint, which steers community selection
+/// (conifer -> taiga/alpine, wet -> swamp/mangrove, dry -> savanna/scrub, else lowland forest).
+fn habitat_for_tree_type(t: TreeType) -> Habitat {
+    match t {
+        TreeType::Spruce | TreeType::Pine => Habitat::Conifer,
+        TreeType::Willow | TreeType::Mangrove => Habitat::Wet,
+        TreeType::Acacia => Habitat::Dry,
+        _ => Habitat::Lowland,
+    }
 }
 
 /// Map Arnis's chosen `TreeType` to a pack species folder key (oak stays the plurality).
@@ -502,6 +524,44 @@ impl Tree {
         // procedural tree. The footprint/water/road checks + density above already ran, so the
         // schematic inherits Arnis's exact coverage and avoidance; the blacklist keeps it from
         // cutting buildings/water.
+        // Region pack active: pick a schematic by realm/community (85/12/3 blend). Same trunk-slot
+        // spacing + road/water guard as the plain pack below.
+        if let Some(region) = REGION_PACK.get() {
+            let (sx, sz) = crate::schematic::trunk_slot(x, z);
+            if editor.check_for_block(
+                sx,
+                0,
+                sz,
+                Some(&[
+                    BLACK_CONCRETE,
+                    GRAY_CONCRETE_POWDER,
+                    CYAN_TERRACOTTA,
+                    GRAY_CONCRETE,
+                    LIGHT_GRAY_CONCRETE,
+                    DIRT_PATH,
+                    SMOOTH_STONE,
+                    WATER,
+                ]),
+            ) {
+                return;
+            }
+            let hint = habitat_for_tree_type(tree_type);
+            if let Some((idx, rot)) = region.pick(sx, sz, hint) {
+                let slot_base_y = editor.get_absolute_y(sx, y, sz);
+                crate::schematic::place_schematic_tree(
+                    editor,
+                    region.schem(idx),
+                    sx,
+                    sz,
+                    slot_base_y,
+                    rot,
+                    &blacklist,
+                    building_footprints,
+                );
+            }
+            return;
+        }
+
         if let Some((lib, scale)) = SCHEMATIC_PACK.get() {
             // Snap to the trunk-spacing slot so wide schematic trees never touch trunks
             // (>= 1 block gap), and seed every pick on the slot so all Arnis spawns inside the

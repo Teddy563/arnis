@@ -66,6 +66,15 @@ Selection rule per cell (first match):
 4. else -> realm default forest (most species-rich lowland community), with value_noise
    occasionally (~10-20%) swapping to a secondary (dry/savanna in arid realms, mixed in temperate)
 
+## LOCKED DECISIONS (2026-06-21)
+
+- vanilla-plus is a SEASONING, not a fallback. Blend every realm: **85% regional community /
+  12% vanilla-plus sprinkle / 3% rare cross-accent (an exotic from the same realm)**. Tunable.
+- No-match fallback = the realm's DEFAULT FOREST community (most species-rich lowland), still
+  85/12/3 blended. Never drop to plain vanilla-plus (keeps ambiguous cells location-correct).
+- Region selection UI = Auto (by location) default + manual override dropdown.
+- Use ALL species except the pale garden (pale-oak trees) + giant mushrooms. Tall pines included.
+
 ## Layer 2 - Species (within community)
 
 Weighted random over the community's schems. Base weight = variant count per species (the author

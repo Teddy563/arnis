@@ -32,6 +32,7 @@ mod overture;
 #[cfg(feature = "gui")]
 mod progress;
 mod projection;
+mod region;
 mod retrieve_data;
 mod schematic;
 #[cfg(feature = "gui")]

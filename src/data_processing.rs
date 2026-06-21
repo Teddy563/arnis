@@ -306,25 +306,24 @@ pub fn generate_world_with_options(
     let ground = Arc::new(ground);
     let mut bench = crate::bench::Bench::new(args.benchmark);
 
-    // Optional tree schematic pack: load + report the breakdown (the UI numbers). Held
-    // for the schematic tree placement pass after ground generation.
-    let tree_library = args.tree_pack.as_ref().and_then(|pack| {
-        match crate::tree_library::TreeLibrary::load(pack) {
+    // Optional tree schematic pack: load + report the breakdown (the UI numbers). Held for the
+    // schematic tree placement pass after ground generation. Prefer the region loader (a realm
+    // dir with region.json -> realm/community 85/12/3 blend); fall back to the plain
+    // species-folder pack (e.g. a bare vanilla-plus dir without region.json).
+    if let Some(pack) = args.tree_pack.as_ref() {
+        match crate::region::RegionLibrary::load(pack, args.scale) {
             Ok(lib) => {
                 lib.report();
-                Some(lib)
+                crate::element_processing::tree::set_region_pack(lib);
             }
-            Err(e) => {
-                eprintln!("Warning: {e}");
-                None
-            }
+            Err(region_err) => match crate::tree_library::TreeLibrary::load(pack) {
+                Ok(lib) => {
+                    lib.report();
+                    crate::element_processing::tree::set_schematic_pack(lib, args.scale);
+                }
+                Err(e) => eprintln!("Warning: {e} (region: {region_err})"),
+            },
         }
-    });
-    // With a pack active, hand it to the tree spawner: every tree spawn stamps a schematic of
-    // the chosen type instead of procedural blocks, inheriting Arnis's coverage, density, and
-    // water/road/building avoidance.
-    if let Some(lib) = tree_library {
-        crate::element_processing::tree::set_schematic_pack(lib, args.scale);
     }
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
