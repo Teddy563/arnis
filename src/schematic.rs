@@ -222,14 +222,21 @@ pub fn rotate_xz(x: i32, z: i32, w: i32, l: i32, k: u8) -> (i32, i32) {
 /// apart (canopies still overlap, so a forest still closes). The jitter is restricted to `{0,1}`
 /// so neighbouring slots stay >= 2 blocks apart. Pure function of `(x, z)` => identical from any
 /// tile, so it never introduces a seam.
-pub fn trunk_slot(x: i32, z: i32) -> (i32, i32) {
-    const S: i32 = 3;
-    let cx = x.div_euclid(S);
-    let cz = z.div_euclid(S);
+pub fn trunk_slot(x: i32, z: i32, scale: f64) -> (i32, i32) {
+    // Wider spacing on small maps so trees aren't crowded; tighter at full scale (cities).
+    let s: i32 = if scale < 0.3 {
+        5
+    } else if scale < 0.7 {
+        4
+    } else {
+        3
+    };
+    let cx = x.div_euclid(s);
+    let cz = z.div_euclid(s);
     let h = crate::land_cover::coord_hash(cx.wrapping_mul(0x1f1f) + 17, cz.wrapping_mul(0x2b2b) + 91);
     let jx = (h & 1) as i32;
     let jz = ((h >> 1) & 1) as i32;
-    (cx * S + jx, cz * S + jz)
+    (cx * s + jx, cz * s + jz)
 }
 
 /// One of the eight trunk log types `map_block` can emit. Used to decide which footprint cells
@@ -287,9 +294,9 @@ pub fn place_schematic_tree(
         if footprints.is_some_and(|f| f.contains(wx, wz)) {
             continue;
         }
-        // Never place a log or leaf over water already present (a belt-and-suspenders; the
-        // post-carve sweep is what removes trees over water carved after placement).
-        if editor.check_for_block(wx, 0, wz, Some(&[WATER])) {
+        // Trunk (logs) never go over water, but LEAVES may overhang it - a bank tree's canopy
+        // extending out over the river is wanted, not cut. So only skip log voxels over water.
+        if is_log(block) && editor.check_for_block(wx, 0, wz, Some(&[WATER])) {
             continue;
         }
         // Overwrite terrain/grass (so grass does not poke through the trunk), but the
@@ -381,7 +388,7 @@ mod tests {
         let mut slots = std::collections::HashSet::new();
         for x in -30..30 {
             for z in -30..30 {
-                slots.insert(trunk_slot(x, z));
+                slots.insert(trunk_slot(x, z, 1.0));
             }
         }
         let v: Vec<(i32, i32)> = slots.into_iter().collect();

@@ -205,6 +205,11 @@ impl RegionLibrary {
         &self.entries[idx].0
     }
 
+    /// Map scale, for scale-aware trunk spacing at the call site.
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
     /// The size tier wanted at this cell, by the scale band. Huge only appears at high scale and
     /// stays rare; small maps lean small/medium. Position-seeded (seam-safe).
     fn size_pick(&self, x: i32, z: i32) -> TreeSize {

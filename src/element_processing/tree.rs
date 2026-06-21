@@ -575,7 +575,7 @@ impl Tree {
         // Region pack active: pick a schematic by realm/community (85/12/3 blend). Same trunk-slot
         // spacing + road/water guard as the plain pack below.
         if let Some(region) = REGION_PACK.get() {
-            let (sx, sz) = crate::schematic::trunk_slot(x, z);
+            let (sx, sz) = crate::schematic::trunk_slot(x, z, region.scale());
             if in_water_mask(sx, sz)
                 || editor.check_for_block(
                     sx,
@@ -621,7 +621,7 @@ impl Tree {
             // Snap to the trunk-spacing slot so wide schematic trees never touch trunks
             // (>= 1 block gap), and seed every pick on the slot so all Arnis spawns inside the
             // same cell collapse to the identical tree (idempotent, seam-safe).
-            let (sx, sz) = crate::schematic::trunk_slot(x, z);
+            let (sx, sz) = crate::schematic::trunk_slot(x, z, *scale);
             // The slot can be up to ~2 blocks from (x,z); re-check it is not on a road/water
             // surface (the top-of-function check ran at the un-snapped point).
             if in_water_mask(sx, sz)
