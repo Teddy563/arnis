@@ -3,8 +3,18 @@ use crate::deterministic_rng::coord_rng;
 use crate::floodfill_cache::BuildingFootprintBitmap;
 use crate::world_editor::WorldEditor;
 use rand::Rng;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 type Coord = (i32, i32, i32);
+
+/// When a schematic tree pack is active, the schematic placement pass handles all tree cover,
+/// so procedural trees are suppressed everywhere to avoid doubling up (the dense-forest bug).
+static SCHEMATIC_TREES_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Set once per generation from whether a `--tree-pack` is loaded.
+pub fn set_schematic_trees_active(active: bool) {
+    SCHEMATIC_TREES_ACTIVE.store(active, Ordering::Relaxed);
+}
 
 // Concentric rings added on top of the trunk column to bulk up the canopy.
 #[rustfmt::skip]
@@ -428,6 +438,9 @@ impl Tree {
         tree_type: TreeType,
         building_footprints: Option<&BuildingFootprintBitmap>,
     ) {
+        if SCHEMATIC_TREES_ACTIVE.load(Ordering::Relaxed) {
+            return; // a schematic tree pack handles tree cover; skip procedural trees
+        }
         if let Some(footprints) = building_footprints {
             if footprints.contains(x, z) {
                 return;

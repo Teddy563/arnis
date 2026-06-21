@@ -320,6 +320,9 @@ pub fn generate_world_with_options(
             }
         }
     });
+    // With a pack active, the schematic pass owns tree cover; suppress procedural trees
+    // everywhere so forests/parks don't get both (the over-dense clutter).
+    crate::element_processing::tree::set_schematic_trees_active(tree_library.is_some());
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
     let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox, args.scale);

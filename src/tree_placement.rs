@@ -18,12 +18,13 @@ use crate::water_depth::BigWaterField;
 use crate::world_editor::WorldEditor;
 
 /// Minimum trunk spacing in blocks (the grid cell size). Constant across scales so the
-/// spacing in the actual generation is the same at 1:1 and 1:10.
-const MIN_TRUNK_SPACING: i32 = 4;
+/// spacing in the actual generation is the same at 1:1 and 1:10. Larger = sparser forest
+/// with visible ground; smaller = denser canopy.
+const MIN_TRUNK_SPACING: i32 = 6;
 /// Forest-density noise scale: low values are clearings, high values are thickets.
 const DENSITY_SCALE: i32 = 32;
-/// Below this density-noise value a cell is a clearing (no tree).
-const CLEARING_CUTOFF: f64 = 0.28;
+/// Below this density-noise value a cell is a clearing (no tree). Higher = more clearings.
+const CLEARING_CUTOFF: f64 = 0.40;
 /// Patch noise scale for species stands (birch groves, dark-oak pockets).
 const PATCH_SCALE: i32 = 96;
 
@@ -181,7 +182,8 @@ pub fn place_schematic_trees_region(
                 continue;
             };
             let rot = (coord_hash(px ^ 0x5bd1, pz ^ 0x9e37) % 4) as u8;
-            let base_y = ground.level(coord);
+            // Same ground snap as procedural trees so the trunk sits on the surface, not floating.
+            let base_y = editor.get_absolute_y(px, 1, pz);
             place_schematic_tree(editor, &lib.entries[idx].schem, px, pz, base_y, rot);
             placed += 1;
         }

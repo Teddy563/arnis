@@ -155,6 +155,17 @@ pub fn load_schem(gz_bytes: &[u8]) -> Result<Schematic, String> {
         }
     }
 
+    // Normalise so the lowest log/leaf sits at y=0. Schematics often include air padding
+    // below the trunk; without this shift the tree stamps a few blocks above the ground
+    // (the "floating on grass" artifact).
+    if let Some(min_y) = voxels.iter().map(|v| v.1).min() {
+        if min_y != 0 {
+            for v in &mut voxels {
+                v.1 -= min_y;
+            }
+        }
+    }
+
     Ok(Schematic {
         width,
         height,
