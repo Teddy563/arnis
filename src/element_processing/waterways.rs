@@ -103,13 +103,18 @@ fn create_water_channel(
                 };
 
                 if let Some(water_y) = water_y {
-                    // Channel bowl: deeper toward the centreline so a river/stream has a real bed
-                    // instead of a flat one-block ribbon. Depth = how far in from the bank this
-                    // cell is (sloped 1 block per block, no cliffs), capped. Place-if-absent down
-                    // the column so overlapping segments union to the deepest; ground generation
-                    // then seals terrain below the water (its skip_existing fill leaves it intact).
-                    let inner = half_width - distance_from_center; // 0 at the bank, max at centre
-                    let depth = inner.clamp(0, SMALL_SCALE_MAX_DEPTH);
+                    // Channel cut: deepen WITHOUT widening. The bank cell stays at the surface,
+                    // then one step in the floor drops straight to a real depth (not tied to the
+                    // channel width), so even a 3-wide stream gets a proper bed instead of a flat
+                    // ribbon. Wider channels keep deepening toward the centre, capped. Place-if-
+                    // absent down the column so overlapping segments union to the deepest; ground
+                    // generation then seals terrain below (its skip_existing fill leaves it intact).
+                    let inner = half_width - distance_from_center; // 0 at the bank, > 0 inside
+                    let depth = if inner <= 0 {
+                        0
+                    } else {
+                        (inner + 2).min(SMALL_SCALE_MAX_DEPTH)
+                    };
                     for dy in 0..=depth {
                         editor.set_block_absolute(WATER, x, water_y - dy, z, None, None);
                     }
