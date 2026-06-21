@@ -8,6 +8,33 @@ use crate::block_definitions::{
     SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TALL_SEAGRASS_BOTTOM, TALL_SEAGRASS_TOP, WATER,
     WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
+use crate::block_definitions::{
+    ACACIA_LEAVES, ACACIA_LOG, AZALEA_LEAVES, BIRCH_LEAVES, BIRCH_LOG, CHERRY_LEAVES, CHERRY_LOG,
+    DARK_OAK_LEAVES, DARK_OAK_LOG, JUNGLE_LEAVES, JUNGLE_LOG, MANGROVE_LEAVES, MANGROVE_LOG,
+    OAK_LEAVES, OAK_LOG, SPRUCE_LEAVES, SPRUCE_LOG,
+};
+
+/// Tree logs + leaves. The water carve never overwrites these, so a bank tree's canopy that
+/// overhangs the water is kept whole instead of being sliced flat at the waterline.
+const TREE_PROTECT: &[Block] = &[
+    OAK_LOG,
+    BIRCH_LOG,
+    SPRUCE_LOG,
+    DARK_OAK_LOG,
+    JUNGLE_LOG,
+    ACACIA_LOG,
+    CHERRY_LOG,
+    MANGROVE_LOG,
+    OAK_LEAVES,
+    BIRCH_LEAVES,
+    SPRUCE_LEAVES,
+    DARK_OAK_LEAVES,
+    JUNGLE_LEAVES,
+    ACACIA_LEAVES,
+    CHERRY_LEAVES,
+    MANGROVE_LEAVES,
+    AZALEA_LEAVES,
+];
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
@@ -452,7 +479,9 @@ pub fn carve_water_column_with_flags(
         .clamp(0, MAX_WATER_DEPTH)
         .min((water_y - MIN_Y - 2).max(0));
     for dy in 0..=depth {
-        editor.set_block_absolute(WATER, x, water_y - dy, z, None, Some(&[]));
+        // Blacklist tree logs/leaves so the carve never slices an overhanging bank-tree canopy
+        // (it still overwrites terrain to carve the channel/lake).
+        editor.set_block_absolute(WATER, x, water_y - dy, z, None, Some(TREE_PROTECT));
     }
     let bed_y = water_y - depth - 1;
 

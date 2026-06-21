@@ -205,16 +205,20 @@ impl RegionLibrary {
         &self.entries[idx].0
     }
 
-    /// Scale-gated size tier. Big absorbs the 21+ giants, so they only appear at high scale.
-    fn size_tier(&self, x: i32, z: i32) -> TreeSize {
+    /// The size tier wanted at this cell, by the scale band. Huge only appears at high scale and
+    /// stays rare; small maps lean small/medium. Position-seeded (seam-safe).
+    fn size_pick(&self, x: i32, z: i32) -> TreeSize {
         let roll = coord_hash(x + 101, z + 233) % 100;
-        if self.scale < 0.25 {
-            if roll < 70 {
+        if self.scale < 0.3 {
+            // small ratio: mostly small + medium, big rare, NEVER huge
+            if roll < 65 {
                 TreeSize::Small
-            } else {
+            } else if roll < 98 {
                 TreeSize::Medium
+            } else {
+                TreeSize::Big
             }
-        } else if self.scale < 0.6 {
+        } else if self.scale < 0.7 {
             if roll < 40 {
                 TreeSize::Small
             } else if roll < 85 {
@@ -222,40 +226,89 @@ impl RegionLibrary {
             } else {
                 TreeSize::Big
             }
-        } else if roll < 25 {
+        } else if self.scale < 1.0 {
+            if roll < 28 {
+                TreeSize::Small
+            } else if roll < 73 {
+                TreeSize::Medium
+            } else if roll < 95 {
+                TreeSize::Big
+            } else {
+                TreeSize::Huge
+            }
+        } else if roll < 20 {
             TreeSize::Small
-        } else if roll < 70 {
+        } else if roll < 65 {
             TreeSize::Medium
-        } else {
+        } else if roll < 93 {
             TreeSize::Big
+        } else {
+            TreeSize::Huge
         }
     }
 
-    /// Pick one variant entry index from a community: weighted by species variant count, then the
-    /// scale-gated size tier (falling back across sizes when the species lacks that tier).
+    /// Whether a size may appear at this scale at all. Huge giants are forbidden below 1:1.4 - the
+    /// no-leak rule: a species that only has huge variants is simply skipped on a small map rather
+    /// than dropping a giant.
+    fn size_allowed(&self, size: TreeSize) -> bool {
+        !matches!(size, TreeSize::Huge) || self.scale >= 0.7
+    }
+
+    /// Pick one variant entry index from a community: species weighted by their ALLOWED-size variant
+    /// count, then the wanted size tier (else any allowed size of that species). Never returns a
+    /// disallowed size (so huge never leaks onto a small map).
     fn pick_in_community(&self, c: &Community, x: i32, z: i32) -> Option<usize> {
-        let total: usize = c.species.iter().map(Vec::len).sum();
+        let allowed_count =
+            |sp: &Vec<usize>| sp.iter().filter(|&&i| self.size_allowed(self.entries[i].1)).count();
+        let total: usize = c.species.iter().map(&allowed_count).sum();
         if total == 0 {
+            // Community has nothing in an allowed size at this scale: place anything rather than a
+            // gap (rare - a tiny all-huge community on a small map).
+            let any: usize = c.species.iter().map(Vec::len).sum();
+            if any == 0 {
+                return None;
+            }
+            let mut r = (coord_hash(x + 31, z + 57) % any as u64) as usize;
+            for sp in &c.species {
+                if r < sp.len() {
+                    let h = coord_hash(x + 313, z + 727) as usize;
+                    return Some(sp[h % sp.len()]);
+                }
+                r -= sp.len();
+            }
             return None;
         }
-        // weighted species choice
+        // weighted species choice (by allowed-size count)
         let mut r = (coord_hash(x + 31, z + 57) % total as u64) as usize;
         let mut chosen: &Vec<usize> = &c.species[0];
         for sp in &c.species {
-            if r < sp.len() {
+            let w = allowed_count(sp);
+            if r < w {
                 chosen = sp;
                 break;
             }
-            r -= sp.len();
+            r -= w;
         }
-        // size gate
-        let want = self.size_tier(x, z);
-        let of_size: Vec<usize> = chosen
+        // prefer the wanted size, else any allowed size of this species (never a disallowed one)
+        let want = self.size_pick(x, z);
+        let of_want: Vec<usize> = chosen
             .iter()
             .copied()
             .filter(|&i| self.entries[i].1 == want)
             .collect();
-        let pool: &[usize] = if of_size.is_empty() { chosen } else { &of_size };
+        let of_allowed: Vec<usize> = chosen
+            .iter()
+            .copied()
+            .filter(|&i| self.size_allowed(self.entries[i].1))
+            .collect();
+        let pool: &[usize] = if !of_want.is_empty() {
+            &of_want
+        } else {
+            &of_allowed
+        };
+        if pool.is_empty() {
+            return None;
+        }
         let h = coord_hash(x + 313, z + 727) as usize;
         Some(pool[h % pool.len()])
     }

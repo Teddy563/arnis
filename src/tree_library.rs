@@ -12,12 +12,15 @@ use crate::schematic::{load_schem, Schematic};
 /// Height (block) cut-offs for the size tiers.
 const SMALL_MAX_HEIGHT: i32 = 6;
 const MEDIUM_MAX_HEIGHT: i32 = 12;
+const BIG_MAX_HEIGHT: i32 = 20;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TreeSize {
     Small,
     Medium,
     Big,
+    /// 21+ blocks - the giants. Gated to high scale only and kept rare (they dwarf a small map).
+    Huge,
 }
 
 /// Bucket a schematic by its height.
@@ -26,8 +29,10 @@ pub fn size_for_height(height: i32) -> TreeSize {
         TreeSize::Small
     } else if height <= MEDIUM_MAX_HEIGHT {
         TreeSize::Medium
-    } else {
+    } else if height <= BIG_MAX_HEIGHT {
         TreeSize::Big
+    } else {
+        TreeSize::Huge
     }
 }
 
@@ -60,12 +65,13 @@ pub struct TreeEntry {
     pub schem: Schematic,
 }
 
-/// Counts surfaced to the UI: total plus the small/medium/big breakdown and per-species.
+/// Counts surfaced to the UI: total plus the small/medium/big/huge breakdown and per-species.
 pub struct LibraryStats {
     pub total: usize,
     pub small: usize,
     pub medium: usize,
     pub big: usize,
+    pub huge: usize,
     pub by_species: Vec<(String, usize)>, // sorted by species name
 }
 
@@ -97,12 +103,14 @@ fn compute_stats(entries: &[TreeEntry]) -> LibraryStats {
     let mut small = 0;
     let mut medium = 0;
     let mut big = 0;
+    let mut huge = 0;
     let mut per: HashMap<String, usize> = HashMap::new();
     for e in entries {
         match e.size {
             TreeSize::Small => small += 1,
             TreeSize::Medium => medium += 1,
             TreeSize::Big => big += 1,
+            TreeSize::Huge => huge += 1,
         }
         *per.entry(e.species.clone()).or_default() += 1;
     }
@@ -113,6 +121,7 @@ fn compute_stats(entries: &[TreeEntry]) -> LibraryStats {
         small,
         medium,
         big,
+        huge,
         by_species,
     }
 }
@@ -194,7 +203,13 @@ impl TreeLibrary {
     /// Position-seeded so the same spot always picks the same tree (seam-safe).
     pub fn pick_variant(&self, species: &str, size: TreeSize, px: i32, pz: i32) -> Option<usize> {
         let h = crate::land_cover::coord_hash(px + 313, pz + 727) as usize;
-        let order = [size, TreeSize::Medium, TreeSize::Small, TreeSize::Big];
+        let order = [
+            size,
+            TreeSize::Medium,
+            TreeSize::Small,
+            TreeSize::Big,
+            TreeSize::Huge,
+        ];
         for sp in [species, "oak"] {
             for &sz in &order {
                 let c = self.candidates(sp, sz);
@@ -215,11 +230,12 @@ impl TreeLibrary {
             .map(|(k, n)| format!("{k} {n}"))
             .collect();
         println!(
-            "Tree pack loaded: {} trees (small {}, medium {}, big {}) across {} species: {}",
+            "Tree pack loaded: {} trees (small {}, medium {}, big {}, huge {}) across {} species: {}",
             s.total,
             s.small,
             s.medium,
             s.big,
+            s.huge,
             s.by_species.len(),
             by.join(", ")
         );
@@ -237,7 +253,9 @@ mod tests {
         assert_eq!(size_for_height(7), TreeSize::Medium);
         assert_eq!(size_for_height(12), TreeSize::Medium);
         assert_eq!(size_for_height(13), TreeSize::Big);
-        assert_eq!(size_for_height(16), TreeSize::Big);
+        assert_eq!(size_for_height(20), TreeSize::Big);
+        assert_eq!(size_for_height(21), TreeSize::Huge);
+        assert_eq!(size_for_height(35), TreeSize::Huge);
     }
 
     #[test]
