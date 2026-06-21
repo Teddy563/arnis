@@ -56,11 +56,24 @@ fn is_subgrade(way: &ProcessedWay) -> bool {
     )
 }
 
-pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay) {
+/// Channel half-width, capped on small maps so a 1:10 stream/river stays a thin strip instead of a
+/// fat ribbon. `create_water_channel` draws to `half_width + 1`, so hw=0 => 3 wide, hw=1 => 5 wide.
+fn scaled_half_width(width: i32, scale: f64) -> i32 {
+    let hw = (width / 2).max(0);
+    if scale < 0.3 {
+        0 // <= 3 wide at small scale (e.g. 1:10)
+    } else if scale < 0.7 {
+        hw.min(1) // <= 5 wide
+    } else {
+        hw
+    }
+}
+
+pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay, scale: f64) {
     if !element.tags.contains_key("waterway") || is_subgrade(element) {
         return;
     }
-    let width = waterway_width(element);
+    let half_width = scaled_half_width(waterway_width(element), scale);
     for nodes_pair in element.nodes.windows(2) {
         let prev_node = nodes_pair[0].xz();
         let current_node = nodes_pair[1].xz();
@@ -69,7 +82,7 @@ pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay) {
             .min(editor.get_water_level(current_node.x, current_node.z));
         let points = bresenham_line(prev_node.x, 0, prev_node.z, current_node.x, 0, current_node.z);
         for (bx, _, bz) in points {
-            create_water_channel(editor, bx, bz, width, seg_water_y);
+            create_water_channel(editor, bx, bz, half_width, seg_water_y);
         }
     }
 }
@@ -81,10 +94,9 @@ fn create_water_channel(
     editor: &mut WorldEditor,
     center_x: i32,
     center_z: i32,
-    width: i32,
+    half_width: i32,
     flat_water_y: i32,
 ) {
-    let half_width = width / 2;
     for x in (center_x - half_width - 1)..=(center_x + half_width + 1) {
         for z in (center_z - half_width - 1)..=(center_z + half_width + 1) {
             if (x - center_x).abs().max((z - center_z).abs()) > half_width + 1 {
@@ -134,6 +146,7 @@ pub fn compute_waterway_field(
     elements: &[ProcessedElement],
     ground: &Ground,
     xzbbox: &XZBBox,
+    scale: f64,
 ) -> WaterwayField {
     let off_x = xzbbox.min_x();
     let off_z = xzbbox.min_z();
@@ -151,7 +164,7 @@ pub fn compute_waterway_field(
         if !way.tags.contains_key("waterway") || is_subgrade(way) {
             continue;
         }
-        let half_width = waterway_width(way) / 2;
+        let half_width = scaled_half_width(waterway_width(way), scale);
         for pair in way.nodes.windows(2) {
             let a = pair[0].xz();
             let b = pair[1].xz();

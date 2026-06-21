@@ -109,7 +109,7 @@ fn process_element(
                         road_mask,
                     );
                 } else {
-                    waterways::generate_waterways(editor, way);
+                    waterways::generate_waterways(editor, way, args.scale);
                 }
             } else if way.tags.contains_key("railway") {
                 railways::generate_railways(
@@ -343,7 +343,9 @@ pub fn generate_world_with_options(
     // post-ground-gen (carve_waterway_region) for a real bed, and also handed to the tree spawner
     // so trees never root on a river line (which the ESA LC_WATER mask alone can miss).
     let waterway_field = std::sync::Arc::new(
-        crate::element_processing::waterways::compute_waterway_field(&elements, &ground, &xzbbox),
+        crate::element_processing::waterways::compute_waterway_field(
+            &elements, &ground, &xzbbox, args.scale,
+        ),
     );
     crate::element_processing::tree::set_waterway_mask(std::sync::Arc::clone(&waterway_field));
 
