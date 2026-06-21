@@ -9,13 +9,16 @@
 //! tree water-gate (`tree::in_water_mask`), so trees never root on a river line - the only thing
 //! kept from the field experiment.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
+use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
+use crate::land_cover::LC_WATER;
 use crate::osm_parser::{ProcessedElement, ProcessedWay};
+use crate::water_depth::carve_water_column_with_flags;
 use crate::world_editor::WorldEditor;
 
 /// Bank tolerance: water still fills a cell up to this many blocks above the segment water level
@@ -118,32 +121,54 @@ fn create_water_channel(
     }
 }
 
-/// The set of line-waterway cells (used only to keep trees off river lines). Block-resolution, so
-/// it catches narrow channels the coarse ESA grid + the surface-Y water probe both miss.
+/// Line-waterway cells: `(x,z) -> (surface_y, depth)`. Block-resolution, so it catches narrow
+/// channels the coarse ESA grid misses. Used both to keep trees off river lines (`contains`) and to
+/// carve a shallow channel below the flat ribbon (`carve_waterway_region`).
 pub struct WaterwayField {
-    cells: HashSet<(i32, i32)>,
+    cells: HashMap<(i32, i32), (i32, i32)>,
 }
 
 impl WaterwayField {
     /// True if a line waterway carries water at this cell.
     pub fn contains(&self, x: i32, z: i32) -> bool {
-        self.cells.contains(&(x, z))
+        self.cells.contains_key(&(x, z))
     }
 }
 
-/// Record every cell a line waterway draws water into (mirrors `create_water_channel`'s footprint),
-/// for the tree water-gate. Pure function of the elements + `Ground`, built once before tiling.
+/// Hard cap on a channel carve (matches water_depth MAX_WATER_DEPTH so the carve never panics).
+const MAX_CHANNEL_DEPTH: i32 = 6;
+
+/// Shallow, scale-aware channel depth. The outer ring is a 1-block lip so the bank isn't a wall.
+fn channel_depth(scale: f64, dist: i32, half_width: i32) -> i32 {
+    let base = if scale < 0.3 {
+        1
+    } else if scale < 0.7 {
+        2
+    } else {
+        3
+    };
+    if dist >= half_width {
+        1.min(base)
+    } else {
+        base
+    }
+}
+
+/// Record every line-waterway cell with its water surface + shallow carve depth. Pure function of
+/// the elements + `Ground`, built once before tiling. The surface is `max(ground, seg_water_y)` so
+/// it never sits BELOW the terrain (no sunken water); the carve only deepens the bed below it.
 pub fn compute_waterway_field(
     elements: &[ProcessedElement],
     ground: &Ground,
     xzbbox: &XZBBox,
+    scale: f64,
 ) -> WaterwayField {
     let off_x = xzbbox.min_x();
     let off_z = xzbbox.min_z();
     let water_level = |x: i32, z: i32| ground.water_level(XZPoint::new(x - off_x, z - off_z));
     let ground_level = |x: i32, z: i32| ground.level(XZPoint::new(x - off_x, z - off_z));
 
-    let mut cells: HashSet<(i32, i32)> = HashSet::new();
+    let mut cells: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
     for el in elements {
         let ProcessedElement::Way(way) = el else {
             continue;
@@ -162,16 +187,73 @@ pub fn compute_waterway_field(
             for (bx, _, bz) in bresenham_line(a.x, 0, a.z, b.x, 0, b.z) {
                 for x in (bx - half_width - 1)..=(bx + half_width + 1) {
                     for z in (bz - half_width - 1)..=(bz + half_width + 1) {
-                        if (x - bx).abs().max((z - bz).abs()) > half_width + 1 {
+                        let dist = (x - bx).abs().max((z - bz).abs());
+                        if dist > half_width + 1 {
                             continue;
                         }
-                        if ground_level(x, z) <= seg_water_y + BANK_TOLERANCE {
-                            cells.insert((x, z));
+                        let gy = ground_level(x, z);
+                        if gy > seg_water_y + BANK_TOLERANCE {
+                            continue;
                         }
+                        // Surface never below terrain -> no sunken water.
+                        let surface = gy.max(seg_water_y);
+                        // Carve down to the terrain floor (surface - gy) PLUS the shallow channel
+                        // depth, so water never floats over a dip and the floating-veg sweep (which
+                        // probes ground level) always finds the column. Capped so the carve is safe.
+                        let depth = (channel_depth(scale, dist, half_width) + (surface - gy))
+                            .min(MAX_CHANNEL_DEPTH);
+                        cells
+                            .entry((x, z))
+                            .and_modify(|e| {
+                                if surface < e.0 {
+                                    e.0 = surface;
+                                }
+                                if depth > e.1 {
+                                    e.1 = depth;
+                                }
+                            })
+                            .or_insert((surface, depth));
                     }
                 }
             }
         }
     }
     WaterwayField { cells }
+}
+
+/// Deepen each recorded line-waterway cell into a real (shallow) channel, AFTER ground generation.
+/// Skips cells that are already ESA `LC_WATER` (the area-water carve owns those - so a line running
+/// through a lake never grooves it) and road/bridge decks. Reuses the shared
+/// `carve_water_column_with_flags`, which lays the varied SAND/GRAVEL/DIRT/CLAY bed and (since the
+/// blacklist there) never cuts an overhanging tree. Vertical-only writes => tile/seam-safe.
+#[allow(clippy::too_many_arguments)]
+pub fn carve_waterway_region(
+    editor: &mut WorldEditor,
+    field: &WaterwayField,
+    ground: &Ground,
+    xzbbox: &XZBBox,
+    road_mask: &RoadMaskBitmap,
+    iter_min_x: i32,
+    iter_max_x: i32,
+    iter_min_z: i32,
+    iter_max_z: i32,
+) {
+    let off_x = xzbbox.min_x();
+    let off_z = xzbbox.min_z();
+    for (&(x, z), &(surface, depth)) in &field.cells {
+        if x < iter_min_x || x > iter_max_x || z < iter_min_z || z > iter_max_z {
+            continue;
+        }
+        if road_mask.contains(x, z) {
+            continue;
+        }
+        // Let the area-water carve own LC_WATER cells (a line crossing a lake must not groove it).
+        if ground.cover_class(XZPoint::new(x - off_x, z - off_z)) == LC_WATER {
+            continue;
+        }
+        let near_bridge = (-2..=2).any(|dx: i32| {
+            (-2..=2).any(|dz: i32| !(dx == 0 && dz == 0) && road_mask.contains(x + dx, z + dz))
+        });
+        carve_water_column_with_flags(editor, x, z, surface, depth, near_bridge, depth);
+    }
 }
