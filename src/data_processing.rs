@@ -343,9 +343,7 @@ pub fn generate_world_with_options(
     // post-ground-gen (carve_waterway_region) for a real bed, and also handed to the tree spawner
     // so trees never root on a river line (which the ESA LC_WATER mask alone can miss).
     let waterway_field = std::sync::Arc::new(
-        crate::element_processing::waterways::compute_waterway_field(
-            &elements, &ground, &xzbbox, args.scale,
-        ),
+        crate::element_processing::waterways::compute_waterway_field(&elements, &ground, &xzbbox),
     );
     crate::element_processing::tree::set_waterway_mask(std::sync::Arc::clone(&waterway_field));
 
@@ -606,18 +604,6 @@ pub fn generate_world_with_options(
                         g_min_z,
                         g_max_z,
                     );
-                    // Shallow channel under the flat line-river ribbon (skips LC_WATER/roads).
-                    crate::element_processing::waterways::carve_waterway_region(
-                        &mut tile_editor,
-                        &waterway_field,
-                        ground.as_ref(),
-                        &xzbbox,
-                        &road_mask,
-                        g_min_x,
-                        g_max_x,
-                        g_min_z,
-                        g_max_z,
-                    );
                     // Per-tile floating-veg sweep so it's eviction-safe: the post-merge
                     // full-bbox sweep never reaches regions already freed to disk under
                     // stream-to-disk, so run the same logic in-tile over strict bounds.
@@ -839,17 +825,6 @@ pub fn generate_world_with_options(
             &xzbbox,
             &big_water_field,
             &road_mask,
-        );
-        crate::element_processing::waterways::carve_waterway_region(
-            &mut editor,
-            &waterway_field,
-            ground.as_ref(),
-            &xzbbox,
-            &road_mask,
-            xzbbox.min_x(),
-            xzbbox.max_x(),
-            xzbbox.min_z(),
-            xzbbox.max_z(),
         );
     }
 
