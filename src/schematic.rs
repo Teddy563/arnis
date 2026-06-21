@@ -192,6 +192,7 @@ pub fn rotate_xz(x: i32, z: i32, w: i32, l: i32, k: u8) -> (i32, i32) {
 /// AIR via place-if-absent, so it never overwrites buildings, roads, water, or terrain;
 /// air voxels were already dropped at load time. Pure function of its inputs, so the same
 /// tree renders identically from any tile (seam-safe).
+#[allow(clippy::too_many_arguments)]
 pub fn place_schematic_tree(
     editor: &mut WorldEditor,
     schem: &Schematic,
@@ -200,6 +201,7 @@ pub fn place_schematic_tree(
     base_y: i32,
     rot: u8,
     blacklist: &[Block],
+    footprints: Option<&crate::floodfill_cache::BuildingFootprintBitmap>,
 ) {
     // A 90/270 turn swaps the footprint width/length.
     let (fw, fl) = if rot & 1 == 0 {
@@ -213,8 +215,12 @@ pub fn place_schematic_tree(
         let (rx, rz) = rotate_xz(vx, vz, schem.width, schem.length, rot);
         let wx = anchor_x + rx - cx;
         let wz = anchor_z + rz - cz;
-        // Never place a log or leaf over water: drops canopy that overhangs a lake/river
-        // (the trunk cell itself is already validated non-water by the caller).
+        // Never put a tree block (trunk or canopy) inside a building footprint.
+        if footprints.is_some_and(|f| f.contains(wx, wz)) {
+            continue;
+        }
+        // Never place a log or leaf over water already present (a belt-and-suspenders; the
+        // post-carve sweep is what removes trees over water carved after placement).
         if editor.check_for_block(wx, 0, wz, Some(&[WATER])) {
             continue;
         }

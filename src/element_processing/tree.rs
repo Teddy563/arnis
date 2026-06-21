@@ -515,6 +515,7 @@ impl Tree {
                     base_y,
                     rot,
                     &blacklist,
+                    building_footprints,
                 );
             }
             return;
