@@ -524,9 +524,16 @@ pub fn carve_water_column_with_flags(
             // tested against its threshold, FIRST positive wins by depth
             // priority, else GRAVEL.
             //
-            // Depth-tier jitter via coord_hash breaks concentric depth rings.
-            let h = crate::land_cover::coord_hash(x + 7, z + 13);
-            let jitter = (h % 3) as i32 - 1;
+            // Depth-tier jitter via a coarse value-noise (NOT per-block coord_hash) so it breaks
+            // concentric depth rings as COHERENT patches instead of per-block static speckle.
+            let jn = crate::ground_generation::value_noise_01(x + 7, z + 13, 22);
+            let jitter = if jn < 0.34 {
+                -1
+            } else if jn > 0.66 {
+                1
+            } else {
+                0
+            };
             let d = (depth + jitter).max(1);
 
             // Per-block independent noise — different seeds + scales.
@@ -541,15 +548,16 @@ pub fn carve_water_column_with_flags(
             //
             // Domain-warp displaces sampling coords → patches are organic
             // (long rounded AND bubble shapes), not circles.
-            let warp_x = crate::ground_generation::value_noise_01(x + 901, z + 33, 40);
-            let warp_z = crate::ground_generation::value_noise_01(x + 17, z + 811, 40);
-            let wx = x + ((warp_x - 0.5) * 24.0) as i32;
-            let wz = z + ((warp_z - 0.5) * 24.0) as i32;
+            let warp_x = crate::ground_generation::value_noise_01(x + 901, z + 33, 52);
+            let warp_z = crate::ground_generation::value_noise_01(x + 17, z + 811, 52);
+            let wx = x + ((warp_x - 0.5) * 28.0) as i32;
+            let wz = z + ((warp_z - 0.5) * 28.0) as i32;
 
-            let n_sand = crate::ground_generation::value_noise_01(wx + 53, wz + 97, 36);
-            let n_clay = crate::ground_generation::value_noise_01(wx + 73, wz + 109, 42);
-            let n_dirt = crate::ground_generation::value_noise_01(wx + 211, wz + 41, 26);
-            let n_coarse = crate::ground_generation::value_noise_01(wx + 311, wz + 17, 30);
+            // Bigger patch periods so dirt/clay/gravel form coherent vanilla-style blobs.
+            let n_sand = crate::ground_generation::value_noise_01(wx + 53, wz + 97, 56);
+            let n_clay = crate::ground_generation::value_noise_01(wx + 73, wz + 109, 64);
+            let n_dirt = crate::ground_generation::value_noise_01(wx + 211, wz + 41, 44);
+            let n_coarse = crate::ground_generation::value_noise_01(wx + 311, wz + 17, 50);
             // 5-13 cell clusters: scale 8 → cluster radius ~3-6 cells.
             // Very tight threshold 0.96 → very few sites pass → spread apart.
             let n_magma = crate::ground_generation::value_noise_01(wx + 401, wz + 503, 8);
