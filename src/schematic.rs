@@ -232,11 +232,31 @@ pub fn trunk_slot(x: i32, z: i32) -> (i32, i32) {
     (cx * S + jx, cz * S + jz)
 }
 
+/// One of the eight trunk log types `map_block` can emit. Used to decide which footprint cells
+/// get a downward "root" (only actual trunk columns, not leaf columns).
+fn is_log(b: Block) -> bool {
+    matches!(
+        b,
+        OAK_LOG
+            | BIRCH_LOG
+            | SPRUCE_LOG
+            | DARK_OAK_LOG
+            | JUNGLE_LOG
+            | ACACIA_LOG
+            | CHERRY_LOG
+            | MANGROVE_LOG
+    )
+}
+
+/// How far a trunk root may extend down to reach the ground on a slope.
+const MAX_ROOT: i32 = 4;
+
 /// Stamp a schematic into the world with its footprint centred on `(anchor_x, anchor_z)`,
 /// the base row (`y = 0`) at `base_y`, rotated by `rot` quarter-turns. Writes only into
 /// AIR via place-if-absent, so it never overwrites buildings, roads, water, or terrain;
-/// air voxels were already dropped at load time. Pure function of its inputs, so the same
-/// tree renders identically from any tile (seam-safe).
+/// air voxels were already dropped at load time. `y_offset` is the same offset used to build
+/// `base_y` (so per-column ground can be recomputed for roots). Pure function of its inputs, so
+/// the same tree renders identically from any tile (seam-safe).
 #[allow(clippy::too_many_arguments)]
 pub fn place_schematic_tree(
     editor: &mut WorldEditor,
@@ -247,6 +267,7 @@ pub fn place_schematic_tree(
     rot: u8,
     blacklist: &[Block],
     footprints: Option<&crate::floodfill_cache::BuildingFootprintBitmap>,
+    y_offset: i32,
 ) {
     // A 90/270 turn swaps the footprint width/length.
     let (fw, fl) = if rot & 1 == 0 {
@@ -256,6 +277,8 @@ pub fn place_schematic_tree(
     };
     let cx = (fw - 1) / 2;
     let cz = (fl - 1) / 2;
+    // Per trunk column: the world Y of its lowest log + the log type, for the root pass below.
+    let mut trunk_bottom: HashMap<(i32, i32), (i32, Block)> = HashMap::new();
     for &(vx, vy, vz, block) in &schem.voxels {
         let (rx, rz) = rotate_xz(vx, vz, schem.width, schem.length, rot);
         let wx = anchor_x + rx - cx;
@@ -272,6 +295,29 @@ pub fn place_schematic_tree(
         // Overwrite terrain/grass (so grass does not poke through the trunk), but the
         // blacklist (buildings, water) is never overwritten.
         editor.set_block_absolute(block, wx, base_y + vy, wz, None, Some(blacklist));
+        // Track the lowest log per column (roots anchor only real trunk columns).
+        if is_log(block) {
+            let wy = base_y + vy;
+            trunk_bottom
+                .entry((wx, wz))
+                .and_modify(|e| {
+                    if wy < e.0 {
+                        *e = (wy, block);
+                    }
+                })
+                .or_insert((wy, block));
+        }
+    }
+    // Root pass: under each trunk column, extend the column's OWN log down to the local ground so
+    // trunks on a slope/edge are anchored instead of floating. The range is naturally EMPTY on flat
+    // or uphill ground (gy >= top), so a flat-terrain trunk never buries its surface block.
+    for ((wx, wz), (top, log)) in trunk_bottom {
+        let gy = editor.get_absolute_y(wx, y_offset, wz); // local terrain Y + same offset as base_y
+        let from = (top - 1 - MAX_ROOT).max(gy);
+        let to = top - 1;
+        for wy in from..=to {
+            editor.set_block_absolute(log, wx, wy, wz, None, Some(blacklist));
+        }
     }
 }
 

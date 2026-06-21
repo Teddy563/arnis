@@ -22,6 +22,11 @@ pub enum Habitat {
     Wet,
     Lowland,
     Dry,
+    /// Tropical (jungle/palm). `habitat_for_tree_type` never returns this, so a Tropical community
+    /// is only ever reachable in a realm that has no other bucket - i.e. the vanilla-plus jungle is
+    /// kept OUT of the temperate sprinkle, while genuinely tropical realms use their own lowland
+    /// rainforest communities.
+    Tropical,
 }
 
 impl Habitat {
@@ -30,6 +35,7 @@ impl Habitat {
             "conifer" => Habitat::Conifer,
             "wet" => Habitat::Wet,
             "dry" => Habitat::Dry,
+            "tropical" => Habitat::Tropical,
             _ => Habitat::Lowland,
         }
     }
@@ -81,9 +87,14 @@ pub struct RegionLibrary {
     realm_pack: Pack,
     vanilla_pack: Pack, // sprinkle; may be empty (then the 12% slice falls back to realm)
     scale: f64,
+    ground_level: i32, // the world's base Y (selection min elevation maps here) for montane test
     total_realm: usize,
     total_vanilla: usize,
 }
+
+/// Metres above the selection's lowest point at which a cell counts as montane (then lowland/wet
+/// communities are swapped for conifer/alpine ones). Converted to blocks via the map scale.
+const MONTANE_METRES: f64 = 450.0;
 
 /// Load every file of a manifest into `entries`, returning the built `Pack`. Files are resolved
 /// relative to `dir`. Empty species/communities are dropped.
@@ -146,7 +157,7 @@ impl RegionLibrary {
     /// Load the realm pack at `dir` (must contain `region.json`) plus the sibling `vanilla-plus`
     /// pack for the sprinkle. Errors if `dir/region.json` is missing (caller falls back to the
     /// plain vanilla loader).
-    pub fn load(dir: &Path, scale: f64) -> Result<RegionLibrary, String> {
+    pub fn load(dir: &Path, scale: f64, ground_level: i32) -> Result<RegionLibrary, String> {
         let m = read_manifest(dir)?;
         let mut entries: Vec<(Schematic, TreeSize)> = Vec::new();
         let realm_pack = load_pack(dir, &m, &mut entries);
@@ -177,9 +188,17 @@ impl RegionLibrary {
             realm_pack,
             vanilla_pack,
             scale,
+            ground_level,
             total_realm,
             total_vanilla,
         })
+    }
+
+    /// True if `(x, z)`'s terrain Y is high enough above the world baseline to be montane (so
+    /// lowland/wet communities are swapped for conifer ones). Pure function of `elev_y`.
+    fn is_montane(&self, elev_y: i32) -> bool {
+        let blocks_above = f64::from(elev_y - self.ground_level);
+        blocks_above / self.scale.max(0.001) > MONTANE_METRES
     }
 
     pub fn schem(&self, idx: usize) -> &Schematic {
@@ -242,9 +261,28 @@ impl RegionLibrary {
     }
 
     /// Choose a community within `pack` for `habitat_hint`: among the communities of that habitat
-    /// (a coarse value-noise zone keeps patches coherent), else the pack default forest.
-    fn pick_community<'a>(&self, pack: &'a Pack, hint: Habitat, x: i32, z: i32) -> &'a Community {
-        let cand = pack.by_habitat.get(&hint).filter(|v| !v.is_empty());
+    /// (a coarse value-noise zone keeps patches coherent), else the pack default forest. On a
+    /// montane cell a lowland/wet hint is swapped for conifer, so mountains pull alpine/taiga
+    /// communities instead of Mediterranean/beach or jungle ones.
+    fn pick_community<'a>(
+        &self,
+        pack: &'a Pack,
+        hint: Habitat,
+        x: i32,
+        z: i32,
+        montane: bool,
+    ) -> &'a Community {
+        let eff_hint = if montane && matches!(hint, Habitat::Lowland | Habitat::Wet) {
+            Habitat::Conifer
+        } else {
+            hint
+        };
+        let cand = pack
+            .by_habitat
+            .get(&eff_hint)
+            .filter(|v| !v.is_empty())
+            // montane fell through to a realm with no conifer community: keep the lowland set.
+            .or_else(|| pack.by_habitat.get(&hint).filter(|v| !v.is_empty()));
         let idx = match cand {
             Some(v) => {
                 let n = crate::ground_generation::value_noise_01(x, z, 160);
@@ -256,20 +294,22 @@ impl RegionLibrary {
         &pack.communities[idx]
     }
 
-    /// Pick a schematic + rotation for the tree at `(x, z)` with the given habitat hint. Applies
-    /// the 85/12/3 regional / vanilla-sprinkle / rare-exotic blend. Pure function of `(x, z)`.
-    pub fn pick(&self, x: i32, z: i32, hint: Habitat) -> Option<(usize, u8)> {
+    /// Pick a schematic + rotation for the tree at `(x, z)` with the given habitat hint and the
+    /// cell's terrain Y (`elev_y`, for montane gating). Applies the 85/12/3 regional /
+    /// vanilla-sprinkle / rare-exotic blend. Pure function of `(x, z, elev_y)`.
+    pub fn pick(&self, x: i32, z: i32, hint: Habitat, elev_y: i32) -> Option<(usize, u8)> {
+        let montane = self.is_montane(elev_y);
         let blend = coord_hash(x + 7, z + 13) % 100;
         let entry = if blend >= 97 {
             // 3% rare: an off-type exotic from a random realm community
             self.pick_rare(x, z)
         } else if blend >= 85 && !self.vanilla_pack.is_empty() {
             // 12% vanilla sprinkle
-            let c = self.pick_community(&self.vanilla_pack, hint, x, z);
+            let c = self.pick_community(&self.vanilla_pack, hint, x, z, montane);
             self.pick_in_community(c, x, z)
         } else {
             // 85% regional (also covers the vanilla slice when no vanilla sibling is present)
-            let c = self.pick_community(&self.realm_pack, hint, x, z);
+            let c = self.pick_community(&self.realm_pack, hint, x, z, montane);
             self.pick_in_community(c, x, z)
         };
         let idx = entry?;
@@ -311,6 +351,7 @@ mod tests {
         assert_eq!(Habitat::parse("conifer"), Habitat::Conifer);
         assert_eq!(Habitat::parse("wet"), Habitat::Wet);
         assert_eq!(Habitat::parse("dry"), Habitat::Dry);
+        assert_eq!(Habitat::parse("tropical"), Habitat::Tropical);
         assert_eq!(Habitat::parse("anything"), Habitat::Lowland);
     }
 
@@ -318,12 +359,12 @@ mod tests {
     #[ignore = "set ARNIS_REGION to a realm dir with region.json"]
     fn smoke_load_real_region() {
         let dir = std::env::var("ARNIS_REGION").expect("ARNIS_REGION");
-        let lib = RegionLibrary::load(Path::new(&dir), 1.0).expect("load region");
+        let lib = RegionLibrary::load(Path::new(&dir), 1.0, -62).expect("load region");
         lib.report();
         assert!(lib.total_realm > 0);
         // every blend branch resolves to a real entry
         for k in 0..200 {
-            if let Some((idx, _)) = lib.pick(k * 3, k * 7, Habitat::Lowland) {
+            if let Some((idx, _)) = lib.pick(k * 3, k * 7, Habitat::Lowland, 0) {
                 assert!(idx < lib.entries.len());
             }
         }

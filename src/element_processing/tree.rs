@@ -18,19 +18,35 @@ use crate::tree_library::TreeLibrary;
 /// the overhanging canopy of bank trees).
 static WATER_MASK: OnceLock<(Arc<Ground>, i32, i32)> = OnceLock::new();
 
+/// The line-waterway channel field (rivers/streams) - block-resolution, so it catches narrow
+/// channels the coarse ESA grid + the surface-Y water probe both miss. Set once per generation.
+static WATERWAY_MASK: OnceLock<Arc<crate::element_processing::waterways::WaterwayField>> =
+    OnceLock::new();
+
 /// Provide the water mask (called once per generation from data_processing).
 pub fn set_water_mask(ground: Arc<Ground>, origin_x: i32, origin_z: i32) {
     let _ = WATER_MASK.set((ground, origin_x, origin_z));
 }
 
-/// True if `(x, z)` is an ESA land-cover water cell (lake/river/ocean). False when no mask is set.
+/// Provide the line-waterway mask (called once per generation from data_processing).
+pub fn set_waterway_mask(field: Arc<crate::element_processing::waterways::WaterwayField>) {
+    let _ = WATERWAY_MASK.set(field);
+}
+
+/// True if `(x, z)` is a water cell - either an ESA land-cover water cell (lake/river/ocean) or a
+/// line-waterway channel cell. False when no mask is set.
 fn in_water_mask(x: i32, z: i32) -> bool {
-    match WATER_MASK.get() {
-        Some((ground, ox, oz)) => {
-            ground.cover_class(XZPoint::new(x - ox, z - oz)) == LC_WATER
+    if let Some((ground, ox, oz)) = WATER_MASK.get() {
+        if ground.cover_class(XZPoint::new(x - ox, z - oz)) == LC_WATER {
+            return true;
         }
-        None => false,
     }
+    if let Some(field) = WATERWAY_MASK.get() {
+        if field.contains(x, z) {
+            return true;
+        }
+    }
+    false
 }
 
 type Coord = (i32, i32, i32);
@@ -580,7 +596,11 @@ impl Tree {
                 return;
             }
             let hint = habitat_for_tree_type(tree_type);
-            if let Some((idx, rot)) = region.pick(sx, sz, hint) {
+            // Terrain Y at the slot drives montane gating (conifer on mountains, not jungle/beach).
+            let elev_y = editor
+                .terrain_level(sx, sz)
+                .unwrap_or_else(|| editor.get_absolute_y(sx, y, sz));
+            if let Some((idx, rot)) = region.pick(sx, sz, hint, elev_y) {
                 let slot_base_y = editor.get_absolute_y(sx, y, sz);
                 crate::schematic::place_schematic_tree(
                     editor,
@@ -591,6 +611,7 @@ impl Tree {
                     rot,
                     &blacklist,
                     building_footprints,
+                    y,
                 );
             }
             return;
@@ -636,6 +657,7 @@ impl Tree {
                     rot,
                     &blacklist,
                     building_footprints,
+                    y,
                 );
             }
             return;
