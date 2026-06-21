@@ -298,7 +298,10 @@ impl RegionLibrary {
     /// cell's terrain Y (`elev_y`, for montane gating). Applies the 85/12/3 regional /
     /// vanilla-sprinkle / rare-exotic blend. Pure function of `(x, z, elev_y)`.
     pub fn pick(&self, x: i32, z: i32, hint: Habitat, elev_y: i32) -> Option<(usize, u8)> {
-        let montane = self.is_montane(elev_y);
+        // Bias toward conifer up high, but only in ~60% of zones (a coarse value-noise patch), so
+        // mountains keep oak/birch patches instead of turning 100% spruce.
+        let montane =
+            self.is_montane(elev_y) && crate::ground_generation::value_noise_01(x, z, 64) < 0.6;
         let blend = coord_hash(x + 7, z + 13) % 100;
         let entry = if blend >= 97 {
             // 3% rare: an off-type exotic from a random realm community

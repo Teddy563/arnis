@@ -109,8 +109,7 @@ fn process_element(
                         road_mask,
                     );
                 } else {
-                    // Line waterways are carved post-ground-gen via the WaterwayField
-                    // (carve_waterway_region), so nothing is drawn here.
+                    waterways::generate_waterways(editor, way);
                 }
             } else if way.tags.contains_key("railway") {
                 railways::generate_railways(
@@ -605,16 +604,6 @@ pub fn generate_world_with_options(
                         g_min_z,
                         g_max_z,
                     );
-                    // Carve line waterways (rivers/streams) with the same bed machinery.
-                    crate::element_processing::waterways::carve_waterway_region(
-                        &mut tile_editor,
-                        &waterway_field,
-                        &road_mask,
-                        g_min_x,
-                        g_max_x,
-                        g_min_z,
-                        g_max_z,
-                    );
                     // Per-tile floating-veg sweep so it's eviction-safe: the post-merge
                     // full-bbox sweep never reaches regions already freed to disk under
                     // stream-to-disk, so run the same logic in-tile over strict bounds.
@@ -836,15 +825,6 @@ pub fn generate_world_with_options(
             &xzbbox,
             &big_water_field,
             &road_mask,
-        );
-        crate::element_processing::waterways::carve_waterway_region(
-            &mut editor,
-            &waterway_field,
-            &road_mask,
-            xzbbox.min_x(),
-            xzbbox.max_x(),
-            xzbbox.min_z(),
-            xzbbox.max_z(),
         );
     }
 
