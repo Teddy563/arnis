@@ -378,12 +378,12 @@ impl RegionLibrary {
         let entry = if blend >= 97 {
             // 3% rare: an off-type exotic from a random realm community
             self.pick_rare(x, z)
-        } else if blend >= 85 && !self.vanilla_pack.is_empty() {
-            // 12% vanilla sprinkle
+        } else if blend >= 67 && !self.vanilla_pack.is_empty() {
+            // 30% vanilla-plus sprinkle - the familiar MC trees everywhere
             let c = self.pick_community(&self.vanilla_pack, hint, x, z, montane);
             self.pick_in_community(c, x, z)
         } else {
-            // 85% regional (also covers the vanilla slice when no vanilla sibling is present)
+            // 67% regional (also covers the vanilla slice when no vanilla sibling is present)
             let c = self.pick_community(&self.realm_pack, hint, x, z, montane);
             self.pick_in_community(c, x, z)
         };
