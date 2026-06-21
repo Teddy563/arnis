@@ -150,11 +150,15 @@ fn process_element(
                     flood_fill_cache,
                     building_footprints,
                 );
-            } else if node.tags.contains_key("amenity") {
+            } else if args.buildings && node.tags.contains_key("amenity") {
+                // amenity NODES are vertical props (lamps, benches, fountains, shelters) - skip
+                // them with --no-buildings (the user wants a clean roads/ground world, no furniture).
                 amenities::generate_amenities(editor, element, args, flood_fill_cache, road_mask);
             } else if args.buildings && node.tags.contains_key("barrier") {
                 barriers::generate_barrier_nodes(editor, node, bridge_surface);
-            } else if node.tags.contains_key("highway") {
+            } else if args.buildings && node.tags.contains_key("highway") {
+                // highway NODES are point furniture (street_lamp, traffic_signals, signs, bus_stop).
+                // Skipped with --no-buildings; the road geometry comes from highway WAYS (above).
                 highways::generate_highways(
                     editor,
                     element,
