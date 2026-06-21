@@ -3,17 +3,34 @@ use crate::deterministic_rng::coord_rng;
 use crate::floodfill_cache::BuildingFootprintBitmap;
 use crate::world_editor::WorldEditor;
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+use crate::tree_library::TreeLibrary;
 
 type Coord = (i32, i32, i32);
 
-/// When a schematic tree pack is active, the schematic placement pass handles all tree cover,
-/// so procedural trees are suppressed everywhere to avoid doubling up (the dense-forest bug).
-static SCHEMATIC_TREES_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// The loaded schematic tree pack (+ map scale), set once per generation. When present, tree
+/// spawns stamp a schematic of the chosen type instead of building procedural blocks, so
+/// schematic trees inherit Arnis's coverage, density, and water/road/building checks.
+static SCHEMATIC_PACK: OnceLock<(TreeLibrary, f64)> = OnceLock::new();
 
-/// Set once per generation from whether a `--tree-pack` is loaded.
-pub fn set_schematic_trees_active(active: bool) {
-    SCHEMATIC_TREES_ACTIVE.store(active, Ordering::Relaxed);
+/// Provide the schematic pack (called once per generation when a `--tree-pack` is loaded).
+pub fn set_schematic_pack(lib: TreeLibrary, scale: f64) {
+    let _ = SCHEMATIC_PACK.set((lib, scale));
+}
+
+/// Map Arnis's chosen `TreeType` to a pack species folder key (oak stays the plurality).
+fn species_for_tree_type(t: TreeType) -> &'static str {
+    match t {
+        TreeType::Spruce | TreeType::Pine => "spruce",
+        TreeType::Birch => "birch",
+        TreeType::DarkOak => "dark_oak",
+        TreeType::Jungle => "jungle",
+        TreeType::Acacia => "acacia",
+        TreeType::Bush | TreeType::AzaleaBush => "azalea",
+        TreeType::Willow | TreeType::Mangrove => "swamp_oak",
+        TreeType::Oak | TreeType::TallOak | TreeType::FloweringOak | TreeType::Cherry => "oak",
+    }
 }
 
 // Concentric rings added on top of the trunk column to bulk up the canopy.
@@ -438,9 +455,6 @@ impl Tree {
         tree_type: TreeType,
         building_footprints: Option<&BuildingFootprintBitmap>,
     ) {
-        if SCHEMATIC_TREES_ACTIVE.load(Ordering::Relaxed) {
-            return; // a schematic tree pack handles tree cover; skip procedural trees
-        }
         if let Some(footprints) = building_footprints {
             if footprints.contains(x, z) {
                 return;
@@ -483,6 +497,28 @@ impl Tree {
 
         // One base_y for the whole tree so the canopy doesn't warp to follow terrain.
         let base_y = editor.get_absolute_y(x, y, z);
+
+        // Schematic pack active: stamp a schematic of this type/size instead of building the
+        // procedural tree. The footprint/water/road checks + density above already ran, so the
+        // schematic inherits Arnis's exact coverage and avoidance; the blacklist keeps it from
+        // cutting buildings/water.
+        if let Some((lib, scale)) = SCHEMATIC_PACK.get() {
+            let species = species_for_tree_type(tree_type);
+            let size = crate::tree_library::pick_size(x, z, *scale);
+            if let Some(idx) = lib.pick_variant(species, size, x, z) {
+                let rot = (crate::land_cover::coord_hash(x ^ 0x5bd1, z ^ 0x9e37) % 4) as u8;
+                crate::schematic::place_schematic_tree(
+                    editor,
+                    &lib.entries[idx].schem,
+                    x,
+                    z,
+                    base_y,
+                    rot,
+                    &blacklist,
+                );
+            }
+            return;
+        }
 
         // Trunk jitter clamped so the canopy cap always sits above the trunk top.
         let height_jitter = ((variant_idx >> 8) & 0x3) as i32 - 1;

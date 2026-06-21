@@ -320,9 +320,12 @@ pub fn generate_world_with_options(
             }
         }
     });
-    // With a pack active, the schematic pass owns tree cover; suppress procedural trees
-    // everywhere so forests/parks don't get both (the over-dense clutter).
-    crate::element_processing::tree::set_schematic_trees_active(tree_library.is_some());
+    // With a pack active, hand it to the tree spawner: every tree spawn stamps a schematic of
+    // the chosen type instead of procedural blocks, inheriting Arnis's coverage, density, and
+    // water/road/building avoidance.
+    if let Some(lib) = tree_library {
+        crate::element_processing::tree::set_schematic_pack(lib, args.scale);
+    }
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
     let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox, args.scale);
@@ -584,27 +587,6 @@ pub fn generate_world_with_options(
                         g_min_z,
                         g_max_z,
                     );
-                    // Schematic trees per tile (eviction-safe). Expand by the canopy halo so a
-                    // boundary tree is stamped from both tiles; place-if-absent keeps the
-                    // overlap identical, so the canopy is seamless across the tile edge.
-                    if let Some(lib) = tree_library.as_ref() {
-                        let halo = crate::tree_placement::TREE_TILE_HALO;
-                        crate::tree_placement::place_schematic_trees_region(
-                            &mut tile_editor,
-                            ground.as_ref(),
-                            lib,
-                            &road_mask,
-                            &big_water_field,
-                            &building_footprints,
-                            &xzbbox,
-                            args.scale,
-                            args.master_origin_lat.unwrap_or(45.0),
-                            g_min_x - halo,
-                            g_max_x + halo,
-                            g_min_z - halo,
-                            g_max_z + halo,
-                        );
-                    }
                     // Per-tile floating-veg sweep so it's eviction-safe: the post-merge
                     // full-bbox sweep never reaches regions already freed to disk under
                     // stream-to-disk, so run the same logic in-tile over strict bounds.
@@ -827,22 +809,6 @@ pub fn generate_world_with_options(
             &big_water_field,
             &road_mask,
         );
-
-        // Stamp schematic trees over ESA tree cover when a --tree-pack is loaded.
-        if let Some(lib) = &tree_library {
-            let latitude = args.master_origin_lat.unwrap_or(45.0);
-            crate::tree_placement::place_schematic_trees_pass(
-                &mut editor,
-                ground.as_ref(),
-                lib,
-                &road_mask,
-                &big_water_field,
-                &building_footprints,
-                &xzbbox,
-                args.scale,
-                latitude,
-            );
-        }
     }
 
     // v2.8.10 F10 — sweep floating veg over WATER + roads.

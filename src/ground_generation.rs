@@ -1006,9 +1006,9 @@ pub fn generate_ground_region(
                                         if slope <= 4 && ground_allows_trees =>
                                     {
                                         let choice = rng.random_range(0..30);
-                                        if choice == 0 && args.tree_pack.is_none() {
-                                            // Procedural tree, unless a schematic pack is active:
-                                            // the schematic placement pass covers tree cover then.
+                                        if choice == 0 {
+                                            // Tree::create stamps a schematic when a pack is
+                                            // active, else builds the procedural tree.
                                             tree::Tree::create(
                                                 editor,
                                                 (x, 1, z),

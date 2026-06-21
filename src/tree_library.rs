@@ -31,6 +31,29 @@ pub fn size_for_height(height: i32) -> TreeSize {
     }
 }
 
+/// Choose a size tier from the scale band (medium common at full scale; small-only on very
+/// small maps). Position-seeded so it is identical from any tile.
+pub fn pick_size(px: i32, pz: i32, scale: f64) -> TreeSize {
+    let roll = crate::land_cover::coord_hash(px + 101, pz + 233) % 100;
+    if scale >= 0.5 {
+        if roll < 20 {
+            TreeSize::Small
+        } else if roll < 80 {
+            TreeSize::Medium
+        } else {
+            TreeSize::Big
+        }
+    } else if scale >= 0.2 {
+        if roll < 60 {
+            TreeSize::Small
+        } else {
+            TreeSize::Medium
+        }
+    } else {
+        TreeSize::Small
+    }
+}
+
 pub struct TreeEntry {
     pub species: String,
     pub size: TreeSize,
@@ -165,6 +188,22 @@ impl TreeLibrary {
             .get(&(species.to_string(), size))
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// Pick a library entry index for (species, size), falling back across sizes then to oak.
+    /// Position-seeded so the same spot always picks the same tree (seam-safe).
+    pub fn pick_variant(&self, species: &str, size: TreeSize, px: i32, pz: i32) -> Option<usize> {
+        let h = crate::land_cover::coord_hash(px + 313, pz + 727) as usize;
+        let order = [size, TreeSize::Medium, TreeSize::Small, TreeSize::Big];
+        for sp in [species, "oak"] {
+            for &sz in &order {
+                let c = self.candidates(sp, sz);
+                if !c.is_empty() {
+                    return Some(c[h % c.len()]);
+                }
+            }
+        }
+        None
     }
 
     /// Log the total + breakdown (the numbers the UI surfaces).

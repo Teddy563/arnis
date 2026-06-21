@@ -12,7 +12,7 @@ use fastnbt::Value;
 use crate::block_definitions::{
     Block, ACACIA_LEAVES, ACACIA_LOG, AZALEA_LEAVES, BIRCH_LEAVES, BIRCH_LOG, CHERRY_LEAVES,
     CHERRY_LOG, DARK_OAK_LEAVES, DARK_OAK_LOG, JUNGLE_LEAVES, JUNGLE_LOG, MANGROVE_LEAVES,
-    MANGROVE_LOG, OAK_LEAVES, OAK_LOG, SPRUCE_LEAVES, SPRUCE_LOG,
+    MANGROVE_LOG, OAK_LEAVES, OAK_LOG, SPRUCE_LEAVES, SPRUCE_LOG, WATER,
 };
 use crate::world_editor::WorldEditor;
 
@@ -199,6 +199,7 @@ pub fn place_schematic_tree(
     anchor_z: i32,
     base_y: i32,
     rot: u8,
+    blacklist: &[Block],
 ) {
     // A 90/270 turn swaps the footprint width/length.
     let (fw, fl) = if rot & 1 == 0 {
@@ -210,12 +211,16 @@ pub fn place_schematic_tree(
     let cz = (fl - 1) / 2;
     for &(vx, vy, vz, block) in &schem.voxels {
         let (rx, rz) = rotate_xz(vx, vz, schem.width, schem.length, rot);
-        editor.set_block_if_absent_absolute(
-            block,
-            anchor_x + rx - cx,
-            base_y + vy,
-            anchor_z + rz - cz,
-        );
+        let wx = anchor_x + rx - cx;
+        let wz = anchor_z + rz - cz;
+        // Never place a log or leaf over water: drops canopy that overhangs a lake/river
+        // (the trunk cell itself is already validated non-water by the caller).
+        if editor.check_for_block(wx, 0, wz, Some(&[WATER])) {
+            continue;
+        }
+        // Overwrite terrain/grass (so grass does not poke through the trunk), but the
+        // blacklist (buildings, water) is never overwritten.
+        editor.set_block_absolute(block, wx, base_y + vy, wz, None, Some(blacklist));
     }
 }
 
