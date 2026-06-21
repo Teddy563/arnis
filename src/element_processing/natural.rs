@@ -253,8 +253,17 @@ pub fn generate_natural(
                             editor.set_block(SAND, x, 0, z, None, None);
                         }
                         "glacier" => {
-                            editor.set_block(PACKED_ICE, x, 0, z, None, None);
-                            editor.set_block(STONE, x, -1, z, None, None);
+                            // Don't tile packed ice up against water (a glacier edge meeting a
+                            // pond); leave those shore cells as the base ground instead.
+                            let water_adjacent = editor.check_for_block(x, 0, z, Some(&[WATER]))
+                                || editor.check_for_block(x + 1, 0, z, Some(&[WATER]))
+                                || editor.check_for_block(x - 1, 0, z, Some(&[WATER]))
+                                || editor.check_for_block(x, 0, z + 1, Some(&[WATER]))
+                                || editor.check_for_block(x, 0, z - 1, Some(&[WATER]));
+                            if !water_adjacent {
+                                editor.set_block(PACKED_ICE, x, 0, z, None, None);
+                                editor.set_block(STONE, x, -1, z, None, None);
+                            }
                         }
                         "bare_rock" => {
                             // Varied rock surface: stone base with natural variation

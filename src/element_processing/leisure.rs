@@ -91,7 +91,17 @@ pub fn generate_leisure(
             let tile_inv = crate::ground_generation::tile_invariant_enabled();
 
             for &(x, z) in filled_area.iter() {
-                editor.set_block(block_type, x, 0, z, Some(&[GRASS_BLOCK]), None);
+                // Keep an ice_rink off the waterline: don't tile packed ice right up against a
+                // pond/pool. Only ice pays the neighbour scan (id check short-circuits).
+                let ice_on_water = block_type.id() == PACKED_ICE.id()
+                    && (editor.check_for_block(x, 0, z, Some(&[WATER]))
+                        || editor.check_for_block(x + 1, 0, z, Some(&[WATER]))
+                        || editor.check_for_block(x - 1, 0, z, Some(&[WATER]))
+                        || editor.check_for_block(x, 0, z + 1, Some(&[WATER]))
+                        || editor.check_for_block(x, 0, z - 1, Some(&[WATER])));
+                if !ice_on_water {
+                    editor.set_block(block_type, x, 0, z, Some(&[GRASS_BLOCK]), None);
+                }
 
                 let mut tile_rng;
                 let rng = if tile_inv {
