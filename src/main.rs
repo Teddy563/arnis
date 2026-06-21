@@ -40,6 +40,7 @@ mod telemetry;
 mod test_utilities;
 mod tile;
 mod tree_library;
+mod tree_placement;
 mod version_check;
 mod water_depth;
 mod world_editor;

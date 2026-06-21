@@ -1006,7 +1006,9 @@ pub fn generate_ground_region(
                                         if slope <= 4 && ground_allows_trees =>
                                     {
                                         let choice = rng.random_range(0..30);
-                                        if choice == 0 {
+                                        if choice == 0 && args.tree_pack.is_none() {
+                                            // Procedural tree, unless a schematic pack is active:
+                                            // the schematic placement pass covers tree cover then.
                                             tree::Tree::create(
                                                 editor,
                                                 (x, 1, z),

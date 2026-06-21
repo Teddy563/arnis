@@ -14,6 +14,7 @@ use crate::block_definitions::{
     CHERRY_LOG, DARK_OAK_LEAVES, DARK_OAK_LOG, JUNGLE_LEAVES, JUNGLE_LOG, MANGROVE_LEAVES,
     MANGROVE_LOG, OAK_LEAVES, OAK_LOG, SPRUCE_LEAVES, SPRUCE_LOG,
 };
+use crate::world_editor::WorldEditor;
 
 /// A parsed schematic: dimensions plus the non-air log/leaf voxels. The origin is the
 /// schematic's min corner (`x` in `0..width`, `y` in `0..height`, `z` in `0..length`).
@@ -172,6 +173,38 @@ pub fn rotate_xz(x: i32, z: i32, w: i32, l: i32, k: u8) -> (i32, i32) {
         1 => (l - 1 - z, x),
         2 => (w - 1 - x, l - 1 - z),
         _ => (z, w - 1 - x),
+    }
+}
+
+/// Stamp a schematic into the world with its footprint centred on `(anchor_x, anchor_z)`,
+/// the base row (`y = 0`) at `base_y`, rotated by `rot` quarter-turns. Writes only into
+/// AIR via place-if-absent, so it never overwrites buildings, roads, water, or terrain;
+/// air voxels were already dropped at load time. Pure function of its inputs, so the same
+/// tree renders identically from any tile (seam-safe).
+pub fn place_schematic_tree(
+    editor: &mut WorldEditor,
+    schem: &Schematic,
+    anchor_x: i32,
+    anchor_z: i32,
+    base_y: i32,
+    rot: u8,
+) {
+    // A 90/270 turn swaps the footprint width/length.
+    let (fw, fl) = if rot & 1 == 0 {
+        (schem.width, schem.length)
+    } else {
+        (schem.length, schem.width)
+    };
+    let cx = (fw - 1) / 2;
+    let cz = (fl - 1) / 2;
+    for &(vx, vy, vz, block) in &schem.voxels {
+        let (rx, rz) = rotate_xz(vx, vz, schem.width, schem.length, rot);
+        editor.set_block_if_absent_absolute(
+            block,
+            anchor_x + rx - cx,
+            base_y + vy,
+            anchor_z + rz - cz,
+        );
     }
 }
 
