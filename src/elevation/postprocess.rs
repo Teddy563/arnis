@@ -1196,6 +1196,7 @@ pub fn filter_elevation_outliers(height_grid: &mut [Vec<f64>]) {
 /// Scale raw elevation (meters) to Minecraft Y coordinates, keeping f64 precision.
 /// `extended_max_y` is the cap when `disable_height_limit` is on (Java datapack:
 /// 2031; Bedrock BP: 512); ignored otherwise.
+#[allow(clippy::too_many_arguments)]
 pub fn scale_to_minecraft(
     blurred_heights: &[Vec<f64>],
     scale: f64,
@@ -1204,7 +1205,8 @@ pub fn scale_to_minecraft(
     extended_max_y: i32,
     elevation_min_override: Option<f64>,
     elevation_max_override: Option<f64>,
-) -> (Vec<Vec<f64>>, f64, f64) {
+    vertical_exaggeration: f64,
+) -> (Vec<Vec<f64>>, f64, f64, f64) {
     // When global overrides are provided (from --elevation-min/--elevation-max),
     // use them directly so all tiles share the same Y reference frame.
     // Otherwise derive min/max from this tile's data (original per-tile behaviour).
@@ -1232,7 +1234,7 @@ pub fn scale_to_minecraft(
             ),
     };
 
-    let (min_height, _max_height, height_range) =
+    let (min_height, max_height, height_range) =
         if !min_height.is_finite() || !max_height.is_finite() || min_height >= max_height {
             // Zero-relief/degenerate: keep the real min height (the snow line needs it)
             // but flatten the range so every cell maps to ground_level. `min <= max`
@@ -1255,7 +1257,9 @@ pub fn scale_to_minecraft(
     };
     let upper_clamp = (effective_max_y - TERRAIN_HEIGHT_BUFFER) as f64;
 
-    let ideal_scaled_range: f64 = height_range * scale;
+    // Vertical exaggeration multiplies the height mapping only (footprint is unchanged). The
+    // compression clamp below still keeps it inside the build height.
+    let ideal_scaled_range: f64 = height_range * scale * vertical_exaggeration.max(0.1);
     let available_y_range: f64 = (effective_max_y - TERRAIN_HEIGHT_BUFFER - ground_level) as f64;
 
     let scaled_range: f64 = if ideal_scaled_range <= available_y_range {
@@ -1301,7 +1305,7 @@ pub fn scale_to_minecraft(
     } else {
         0.0
     };
-    (mc_heights, min_height, blocks_per_meter)
+    (mc_heights, min_height, max_height, blocks_per_meter)
 }
 
 #[cfg(test)]
@@ -1313,8 +1317,8 @@ mod tests {
         // Zero-relief terrain must still report its true elevation so the snow
         // line can tell a high plateau from a low one.
         let grid = vec![vec![4500.0_f64; 4]; 4];
-        let (mc, min_m, blocks_per_meter) =
-            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None);
+        let (mc, min_m, _max_m, blocks_per_meter) =
+            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None, 1.0);
         assert_eq!(min_m, 4500.0);
         assert_eq!(blocks_per_meter, 0.0);
         // Every cell flattens to ground level.
@@ -1325,8 +1329,8 @@ mod tests {
     fn scale_all_nan_grid_min_height_zero() {
         // No finite samples must not leak the f64::MAX reduce sentinel as min.
         let grid = vec![vec![f64::NAN; 4]; 4];
-        let (_mc, min_m, blocks_per_meter) =
-            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None);
+        let (_mc, min_m, _max_m, blocks_per_meter) =
+            scale_to_minecraft(&grid, 1.0, 64, false, 0, None, None, 1.0);
         assert_eq!(min_m, 0.0);
         assert_eq!(blocks_per_meter, 0.0);
     }

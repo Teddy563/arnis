@@ -1097,6 +1097,11 @@ fn gui_start_generation(
             let args: Args = Args {
                 bbox,
                 file: None,
+                tree_sizes: None,
+                vertical_exaggeration: 1.0,
+                snow_mode: "realistic".to_string(),
+                snow_percent: 6.0,
+                snow_y: 80,
                 osm_tile_dir: None,
                 osm_tile_z: 11,
                 save_json_file: None,

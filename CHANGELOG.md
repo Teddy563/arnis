@@ -4,6 +4,26 @@ All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https
 
 Starting with this release the fork tracks the upstream Arnis version number (2.9.0); earlier entries used an internal 1.8.x sequence.
 
+## [2.9.2] - 2026-06-22
+
+Two themes: load your own tree models, and shape the terrain. This release adds a pack-agnostic schematic tree system and two terrain knobs on top of the 2.9.1 generator. It ships no tree art; it places whatever pack directory you point it at.
+
+### Added
+
+- **`--tree-pack <DIR>` (schematic tree packs).** Points Arnis at a directory of Sponge `.schem` tree models plus a `region.json` manifest and places those models instead of the built-in procedural trees. The engine picks a realm by location, a community by terrain, then a weighted species, with a vanilla-tree blend mixed in, and stamps the models inside Arnis's own tree-spawn pass so density and clearings stay natural. Mutually optional: without the flag, the built-in procedural trees are used exactly as before. Usage: `arnis --output-dir ./world --bbox <bbox> --tree-pack ./packs/eur`.
+- **`--tree-sizes <list>` (size by scale).** Comma list of `small,medium,big,tall,giant` choosing which height tiers may place. A disabled tier falls back to a smaller one rather than leaving a gap, and large tiers are gated off on small scales so a 1:N city does not sprout 40-block giants. Usage: `arnis ... --tree-pack ./packs/eur --tree-sizes small,medium,big`.
+- **`--vertical-exaggeration <FACTOR>`.** Multiplies terrain height only, not the map footprint, so relief that flattens at small scales comes back; it auto-compresses to the build height. Default 1.0. Usage: `arnis ... --terrain --vertical-exaggeration 2.0`.
+- **`--snow-mode off|realistic|peaks|manual` plus `--snow-percent <P>` / `--snow-y <Y>`.** Controls snow placement: off, the real latitude snow line, the top N percent of world height (`--snow-percent`), or above a fixed Y (`--snow-y`). Usage: `arnis ... --terrain --snow-mode peaks --snow-percent 15`.
+
+### Fixed
+
+- **Tree anchoring (float fix).** Trees anchor on slopes and at water edges instead of floating, never root in water, may overhang the bank with canopy, and never clip into buildings.
+- **Small-scale water.** Scale-aware river and pool depth (a linear bowl below scale 0.5), line-river width scale-capped so 1:10 streams stay 3 blocks or under, and a more varied riverbed. Trees and leaves are swept off the water surface so the waterline stays clean.
+
+### Changed / Engine
+
+- **`--no-buildings` skips street furniture.** Also drops street-furniture nodes (lampposts, signs, traffic signals), not just building footprints.
+
 ## [2.9.1] - 2026-06-18
 
 A maintenance release on top of 2.9.0. It lets a Meld orchestrator feed each cell its own slice of a shared OSM tile cache directly (no per-cell merge step), removes a water rendering artifact that could flood a triangle of a cell, and makes the Overture building fetch skip work it does not need.

@@ -40,6 +40,31 @@ pub struct Args {
     #[arg(long = "tree-pack", value_name = "DIR")]
     pub tree_pack: Option<PathBuf>,
 
+    /// Enabled tree size tiers for a region pack, comma-separated: small,medium,big,tall,giant.
+    /// Unset = small,medium,big,tall (Giant off). The Giant tier (29+ blocks) only renders at 1:1
+    /// even when enabled. A disabled tier falls back to a smaller one (never leaves a gap).
+    #[arg(long = "tree-sizes", value_name = "LIST")]
+    pub tree_sizes: Option<String>,
+
+    /// Vertical exaggeration for terrain: multiplies the elevation->Y mapping ONLY (not the
+    /// horizontal footprint). 1.0 = true scale; 2-3 = dramatic mountains at the same map size.
+    /// Auto-compresses if it would exceed the build height.
+    #[arg(long = "vertical-exaggeration", default_value_t = 1.0)]
+    pub vertical_exaggeration: f64,
+
+    /// Snow placement mode: off | realistic (latitude snow line) | peaks (top N% of the world's
+    /// height range) | manual (at/above a fixed Y).
+    #[arg(long = "snow-mode", default_value = "realistic")]
+    pub snow_mode: String,
+
+    /// For --snow-mode peaks: snow on the top N% of the world's height range.
+    #[arg(long = "snow-percent", default_value_t = 6.0)]
+    pub snow_percent: f64,
+
+    /// For --snow-mode manual: snow at/above this Minecraft Y.
+    #[arg(long = "snow-y", default_value_t = 80)]
+    pub snow_y: i32,
+
     /// Generate a Bedrock Edition world (.mcworld) instead of Java Edition
     #[arg(long)]
     pub bedrock: bool,

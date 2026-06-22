@@ -71,6 +71,65 @@ fn snow_threshold_for(ed: &ElevationData, lat_deg: f64, ground_level: i32) -> i3
     (ground_level as f64 + (snowline - ed.min_height_m) * ed.blocks_per_meter).round() as i32
 }
 
+/// How snow caps are placed on terrain.
+#[derive(Clone, Copy, Debug)]
+pub enum SnowMode {
+    /// No snow anywhere.
+    Off,
+    /// Real climatic snow line by latitude (the geographically-honest default).
+    Realistic,
+    /// Snow on the top N% of the world's height range (always gives a cap on the tallest terrain,
+    /// independent of latitude).
+    Peaks,
+    /// Snow at/above a fixed Minecraft Y the user picks.
+    Manual,
+}
+
+/// Snow placement config, resolved from the CLI flags.
+#[derive(Clone, Copy, Debug)]
+pub struct SnowConfig {
+    pub mode: SnowMode,
+    pub percent: f64,
+    pub manual_y: i32,
+}
+
+impl SnowConfig {
+    pub fn from_args(mode: &str, percent: f64, manual_y: i32) -> SnowConfig {
+        let mode = match mode.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" => SnowMode::Off,
+            "peaks" | "percent" | "top" => SnowMode::Peaks,
+            "manual" | "y" | "fixed" => SnowMode::Manual,
+            _ => SnowMode::Realistic,
+        };
+        SnowConfig { mode, percent, manual_y }
+    }
+}
+
+/// Resolve the snow-cap Y threshold for the chosen mode. `ground_level` is the world floor Y; the
+/// elevation affine (`min_height_m`/`max_height_m`/`blocks_per_meter`) gives the highest terrain Y
+/// for the "peaks" percentile. The same global affine is shared by every Meld tile, so the snowline
+/// is identical across cells (seam-safe).
+fn compute_snow_threshold(
+    ed: &ElevationData,
+    lat_deg: f64,
+    ground_level: i32,
+    cfg: SnowConfig,
+) -> i32 {
+    match cfg.mode {
+        SnowMode::Off => i32::MAX,
+        SnowMode::Realistic => snow_threshold_for(ed, lat_deg, ground_level),
+        SnowMode::Manual => cfg.manual_y,
+        SnowMode::Peaks => {
+            let max_y =
+                ground_level as f64 + (ed.max_height_m - ed.min_height_m) * ed.blocks_per_meter;
+            let min_y = ground_level as f64;
+            let range = (max_y - min_y).max(0.0);
+            let pct = cfg.percent.clamp(0.0, 100.0) / 100.0;
+            (max_y - pct * range).round() as i32
+        }
+    }
+}
+
 impl Ground {
     pub fn new_flat(ground_level: i32) -> Self {
         Self {
@@ -97,6 +156,8 @@ impl Ground {
         master_origin_lat: Option<f64>,
         master_origin_lng: Option<f64>,
         benchmark: bool,
+        vertical_exaggeration: f64,
+        snow: SnowConfig,
     ) -> Self {
         let mut bench = crate::bench::Bench::new(benchmark);
         // Fetch land cover FIRST so we can feed it into the elevation
@@ -141,10 +202,11 @@ impl Ground {
             master_origin_lat,
             master_origin_lng,
             benchmark,
+            vertical_exaggeration,
         ) {
             Ok(elevation_data) => {
                 let lat = (bbox.min().lat() + bbox.max().lat()) / 2.0;
-                let snow_threshold_y = snow_threshold_for(&elevation_data, lat, water_floor);
+                let snow_threshold_y = compute_snow_threshold(&elevation_data, lat, water_floor, snow);
                 Self {
                     elevation_enabled: true,
                     ground_level: water_floor,
@@ -659,6 +721,8 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             args.master_origin_lat,
             args.master_origin_lng,
             args.benchmark,
+            args.vertical_exaggeration,
+            SnowConfig::from_args(&args.snow_mode, args.snow_percent, args.snow_y),
         );
         if args.debug {
             ground.save_debug_image("elevation_debug");
@@ -698,6 +762,7 @@ mod tests {
                 world_width: w,
                 world_height: h,
                 min_height_m: 0.0,
+                max_height_m: 0.0,
                 blocks_per_meter: 1.0,
             }),
             land_cover: None,
@@ -749,6 +814,7 @@ mod tests {
             world_width: 2,
             world_height: 2,
             min_height_m: min_m,
+            max_height_m: min_m,
             blocks_per_meter: bpm,
         };
         // 46 deg snow line is 3000 m; at 0.1 block/m from min 0 m, ground 64 => Y 364.
@@ -756,5 +822,31 @@ mod tests {
         // Flat terrain: never below the line, always above it.
         assert_eq!(snow_threshold_for(&ed(100.0, 0.0), 46.0, 64), i32::MAX);
         assert_eq!(snow_threshold_for(&ed(4000.0, 0.0), 46.0, 64), i32::MIN);
+    }
+
+    #[test]
+    fn snow_peaks_caps_the_top_percent() {
+        // min 0 m -> Y0, range 1000 m at 0.1 block/m -> peak Y100. Top 10% -> snow above Y90.
+        let ed = ElevationData {
+            heights: vec![vec![0.0; 2]; 2],
+            width: 2,
+            height: 2,
+            world_width: 2,
+            world_height: 2,
+            min_height_m: 0.0,
+            max_height_m: 1000.0,
+            blocks_per_meter: 0.1,
+        };
+        let cfg = SnowConfig::from_args("peaks", 10.0, 0);
+        assert_eq!(compute_snow_threshold(&ed, 46.0, 0, cfg), 90);
+        // off + manual.
+        assert_eq!(
+            compute_snow_threshold(&ed, 46.0, 0, SnowConfig::from_args("off", 0.0, 0)),
+            i32::MAX
+        );
+        assert_eq!(
+            compute_snow_threshold(&ed, 46.0, 0, SnowConfig::from_args("manual", 0.0, 55)),
+            55
+        );
     }
 }

@@ -231,6 +231,14 @@ pub fn trunk_slot(x: i32, z: i32, scale: f64) -> (i32, i32) {
     } else {
         3
     };
+    trunk_slot_s(x, z, s)
+}
+
+/// Trunk slot with an explicit spacing `s` (blocks). The region pack uses this so spacing can be
+/// density-aware per community. Quantizes (x,z) to the `s`-grid with a 1-bit hash jitter, so every
+/// spawn in a cell collapses to one idempotent, seam-safe slot.
+pub fn trunk_slot_s(x: i32, z: i32, s: i32) -> (i32, i32) {
+    let s = s.max(1);
     let cx = x.div_euclid(s);
     let cz = z.div_euclid(s);
     let h = crate::land_cover::coord_hash(cx.wrapping_mul(0x1f1f) + 17, cz.wrapping_mul(0x2b2b) + 91);
@@ -255,8 +263,14 @@ fn is_log(b: Block) -> bool {
     )
 }
 
-/// How far a trunk root may extend down to reach the ground on a slope.
-const MAX_ROOT: i32 = 4;
+/// A log column counts as a ground-rooted TRUNK BASE (eligible for the downward root pass) only if
+/// its lowest log is within this many blocks of the schem floor (y=0). Columns whose lowest log
+/// sits higher are branch/canopy tips - rooting them would drop a log pillar from the canopy to the
+/// ground (the screenshot "floating/pillar" artifact), so they are never rooted.
+const ROOT_BASE_VY: i32 = 2;
+/// Safety bound on how far a real trunk root may reach down (only bites pathological tile-seam
+/// elevation deltas). Genuine trunk bases otherwise anchor straight to their own local ground.
+const ROOT_MAX: i32 = 64;
 
 /// Stamp a schematic into the world with its footprint centred on `(anchor_x, anchor_z)`,
 /// the base row (`y = 0`) at `base_y`, rotated by `rot` quarter-turns. Writes only into
@@ -284,6 +298,14 @@ pub fn place_schematic_tree(
     };
     let cx = (fw - 1) / 2;
     let cz = (fl - 1) / 2;
+    // Lowest log row in the schem (the floor for the root-level test below).
+    let min_log_vy = schem
+        .voxels
+        .iter()
+        .filter(|&&(_, _, _, b)| is_log(b))
+        .map(|&(_, vy, _, _)| vy)
+        .min()
+        .unwrap_or(0);
     // Per trunk column: the world Y of its lowest log + the log type, for the root pass below.
     let mut trunk_bottom: HashMap<(i32, i32), (i32, Block)> = HashMap::new();
     for &(vx, vy, vz, block) in &schem.voxels {
@@ -294,10 +316,18 @@ pub fn place_schematic_tree(
         if footprints.is_some_and(|f| f.contains(wx, wz)) {
             continue;
         }
-        // Trunk (logs) never go over water, but LEAVES may overhang it - a bank tree's canopy
-        // extending out over the river is wanted, not cut. So only skip log voxels over water.
-        if is_log(block) && editor.check_for_block(wx, 0, wz, Some(&[WATER])) {
-            continue;
+        // Water handling for logs. A log on ACTUAL placed water is always skipped (it would sit in
+        // the lake). For the ESA water MASK (carved later), skip ONLY a low root-level log - those
+        // are the prop-roots that would float once the cell is carved. A HIGH trunk/canopy log that
+        // merely crosses a mask cell is KEPT, otherwise the trunk gets a 1-block hole punched in it
+        // (the "missing block" on bank/mangrove trees). Leaves always overhang freely.
+        if is_log(block) {
+            let root_level = vy <= min_log_vy + ROOT_BASE_VY;
+            let over_water = editor.check_for_block(wx, 0, wz, Some(&[WATER]))
+                || (root_level && crate::element_processing::tree::in_water_mask(wx, wz));
+            if over_water {
+                continue;
+            }
         }
         // Overwrite terrain/grass (so grass does not poke through the trunk), but the
         // blacklist (buildings, water) is never overwritten.
@@ -315,12 +345,30 @@ pub fn place_schematic_tree(
                 .or_insert((wy, block));
         }
     }
-    // Root pass: under each trunk column, extend the column's OWN log down to the local ground so
-    // trunks on a slope/edge are anchored instead of floating. The range is naturally EMPTY on flat
-    // or uphill ground (gy >= top), so a flat-terrain trunk never buries its surface block.
+    // Root pass: anchor ONLY genuine ground-rooted trunk columns (lowest log within ROOT_BASE_VY of
+    // the schem floor) straight down to their OWN local ground, so off-center trunks / buttress legs
+    // / mangrove prop-roots on a slope or seam are anchored instead of floating. High branch-tip log
+    // columns are skipped entirely - extending them would drop a tall log pillar from the canopy to
+    // the ground. The range is naturally EMPTY on flat/uphill ground, so a flat trunk never buries
+    // its surface block. ROOT_MAX only caps pathological seam deltas.
+    // The schem's lowest LOG row: a tree's logs can sit several blocks above the y=0 voxel when the
+    // normalize floor is a hanging leaf/frond/root tip. A genuine ground-rooted trunk base is judged
+    // relative to this lowest log, NOT the lowest voxel - otherwise bushy/drooping trees (trunk log
+    // at vy>2) would be wrongly treated as "all branch" and never rooted (-> floating).
+    let min_log_vy = trunk_bottom
+        .values()
+        .map(|(top, _)| top - base_y)
+        .min()
+        .unwrap_or(0);
     for ((wx, wz), (top, log)) in trunk_bottom {
+        if top - base_y > min_log_vy + ROOT_BASE_VY {
+            continue; // a higher branch / canopy log column, not a ground trunk base
+        }
+        if crate::element_processing::tree::in_water_mask(wx, wz) {
+            continue; // never extend a root onto a cell the water carve will flood
+        }
         let gy = editor.get_absolute_y(wx, y_offset, wz); // local terrain Y + same offset as base_y
-        let from = (top - 1 - MAX_ROOT).max(gy);
+        let from = (top - 1 - ROOT_MAX).max(gy);
         let to = top - 1;
         for wy in from..=to {
             editor.set_block_absolute(log, wx, wy, wz, None, Some(blacklist));

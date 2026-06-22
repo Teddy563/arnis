@@ -39,6 +39,9 @@ pub struct ElevationData {
     /// metres and the blocks-per-metre slope. Used to map a real-world elevation
     /// (e.g. the snow line) to a Minecraft Y threshold.
     pub(crate) min_height_m: f64,
+    /// Maximum source height in metres (the affine's upper anchor). With `min_height_m` +
+    /// `blocks_per_meter` this gives the world's highest terrain Y, used by the snow "peaks" mode.
+    pub(crate) max_height_m: f64,
     pub(crate) blocks_per_meter: f64,
 }
 
@@ -143,6 +146,7 @@ pub fn fetch_elevation_data(
     master_origin_lat: Option<f64>,
     master_origin_lng: Option<f64>,
     benchmark: bool,
+    vertical_exaggeration: f64,
 ) -> Result<ElevationData, Box<dyn std::error::Error>> {
     let mut bench = crate::bench::Bench::new(benchmark);
     let (world_width, world_height, grid_width, grid_height) =
@@ -275,7 +279,7 @@ pub fn fetch_elevation_data(
     bench.mark("elev_landcover_repair");
     emit_gui_progress_update(16.0, "Processing elevation...");
 
-    let (mc_heights, min_height_m, blocks_per_meter) = scale_to_minecraft(
+    let (mc_heights, min_height_m, max_height_m, blocks_per_meter) = scale_to_minecraft(
         &height_grid,
         scale,
         ground_level,
@@ -283,6 +287,7 @@ pub fn fetch_elevation_data(
         extended_max_y,
         elevation_min,
         elevation_max,
+        vertical_exaggeration,
     );
     bench.mark("elev_scale_to_mc");
 
@@ -316,6 +321,7 @@ pub fn fetch_elevation_data(
         world_width,
         world_height,
         min_height_m,
+        max_height_m,
         blocks_per_meter,
     })
 }

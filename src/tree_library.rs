@@ -13,14 +13,18 @@ use crate::schematic::{load_schem, Schematic};
 const SMALL_MAX_HEIGHT: i32 = 6;
 const MEDIUM_MAX_HEIGHT: i32 = 12;
 const BIG_MAX_HEIGHT: i32 = 20;
+const TALL_MAX_HEIGHT: i32 = 28;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TreeSize {
     Small,
     Medium,
     Big,
-    /// 21+ blocks - the giants. Gated to high scale only and kept rare (they dwarf a small map).
-    Huge,
+    /// 21-28 blocks - tall canopy trees. Kept rare and (by default) only at high scale.
+    Tall,
+    /// 29+ blocks - the giants. Off by default; only at 1:1 and ultra-rare when enabled. The truly
+    /// absurd ones (H>40, up to 117 blocks) are dropped at pack-build, so Giant here means ~29-40.
+    Giant,
 }
 
 /// Bucket a schematic by its height.
@@ -31,8 +35,73 @@ pub fn size_for_height(height: i32) -> TreeSize {
         TreeSize::Medium
     } else if height <= BIG_MAX_HEIGHT {
         TreeSize::Big
+    } else if height <= TALL_MAX_HEIGHT {
+        TreeSize::Tall
     } else {
-        TreeSize::Huge
+        TreeSize::Giant
+    }
+}
+
+/// The five size tiers + which are enabled (the Meld UI checkboxes). Default: all but Giant.
+#[derive(Clone, Copy, Debug)]
+pub struct SizeFilter {
+    pub small: bool,
+    pub medium: bool,
+    pub big: bool,
+    pub tall: bool,
+    pub giant: bool,
+}
+
+impl Default for SizeFilter {
+    fn default() -> Self {
+        SizeFilter {
+            small: true,
+            medium: true,
+            big: true,
+            tall: true,
+            giant: false,
+        }
+    }
+}
+
+impl SizeFilter {
+    /// True if `size` is ticked on in the UI.
+    pub fn allows(&self, size: TreeSize) -> bool {
+        match size {
+            TreeSize::Small => self.small,
+            TreeSize::Medium => self.medium,
+            TreeSize::Big => self.big,
+            TreeSize::Tall => self.tall,
+            TreeSize::Giant => self.giant,
+        }
+    }
+
+    /// Parse a comma list of enabled tiers (e.g. "small,medium,big,tall"). Unknown tokens ignored.
+    /// An empty / all-unknown list falls back to the default (so a tree never silently vanishes).
+    pub fn parse(list: &str) -> SizeFilter {
+        let mut f = SizeFilter {
+            small: false,
+            medium: false,
+            big: false,
+            tall: false,
+            giant: false,
+        };
+        let mut any = false;
+        for tok in list.split(',') {
+            match tok.trim().to_ascii_lowercase().as_str() {
+                "small" | "s" => { f.small = true; any = true; }
+                "medium" | "m" => { f.medium = true; any = true; }
+                "big" | "b" => { f.big = true; any = true; }
+                "tall" | "t" => { f.tall = true; any = true; }
+                "giant" | "g" | "huge" => { f.giant = true; any = true; }
+                _ => {}
+            }
+        }
+        if any {
+            f
+        } else {
+            SizeFilter::default()
+        }
     }
 }
 
@@ -65,13 +134,14 @@ pub struct TreeEntry {
     pub schem: Schematic,
 }
 
-/// Counts surfaced to the UI: total plus the small/medium/big/huge breakdown and per-species.
+/// Counts surfaced to the UI: total plus the small/medium/big/tall/giant breakdown and per-species.
 pub struct LibraryStats {
     pub total: usize,
     pub small: usize,
     pub medium: usize,
     pub big: usize,
-    pub huge: usize,
+    pub tall: usize,
+    pub giant: usize,
     pub by_species: Vec<(String, usize)>, // sorted by species name
 }
 
@@ -103,14 +173,16 @@ fn compute_stats(entries: &[TreeEntry]) -> LibraryStats {
     let mut small = 0;
     let mut medium = 0;
     let mut big = 0;
-    let mut huge = 0;
+    let mut tall = 0;
+    let mut giant = 0;
     let mut per: HashMap<String, usize> = HashMap::new();
     for e in entries {
         match e.size {
             TreeSize::Small => small += 1,
             TreeSize::Medium => medium += 1,
             TreeSize::Big => big += 1,
-            TreeSize::Huge => huge += 1,
+            TreeSize::Tall => tall += 1,
+            TreeSize::Giant => giant += 1,
         }
         *per.entry(e.species.clone()).or_default() += 1;
     }
@@ -121,7 +193,8 @@ fn compute_stats(entries: &[TreeEntry]) -> LibraryStats {
         small,
         medium,
         big,
-        huge,
+        tall,
+        giant,
         by_species,
     }
 }
@@ -208,7 +281,8 @@ impl TreeLibrary {
             TreeSize::Medium,
             TreeSize::Small,
             TreeSize::Big,
-            TreeSize::Huge,
+            TreeSize::Tall,
+            TreeSize::Giant,
         ];
         for sp in [species, "oak"] {
             for &sz in &order {
@@ -230,12 +304,13 @@ impl TreeLibrary {
             .map(|(k, n)| format!("{k} {n}"))
             .collect();
         println!(
-            "Tree pack loaded: {} trees (small {}, medium {}, big {}, huge {}) across {} species: {}",
+            "Tree pack loaded: {} trees (small {}, medium {}, big {}, tall {}, giant {}) across {} species: {}",
             s.total,
             s.small,
             s.medium,
             s.big,
-            s.huge,
+            s.tall,
+            s.giant,
             s.by_species.len(),
             by.join(", ")
         );
@@ -254,8 +329,9 @@ mod tests {
         assert_eq!(size_for_height(12), TreeSize::Medium);
         assert_eq!(size_for_height(13), TreeSize::Big);
         assert_eq!(size_for_height(20), TreeSize::Big);
-        assert_eq!(size_for_height(21), TreeSize::Huge);
-        assert_eq!(size_for_height(35), TreeSize::Huge);
+        assert_eq!(size_for_height(21), TreeSize::Tall);
+        assert_eq!(size_for_height(28), TreeSize::Tall);
+        assert_eq!(size_for_height(35), TreeSize::Giant);
     }
 
     #[test]

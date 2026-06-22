@@ -34,8 +34,9 @@ pub fn set_waterway_mask(field: Arc<crate::element_processing::waterways::Waterw
 }
 
 /// True if `(x, z)` is a water cell - either an ESA land-cover water cell (lake/river/ocean) or a
-/// line-waterway channel cell. False when no mask is set.
-fn in_water_mask(x: i32, z: i32) -> bool {
+/// line-waterway channel cell. False when no mask is set. `pub(crate)` so the schematic placer can
+/// gate trunk-root voxels against the same mask the area carve uses.
+pub(crate) fn in_water_mask(x: i32, z: i32) -> bool {
     if let Some((ground, ox, oz)) = WATER_MASK.get() {
         if ground.cover_class(XZPoint::new(x - ox, z - oz)) == LC_WATER {
             return true;
@@ -575,36 +576,52 @@ impl Tree {
         // Region pack active: pick a schematic by realm/community (85/12/3 blend). Same trunk-slot
         // spacing + road/water guard as the plain pack below.
         if let Some(region) = REGION_PACK.get() {
-            let (sx, sz) = crate::schematic::trunk_slot(x, z, region.scale());
-            if in_water_mask(sx, sz)
-                || editor.check_for_block(
-                    sx,
-                    0,
-                    sz,
-                    Some(&[
-                        BLACK_CONCRETE,
-                        GRAY_CONCRETE_POWDER,
-                        CYAN_TERRACOTTA,
-                        GRAY_CONCRETE,
-                        LIGHT_GRAY_CONCRETE,
-                        DIRT_PATH,
-                        SMOOTH_STONE,
-                        WATER,
-                    ]),
-                )
-            {
-                return;
-            }
             let hint = habitat_for_tree_type(tree_type);
-            // Terrain Y at the slot drives montane gating (conifer on mountains, not jungle/beach).
-            let elev_y = editor
-                .terrain_level(sx, sz)
-                .unwrap_or_else(|| editor.get_absolute_y(sx, y, sz));
-            if let Some((idx, rot)) = region.pick(sx, sz, hint, elev_y) {
-                let slot_base_y = editor.get_absolute_y(sx, y, sz);
+            // Terrain Y drives montane gating (conifer on mountains, not jungle/beach). The slot is
+            // within a few blocks of (x,z), so sampling here is close enough for the 450m threshold.
+            let elev_y = editor.terrain_level(x, z).unwrap_or(base_y);
+            // pick_slot picks the density-aware trunk slot, the grove/clearing gate, and the schem.
+            // It returns None for a clearing (spacing gap) - that is how the forest gets its patches.
+            if let Some((sx, sz, idx, rot)) = region.pick_slot(x, z, hint, elev_y) {
+                // The slot can be several blocks from (x,z); re-check it isn't on a road/water cell.
+                if in_water_mask(sx, sz)
+                    || editor.check_for_block(
+                        sx,
+                        0,
+                        sz,
+                        Some(&[
+                            BLACK_CONCRETE,
+                            GRAY_CONCRETE_POWDER,
+                            CYAN_TERRACOTTA,
+                            GRAY_CONCRETE,
+                            LIGHT_GRAY_CONCRETE,
+                            DIRT_PATH,
+                            SMOOTH_STONE,
+                            WATER,
+                        ]),
+                    )
+                {
+                    return;
+                }
+                // Anchor: the slot-centre ground can be anomalously high on a cliff/steep edge, so a
+                // tree placed at it would hover over the lower terrain under its footprint. Clamp the
+                // base to at most 2 blocks above the LOWEST ground sampled across the footprint; the
+                // per-column root pass then bridges that small residual. Pure function of the slot
+                // (samples are deterministic), so it stays seam-safe.
+                let schem = region.schem(idx);
+                let half = (schem.width.max(schem.length) / 2).clamp(1, 6);
+                let center = editor.get_absolute_y(sx, y, sz);
+                let mut fpmin = center;
+                for (dx, dz) in [
+                    (-half, 0), (half, 0), (0, -half), (0, half),
+                    (-half, -half), (half, half), (-half, half), (half, -half),
+                ] {
+                    fpmin = fpmin.min(editor.get_absolute_y(sx + dx, y, sz + dz));
+                }
+                let slot_base_y = center.min(fpmin + 2);
                 crate::schematic::place_schematic_tree(
                     editor,
-                    region.schem(idx),
+                    schem,
                     sx,
                     sz,
                     slot_base_y,

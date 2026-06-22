@@ -325,7 +325,12 @@ pub fn generate_world_with_options(
     // dir with region.json -> realm/community 85/12/3 blend); fall back to the plain
     // species-folder pack (e.g. a bare vanilla-plus dir without region.json).
     if let Some(pack) = args.tree_pack.as_ref() {
-        match crate::region::RegionLibrary::load(pack, args.scale, args.ground_level) {
+        let sizes = args
+            .tree_sizes
+            .as_deref()
+            .map(crate::tree_library::SizeFilter::parse)
+            .unwrap_or_default();
+        match crate::region::RegionLibrary::load(pack, args.scale, args.ground_level, sizes) {
             Ok(lib) => {
                 lib.report();
                 crate::element_processing::tree::set_region_pack(lib);

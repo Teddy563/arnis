@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use crate::land_cover::coord_hash;
 use crate::schematic::{load_schem, Schematic};
-use crate::tree_library::{size_for_height, TreeSize};
+use crate::tree_library::{size_for_height, SizeFilter, TreeSize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Habitat {
@@ -58,11 +58,18 @@ struct MSpecies {
 /// 3-wide rare. So heavy trunks never dominate. W1=78, then +18 to 96 for W2, rest (4) for W3.
 const WIDTH_W1: u64 = 78;
 const WIDTH_W2: u64 = 96;
+fn default_density() -> u32 {
+    20
+}
 #[derive(Deserialize)]
 struct MCommunity {
     name: String,
     habitat: String,
     species: Vec<MSpecies>,
+    /// WorldPainter Bo2 layer density (~10..150) for this community. Drives how dense/sparse the
+    /// scatter is: low = sparse scattered clumps, high = dense thicket. Defaults to 20 (medium).
+    #[serde(default = "default_density")]
+    density: u32,
 }
 #[derive(Deserialize)]
 struct MRegion {
@@ -77,6 +84,7 @@ struct Community {
     name: String,
     habitat: Habitat,
     species: Vec<Vec<usize>>, // per species: entry indices (weight = len)
+    density: u32,             // WorldPainter scatter density for this community
 }
 
 /// A loaded set of communities (one realm pack, or the vanilla-plus sprinkle pack).
@@ -99,6 +107,7 @@ pub struct RegionLibrary {
     vanilla_pack: Pack, // sprinkle; may be empty (then the 12% slice falls back to realm)
     scale: f64,
     ground_level: i32, // the world's base Y (selection min elevation maps here) for montane test
+    sizes: SizeFilter, // which of the 5 size tiers the UI enabled
     total_realm: usize,
     total_vanilla: usize,
 }
@@ -139,6 +148,7 @@ fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, u8
                 name: mc.name.clone(),
                 habitat: Habitat::parse(&mc.habitat),
                 species,
+                density: mc.density,
             });
         }
     }
@@ -169,7 +179,12 @@ impl RegionLibrary {
     /// Load the realm pack at `dir` (must contain `region.json`) plus the sibling `vanilla-plus`
     /// pack for the sprinkle. Errors if `dir/region.json` is missing (caller falls back to the
     /// plain vanilla loader).
-    pub fn load(dir: &Path, scale: f64, ground_level: i32) -> Result<RegionLibrary, String> {
+    pub fn load(
+        dir: &Path,
+        scale: f64,
+        ground_level: i32,
+        sizes: SizeFilter,
+    ) -> Result<RegionLibrary, String> {
         let m = read_manifest(dir)?;
         let mut entries: Vec<(Schematic, TreeSize, u8)> = Vec::new();
         let realm_pack = load_pack(dir, &m, &mut entries);
@@ -201,6 +216,7 @@ impl RegionLibrary {
             vanilla_pack,
             scale,
             ground_level,
+            sizes,
             total_realm,
             total_vanilla,
         })
@@ -217,58 +233,69 @@ impl RegionLibrary {
         &self.entries[idx].0
     }
 
-    /// Map scale, for scale-aware trunk spacing at the call site.
-    pub fn scale(&self) -> f64 {
-        self.scale
-    }
-
-    /// The size tier wanted at this cell, by the scale band. Huge only appears at high scale and
-    /// stays rare; small maps lean small/medium. Position-seeded (seam-safe).
+    /// The size tier WANTED at this cell, by the scale band. Tall (21-28) is rare and Giant (29+)
+    /// ultra-rare and only at 1:1; small maps lean small/medium. If the wanted tier is disabled or
+    /// disallowed at this scale, `pick_in_community` falls back to a thinner allowed tier, so a
+    /// disabled Giant roll simply becomes a smaller tree (never a gap). Position-seeded (seam-safe).
     fn size_pick(&self, x: i32, z: i32) -> TreeSize {
-        let roll = coord_hash(x + 101, z + 233) % 100;
+        let roll = coord_hash(x + 101, z + 233) % 1000;
         if self.scale < 0.3 {
-            // small ratio: mostly small + medium, big rare, NEVER huge
-            if roll < 65 {
+            // tiny maps: small/medium, big rare, never tall/giant
+            if roll < 650 {
                 TreeSize::Small
-            } else if roll < 98 {
+            } else if roll < 985 {
                 TreeSize::Medium
             } else {
                 TreeSize::Big
             }
         } else if self.scale < 0.7 {
-            if roll < 40 {
+            if roll < 380 {
                 TreeSize::Small
-            } else if roll < 85 {
+            } else if roll < 820 {
                 TreeSize::Medium
-            } else {
+            } else if roll < 985 {
                 TreeSize::Big
+            } else {
+                TreeSize::Tall // ~1.5%
             }
         } else if self.scale < 1.0 {
-            if roll < 28 {
+            if roll < 260 {
                 TreeSize::Small
-            } else if roll < 73 {
+            } else if roll < 700 {
                 TreeSize::Medium
-            } else if roll < 95 {
+            } else if roll < 930 {
                 TreeSize::Big
             } else {
-                TreeSize::Huge
+                TreeSize::Tall // ~7% (no Giant below 1:1)
             }
-        } else if roll < 20 {
-            TreeSize::Small
-        } else if roll < 65 {
-            TreeSize::Medium
-        } else if roll < 93 {
-            TreeSize::Big
         } else {
-            TreeSize::Huge
+            // 1:1 - all tiers; Tall ~9.5%, Giant ~2.5%
+            if roll < 200 {
+                TreeSize::Small
+            } else if roll < 600 {
+                TreeSize::Medium
+            } else if roll < 880 {
+                TreeSize::Big
+            } else if roll < 975 {
+                TreeSize::Tall
+            } else {
+                TreeSize::Giant
+            }
         }
     }
 
-    /// Whether a size may appear at this scale at all. Huge giants are forbidden below 1:1.4 - the
-    /// no-leak rule: a species that only has huge variants is simply skipped on a small map rather
-    /// than dropping a giant.
+    /// Whether a size may appear, combining the UI tier toggle with a scale gate: Giant (very big)
+    /// only renders at 1:1; the other tiers render at any scale they were rolled for. A size that is
+    /// toggled off (or Giant below 1:1) is simply skipped - `pick_in_community` falls back to a
+    /// thinner allowed tier, so nothing leaks and no gap appears.
     fn size_allowed(&self, size: TreeSize) -> bool {
-        !matches!(size, TreeSize::Huge) || self.scale >= 0.7
+        if !self.sizes.allows(size) {
+            return false;
+        }
+        match size {
+            TreeSize::Giant => self.scale >= 1.0,
+            _ => true,
+        }
     }
 
     /// Pick one variant entry index from a community: species weighted by their ALLOWED-size variant
@@ -384,45 +411,89 @@ impl RegionLibrary {
         &pack.communities[idx]
     }
 
-    /// Pick a schematic + rotation for the tree at `(x, z)` with the given habitat hint and the
-    /// cell's terrain Y (`elev_y`, for montane gating). Applies the 85/12/3 regional /
-    /// vanilla-sprinkle / rare-exotic blend. Pure function of `(x, z, elev_y)`.
-    pub fn pick(&self, x: i32, z: i32, hint: Habitat, elev_y: i32) -> Option<(usize, u8)> {
-        // Bias toward conifer up high, but only in ~60% of zones (a coarse value-noise patch), so
-        // mountains keep oak/birch patches instead of turning 100% spruce.
-        let montane =
-            self.is_montane(elev_y) && crate::ground_generation::value_noise_01(x, z, 64) < 0.6;
-        let blend = coord_hash(x + 7, z + 13) % 100;
-        let entry = if blend >= 97 {
-            // 3% rare: an off-type exotic from a random realm community
-            self.pick_rare(x, z)
-        } else if blend >= 67 && !self.vanilla_pack.is_empty() {
-            // 30% vanilla-plus sprinkle - the familiar MC trees everywhere
-            let c = self.pick_community(&self.vanilla_pack, hint, x, z, montane);
-            self.pick_in_community(c, x, z)
+    /// Base trunk-slot spacing (blocks) by scale. Density then THINS within this grid into clumps
+    /// and clearings, so this is the tightest possible spacing, not the average.
+    fn base_spacing(&self) -> i32 {
+        if self.scale < 0.3 {
+            6
+        } else if self.scale < 0.7 {
+            5
         } else {
-            // 67% regional (also covers the vanilla slice when no vanilla sibling is present)
-            let c = self.pick_community(&self.realm_pack, hint, x, z, montane);
-            self.pick_in_community(c, x, z)
-        };
-        let idx = entry?;
-        let rot = (coord_hash(x ^ 0x5bd1, z ^ 0x9e37) % 4) as u8;
-        Some((idx, rot))
+            4
+        }
     }
 
-    /// A rare exotic: a uniformly chosen realm community (ignores the habitat hint), so unusual
-    /// species surface occasionally for variety.
-    fn pick_rare(&self, x: i32, z: i32) -> Option<usize> {
-        if self.realm_pack.communities.is_empty() {
+    /// WorldPainter community density (~10..150) -> fraction of slots that keep a tree. Low density
+    /// (alpine, open woodland) = sparse scattered clumps; high (fan-palm/bamboo thicket, dense
+    /// rainforest) = near-continuous canopy. The single biggest knob on the forest's overall look.
+    fn keep_prob(density: u32) -> f64 {
+        (0.34 + density as f64 / 90.0).clamp(0.30, 1.0)
+    }
+
+    /// Coarse value-noise period (blocks) for the grove/clearing pattern. Smooth noise means kept
+    /// slots are CONTIGUOUS (real groves with bare clearings between) instead of a uniform grid or
+    /// salt-and-pepper thinning.
+    const GROVE_PERIOD: i32 = 22;
+
+    /// Pick the trunk SLOT + schematic for a candidate cell `(x, z)`. Returns `(sx, sz, idx, rot)`
+    /// where `(sx, sz)` is the slot the tree is stamped on, or `None` if this slot is a clearing /
+    /// spacing gap. Spacing is density-aware: the community at the slot sets how many slots keep a
+    /// tree, and a coarse grove noise clumps them. Everything is keyed on the SLOT, so every Arnis
+    /// spawn inside the cell collapses to the same decision (idempotent, seam-safe).
+    pub fn pick_slot(
+        &self,
+        x: i32,
+        z: i32,
+        hint: Habitat,
+        elev_y: i32,
+    ) -> Option<(i32, i32, usize, u8)> {
+        let s = self.base_spacing();
+        let (sx, sz) = crate::schematic::trunk_slot_s(x, z, s);
+        let montane = self.is_montane(elev_y)
+            && crate::ground_generation::value_noise_01(sx, sz, 64) < 0.6;
+        let blend = coord_hash(sx + 7, sz + 13) % 100;
+        let (community, idx): (&Community, Option<usize>) = if blend >= 97 {
+            // 3% rare exotic: a uniformly chosen realm community
+            let n = self.realm_pack.communities.len();
+            if n == 0 {
+                return None;
+            }
+            let ci = (coord_hash(sx + 5, sz + 9) % n as u64) as usize;
+            let c = &self.realm_pack.communities[ci];
+            (c, self.pick_in_community(c, sx, sz))
+        } else if blend >= 67 && !self.vanilla_pack.is_empty() {
+            let c = self.pick_community(&self.vanilla_pack, hint, sx, sz, montane);
+            (c, self.pick_in_community(c, sx, sz))
+        } else {
+            let c = self.pick_community(&self.realm_pack, hint, sx, sz, montane);
+            (c, self.pick_in_community(c, sx, sz))
+        };
+        // Grove/clearing gate: smooth grove noise (+ a little per-cell jitter to soften edges)
+        // against the community's density-derived keep fraction. Below the threshold = keep a tree.
+        let grove = crate::ground_generation::value_noise_01(sx, sz, Self::GROVE_PERIOD);
+        let jitter = (coord_hash(sx ^ 0x71c3, sz ^ 0x2d9b) % 1000) as f64 / 1000.0;
+        if grove * 0.82 + jitter * 0.18 >= Self::keep_prob(community.density) {
             return None;
         }
-        let ci =
-            (coord_hash(x + 5, z + 9) % self.realm_pack.communities.len() as u64) as usize;
-        self.pick_in_community(&self.realm_pack.communities[ci], x, z)
+        let idx = idx?;
+        let rot = (coord_hash(sx ^ 0x5bd1, sz ^ 0x9e37) % 4) as u8;
+        Some((sx, sz, idx, rot))
     }
 
-    /// Log the loaded breakdown (the numbers Meld surfaces).
+    /// Log the loaded breakdown (the numbers Meld surfaces), including the per-tier schem counts and
+    /// which size tiers are enabled.
     pub fn report(&self) {
+        let (mut s, mut m, mut b, mut t, mut g) = (0u32, 0u32, 0u32, 0u32, 0u32);
+        for (_, size, _) in &self.entries {
+            match size {
+                TreeSize::Small => s += 1,
+                TreeSize::Medium => m += 1,
+                TreeSize::Big => b += 1,
+                TreeSize::Tall => t += 1,
+                TreeSize::Giant => g += 1,
+            }
+        }
+        let on = |v: bool| if v { "on" } else { "off" };
         println!(
             "Region tree pack loaded: realm {} - {} regional trees ({} communities) + {} vanilla \
              sprinkle trees ({} communities)",
@@ -431,6 +502,14 @@ impl RegionLibrary {
             self.realm_pack.communities.len(),
             self.total_vanilla,
             self.vanilla_pack.communities.len(),
+        );
+        println!(
+            "  size tiers [schems]: small {} [{}], medium {} [{}], big {} [{}], tall {} [{}], giant {} [{}]",
+            s, on(self.sizes.small),
+            m, on(self.sizes.medium),
+            b, on(self.sizes.big),
+            t, on(self.sizes.tall),
+            g, on(self.sizes.giant),
         );
     }
 }
@@ -452,12 +531,13 @@ mod tests {
     #[ignore = "set ARNIS_REGION to a realm dir with region.json"]
     fn smoke_load_real_region() {
         let dir = std::env::var("ARNIS_REGION").expect("ARNIS_REGION");
-        let lib = RegionLibrary::load(Path::new(&dir), 1.0, -62).expect("load region");
+        let lib = RegionLibrary::load(Path::new(&dir), 1.0, -62, SizeFilter::default())
+            .expect("load region");
         lib.report();
         assert!(lib.total_realm > 0);
         // every blend branch resolves to a real entry
         for k in 0..200 {
-            if let Some((idx, _)) = lib.pick(k * 3, k * 7, Habitat::Lowland, 0) {
+            if let Some((_, _, idx, _)) = lib.pick_slot(k * 3, k * 7, Habitat::Lowland, 0) {
                 assert!(idx < lib.entries.len());
             }
         }
