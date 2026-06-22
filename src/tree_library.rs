@@ -89,11 +89,26 @@ impl SizeFilter {
         let mut any = false;
         for tok in list.split(',') {
             match tok.trim().to_ascii_lowercase().as_str() {
-                "small" | "s" => { f.small = true; any = true; }
-                "medium" | "m" => { f.medium = true; any = true; }
-                "big" | "b" => { f.big = true; any = true; }
-                "tall" | "t" => { f.tall = true; any = true; }
-                "giant" | "g" | "huge" => { f.giant = true; any = true; }
+                "small" | "s" => {
+                    f.small = true;
+                    any = true;
+                }
+                "medium" | "m" => {
+                    f.medium = true;
+                    any = true;
+                }
+                "big" | "b" => {
+                    f.big = true;
+                    any = true;
+                }
+                "tall" | "t" => {
+                    f.tall = true;
+                    any = true;
+                }
+                "giant" | "g" | "huge" => {
+                    f.giant = true;
+                    any = true;
+                }
                 _ => {}
             }
         }

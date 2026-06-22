@@ -241,7 +241,8 @@ pub fn trunk_slot_s(x: i32, z: i32, s: i32) -> (i32, i32) {
     let s = s.max(1);
     let cx = x.div_euclid(s);
     let cz = z.div_euclid(s);
-    let h = crate::land_cover::coord_hash(cx.wrapping_mul(0x1f1f) + 17, cz.wrapping_mul(0x2b2b) + 91);
+    let h =
+        crate::land_cover::coord_hash(cx.wrapping_mul(0x1f1f) + 17, cz.wrapping_mul(0x2b2b) + 91);
     let jx = (h & 1) as i32;
     let jz = ((h >> 1) & 1) as i32;
     (cx * s + jx, cz * s + jz)

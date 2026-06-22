@@ -80,7 +80,14 @@ pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay, scal
         let seg_water_y = editor
             .get_water_level(prev_node.x, prev_node.z)
             .min(editor.get_water_level(current_node.x, current_node.z));
-        let points = bresenham_line(prev_node.x, 0, prev_node.z, current_node.x, 0, current_node.z);
+        let points = bresenham_line(
+            prev_node.x,
+            0,
+            prev_node.z,
+            current_node.x,
+            0,
+            current_node.z,
+        );
         for (bx, _, bz) in points {
             create_water_channel(editor, bx, bz, half_width, seg_water_y);
         }

@@ -314,11 +314,7 @@ pub fn generate_world_with_options(
     // carve runs after placement). With this gate, in-water trees never exist, so the floating-veg
     // sweep no longer has to strip leaves over water - which is what was eating the overhanging
     // canopy of trees standing on the bank.
-    crate::element_processing::tree::set_water_mask(
-        ground.clone(),
-        xzbbox.min_x(),
-        xzbbox.min_z(),
-    );
+    crate::element_processing::tree::set_water_mask(ground.clone(), xzbbox.min_x(), xzbbox.min_z());
 
     // Optional tree schematic pack: load + report the breakdown (the UI numbers). Held for the
     // schematic tree placement pass after ground generation. Prefer the region loader (a realm

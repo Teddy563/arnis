@@ -90,7 +90,7 @@ struct Community {
 /// A loaded set of communities (one realm pack, or the vanilla-plus sprinkle pack).
 struct Pack {
     communities: Vec<Community>,
-    default_idx: usize,                      // index of the default (fallback) community
+    default_idx: usize, // index of the default (fallback) community
     by_habitat: HashMap<Habitat, Vec<usize>>, // habitat -> community indices
 }
 
@@ -155,7 +155,11 @@ fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, u8
     let default_idx = communities
         .iter()
         .position(|c| c.name == m.default_community)
-        .or_else(|| communities.iter().position(|c| c.habitat == Habitat::Lowland))
+        .or_else(|| {
+            communities
+                .iter()
+                .position(|c| c.habitat == Habitat::Lowland)
+        })
         .unwrap_or(0);
     let mut by_habitat: HashMap<Habitat, Vec<usize>> = HashMap::new();
     for (i, c) in communities.iter().enumerate() {
@@ -170,8 +174,7 @@ fn load_pack(dir: &Path, m: &MRegion, entries: &mut Vec<(Schematic, TreeSize, u8
 
 fn read_manifest(dir: &Path) -> Result<MRegion, String> {
     let p = dir.join("region.json");
-    let bytes =
-        std::fs::read(&p).map_err(|e| format!("region: {}: {e}", p.display()))?;
+    let bytes = std::fs::read(&p).map_err(|e| format!("region: {}: {e}", p.display()))?;
     serde_json::from_slice(&bytes).map_err(|e| format!("region: parse {}: {e}", p.display()))
 }
 
@@ -302,8 +305,11 @@ impl RegionLibrary {
     /// count, then the wanted size tier (else any allowed size of that species). Never returns a
     /// disallowed size (so huge never leaks onto a small map).
     fn pick_in_community(&self, c: &Community, x: i32, z: i32) -> Option<usize> {
-        let allowed_count =
-            |sp: &Vec<usize>| sp.iter().filter(|&&i| self.size_allowed(self.entries[i].1)).count();
+        let allowed_count = |sp: &Vec<usize>| {
+            sp.iter()
+                .filter(|&&i| self.size_allowed(self.entries[i].1))
+                .count()
+        };
         let total: usize = c.species.iter().map(&allowed_count).sum();
         if total == 0 {
             // Community has nothing in an allowed size at this scale: place anything rather than a
@@ -355,7 +361,11 @@ impl RegionLibrary {
         };
         let mut group: Vec<usize> = Vec::new();
         for wc in (1..=target_wc).rev() {
-            group = allowed.iter().copied().filter(|&i| self.entries[i].2 == wc).collect();
+            group = allowed
+                .iter()
+                .copied()
+                .filter(|&i| self.entries[i].2 == wc)
+                .collect();
             if !group.is_empty() {
                 break;
             }
@@ -449,8 +459,8 @@ impl RegionLibrary {
     ) -> Option<(i32, i32, usize, u8)> {
         let s = self.base_spacing();
         let (sx, sz) = crate::schematic::trunk_slot_s(x, z, s);
-        let montane = self.is_montane(elev_y)
-            && crate::ground_generation::value_noise_01(sx, sz, 64) < 0.6;
+        let montane =
+            self.is_montane(elev_y) && crate::ground_generation::value_noise_01(sx, sz, 64) < 0.6;
         let blend = coord_hash(sx + 7, sz + 13) % 100;
         let (community, idx): (&Community, Option<usize>) = if blend >= 97 {
             // 3% rare exotic: a uniformly chosen realm community

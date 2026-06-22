@@ -613,8 +613,14 @@ impl Tree {
                 let center = editor.get_absolute_y(sx, y, sz);
                 let mut fpmin = center;
                 for (dx, dz) in [
-                    (-half, 0), (half, 0), (0, -half), (0, half),
-                    (-half, -half), (half, half), (-half, half), (half, -half),
+                    (-half, 0),
+                    (half, 0),
+                    (0, -half),
+                    (0, half),
+                    (-half, -half),
+                    (half, half),
+                    (-half, half),
+                    (half, -half),
                 ] {
                     fpmin = fpmin.min(editor.get_absolute_y(sx + dx, y, sz + dz));
                 }

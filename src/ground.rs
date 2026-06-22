@@ -101,7 +101,11 @@ impl SnowConfig {
             "manual" | "y" | "fixed" => SnowMode::Manual,
             _ => SnowMode::Realistic,
         };
-        SnowConfig { mode, percent, manual_y }
+        SnowConfig {
+            mode,
+            percent,
+            manual_y,
+        }
     }
 }
 
@@ -206,7 +210,8 @@ impl Ground {
         ) {
             Ok(elevation_data) => {
                 let lat = (bbox.min().lat() + bbox.max().lat()) / 2.0;
-                let snow_threshold_y = compute_snow_threshold(&elevation_data, lat, water_floor, snow);
+                let snow_threshold_y =
+                    compute_snow_threshold(&elevation_data, lat, water_floor, snow);
                 Self {
                     elevation_enabled: true,
                     ground_level: water_floor,
