@@ -59,3 +59,15 @@ gen/
 
 # Local backups of the original upstream art (replaced by the Meld fork art)
 *-arnis-original.png
+
+# Meld fork local scratch: planning docs, audits, PR drafts, and release-note drafts.
+# These are never released. Release notes are pasted into the GitHub Release UI by hand.
+# Only CHANGELOG.md + README.md (+ CODE_OF_CONDUCT.md) are kept docs.
+/RELEASE-2.*.md
+/RELEASE-NOTES-*.md
+/PLAN-*.md
+/FORK-AUDIT.md
+/UPSTREAM-PRS.md
+/pr-body.md
+/CHANGELOG-meld-seam.md
+/docs/meld-fork/
