@@ -24,6 +24,7 @@ use std::sync::{Arc, OnceLock};
 
 #[derive(Deserialize)]
 struct MFamily {
+    #[allow(dead_code)] // kept for debugging dumps
     name: String,
     orientation: String,
     biomes: Vec<String>,
@@ -448,7 +449,7 @@ pub fn stamp_region(
                         floors.push(y);
                     }
                     if !air.contains(&super::pack(gx, y + 1, gz))
-                        && y + 1 <= top
+                        && y < top
                         && editor.check_for_block_absolute(gx, y + 1, gz, Some(ROCK), None)
                     {
                         ceils.push(y);

@@ -2,6 +2,18 @@
 //! geometry (stripes? breaches? fluids?). Usage:
 //!   cargo run --release --example cavedump -- <region.mca> <worldZ> <x0> <x1> <y0> <y1>
 //! All queried (x,z) must lie inside the ONE region file passed.
+#![allow(
+    dead_code,
+    unused_mut,
+    clippy::unnecessary_sort_by,
+    clippy::manual_range_contains,
+    clippy::type_complexity,
+    clippy::identity_op,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments
+)]
+// ^ diagnostic tooling: kept readable over lint-perfect; dead_code covers the shared
+//   src modules compiled into this standalone example target.
 
 use fastanvil::{Chunk, Region};
 use std::collections::HashMap;

@@ -4,6 +4,18 @@
 //! (cell_density <= 0), and prints the sub-term breakdown at the top/mid/bottom of that run so we can
 //! see which term stays negative across the whole span (i.e. which system produced the tall shape).
 //!   cargo run --release --example caveshape_probe -- <bx0> <bz0> <span>
+#![allow(
+    dead_code,
+    unused_mut,
+    clippy::unnecessary_sort_by,
+    clippy::manual_range_contains,
+    clippy::type_complexity,
+    clippy::identity_op,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments
+)]
+// ^ diagnostic tooling: kept readable over lint-perfect; dead_code covers the shared
+//   src modules compiled into this standalone example target.
 
 #[path = "../src/caves/density.rs"]
 mod density;

@@ -698,7 +698,7 @@ fn hang_cave_vines(ed: &mut WorldEditor, air: &HashSet<i64>, x: i32, y: i32, z: 
         if !is_air(air, ed, x, yy, z) {
             break;
         }
-        let berries = hash(x, yy, z, seed ^ 0xBEEF) % 5 == 0; // 20%
+        let berries = hash(x, yy, z, seed ^ 0xBEEF).is_multiple_of(5); // 20%
         let b = if berries { "true" } else { "false" };
         if i == len - 1 {
             put(
@@ -765,7 +765,7 @@ fn build_giant_mushroom(
             return;
         }
     }
-    let red = hash(x, y, z, seed ^ 0x9146) % 2 == 0;
+    let red = hash(x, y, z, seed ^ 0x9146).is_multiple_of(2);
     for i in 0..stem_h {
         put(ed, MUSHROOM_STEM, x, y + i, z, None);
     }
@@ -795,7 +795,7 @@ fn build_giant_mushroom(
                 put(ed, BROWN_MUSHROOM_BLOCK, x + dx, cap_y, z + dz, None);
             }
         }
-        if hash(x, cap_y, z, seed ^ 0x9147) % 4 == 0 {
+        if hash(x, cap_y, z, seed ^ 0x9147).is_multiple_of(4) {
             put(ed, SHROOMLIGHT, x, cap_y - 1, z, None);
         }
     }
@@ -872,7 +872,7 @@ fn place_geodes(
 
     for cx in cx0..=cx1 {
         for cz in cz0..=cz1 {
-            if hash(cx, 0, cz, seed ^ 0x6E0D_E5) % 80 != 0 {
+            if !hash(cx, 0, cz, seed ^ 0x006E_0DE5).is_multiple_of(80) {
                 continue;
             }
             let gx = cx * 16 + (hash(cx, 1, cz, seed) % 16) as i32;
@@ -973,11 +973,12 @@ fn geode_set(ed: &mut WorldEditor, b: Block, x: i32, y: i32, z: i32) {
 /// rarer than 1-in-1000). Used for the rarest feature rolls.
 #[inline]
 fn rare_chance(x: i32, y: i32, z: i32, seed: u64, denom: u64) -> bool {
-    hash(x, y, z, seed) % denom == 0
+    hash(x, y, z, seed).is_multiple_of(denom)
 }
 
 /// place an amethyst_cluster in the hollow cell adjacent to a budding block, facing toward the geode
 /// center (so it grows off the wall into the hollow, like vanilla).
+#[allow(clippy::too_many_arguments)]
 fn grow_cluster(
     ed: &mut WorldEditor,
     gx: i32,

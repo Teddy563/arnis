@@ -136,6 +136,7 @@ impl CaveGen {
     }
 
     /// Raw NormalNoise value by id (for the Java value-parity harness — no xz/ys scaling).
+    #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn raw_noise(&self, id: &str, x: f64, y: f64, z: f64) -> f64 {
         let n = match id {
             "cave_cheese" => &self.cave_cheese,
@@ -205,6 +206,7 @@ impl CaveGen {
 
     /// Diagnostic: `entrances()`'s two sub-args (arg_a = broad cave-entrance noise pocket, arg_b =
     /// spaghetti_3d worm tube) — tells which one is actually driving a carved cell.
+    #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn entrances_breakdown(&self, x: i32, y: i32, z: i32) -> (f64, f64) {
         let (x, y, z) = (x as f64, y as f64, z as f64);
         let depth_bias = y_clamped_gradient(y, -40, 30, 0.0, ENTRANCE_SHRINK);
@@ -226,13 +228,13 @@ impl CaveGen {
 
     fn pillars(&self, x: f64, y: f64, z: f64) -> f64 {
         let a = 2.0 * self.pillar.get_value(x * 25.0, y * 0.3, z * 25.0)
-            + (-1.0 + -1.0 * self.pillar_rareness.get_value(x, y, z));
+            + (-1.0 - self.pillar_rareness.get_value(x, y, z));
         let t = 0.55 + 0.55 * self.pillar_thickness.get_value(x, y, z);
         a * (t * t * t)
     }
 
     fn noodle(&self, x: f64, y: f64, z: f64) -> f64 {
-        let in_range = y >= -60.0 && y < 321.0;
+        let in_range = (-60.0..321.0).contains(&y);
         let toggle = if in_range {
             self.noodle.get_value(x, y, z)
         } else {
@@ -295,6 +297,7 @@ impl CaveGen {
     /// Diagnostic: raw cheese/entrances/spaghetti/pillars sub-terms BEFORE the min/max combine (for
     /// telling which system actually carved a given cell — the shared `combined_density` output alone
     /// can't say whether cheese, entrances, or spaghetti was the driving term).
+    #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn density_breakdown(&self, x: i32, y: i32, z: i32) -> (f64, f64, f64, f64) {
         let (xf, yf, zf) = (x as f64, y as f64, z as f64);
         let entrances = self.entrances(xf, yf, zf);
@@ -319,6 +322,7 @@ impl CaveGen {
     }
 
     /// Per-block `final_density` (no cell interp). Block SOLID iff > 0; carve AIR where ≤ 0.
+    #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn final_density(&self, x: i32, y: i32, z: i32) -> f64 {
         self.combined_density(x, y, z)
             .min(self.noodle_density(x, y, z))
@@ -327,6 +331,7 @@ impl CaveGen {
     /// Cell-interpolated final density for a single block — samples the combined density at the 8
     /// corners of the block's 4×8×4 cell, trilerps, then mins with per-block noodle. Identical result
     /// to the efficient cell loop in `mod.rs::carve_region`; this single-block form is for previews.
+    #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn cell_density(&self, x: i32, y: i32, z: i32) -> f64 {
         let cw = 4;
         let ch = 8;

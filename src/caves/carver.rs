@@ -403,11 +403,11 @@ fn canyon_chunk(
     let mut tr = XoroRandom::from_seed(tseed);
     let mut widths = [1.0f64; BRANCH_BUDGET as usize];
     let mut w = 1.0;
-    for wi in 0..branch_count as usize {
+    for (wi, width) in widths.iter_mut().enumerate().take(branch_count as usize) {
         if wi == 0 || tr.next_int(3) == 0 {
             w = 1.0 + tr.next_float() as f64 * tr.next_float() as f64;
         }
-        widths[wi] = (w * w).min(1.8); // widen factor capped (sqrt -> <=1.35x) — see thickness cap
+        *width = (w * w).min(1.8); // widen factor capped (sqrt -> <=1.35x) — see thickness cap
     }
 
     let mut x = ox;

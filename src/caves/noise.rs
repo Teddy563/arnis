@@ -97,8 +97,8 @@ impl ImprovedNoise {
         let yo = random.next_double() * 256.0;
         let zo = random.next_double() * 256.0;
         let mut p = [0u8; 256];
-        for i in 0..256 {
-            p[i] = i as u8;
+        for (i, v) in p.iter_mut().enumerate() {
+            *v = i as u8;
         }
         for i in 0..256 {
             let r = random.next_int(256 - i as i32) as usize;

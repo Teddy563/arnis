@@ -322,8 +322,9 @@ fn carve_pool(
 ///     lip opens) and the walk stops — the ticked water at the lip pours down into the cave.
 ///   - LEVEL/UPWARD contact → SEALED: stop without carving this step at all; the wall stays intact,
 ///     so no sideways/ceiling holes into existing caves.
-/// `splits_left` allows up to 2 split events (source → 2 streams, one of which may → 2 again =
-/// max 3 streams total from one source).
+///
+/// `splits_left` allows up to 2 split events (source → 2 streams, one of which may → 2 again
+/// = max 3 streams total from one source).
 #[allow(clippy::too_many_arguments)]
 fn walk_river(
     editor: &mut WorldEditor,

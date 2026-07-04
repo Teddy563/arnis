@@ -126,6 +126,7 @@ impl XoroRandom {
         (self.next_bits(53) as f32 * 1.110223e-16f32) as f64
     }
     /// `nextFloat = (float)nextBits(24) * 5.9604645E-8F` (2^-24).
+    #[allow(dead_code)] // vanilla-parity API kept complete
     #[inline]
     pub fn next_float(&mut self) -> f32 {
         self.next_bits(24) as f32 * 5.9604645e-8f32
@@ -168,6 +169,7 @@ pub struct PositionalFactory {
 
 impl PositionalFactory {
     /// `fromHashOf(name)` — md5 seed xored with the factory, used directly (not re-mixed).
+    #[allow(clippy::wrong_self_convention)] // mirrors vanilla's forkPositional().fromHashOf
     pub fn from_hash_of(&self, name: &str) -> XoroRandom {
         let s = seed_from_hash_of(name).xor(self.lo, self.hi);
         XoroRandom::from_seed128(s)

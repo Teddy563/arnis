@@ -3,7 +3,20 @@
 //!   - floating fluid (water/lava with air directly below: should be ~0)
 //!   - water-touching-lava face adjacencies (barrier check: should be 0)
 //!   - total carved air (cave volume), connectivity, and themed-floor coverage
+//!
 //! Usage: cargo run --release --example cavecheck -- <region.mca> <y0> <y1>
+#![allow(
+    dead_code,
+    unused_mut,
+    clippy::unnecessary_sort_by,
+    clippy::manual_range_contains,
+    clippy::type_complexity,
+    clippy::identity_op,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments
+)]
+// ^ diagnostic tooling: kept readable over lint-perfect; dead_code covers the shared
+//   src modules compiled into this standalone example target.
 use fastanvil::{Chunk, Region};
 use std::collections::HashMap;
 use std::fs::File;
