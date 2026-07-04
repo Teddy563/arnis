@@ -1097,6 +1097,9 @@ fn gui_start_generation(
             let args: Args = Args {
                 bbox,
                 file: None,
+                cave_biomes: None,
+                cave_zone_map: None,
+                cave_zone_map_step: None,
                 tree_sizes: None,
                 vertical_exaggeration: 1.0,
                 snow_mode: "realistic".to_string(),
@@ -1123,6 +1126,8 @@ fn gui_start_generation(
                 buildings: buildings_enabled,
                 prewarm_overture: false,
                 fillground: fillground_enabled,
+                caves: false,
+                cave_asset_pack: None,
                 land_cover: land_cover_enabled,
                 use_3d: use_3d_enabled,
                 debug: false,

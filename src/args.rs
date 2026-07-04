@@ -107,6 +107,44 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub fillground: bool,
 
+    /// Underground cave generation (clean-room port of Minecraft 1.21.8 cave worldgen: noise caves +
+    /// random-walk carvers + pools/rivers + themed biome zones + ores + decoration + asset-pack
+    /// formations). Implies --fillground (caves need solid host rock to carve into).
+    /// `--vanilla-caves` is accepted as a legacy alias.
+    #[arg(long, alias = "vanilla-caves", default_value_t = false)]
+    pub caves: bool,
+
+    /// OPTIONAL directory holding the cave ASSET pack (cave_pack.json + renamed .schem formations -
+    /// ice spikes, dripstone columns, amethyst clusters...) stamped into --caves. When omitted,
+    /// a `cave-pack/` directory next to the arnis executable is used if present; otherwise the
+    /// formation pass is skipped (procedural decoration still runs).
+    #[arg(long = "cave-asset-pack", value_name = "DIR")]
+    pub cave_asset_pack: Option<std::path::PathBuf>,
+
+    /// Per-biome cave theme amounts as `name=percent` pairs (comma separated). Names: lush,
+    /// dripstone, deepdark, mushroom, ice, amethyst, volcanic, coral. 100 = the default share,
+    /// 0 = biome off, 200 = roughly double its area (the percent shifts the biome's noise
+    /// threshold on a log2 curve, so growth stays smooth). Omitted names stay at 100; omitting
+    /// the flag entirely reproduces the default distribution byte-for-byte. Depth/terrain gates
+    /// (volcanic bottom-only, ice under mountains only, coral in water pools) always apply.
+    /// Example: --cave-biomes lush=150,deepdark=0,amethyst=60
+    #[arg(long = "cave-biomes", value_name = "LIST")]
+    pub cave_biomes: Option<String>,
+
+    /// Render the cave BIOME ZONE layout for --bbox and exit (no world generation): writes
+    /// `<PREFIX>-upper.png` (upper caves, y=-20) and `<PREFIX>-deep.png` (deep caves, y=-48),
+    /// transparent where the cave is plain rock, one color per theme, plus a JSON line with the
+    /// measured share of each theme on stdout. Honours --seed, --scale, --master-origin and
+    /// --cave-biomes, so the preview matches what --caves will carve for the same world.
+    #[arg(long = "cave-zone-map", value_name = "PREFIX")]
+    pub cave_zone_map: Option<std::path::PathBuf>,
+
+    /// Sample step for --cave-zone-map, in blocks per output pixel (one zone sample per
+    /// STEP×STEP square — bigger = chunkier squares, like a noise-cell view; 512 = one
+    /// sample per region). Omitted = automatic fine sampling (image capped at 1536px).
+    #[arg(long = "cave-zone-map-step", value_name = "BLOCKS")]
+    pub cave_zone_map_step: Option<u32>,
+
     /// Enable land cover classification (optional)
     /// When enabled, fetches ESA WorldCover satellite data to classify terrain
     /// (forests, deserts, wetlands, built-up areas, etc.) and select appropriate
@@ -296,6 +334,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     // Overture pre-warm just fetches + caches Overture ranges for --bbox; no world is created.
     if args.prewarm_overture {
+        return Ok(());
+    }
+
+    // Zone-map mode renders cave-biome PNGs for --bbox; no world is created.
+    if args.cave_zone_map.is_some() {
         return Ok(());
     }
 

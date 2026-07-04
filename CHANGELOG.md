@@ -2,7 +2,40 @@
 
 All releases of the Meld fork of louis-e/arnis. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
-Starting with this release the fork tracks the upstream Arnis version number (2.9.0); earlier entries used an internal 1.8.x sequence.
+This fork is the generator behind [Meld](https://github.com/Teddy563/meld): Meld slices a real-world
+selection into region-aligned cells and runs one arnis process per cell; everything the fork adds
+(shared master origin, global elevation band, tile-invariant rendering, tile-mode OSM/terrain reads,
+tree packs, terrain shaping, caves) exists so that many independently generated cells merge into one
+seamless world. Every flag is additive — omit it and upstream behaviour is preserved.
+
+Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
+
+## [2.9.3] - 2026-07-04
+
+Underground update: one cave system, done right. The experimental cave engine is gone; `--caves` now runs a from-scratch Rust port of Minecraft 1.21.8 cave worldgen, carved directly into the filled ground at generation time. This is the engine behind Meld 1.5.0 "Meld Depths" — Meld's Caves toggle passes `--caves` to every cell, and because every cave pass is a pure function of (seed, position), the caves line up across cell seams like the surface does.
+
+### Added
+
+- **`--caves` (cave worldgen).** Clean-room port of vanilla 1.21.8 cave generation: the noise density field (cheese caverns, spaghetti tunnels, entrance pockets, pillars, noodle worms) sampled with vanilla's 4x8x4 cell interpolation, plus the random-walk tunnel/ravine carvers. On top of the vanilla base: pool caves (multi-lobe, half-flooded, grand and coral-reef variants), snake rivers (long, downhill, up to 3 streams per source, breach into caves only while descending), a contained deep lava sea below y=-54 with obsidian/magma rims, the vanilla ore table plus three size tiers of stone-variant patches, and 8 cave biome themes (lush, dripstone, deep dark, mushroom, ice under mountains only, amethyst, volcanic at the bottom of the world, coral in water pools) covering about half the underground with plain-rock buffer strips between zones. Implies `--fillground`. `--vanilla-caves` is accepted as a legacy alias. Usage: `arnis --output-dir ./world --bbox <bbox> --terrain --caves`.
+- **Cave asset packs.** A `cave-pack/` directory next to the arnis executable (or `--cave-asset-pack <DIR>`) supplies Sponge `.schem` formations - ice spikes, dripstone columns, amethyst clusters, clay pool basins, snow piles - stamped onto cave floors and ceilings, themed by biome zone, with block-states preserved and rotated. Formations sink into the ground, clip safely against walls, and never touch fluids. Without the directory, caves still generate fully (procedural decoration only).
+- **Deterministic + seam-safe.** Every cave pass is a pure function of (seed, position): adjacent tiles generated independently carve the same caves at the seam.
+- **`--cave-biomes <list>` (biome mix control).** Per-theme amounts as `name=percent` pairs (`lush=150,deepdark=0,amethyst=50`): 100 = the default share, 0 = theme off, 200 ≈ double its area (the percent shifts that theme's noise threshold on a log2 curve, so growth stays smooth and the field stays a pure function of seed + position — seam-safety unaffected). Omitting the flag reproduces the default distribution byte-for-byte; depth/terrain gates (volcanic bottom-only, ice under mountains, coral in pools) always apply.
+- **`--cave-zone-map <prefix>` (layout preview).** Renders the biome zone layout for `--bbox` without generating a world: `<prefix>-upper.png` (y=-20 band) + `<prefix>-deep.png` (y=-48 band), transparent where the cave is plain rock, plus a `ZONEMAP {json}` stdout line with the measured share of every theme. Uses the exact zone picker, seed and `--cave-biomes` values generation uses, so the preview IS the layout the world gets. Meld drives this for its on-map cave-biome preview.
+
+### Fixed (cave polish)
+
+- **Deep dark is deep-only now.** Its depth gate moved from `y <= -18` (mid-cave) to `y <= -35` (below the deepslate line), so sculk belongs to the depths like vanilla instead of bleeding into the shallow/mid caves.
+- **Stone-variant patches actually appear.** Diorite/granite/andesite/dirt were placed with absolute Y ranges (0-60), which land mostly above ground in low, valley-height real-world terrain and were pruned to near-nothing (a valley region measured diorite=4). They are now placed **surface-relative** (2-72 blocks below the local surface), so they fill the rock under every column at any terrain height — measured ~26k of each variant per region (evenly balanced), the vanilla "patches of diorite/granite/andesite everywhere" look.
+
+### Removed
+
+- **The old experimental cave engine** (`src/cave/`, ~3,900 lines) and its flags `--carver-caves` and `--cave-pack` (the cave.json biome-pack override). The stone-to-deepslate fillground transition it hosted moved to its own module (`src/deepslate.rs`, 123 lines) and behaves identically. Why: two cave systems meant double maintenance, and the experimental one produced artifacts the new engine's verification harness would never accept.
+- **`--underilla`** (building-palette remap + `underilla_mask.bin` sidecar). Why: it existed solely for the external Paper+Underilla cave pipeline, which the native `--caves` engine supersedes (~100× faster, no Java server, no restore mask).
+- Dead `ore_generation` module (157 lines). Why: only the deleted engine called it; `--caves` has its own vanilla ore table.
+
+### Stats
+
+Measured against the 2.9.2 release commit: **31 files, +6,178 / −169 lines** in `src/` + `examples/`. Breakdown: `src/caves/` + `src/deepslate.rs` = 4,024 lines (density-field port 402, noise 265, RNG 267, carvers 330, water features 404, formation engine 714, biome decoration 820, ores 238, pipeline 461, deepslate 123); verification tooling in `examples/` ≈ 1,900 lines (cavecheck region auditor, caveshape probe, mask preview) — the harness that gated every build on zero floating fluid / zero water-lava contact / zero ore-masking errors; the rest is wiring (flag unification, direct `--output-dir` world output, Underilla removal, 72 new block definitions for the coral/ice/snow/deep-dark biome themes).
 
 ## [2.9.2] - 2026-06-22
 

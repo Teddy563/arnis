@@ -1,0 +1,496 @@
+//! CAVE WORLDGEN (`--caves`) — a from-scratch Rust port of Minecraft 1.21.8 cave generation
+//! (clean-room from the decompiled mojmap source and worldgen JSON; the noise math is
+//! bit-identical, validated by a Java value-parity harness), carving directly into arnis's solid
+//! `--fillground` columns at worldgen — in-process, parallel, no external server.
+//! Terrain-decoupled: below the surface, vanilla caves are a pure 3D position-noise function, so
+//! per-tile carving is automatically seamless.
+//!
+//! THE PIPELINE (carve_region, in order):
+//!   1. Surface heightmap — every pass respects `surf − TOP_GATE` (the roof seal; caves never
+//!      breach the surface or expose building foundations).
+//!   2. NOISE CAVES — the vanilla density field (cheese caverns + spaghetti tunnels + entrance
+//!      pockets + pillars), sampled at 4×8×4 cell corners and trilerped like vanilla, plus
+//!      per-block thin "noodle" worms (the connectors between cave systems). Carve where ≤ 0.
+//!      Shape knobs (depth-tapered shrinks that keep shallow caves modest and let deep ones open
+//!      up) live in `density.rs`.
+//!   3. CARVERS — vanilla's random-walk tunnels + rare ravines (`carver.rs`), per-chunk seeded so
+//!      tiles agree.
+//!   4. DESPECKLE + MICRO-CAVE PRUNE — remove floating rock spikes, then refill any isolated cave
+//!      pocket under 48 blocks (tile-edge pockets kept: the neighbor tile carves its half).
+//!   5. WATER FEATURES (`water.rs`) — pool caves (multi-lobe rooms, bottom half water; big "grand"
+//!      and coral-reef variants) and snake rivers (long, meandering, downhill, up to 3 streams per
+//!      source, breach INTO caves only while descending). All real ticked source blocks, all
+//!      support-checked; water and lava may never touch (stone barrier + placement guards).
+//!   6. DEEP LAVA SEA — everything below y=−54 floods with contained, supported lava; rock faces
+//!      touching it get obsidian/magma rims.
+//!   7. FORMATIONS (`schems.rs`) — curated .schem assets (ice spikes, dripstone columns, amethyst
+//!      clusters, clay basins…) from the exe-adjacent `cave-pack/` directory, stamped on cave
+//!      floors/ceilings, themed by biome zone, clipped safely against walls.
+//!   8. ORES (`ores.rs`) — the vanilla ore table + stone-variant patches (three size tiers),
+//!      masked to bare rock so they never bleed into caves or over other features.
+//!   9. DECORATION (`decoration.rs`) — 8 biome themes in noise blotches (~half the underground;
+//!      lush, dripstone, deep dark, mushroom, ice [mountains only], amethyst, volcanic [bottom of
+//!      world], coral [in water pools]) with buffer strips of plain rock between them, plus glow
+//!      lichen and rare amethyst geodes everywhere.
+//!
+//! Everything is a pure function of (world seed, position) — deterministic and seam-safe across
+//! tiles by construction. `--vanilla-caves` is accepted as a legacy alias of `--caves`.
+
+mod carver;
+pub mod decoration;
+pub mod density;
+mod noise;
+mod ores;
+mod rng;
+mod schems;
+mod water;
+pub mod zone_map;
+
+use crate::args::Args;
+use crate::block_definitions::*;
+use crate::coordinate_system::cartesian::XZBBox;
+use crate::world_editor::{WorldEditor, MIN_Y};
+use density::CaveGen;
+use rayon::prelude::*;
+use std::collections::HashSet;
+
+/// Carve only this many blocks below the column's surface (the roof seal — keeps caves from breaching
+/// the surface / exposing grass).
+const TOP_GATE: i32 = 6;
+/// Global carve-density knob: carve the noise body only where combined density ≤ this (vanilla = 0.0).
+/// NOTE kept at 0.0: the `squeeze` clusters density extremely tightly near 0, so even tiny negatives
+/// are a cliff (−0.013 → −52% volume AND shatters connectivity 62%→15%). Room-size reduction is done
+/// via density::CHEESE_SHRINK instead (shrinks the broad cheese rooms while keeping them as hubs).
+const CARVE_THRESHOLD: f64 = 0.0;
+/// Rock the carve is allowed to replace (never bedrock, water, buildings, ores, plants).
+const CAVE_HOST: &[Block] = &[
+    STONE,
+    DEEPSLATE,
+    TUFF,
+    COBBLED_DEEPSLATE,
+    GRAVEL,
+    DIRT,
+    ANDESITE,
+    GRANITE,
+    DIORITE,
+];
+
+/// Carve vanilla noise caves into the solid fillground across the whole bbox.
+pub fn carve(editor: &mut WorldEditor, args: &Args, xzbbox: &XZBBox) {
+    carve_region(
+        editor,
+        args,
+        xzbbox.min_x(),
+        xzbbox.max_x(),
+        xzbbox.min_z(),
+        xzbbox.max_z(),
+    );
+}
+
+/// Carve over an explicit block-coordinate rect (per-tile callers pass strict tile bounds). Noise is
+/// a pure position-fn, so per-tile carving is seamless (same coords → same density).
+pub fn carve_region(
+    editor: &mut WorldEditor,
+    args: &Args,
+    min_x: i32,
+    max_x: i32,
+    min_z: i32,
+    max_z: i32,
+) {
+    let seed = (crate::ground_generation::current_noise_seed() ^ 0xCA7E_CA7E) as i64;
+    let gen = CaveGen::new(seed);
+    // resolve + load the cave asset pack once (explicit flag dir, else exe-adjacent `cave-pack/`).
+    schems::init_pack(args.cave_asset_pack.as_deref());
+    // install the per-biome amounts once per process (all cells share one --cave-biomes value)
+    if let Some(spec) = &args.cave_biomes {
+        match decoration::BiomeAmounts::parse(spec) {
+            Ok(a) => decoration::set_biome_amounts(a),
+            Err(e) => eprintln!("warning: --cave-biomes ignored ({e}); using defaults"),
+        }
+    }
+
+    // 1) surface heightmap (sequential — get_ground_level borrows &editor).
+    let h = (max_z - min_z + 1) as usize;
+    let w = (max_x - min_x + 1) as usize;
+    let mut surf = vec![0i32; w * h];
+    let mut max_surf = MIN_Y;
+    for (ix, sx) in (min_x..=max_x).enumerate() {
+        for (iz, sz) in (min_z..=max_z).enumerate() {
+            let s = editor.get_ground_level(sx, sz);
+            surf[ix * h + iz] = s;
+            max_surf = max_surf.max(s);
+        }
+    }
+    let surf = &surf;
+
+    // 2) cave mask via vanilla CELL INTERPOLATION (4×8×4 cells: sample the combined cheese/spaghetti/
+    //    entrances/pillars density at 8 cell corners, trilerp per block — gives vanilla-sized smooth
+    //    rooms instead of per-block-fat blobs). noodle is min'd in per-block at full res. Cells are on
+    //    GLOBAL boundaries so tiles/regions stay seamless. ~16× fewer density evals than per-block.
+    const CW: i32 = 4;
+    const CH: i32 = 8;
+    let cx0 = min_x.div_euclid(CW);
+    let cx1 = max_x.div_euclid(CW);
+    let cz0 = min_z.div_euclid(CW);
+    let cz1 = max_z.div_euclid(CW);
+    let cy_lo = (MIN_Y + 1).div_euclid(CH);
+    let cy_hi = (max_surf - TOP_GATE).div_euclid(CH);
+
+    let cell_cols: Vec<(i32, i32)> = (cx0..=cx1)
+        .flat_map(|cx| (cz0..=cz1).map(move |cz| (cx, cz)))
+        .collect();
+
+    let carved: Vec<(i32, i32, i32)> = cell_cols
+        .par_iter()
+        .flat_map_iter(|&(cx, cz)| {
+            let mut out: Vec<(i32, i32, i32)> = Vec::new();
+            let (wx0, wx1) = (cx * CW, cx * CW + CW);
+            let (wz0, wz1) = (cz * CW, cz * CW + CW);
+            for cy in cy_lo..=cy_hi {
+                let (wy0, wy1) = (cy * CH, cy * CH + CH);
+                // 8 corners of the combined density (cheese/spaghetti/entrances/pillars + slides+squeeze)
+                let n000 = gen.combined_density(wx0, wy0, wz0);
+                let n100 = gen.combined_density(wx1, wy0, wz0);
+                let n010 = gen.combined_density(wx0, wy1, wz0);
+                let n110 = gen.combined_density(wx1, wy1, wz0);
+                let n001 = gen.combined_density(wx0, wy0, wz1);
+                let n101 = gen.combined_density(wx1, wy0, wz1);
+                let n011 = gen.combined_density(wx0, wy1, wz1);
+                let n111 = gen.combined_density(wx1, wy1, wz1);
+                let by_lo = wy0.max(MIN_Y + 1);
+                let by_hi = (wy1 - 1).min(max_surf - TOP_GATE);
+                for by in by_lo..=by_hi {
+                    let fy = (by - wy0) as f64 / CH as f64;
+                    let xz00 = lerp(fy, n000, n010);
+                    let xz10 = lerp(fy, n100, n110);
+                    let xz01 = lerp(fy, n001, n011);
+                    let xz11 = lerp(fy, n101, n111);
+                    for bx in wx0.max(min_x)..wx1.min(max_x + 1) {
+                        let fx = (bx - wx0) as f64 / CW as f64;
+                        let z0v = lerp(fx, xz00, xz10);
+                        let z1v = lerp(fx, xz01, xz11);
+                        let ix = (bx - min_x) as usize;
+                        for bz in wz0.max(min_z)..wz1.min(max_z + 1) {
+                            let top = surf[ix * h + (bz - min_z) as usize] - TOP_GATE;
+                            if by > top {
+                                continue;
+                            }
+                            let fz = (bz - wz0) as f64 / CW as f64;
+                            let combined = lerp(fz, z0v, z1v);
+                            // Do NOT add per-block jitter to this threshold: the `squeeze`
+                            // clusters density so tightly near 0 that even a mean-zero ±0.005
+                            // perturbation flips a huge number of cells randomly, producing grainy
+                            // salt-and-pepper walls everywhere. Terracing on big caverns is a
+                            // separate problem needing a coherent isosurface warp, not noise here.
+                            // Carve iff min(combined, noodle) <= 0; noodle is only evaluated when
+                            // combined stays solid. Noodle keeps its 0 gate — the thin worms are the
+                            // CONNECTORS between cave systems, and trimming them fragments the
+                            // network (connectivity collapses to ~29%). Cave size is cut via the
+                            // cheese/carver-room shrinks instead, which preserve connectivity.
+                            let carve = combined <= CARVE_THRESHOLD
+                                || gen.noodle_density(bx, by, bz) <= 0.0;
+                            if carve {
+                                out.push((bx, by, bz));
+                            }
+                        }
+                    }
+                }
+            }
+            out
+        })
+        .collect();
+
+    // 3) apply caves (noise + carvers) into rock, tracking every cave-air cell for the despeckle.
+    let mut air: HashSet<i64> = HashSet::new();
+    for (bx, by, bz) in carved {
+        editor.set_block_absolute(AIR, bx, by, bz, Some(CAVE_HOST), None);
+        air.insert(pack(bx, by, bz));
+    }
+    // random-walk CARVERS (winding round tunnels + ravines) — vanilla's other cave system. Pure
+    // geometry in parallel, applied below the surface seal into rock only.
+    let carver_pts = carver::carve_positions(seed, min_x, max_x, min_z, max_z);
+    for (bx, by, bz) in carver_pts {
+        if bx < min_x || bx > max_x || bz < min_z || bz > max_z || by < MIN_Y + 1 {
+            continue;
+        }
+        let top = surf[(bx - min_x) as usize * h + (bz - min_z) as usize] - TOP_GATE;
+        if by > top {
+            continue;
+        }
+        editor.set_block_absolute(AIR, bx, by, bz, Some(CAVE_HOST), None);
+        air.insert(pack(bx, by, bz));
+    }
+
+    // 4) DESPECKLE: remove floating/spike rock (a solid cell with ≥5 of 6 neighbors = cave air).
+    //    Kills the thin rock islands that ore would cling to (the "floating ore" look) and tidies the
+    //    holey overlap between noise caves + carvers. 2 passes (islands, then the spikes they expose).
+    let neigh = |x: i32, y: i32, z: i32| {
+        [
+            (x + 1, y, z),
+            (x - 1, y, z),
+            (x, y + 1, z),
+            (x, y - 1, z),
+            (x, y, z + 1),
+            (x, y, z - 1),
+        ]
+    };
+    for _ in 0..2 {
+        let mut cand: HashSet<i64> = HashSet::new();
+        let mut remove: Vec<(i32, i32, i32)> = Vec::new();
+        for &a in &air {
+            let (px, py, pz) = unpack(a);
+            for (nx, ny, nz) in neigh(px, py, pz) {
+                let np = pack(nx, ny, nz);
+                if air.contains(&np) || !cand.insert(np) {
+                    continue;
+                }
+                let airn = neigh(nx, ny, nz)
+                    .iter()
+                    .filter(|&&(mx, my, mz)| air.contains(&pack(mx, my, mz)))
+                    .count();
+                if airn >= 5 {
+                    remove.push((nx, ny, nz));
+                }
+            }
+        }
+        if remove.is_empty() {
+            break;
+        }
+        for (x, y, z) in remove {
+            editor.set_block_absolute(AIR, x, y, z, Some(CAVE_HOST), None);
+            air.insert(pack(x, y, z));
+        }
+    }
+
+    // 4.4) PRUNE MICRO-CAVES: the noise field's carve fringe leaves isolated pockets of just a few
+    //    blocks — meaningless "caves" that pockmark cliff faces and read as random holes.
+    //    Refill any connected component smaller than 48 cells with rock. Components that
+    //    touch the tile boundary are KEPT even when small — they may continue in the neighbor tile,
+    //    and refilling only our half would carve a visible seam (the neighbor still carves its side).
+    {
+        let mut seen: HashSet<i64> = HashSet::new();
+        let mut refill: Vec<i64> = Vec::new();
+        for &start in &air {
+            if seen.contains(&start) {
+                continue;
+            }
+            let mut comp: Vec<i64> = vec![start];
+            let mut stack: Vec<i64> = vec![start];
+            seen.insert(start);
+            let mut touches_edge = false;
+            while let Some(p) = stack.pop() {
+                let (x, y, z) = unpack(p);
+                if x <= min_x || x >= max_x || z <= min_z || z >= max_z {
+                    touches_edge = true;
+                }
+                for (nx, ny, nz) in neigh(x, y, z) {
+                    let np = pack(nx, ny, nz);
+                    if air.contains(&np) && seen.insert(np) {
+                        stack.push(np);
+                        comp.push(np);
+                    }
+                }
+            }
+            if comp.len() < 48 && !touches_edge {
+                refill.extend(comp);
+            }
+        }
+        for &p in &refill {
+            let (x, y, z) = unpack(p);
+            let rock = if y < 0 { DEEPSLATE } else { STONE };
+            editor.set_block_absolute(rock, x, y, z, Some(&[AIR]), None);
+            air.remove(&p);
+        }
+    }
+
+    // 4.5) WATER FEATURES — pools + snake rivers get their OWN fresh carve into solid rock (see
+    //    water.rs), instead of reusing the dry cave shape and deciding per-cell which parts to flood
+    //    (which produces patchy "blob"/curtain water). Merge their carved cells into `air` so ores/
+    //    geodes/decoration treat them consistently with the rest of the cave network. `water_cells`
+    //    is PURE water (no lava) — used below to tell a genuine water/lava boundary apart from lava
+    //    simply touching more lava (which must NOT trigger the barrier).
+    let decor = decoration::Decor::new(seed);
+    let (feat_carved, water_cells) = water::carve_water_features(
+        editor, &air, &decor, seed, min_x, max_x, min_z, max_z, surf, h, CAVE_HOST, TOP_GATE,
+    );
+    air.extend(feat_carved);
+    // union of every placed fluid cell (water + lava) — for the later passes' "don't place near
+    // fluid" exclusions only; NOT used for the water/lava barrier check (that needs the type
+    // distinction).
+    let mut basin_fluid: HashSet<i64> = water_cells.clone();
+
+    // 4.6) DEEP LAVA FLOOR — the unconditional global lava sea below y=-54 (vanilla: this deep band is
+    //    always lava, a flat bottom-of-the-world plane). This is the ONLY carve-time source of lava in
+    //    the cave system — there are deliberately no scattered mid-depth lava lakes. Containment (skip
+    //    cells touching open terrain) + an ascending-y support sweep keep it from floating or leaking.
+    {
+        const LAVA_LEVEL: i32 = -54;
+        let is_open = |ed: &WorldEditor, x: i32, y: i32, z: i32| {
+            !ed.block_exists_absolute(x, y, z) && !air.contains(&pack(x, y, z))
+        };
+        let mut cand: HashSet<i64> = HashSet::new();
+        for &a in &air {
+            let (x, y, z) = unpack(a);
+            if x < min_x || x > max_x || z < min_z || z > max_z || y >= LAVA_LEVEL {
+                continue;
+            }
+            if neigh(x, y, z)
+                .iter()
+                .any(|&(nx, ny, nz)| is_open(editor, nx, ny, nz))
+            {
+                continue;
+            }
+            cand.insert(a);
+        }
+        let mut order: Vec<i64> = cand.iter().copied().collect();
+        order.sort_unstable_by_key(|&p| unpack(p).1);
+        let mut supported: HashSet<i64> = HashSet::new();
+        for &a in &order {
+            let (x, y, z) = unpack(a);
+            if editor.block_exists_absolute(x, y - 1, z) || supported.contains(&pack(x, y - 1, z)) {
+                supported.insert(a);
+            }
+        }
+        for &a in &supported {
+            let (x, y, z) = unpack(a);
+            // stone seam if this deep-lava cell happens to touch a pool/river WATER cell specifically
+            // (rare — pools/rivers stay well above y=-54, this is only a safety net). Checked against
+            // `water_cells` (pure water), NOT `basin_fluid` — lava touching more lava (the normal case
+            // in a deep sea) must never trigger this.
+            let touches_water = neigh(x, y, z)
+                .iter()
+                .any(|&(nx, ny, nz)| water_cells.contains(&pack(nx, ny, nz)));
+            if touches_water {
+                let barrier = if y < 0 { DEEPSLATE } else { STONE };
+                editor.set_block_absolute(barrier, x, y, z, Some(&[AIR]), None);
+                continue;
+            }
+            editor.set_block_absolute(LAVA, x, y, z, Some(&[AIR]), None);
+            basin_fluid.insert(a);
+        }
+        // VOLCANIC RIM: rock faces touching the lava sea become obsidian (with magma accents) — the
+        // "lava pools with obsidian" look from the reference images. Deterministic per-cell hash so
+        // tiles agree; masked to ROCK-family blocks so ores/bedrock/buildings are never converted.
+        let rim_rock: &[Block] = &[
+            STONE,
+            DEEPSLATE,
+            TUFF,
+            COBBLED_DEEPSLATE,
+            GRANITE,
+            DIORITE,
+            ANDESITE,
+        ];
+        for &a in &supported {
+            let (x, y, z) = unpack(a);
+            for (nx, ny, nz) in neigh(x, y, z) {
+                let np = pack(nx, ny, nz);
+                if supported.contains(&np) || air.contains(&np) {
+                    continue;
+                }
+                let hv = (np as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40;
+                if hv % 100 < 45 {
+                    editor.set_block_absolute(OBSIDIAN, nx, ny, nz, Some(rim_rock), None);
+                } else if hv % 100 < 62 {
+                    editor.set_block_absolute(MAGMA_BLOCK, nx, ny, nz, Some(rim_rock), None);
+                }
+            }
+        }
+    }
+
+    // 4.7) CAVE ASSET FORMATIONS — stamp curated schematics (ice spikes, dripstone columns, amethyst
+    //    clusters, snow piles, fluid pockets, dripleaf…) from the cave pack into the finished cave
+    //    network, themed by the same biome zones decoration uses. Runs BEFORE ores/decoration so ore
+    //    blobs don't spawn inside formations and AIR-only decoration skips formation blocks.
+    schems::stamp_region(
+        editor,
+        &air,
+        seed,
+        min_x,
+        max_x,
+        min_z,
+        max_z,
+        surf,
+        h,
+        TOP_GATE,
+        &mut basin_fluid,
+    );
+
+    // NOTE: floating-water sealing is NOT done here — the ESA/OSM water-depth carve (carve_lc_water_*)
+    // runs AFTER this cave pass, so a seal here can't see that water. The caller invokes
+    // `seal_floating_fluid_region` after all water generation instead.
+
+    // 5) ORES — vanilla blob ores (+ stone variants), placed into the now-clean rock so
+    //    discard-on-air-exposure leaves clean cave walls. deepslate variant matches host rock.
+    ores::place_ores(editor, seed, min_x, max_x, min_z, max_z);
+
+    // 6) DECORATION — the biome themes (lush moss + cave-vines, dripstone, sculk, mushroom, ice,
+    //    amethyst, volcanic, coral reefs in pools), glow lichen on all surfaces, and rare amethyst
+    //    geodes. Biome patches via low-freq noise. No springs/drips: water exists only as the pool/
+    //    river features placed above.
+    decoration::decorate(
+        editor,
+        seed,
+        &air,
+        &basin_fluid,
+        &water_cells,
+        min_x,
+        max_x,
+        min_z,
+        max_z,
+        &gen,
+    );
+}
+
+/// Seal floating water/lava: a fluid block with cave air directly below has no support and looks like
+/// it floats (the ESA/OSM water-depth carve can undercut surface water over a cave). Re-fill that air
+/// cell with rock so every fluid column keeps a bed. MUST be called AFTER all water generation
+/// (carve_lc_water_*). Per-column scan from the surface down — cheap; no-ops on properly supported
+/// cave fluid (its cell below is always rock or more fluid).
+pub fn seal_floating_fluid_region(
+    editor: &mut WorldEditor,
+    min_x: i32,
+    max_x: i32,
+    min_z: i32,
+    max_z: i32,
+) {
+    for x in min_x..=max_x {
+        for z in min_z..=max_z {
+            let top = editor.get_ground_level(x, z) + 2;
+            for y in (MIN_Y + 1..=top).rev() {
+                if editor.check_for_block_absolute(x, y, z, Some(&[WATER, LAVA]), None)
+                    && !editor.block_exists_absolute(x, y - 1, z)
+                {
+                    // Do not add a "waterfall exemption" here (skipping the plug when more fluid
+                    // sits a few blocks lower): it legalizes water-over-air-over-water gaps inside
+                    // multi-lobe pools (hundreds of visible floaters per region). The river→pool
+                    // merge is solved at the SOURCE instead: rivers never place a source block over
+                    // air (water.rs), so there is nothing here to plug at a river mouth — the last
+                    // on-rock source flows over the edge at runtime, a real waterfall.
+                    let rock = if y < 1 { DEEPSLATE } else { STONE };
+                    editor.set_block_absolute(rock, x, y - 1, z, Some(&[AIR]), None);
+                }
+            }
+        }
+    }
+}
+
+/// Pack/unpack a block coord into an i64 for the despeckle air-set (offset so negatives are safe;
+/// supports |x|,|z| < 2^23 and y in [-64, 4031]).
+#[inline]
+fn pack(x: i32, y: i32, z: i32) -> i64 {
+    (((x as i64 + (1 << 23)) & 0xFF_FFFF) << 36)
+        | (((z as i64 + (1 << 23)) & 0xFF_FFFF) << 12)
+        | ((y as i64 + 64) & 0xFFF)
+}
+#[inline]
+fn unpack(p: i64) -> (i32, i32, i32) {
+    let x = ((p >> 36) & 0xFF_FFFF) as i32 - (1 << 23);
+    let z = ((p >> 12) & 0xFF_FFFF) as i32 - (1 << 23);
+    let y = (p & 0xFFF) as i32 - 64;
+    (x, y, z)
+}
+
+#[inline]
+fn lerp(t: f64, a: f64, b: f64) -> f64 {
+    a + t * (b - a)
+}

@@ -19,8 +19,9 @@ use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// Minecraft 1.21.1 data version for chunk format identification.
-const DATA_VERSION: i32 = 3955;
+/// Minecraft 1.21.8 data version (world_version 4440), so generated worlds load natively in 1.21.8
+/// without a DataFixer upgrade pass.
+const DATA_VERSION: i32 = 4440;
 
 /// Cached base chunk sections (grass at Y=-62)
 /// Computed once on first use and reused for all empty chunks
@@ -575,6 +576,11 @@ fn is_light_transparent(name: &str) -> bool {
         "peony",
         "pink_petals",
         "spore_blossom",
+        "small_dripleaf",
+        "small_amethyst_bud",
+        "medium_amethyst_bud",
+        "large_amethyst_bud",
+        "amethyst_cluster",
         "hanging_roots",
         "glow_lichen",
         "sweet_berry_bush",

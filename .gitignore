@@ -71,3 +71,8 @@ gen/
 /pr-body.md
 /CHANGELOG-meld-seam.md
 /docs/meld-fork/
+
+# Local scratch: cave-engine dev archives and clean-room research material
+# (decompiled vanilla sources + spec notes). NEVER ship these.
+/_archive/
+/_cave-research/

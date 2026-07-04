@@ -562,6 +562,50 @@ impl<'a> WorldEditor<'a> {
         }
     }
 
+    /// Schedule a fluid (water/lava) tick at a world position so Minecraft re-evaluates and FLOWS the
+    /// source on first chunk load. Without this, a worldgen-placed fluid source sits frozen ("broken" —
+    /// a static block in the wall) until some unrelated neighbour update happens to poke it. Writes one
+    /// entry into the chunk's `fluid_ticks` list (modern 1.18+ NBT: `{i,x,y,z,t,p}`, `t=0` fires next
+    /// tick). Java-only; no-op for Bedrock/Luanti, out-of-bounds, or already-flushed regions.
+    pub fn schedule_fluid_tick(&mut self, fluid: Block, x: i32, y: i32, z: i32) {
+        if self.format() != WorldFormat::JavaAnvil {
+            return;
+        }
+        if !self.xzbbox.contains(&XZPoint::new(x, z)) {
+            return;
+        }
+        if !self.flushed_regions.is_empty() && self.flushed_regions.contains(&(x >> 9, z >> 9)) {
+            return;
+        }
+        let id = if fluid.id() == LAVA.id() {
+            "minecraft:lava"
+        } else {
+            "minecraft:water"
+        };
+        let chunk_x = x >> 4;
+        let chunk_z = z >> 4;
+        let region = self.world.get_or_create_region(chunk_x >> 5, chunk_z >> 5);
+        let chunk = region.get_or_create_chunk(chunk_x & 31, chunk_z & 31);
+        let tick = HashMap::from([
+            ("i".to_string(), Value::String(id.to_string())),
+            ("x".to_string(), Value::Int(x)),
+            ("y".to_string(), Value::Int(y)),
+            ("z".to_string(), Value::Int(z)),
+            ("t".to_string(), Value::Int(0)),
+            ("p".to_string(), Value::Int(0)),
+        ]);
+        match chunk.other.entry("fluid_ticks".to_string()) {
+            Entry::Occupied(mut entry) => {
+                if let Value::List(list) = entry.get_mut() {
+                    list.push(Value::Compound(tick));
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(Value::List(vec![Value::Compound(tick)]));
+            }
+        }
+    }
+
     /// Places a banner block entity at the given coordinates (absolute Y).
     /// This writes the pattern data into the chunk's block_entities list,
     /// which is required for the banner patterns to appear in-game.

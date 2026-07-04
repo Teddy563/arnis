@@ -40,6 +40,18 @@ arnis --output-dir ./world --bbox <cell-bbox> \
   --master-origin-lat 52.5200 --master-origin-lng 13.4050
 ```
 
+**Vertical exaggeration (taller mountains, same footprint).** At small scales real relief flattens out. `--vertical-exaggeration <FACTOR>` multiplies terrain height only, not the map footprint, and auto-compresses to the build height. Default 1.0.
+
+```
+arnis --output-dir ./world --bbox <bbox> --terrain --vertical-exaggeration 2.0
+```
+
+**Snow control.** `--snow-mode off|realistic|peaks|manual` places snow at the real latitude snow line, on the top N percent of the world's height (`--snow-percent`), or above a fixed Y (`--snow-y`).
+
+```
+arnis --output-dir ./world --bbox <bbox> --terrain --snow-mode peaks --snow-percent 15
+```
+
 **Terrain zoom cap (lighter, hole-free elevation).** The z14/z15 Terrarium tiles have real no-data holes and multiply the tile count, while a coarser zoom still carries the full roughly 30 m signal. Cap the terrain tile zoom for the whole run with an environment variable. There is no CLI flag for this. The value is clamped to the valid zoom band.
 
 ```
@@ -68,6 +80,37 @@ arnis --output-dir ./world --bbox <bbox> --terrain --offline
 
 ```
 arnis --output-dir ./world --bbox <bbox> --terrain --seed 42
+```
+
+### Caves and underground
+
+**Vanilla-style cave worldgen (`--caves`).** A from-scratch Rust port of Minecraft 1.21.8 cave generation, carved into the filled ground at generation time: the vanilla noise density field (cheese caverns, spaghetti tunnels, entrance pockets, pillars, noodle worms) sampled with vanilla's 4x8x4 cell interpolation, plus the random-walk tunnel and ravine carvers. On top of the vanilla base: pool caves (half-flooded, grand and coral-reef variants), long snake rivers that breach into caves only while descending, a contained deep lava sea below y=-54 with obsidian and magma rims, the vanilla ore table plus stone-variant patches, amethyst geodes, and 8 cave biome themes (lush, dripstone, deep dark, mushroom, ice under mountains only, amethyst, volcanic at the bottom of the world, coral in water pools) with plain-rock buffers between zones. Every pass is a pure function of (seed, position), so adjacent tiles carve identical caves at their shared seam. Implies `--fillground`; `--vanilla-caves` is a legacy alias.
+
+```
+arnis --output-dir ./world --bbox <bbox> --terrain --caves
+```
+
+**Cave asset packs.** A `cave-pack/` directory next to the executable (or `--cave-asset-pack <DIR>`) supplies Sponge `.schem` formations — ice spikes, dripstone columns, amethyst clusters, clay pool basins — stamped onto cave floors and ceilings, themed by biome zone, with block states preserved and rotated. Formations sink into the ground, clip safely against walls, and never touch fluids. Without the directory, caves generate fully with procedural decoration only.
+
+**Cave biome mix (`--cave-biomes <list>`).** Per-theme amounts as `name=percent` pairs: 100 = the default share, 0 = theme off, 200 ≈ double its area. The percent shifts that theme's noise threshold on a log2 curve, so the field stays a pure function of seed + position (seam-safety unaffected) and omitting the flag reproduces the default distribution byte-for-byte. Depth/terrain gates always apply (volcanic bottom-only, deep dark below the deepslate line, ice under mountains, coral in water pools).
+
+```
+arnis --output-dir ./world --bbox <bbox> --terrain --caves \
+  --cave-biomes lush=150,deepdark=0,amethyst=50
+```
+
+**Zone-layout preview (`--cave-zone-map <prefix>`).** Renders the cave biome layout for `--bbox` without generating a world: `<prefix>-upper.png` and `<prefix>-deep.png` (transparent where the cave is plain rock) plus a `ZONEMAP {json}` stdout line with the measured share of every theme. Uses the exact zone picker, seed and `--cave-biomes` values generation uses, so the preview IS the layout the world gets. `--cave-zone-map-step <blocks>` samples one zone per N×N square for a chunky noise-cell view.
+
+```
+arnis --bbox <bbox> --scale 0.1 --tile-invariant-rendering 42 --cave-zone-map ./zones
+```
+
+### Trees and vegetation
+
+**Schematic tree packs (`--tree-pack <DIR>`).** Points the generator at a directory of Sponge `.schem` tree models plus a `region.json` manifest and places those models instead of the built-in procedural trees: a realm by location, a community by terrain, then a weighted species, blended with vanilla trees, inside the normal tree-spawn pass so density and clearings stay natural. Without the flag, procedural trees are unchanged. `--tree-sizes small,medium,big,tall,giant` gates which height tiers may place (a disabled tier falls back to a smaller one; large tiers are gated off at small scales).
+
+```
+arnis --output-dir ./world --bbox <bbox> --tree-pack ./packs/eur --tree-sizes small,medium,big
 ```
 
 ### Buildings and structures
@@ -156,6 +199,8 @@ ARNIS_ELEV_ZOOM=13 arnis \
   --master-origin-lat 52.5200 --master-origin-lng 13.4050 \
   --elevation-min 0 --elevation-max 1200 \
   --seed 42 \
+  --caves \
+  --tree-pack ./packs/eur \
   --no-buildings
 ```
 

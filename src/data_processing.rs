@@ -591,13 +591,24 @@ pub fn generate_world_with_options(
                         false,
                     );
                     if args.fillground {
-                        crate::ore_generation::generate_ores_region(
+                        // Deepslate the bottom 30% (stone→deepslate below Y0) — vanilla-ish solid ground.
+                        crate::deepslate::apply_deepslate_region(
                             &mut tile_editor,
                             g_min_x,
                             g_max_x,
                             g_min_z,
                             g_max_z,
-                            false,
+                        );
+                    }
+                    // Cave worldgen per-tile (position-based noise → seamless across tiles).
+                    if args.caves {
+                        crate::caves::carve_region(
+                            &mut tile_editor,
+                            args,
+                            g_min_x,
+                            g_max_x,
+                            g_min_z,
+                            g_max_z,
                         );
                     }
                     crate::water_depth::carve_lc_water_region(
@@ -627,6 +638,19 @@ pub fn generate_world_with_options(
                     // so carve in-tile now, after ground/fill so the interior isn't refilled.
                     if eviction_active {
                         railways::carve_subway_interior(&mut tile_editor, &tile_subway_points);
+                    }
+                    // Seal floating water/lava LAST (after the water-depth carve, veg sweep, and the
+                    // in-tile subway carve all of which can undercut a water body over a cave). Under
+                    // eviction this tile is about to flush, so it must happen in-tile here. Non-eviction
+                    // tiles get the post-merge seal instead (after the post-merge subway carve).
+                    if args.caves && eviction_active {
+                        crate::caves::seal_floating_fluid_region(
+                            &mut tile_editor,
+                            g_min_x,
+                            g_max_x,
+                            g_min_z,
+                            g_max_z,
+                        );
                     }
 
                     let tile_road_overrides = tile_editor.take_road_surface_overrides();
@@ -823,7 +847,12 @@ pub fn generate_world_with_options(
 
     if ground_on_merged {
         if args.fillground {
-            crate::ore_generation::generate_ores(&mut editor, &xzbbox);
+            // Deepslate the bottom (stone→deepslate below Y0) — solid vanilla-ish ground.
+            crate::deepslate::apply_deepslate(&mut editor, &xzbbox);
+        }
+        // Cave worldgen: carve the finished solid column (clean-room Rust port of MC 1.21.8).
+        if args.caves {
+            crate::caves::carve(&mut editor, args, &xzbbox);
         }
         // Carve depth into ESA water cells (water_areas.rs only covers OSM polygons).
         crate::water_depth::carve_lc_water_pass(
@@ -847,6 +876,19 @@ pub fn generate_world_with_options(
     // Under eviction this already ran in-tile (regions get freed before here).
     if !eviction_active && !subway_points.is_empty() {
         railways::carve_subway_interior(&mut editor, &subway_points);
+    }
+
+    // Seal floating water/lava as the FINAL underground pass (covers standalone + non-eviction tiled):
+    // the water-depth carve, veg sweep, and subway carve can all leave a water body hanging over a cave.
+    // Eviction tiles were already sealed in-tile before flush.
+    if args.caves && !eviction_active {
+        crate::caves::seal_floating_fluid_region(
+            &mut editor,
+            xzbbox.min_x(),
+            xzbbox.max_x(),
+            xzbbox.min_z(),
+            xzbbox.max_z(),
+        );
     }
 
     // Run after ground generation so anchor Y reflects the final terrain.

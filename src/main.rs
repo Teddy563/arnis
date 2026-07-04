@@ -6,10 +6,12 @@ mod bench;
 mod biome;
 mod block_definitions;
 mod bresenham;
+mod caves;
 mod clipping;
 mod colors;
 mod coordinate_system;
 mod data_processing;
+mod deepslate;
 mod deterministic_rng;
 mod element_processing;
 mod elevation;
@@ -26,7 +28,6 @@ mod map_preview;
 mod map_renderer;
 mod map_transformation;
 mod models_3d;
-mod ore_generation;
 mod osm_parser;
 mod overture;
 #[cfg(feature = "gui")]
@@ -104,7 +105,12 @@ fn run_cli() {
     version_check::check_for_updates_async();
 
     // Parse input arguments
-    let args: Args = Args::parse();
+    let mut args: Args = Args::parse();
+
+    // --caves needs solid host rock to carve into.
+    if args.caves {
+        args.fillground = true;
+    }
 
     // Hard offline mode for elevation: signal the elevation providers (which run
     // deep in the call stack and don't see `args`) via a process-wide env var.
@@ -164,6 +170,28 @@ fn run_cli() {
                 println!("Terrain prefetch: {ok} tile(s) cached, {fail} failed.");
                 std::process::exit(if fail == 0 { 0 } else { 2 });
             }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Cave zone-map mode: render the cave BIOME ZONE layout for --bbox to PNG overlays and
+    // exit, before any world creation. Uses the exact zone picker + seed + --cave-biomes
+    // multipliers the real --caves carve would use, so the preview matches the world.
+    if args.cave_zone_map.is_some() {
+        if let Some(spec) = &args.cave_biomes {
+            match caves::decoration::BiomeAmounts::parse(spec) {
+                Ok(a) => caves::decoration::set_biome_amounts(a),
+                Err(e) => {
+                    eprintln!("{}: --cave-biomes: {}", "Error".red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        match caves::zone_map::render(&args) {
+            Ok(()) => std::process::exit(0),
             Err(e) => {
                 eprintln!("{}: {}", "Error".red().bold(), e);
                 std::process::exit(1);
@@ -252,9 +280,11 @@ fn run_cli() {
         );
         (world_path, Some(world_name))
     } else {
-        // Java: create a new world in the provided output directory
+        // Java: the CLI's --output-dir/--path IS the intended world folder (caller owns naming/
+        // versioning, e.g. Meld passing a version-named dir) — write region/ directly into it
+        // instead of nesting an auto-numbered "Arnis World N" subfolder (that's the GUI's job).
         let base_dir = args.path.clone().unwrap();
-        let world_path = match world_utils::create_new_world(&base_dir) {
+        let world_path = match world_utils::create_world_at(&base_dir) {
             Ok(path) => PathBuf::from(path),
             Err(e) => {
                 eprintln!("{} {}", "Error:".red().bold(), e);

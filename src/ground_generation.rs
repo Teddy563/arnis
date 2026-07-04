@@ -1425,7 +1425,7 @@ pub fn set_noise_seed(seed: u64) {
 }
 
 #[inline]
-fn current_noise_seed() -> u64 {
+pub(crate) fn current_noise_seed() -> u64 {
     *NOISE_SEED.get().unwrap_or(&0)
 }
 

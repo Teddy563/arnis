@@ -130,7 +130,27 @@ pub fn create_new_world(base_path: &Path) -> Result<String, String> {
     };
 
     let new_world_path: PathBuf = base_path.join(&unique_name);
+    scaffold_world(&new_world_path, &unique_name)
+}
 
+/// Scaffold a Java world DIRECTLY at `world_path` — no "Arnis World N" subfolder, no uniqueness
+/// counter. Region files land straight in `world_path/region/`. For CLI/scripted generation where
+/// the caller's `--output-dir` (e.g. a version-named folder like `Bucharest-v9`) already IS the
+/// intended world folder, so nesting another auto-numbered world inside it is unwanted — the caller
+/// owns naming/versioning via the directory it passes in. Overwrites any existing content at that
+/// path (the caller is expected to pick a fresh/intentional directory per generation).
+pub fn create_world_at(world_path: &Path) -> Result<String, String> {
+    let level_name = world_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Arnis World")
+        .to_string();
+    scaffold_world(world_path, &level_name)
+}
+
+/// Shared world-scaffold body (region template, level.dat, icon.png) used by both
+/// `create_new_world` (nested, auto-numbered) and `create_world_at` (direct path).
+fn scaffold_world(new_world_path: &Path, unique_name: &str) -> Result<String, String> {
     // Create the new world directory structure
     fs::create_dir_all(new_world_path.join("region"))
         .map_err(|e| format!("Failed to create world directory: {e}"))?;
@@ -159,7 +179,10 @@ pub fn create_new_world(base_path: &Path) -> Result<String, String> {
     if let Value::Compound(ref mut root) = level_data {
         if let Some(Value::Compound(ref mut data)) = root.get_mut("Data") {
             // Update LevelName
-            data.insert("LevelName".to_string(), Value::String(unique_name.clone()));
+            data.insert(
+                "LevelName".to_string(),
+                Value::String(unique_name.to_string()),
+            );
 
             // Update LastPlayed to the current Unix time in milliseconds
             let current_time = std::time::SystemTime::now()

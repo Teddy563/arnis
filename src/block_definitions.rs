@@ -377,6 +377,79 @@ impl Block {
             264 => "brown_candle",
             265 => "soul_sand",
             266 => "snow",
+            // Cave generation additions
+            267 => "lava",
+            268 => "dripstone_block",
+            269 => "sculk",
+            270 => "calcite",
+            271 => "amethyst_block",
+            272 => "budding_amethyst",
+            273 => "basalt",
+            274 => "smooth_basalt",
+            275 => "obsidian",
+            276 => "mycelium",
+            277 => "mushroom_stem",
+            278 => "red_mushroom_block",
+            279 => "brown_mushroom_block",
+            280 => "ice",
+            281 => "blue_ice",
+            282 => "rooted_dirt",
+            283 => "deepslate_iron_ore",
+            284 => "deepslate_copper_ore",
+            285 => "tube_coral_block",
+            286 => "brain_coral_block",
+            287 => "fire_coral_block",
+            288 => "horn_coral_block",
+            289 => "bubble_coral_block",
+            290 => "deepslate_coal_ore",
+            291 => "deepslate_gold_ore",
+            292 => "deepslate_redstone_ore",
+            293 => "deepslate_lapis_ore",
+            294 => "deepslate_diamond_ore",
+            295 => "glow_lichen",
+            296 => "sculk_vein",
+            297 => "pointed_dripstone",
+            298 => "moss_carpet",
+            299 => "short_grass",
+            300 => "cave_vines",
+            301 => "amethyst_cluster",
+            302 => "sculk_sensor",
+            303 => "sculk_shrieker",
+            304 => "red_mushroom",
+            305 => "brown_mushroom",
+            306 => "cave_vines_plant",
+            307 => "azalea",
+            308 => "flowering_azalea",
+            309 => "big_dripleaf",
+            310 => "large_fern",
+            311 => "emerald_ore",
+            312 => "deepslate_emerald_ore",
+            313 => "hanging_roots",
+            314 => "small_dripleaf",
+            315 => "small_dripleaf",
+            316 => "spore_blossom",
+            317 => "sculk_catalyst",
+            318 => "small_amethyst_bud",
+            319 => "medium_amethyst_bud",
+            320 => "large_amethyst_bud",
+            321 => "powder_snow",
+            322 => "shroomlight",
+            323 => "dead_tube_coral_block",
+            324 => "dead_brain_coral_block",
+            325 => "dead_fire_coral_block",
+            326 => "dead_horn_coral_block",
+            327 => "dead_bubble_coral_block",
+            328 => "tube_coral_fan",
+            329 => "brain_coral_fan",
+            330 => "fire_coral_fan",
+            331 => "horn_coral_fan",
+            332 => "bubble_coral_fan",
+            333 => "tube_coral",
+            334 => "brain_coral",
+            335 => "fire_coral",
+            336 => "horn_coral",
+            337 => "bubble_coral",
+            338 => "big_dripleaf_stem",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -624,6 +697,17 @@ impl Block {
                 map
             })),
             198 => Some(Value::Compound({
+                let mut map = HashMap::new();
+                map.insert("half".to_string(), Value::String("upper".to_string()));
+                map
+            })),
+
+            314 => Some(Value::Compound({
+                let mut map = HashMap::new();
+                map.insert("half".to_string(), Value::String("lower".to_string()));
+                map
+            })),
+            315 => Some(Value::Compound({
                 let mut map = HashMap::new();
                 map.insert("half".to_string(), Value::String("upper".to_string()));
                 map
@@ -1112,6 +1196,88 @@ pub const BROWN_CANDLE_4: Block = Block::new(264);
 pub const SOUL_SAND: Block = Block::new(265);
 // Snow-line cap (upstream uses id 257; that slot is SUGAR_CANE in this fork, so snow is at 266).
 pub const SNOW_LAYER: Block = Block::new(266);
+
+// Cave generation additions — wall/floor palette blocks used by the cave worldgen (`--caves`)
+// biome themes and decoration passes. All full blocks; no properties() arm needed.
+pub const LAVA: Block = Block::new(267);
+pub const DRIPSTONE_BLOCK: Block = Block::new(268);
+pub const SCULK: Block = Block::new(269);
+pub const CALCITE: Block = Block::new(270);
+pub const AMETHYST_BLOCK: Block = Block::new(271);
+pub const BUDDING_AMETHYST: Block = Block::new(272);
+pub const BASALT: Block = Block::new(273);
+pub const SMOOTH_BASALT: Block = Block::new(274);
+pub const OBSIDIAN: Block = Block::new(275);
+pub const MYCELIUM: Block = Block::new(276);
+pub const MUSHROOM_STEM: Block = Block::new(277);
+pub const RED_MUSHROOM_BLOCK: Block = Block::new(278);
+pub const BROWN_MUSHROOM_BLOCK: Block = Block::new(279);
+pub const ICE: Block = Block::new(280);
+pub const BLUE_ICE: Block = Block::new(281);
+pub const ROOTED_DIRT: Block = Block::new(282);
+pub const DEEPSLATE_IRON_ORE: Block = Block::new(283);
+pub const DEEPSLATE_COPPER_ORE: Block = Block::new(284);
+pub const TUBE_CORAL_BLOCK: Block = Block::new(285);
+pub const BRAIN_CORAL_BLOCK: Block = Block::new(286);
+pub const FIRE_CORAL_BLOCK: Block = Block::new(287);
+pub const HORN_CORAL_BLOCK: Block = Block::new(288);
+pub const BUBBLE_CORAL_BLOCK: Block = Block::new(289);
+
+// Vanilla-ore additions (deepslate variants; iron/copper already at 283/284)
+pub const DEEPSLATE_COAL_ORE: Block = Block::new(290);
+pub const DEEPSLATE_GOLD_ORE: Block = Block::new(291);
+pub const DEEPSLATE_REDSTONE_ORE: Block = Block::new(292);
+pub const DEEPSLATE_LAPIS_ORE: Block = Block::new(293);
+pub const DEEPSLATE_DIAMOND_ORE: Block = Block::new(294);
+
+// Cave decoration (placed with explicit blockstates by the cave decoration pass)
+pub const GLOW_LICHEN: Block = Block::new(295);
+pub const SCULK_VEIN: Block = Block::new(296);
+pub const POINTED_DRIPSTONE: Block = Block::new(297);
+pub const MOSS_CARPET: Block = Block::new(298);
+pub const SHORT_GRASS: Block = Block::new(299);
+pub const CAVE_VINES: Block = Block::new(300);
+pub const AMETHYST_CLUSTER: Block = Block::new(301);
+pub const SCULK_SENSOR: Block = Block::new(302);
+pub const SCULK_SHRIEKER: Block = Block::new(303);
+pub const RED_MUSHROOM: Block = Block::new(304);
+pub const BROWN_MUSHROOM: Block = Block::new(305);
+pub const CAVE_VINES_PLANT: Block = Block::new(306); // the hanging body segment (tip = CAVE_VINES)
+                                                     // Lush-cave floor vegetation
+pub const AZALEA: Block = Block::new(307);
+pub const FLOWERING_AZALEA: Block = Block::new(308);
+pub const BIG_DRIPLEAF: Block = Block::new(309);
+pub const LARGE_FERN: Block = Block::new(310);
+// Mountain emerald ore (Java render path: full block, no properties arm needed)
+pub const EMERALD_ORE: Block = Block::new(311);
+pub const DEEPSLATE_EMERALD_ORE: Block = Block::new(312);
+// Hanging roots (full block hangs under rooted_dirt / cave ceilings; waterlogged defaults false)
+pub const HANGING_ROOTS: Block = Block::new(313);
+pub const SMALL_DRIPLEAF_LOWER: Block = Block::new(314);
+pub const SMALL_DRIPLEAF_UPPER: Block = Block::new(315);
+pub const SPORE_BLOSSOM: Block = Block::new(316);
+pub const SCULK_CATALYST: Block = Block::new(317);
+pub const SMALL_AMETHYST_BUD: Block = Block::new(318);
+pub const MEDIUM_AMETHYST_BUD: Block = Block::new(319);
+pub const LARGE_AMETHYST_BUD: Block = Block::new(320);
+pub const POWDER_SNOW: Block = Block::new(321);
+pub const SHROOMLIGHT: Block = Block::new(322);
+pub const DEAD_TUBE_CORAL_BLOCK: Block = Block::new(323);
+pub const DEAD_BRAIN_CORAL_BLOCK: Block = Block::new(324);
+pub const DEAD_FIRE_CORAL_BLOCK: Block = Block::new(325);
+pub const DEAD_HORN_CORAL_BLOCK: Block = Block::new(326);
+pub const DEAD_BUBBLE_CORAL_BLOCK: Block = Block::new(327);
+pub const TUBE_CORAL_FAN: Block = Block::new(328);
+pub const BRAIN_CORAL_FAN: Block = Block::new(329);
+pub const FIRE_CORAL_FAN: Block = Block::new(330);
+pub const HORN_CORAL_FAN: Block = Block::new(331);
+pub const BUBBLE_CORAL_FAN: Block = Block::new(332);
+pub const TUBE_CORAL: Block = Block::new(333);
+pub const BRAIN_CORAL: Block = Block::new(334);
+pub const FIRE_CORAL: Block = Block::new(335);
+pub const HORN_CORAL: Block = Block::new(336);
+pub const BUBBLE_CORAL: Block = Block::new(337);
+pub const BIG_DRIPLEAF_STEM: Block = Block::new(338);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]
