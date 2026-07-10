@@ -157,6 +157,7 @@ impl Ground {
         elevation_min: Option<f64>,
         elevation_max: Option<f64>,
         aws_only: bool,
+        regional_only: bool,
         master_origin_lat: Option<f64>,
         master_origin_lng: Option<f64>,
         benchmark: bool,
@@ -203,6 +204,7 @@ impl Ground {
             elevation_min,
             elevation_max,
             aws_only,
+            regional_only,
             master_origin_lat,
             master_origin_lng,
             benchmark,
@@ -222,6 +224,12 @@ impl Ground {
                 }
             }
             Err(e) => {
+                // Strict regional mode: flat-ground degradation would silently produce a
+                // wrong world — abort the run instead so the orchestrator retries the cell.
+                if regional_only {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
                 eprintln!("Failed to fetch elevation data: {}", e);
                 #[cfg(feature = "gui")]
                 {
@@ -723,6 +731,7 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             args.elevation_min,
             args.elevation_max,
             args.aws_only_elevation,
+            args.regional_elevation_only,
             args.master_origin_lat,
             args.master_origin_lng,
             args.benchmark,

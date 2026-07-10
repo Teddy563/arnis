@@ -143,6 +143,7 @@ pub fn fetch_elevation_data(
     elevation_min: Option<f64>,
     elevation_max: Option<f64>,
     aws_only: bool,
+    regional_only: bool,
     master_origin_lat: Option<f64>,
     master_origin_lng: Option<f64>,
     benchmark: bool,
@@ -159,16 +160,43 @@ pub fn fetch_elevation_data(
     let provider_name = provider.name();
     let is_fallback = provider_name == "aws";
 
+    // Strict regional mode: the user explicitly refused AWS data (its terrarium set
+    // has broken no-data tiles in some regions). If no regional provider covers this
+    // bbox at all, there is nothing safe to fetch — fail clearly instead.
+    if regional_only && is_fallback {
+        return Err(
+            "elevation fetch failed: no regional high-res provider covers this area and AWS \
+             Terrain Tiles are disabled (--regional-elevation-only)"
+                .into(),
+        );
+    }
+
     emit_gui_progress_update(10.0, "Fetching elevation...");
 
     // Fetch raw elevation data in meters, falling back to AWS on regional provider failure
+    // (unless strict regional mode forbids the fallback — then the error propagates so the
+    // orchestrator can retry the cell instead of silently building broken AWS terrain).
     let raw = match provider.fetch_raw(bbox, grid_width, grid_height) {
         Ok(raw) if !is_fallback => {
             // Check if the regional provider returned mostly empty data (out-of-coverage area).
             // This catches cases where the provider's rectangular bbox over-claims coverage
             // (e.g., IGN France bbox covers Belgium, but returns no data for Belgian coordinates).
             let nan_ratio = compute_nan_ratio(&raw.heights_meters);
-            if nan_ratio > 0.5 {
+            // Strict regional mode tolerates PARTIAL emptiness: coastal/port bboxes are
+            // legitimately mostly sea (NaN — a Marseille cell measures ~92%) and the
+            // fill_nan pass handles that. Only a near-total void means the provider truly
+            // has no data here; anything else proceeds with the regional grid, never AWS.
+            if regional_only {
+                if nan_ratio > 0.98 {
+                    return Err(format!(
+                        "elevation fetch failed: regional provider '{provider_name}' returned \
+                         {:.0}% empty data and AWS fallback is disabled (--regional-elevation-only)",
+                        nan_ratio * 100.0
+                    )
+                    .into());
+                }
+                raw
+            } else if nan_ratio > 0.5 {
                 eprintln!(
                     "Warning: Regional provider '{}' returned {:.0}% empty data. Falling back to AWS Terrain Tiles.",
                     provider_name, nan_ratio * 100.0
@@ -189,6 +217,13 @@ pub fn fetch_elevation_data(
         }
         Ok(raw) => raw,
         Err(e) if !is_fallback => {
+            if regional_only {
+                return Err(format!(
+                    "elevation fetch failed: regional provider '{provider_name}' failed ({e}) \
+                     and AWS fallback is disabled (--regional-elevation-only)"
+                )
+                .into());
+            }
             eprintln!(
                 "Warning: Regional provider '{}' failed: {}. Falling back to AWS Terrain Tiles.",
                 provider_name, e
@@ -324,6 +359,26 @@ pub fn fetch_elevation_data(
         max_height_m,
         blocks_per_meter,
     })
+}
+
+/// Warm the disk cache of the REGIONAL provider selected for `bbox` (the same one
+/// generation will pick), so later parallel cell runs read tiles from disk instead of
+/// hammering the provider live — which rate-limits and silently degrades to the AWS
+/// fallback. Uses the exact grid-dims/level math generation uses, so the cached level
+/// matches. Returns Ok(None) when the selected provider is already AWS (nothing extra
+/// to warm — the AWS prefetch handles that path).
+pub fn prefetch_regional(
+    bbox: &LLBBox,
+    scale: f64,
+) -> Result<Option<&'static str>, Box<dyn std::error::Error>> {
+    let provider = select_provider(bbox, false);
+    if provider.name() == "aws" {
+        return Ok(None);
+    }
+    let (_, _, grid_width, grid_height) = compute_grid_dims(bbox, scale, None, None);
+    provider.fetch_raw(bbox, grid_width, grid_height)?;
+    // The grid itself is discarded — the point was filling the fixed-tile disk cache.
+    Ok(Some(provider.name()))
 }
 
 /// Clean up old cached elevation tiles/files from all providers.

@@ -500,7 +500,12 @@ pub(super) fn fetch_fixed_tile_grid<P: FixedTileProvider>(
     // gets a fresh attempt at the primary source.
     let primary_failures = failed_keys.len();
     let mut fallback_recovered = 0usize;
-    if !failed_keys.is_empty() {
+    // Regional-only mode (--regional-elevation-only) forbids AWS data entirely — the
+    // per-tile Terrarium recovery is exactly what the user is opting out of (its no-data
+    // tiles carve holes). Leave the failed tiles as NaN for post-processing to fill from
+    // the surrounding regional data instead.
+    let allow_aws_fallback = std::env::var_os("ARNIS_NO_AWS").is_none();
+    if !failed_keys.is_empty() && allow_aws_fallback {
         eprintln!(
             "{}: {} tile{} failed; attempting AWS Terrarium fallback...",
             provider.log_prefix(),
@@ -541,6 +546,14 @@ pub(super) fn fetch_fixed_tile_grid<P: FixedTileProvider>(
                 tile_keys.len(),
             );
         }
+    } else if !failed_keys.is_empty() {
+        eprintln!(
+            "{}: {} tile{} failed; AWS Terrarium fallback disabled (--regional-elevation-only), \
+             affected regions will be NaN-filled by post-processing",
+            provider.log_prefix(),
+            primary_failures,
+            if primary_failures == 1 { "" } else { "s" },
+        );
     }
 
     let min_lat = bbox.min().lat();

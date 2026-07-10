@@ -118,6 +118,13 @@ fn run_cli() {
     if args.offline {
         std::env::set_var("ARNIS_OFFLINE", "1");
     }
+    // Regional-only elevation: forbid AWS Terrain Tiles anywhere in the elevation path,
+    // including the PER-TILE AWS Terrarium recovery deep inside fetch_fixed_tile_grid
+    // (which the outer provider select can't see). Same process-wide env-var pattern as
+    // offline mode. Absent = never set, every AWS-no gate is a no-op.
+    if args.regional_elevation_only {
+        std::env::set_var("ARNIS_NO_AWS", "1");
+    }
 
     // Age out stale cached elevation tiles (best-effort; throttled to once/day + swept on a
     // background thread inside). Skipped entirely in Meld tile-mode (master-origin set) and the
@@ -165,16 +172,36 @@ fn run_cli() {
     // terrain serially so the later parallel cells hit the cache instead of bursting S3
     // with ~64 concurrent requests (which rate-limits and truncates tiles -> flat seams).
     if args.download_terrain_only {
-        match elevation::providers::aws_terrain::prefetch_tiles(&args.bbox) {
-            Ok((ok, fail)) => {
-                println!("Terrain prefetch: {ok} tile(s) cached, {fail} failed.");
-                std::process::exit(if fail == 0 { 0 } else { 2 });
+        // AWS tiles are the global base; skip them only when the user hard-disabled AWS.
+        let (aws_ok, aws_fail) = if args.regional_elevation_only {
+            (0usize, 0usize)
+        } else {
+            match elevation::providers::aws_terrain::prefetch_tiles(&args.bbox) {
+                Ok((ok, fail)) => (ok, fail),
+                Err(e) => {
+                    eprintln!("{}: {}", "Error".red().bold(), e);
+                    std::process::exit(1);
+                }
             }
-            Err(e) => {
-                eprintln!("{}: {}", "Error".red().bold(), e);
-                std::process::exit(1);
+        };
+        println!("Terrain prefetch: {aws_ok} tile(s) cached, {aws_fail} failed.");
+        // Also warm the regional high-res provider generation will select (IGN, USGS,
+        // GSI...): one sequential pass fills its fixed-tile disk cache, so the later
+        // PARALLEL cells read from disk instead of rate-limiting the provider live --
+        // which used to make every cell silently fall back to AWS's broken tiles.
+        let mut regional_failed = false;
+        if !args.aws_only_elevation {
+            match elevation::prefetch_regional(&args.bbox, args.scale) {
+                Ok(Some(name)) => println!("Regional elevation warm: '{name}' cached."),
+                Ok(None) => {}
+                Err(e) => {
+                    regional_failed = true;
+                    eprintln!("Regional elevation warm failed: {e}");
+                }
             }
         }
+        let fail = aws_fail > 0 || (regional_failed && args.regional_elevation_only);
+        std::process::exit(if fail { 2 } else { 0 });
     }
 
     // Cave zone-map mode: render the cave BIOME ZONE layout for --bbox to PNG overlays and

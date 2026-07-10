@@ -242,6 +242,15 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub aws_only_elevation: bool,
 
+    /// Use ONLY the regional high-resolution elevation providers (USGS, IGN
+    /// France/Spain, Japan GSI): never select AWS Terrain Tiles and never fall
+    /// back to them when a regional provider fails or returns empty data — the
+    /// run errors instead (so an orchestrator can retry) rather than silently
+    /// generating from AWS's broken no-data tiles. Mutually exclusive with
+    /// --aws-only-elevation.
+    #[arg(long, default_value_t = false)]
+    pub regional_elevation_only: bool,
+
     /// Print generation-only timing to stderr (excludes data fetching)
     #[arg(long, hide = true)]
     pub benchmark: bool,
@@ -317,6 +326,12 @@ pub struct Args {
 /// For Java Edition: `--path` is required. If the directory doesn't exist, it will be created.
 /// For Bedrock Edition (`--bedrock`): `--path` is optional (defaults to Desktop output).
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    if args.aws_only_elevation && args.regional_elevation_only {
+        return Err(
+            "--aws-only-elevation and --regional-elevation-only are mutually exclusive."
+                .to_string(),
+        );
+    }
     // Download-only just fetches OSM to a file; no world is created, so the
     // --output-dir requirement (and the rest) does not apply.
     if args.download_only {

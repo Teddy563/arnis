@@ -1141,6 +1141,7 @@ fn gui_start_generation(
                 rotation: rotation_angle.clamp(-90.0, 90.0),
                 disable_height_limit,
                 aws_only_elevation,
+                regional_elevation_only: false,
                 benchmark: false,
                 overpass_url: Vec::new(),
                 road_detail: {
