@@ -55,7 +55,7 @@ impl CoordTransformer {
         let err_header = "Construct LLBBox to XZBBox transformation failed".to_string();
 
         if scale <= 0.0 {
-            return Err(format!("{}: scale <= 0.0", &err_header));
+            return Err(format!("{}: scale <= 0.0", err_header));
         }
 
         let transformer = Self {
@@ -79,7 +79,7 @@ impl CoordTransformer {
                 .transform_point(LLPoint::new(llbbox.min().lat(), llbbox.max().lng()).unwrap());
 
             let absolute_xzbbox = crate::coordinate_system::cartesian::XZBBox::from_points(nw, se)
-                .map_err(|e| format!("{}:\n{}", &err_header, e))?;
+                .map_err(|e| format!("{}:\n{}", err_header, e))?;
 
             return Ok((transformer, absolute_xzbbox));
         }
@@ -89,7 +89,7 @@ impl CoordTransformer {
         let scale_factor_x: f64 = scale_factor_x.floor() * scale;
 
         let xzbbox = XZBBox::rect_from_xz_lengths(scale_factor_x, scale_factor_z)
-            .map_err(|e| format!("{}:\n{}", &err_header, e))?;
+            .map_err(|e| format!("{}:\n{}", err_header, e))?;
 
         let mut t = transformer;
         t.scale_factor_x = scale_factor_x;
