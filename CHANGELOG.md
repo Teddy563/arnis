@@ -10,6 +10,36 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.0] - 2026-07-12
+
+Upstream parity release: brings the fork level with **louis-e/arnis 3.0.0** while keeping every Meld differentiator (tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid). Every upstream feature below was ported faithfully and audited for cross-tile seam-safety before merging — the fork's #1 invariant is that independently generated cells merge into one seamless world.
+
+### Added
+
+- **Bundled 3D props at real OSM features** (`--props all|none|<list>`). Sponge `.schem` props stamped where they belong: boats on open water, parked cars in car parks, cranes and excavators on construction sites, tractors on farmland, wind turbines at `power=generator source=wind`, lighthouses on `man_made` towers, plus fountains, playgrounds, and cemetery tombstones replacing the older procedural versions. Per-family toggle; omitting the flag keeps every family on (byte-identical default).
+- **Configurable chest loot** (`--loot-table <json>`, `--dump-loot-table`). Interior chests roll a deterministic, coord-seeded loot table; the default reproduces upstream's themed tables, and Meld ships a visual sprite-backed editor with 56 vanilla-structure presets.
+- **Sport pitch markings.** `leisure=pitch` surfaces get sport-specific line markings.
+- **World settings** (`--gamemode survival|creative|spectator`, `--world-time <ticks>`) written into the generated `level.dat`.
+- **Climate / Köppen biomes.** ESA-derived Köppen map selects biomes by real-world climate (arid, polar, tropical …); temperate output stays byte-identical to before.
+- **Electrified railway catenary.** Masts + smoothed overhead wire along `electrified` rails, skipping roads, buildings, and at-grade crossings.
+- **Street lamps** along lit highways (`lit=yes`), interval-spaced, auto-dropped by `--road-detail compact`.
+- **Highway tunnels.** `tunnel=yes` highways carve a proper shell + interior instead of surfacing, with tile-boundary-safe internal endpoints.
+- **Modular bridge schematics.** Wider bridges pick from bundled bridge-segment modules; the fork's flat low-detail bridges are preserved behind the `!low_detail && Beam` gate.
+- **Furnished interiors.** Bedrooms place real `minecraft:bed` block entities (red beds with correct head/foot).
+- **More surface materials** and `amenity=bicycle_parking` surfaces.
+- **World map item** (`--map-item`). Drops a locked filled-map of the whole world into the player's inventory (Java only), rendered straight from the saved regions so it writes zero blocks. New `--map-item-only <existing world>` post-pass adds the map to an already-merged world, deriving its footprint from the region files — this is how Meld gives a single correct map to a multi-cell region.
+- **Mapterhorn global elevation** (default). Global terrarium WebP tiles (GLO-30 floor, national LiDAR to z18) with pyramid-parent hole-proofing that structurally eliminates the broken-no-data-tile cliff artifacts of the legacy AWS source. Regional high-res providers (USGS, IGN France/Spain, Japan GSI) still win in their coverage; legacy AWS is available via `--aws-only-elevation`. A fork-only offline gate makes Mapterhorn honour `--offline` (cache hit served, cache miss degrades to flat rather than hitting the network).
+
+### Changed
+
+- **S3DB multi-part buildings.** Building outlines are now suppressed only when their `building:part` members actually cover ≥50% of them (coverage-gated), plus a new spatial pass catches relation-less S3DB outlines. All parts of one building share a style seed, so colour and roof style stay coherent across parts. Seam-safe: the seed and suppression key only on world-absolute OSM ids.
+- **Default elevation source is now Mapterhorn** rather than the legacy AWS fallback; AWS remains the hard fetch-time fallback and the `--aws-only-elevation` escape. `--regional-elevation-only` now falls through to Mapterhorn (never the broken AWS tiles) for areas no regional provider covers.
+
+### Notes
+
+- Fork differentiators preserved through every merge: tile-invariant rendering, `--road-detail`, `--caves`, the water/shore work, `--offline`, and the seam-safe master-origin elevation grid (`compute_grid_dims` unchanged).
+- Block ids that collide with upstream were assigned at the fork's next-free ids rather than adopting upstream's palette wholesale, so existing fork worlds and assets are unaffected.
+
 ## [2.9.3] - 2026-07-04
 
 Underground update: one cave system, done right. The experimental cave engine is gone; `--caves` now runs a from-scratch Rust port of Minecraft 1.21.8 cave worldgen, carved directly into the filled ground at generation time. This is the engine behind Meld 1.5.0 "Meld Depths" — Meld's Caves toggle passes `--caves` to every cell, and because every cave pass is a pure function of (seed, position), the caves line up across cell seams like the surface does.
