@@ -400,6 +400,17 @@ pub fn generate_building_interior(
                         None,
                     );
 
+                    // Beds have no baked block model; each half needs its own
+                    // block entity to render. Guard on identity so we only tag
+                    // cells where the bed actually landed.
+                    if matches!(cell1, '1'..='8') {
+                        let bed_y = floor_y + y_offset + abs_terrain_offset;
+                        if editor.get_block_absolute(x, bed_y, z).map(|b| b.id()) == Some(block.id())
+                        {
+                            editor.set_bed_block_entity_absolute(x, bed_y, z);
+                        }
+                    }
+
                     // If this is a wall in layer 1, add to wall positions to extend later
                     if cell1 == 'W' {
                         wall_positions.push((x, z));

@@ -1320,6 +1320,23 @@ impl<'a> WorldEditor<'a> {
         self.world.get_block(x, absolute_y, z).is_some()
     }
 
+    #[inline]
+    pub fn get_block_absolute(&self, x: i32, absolute_y: i32, z: i32) -> Option<Block> {
+        self.world.get_block(x, absolute_y, z)
+    }
+
+    /// Writes a `minecraft:bed` block entity so both halves render (beds have no
+    /// baked block model).
+    pub fn set_bed_block_entity_absolute(&mut self, x: i32, absolute_y: i32, z: i32) {
+        let mut be = HashMap::new();
+        be.insert("id".to_string(), Value::String("minecraft:bed".to_string()));
+        be.insert("x".to_string(), Value::Int(x));
+        be.insert("y".to_string(), Value::Int(absolute_y));
+        be.insert("z".to_string(), Value::Int(z));
+        be.insert("keepPacked".to_string(), Value::Byte(0));
+        self.insert_block_entity(x, z, be);
+    }
+
     /// Fills an entire column from y_min to y_max with one block type.
     ///
     /// Resolves region/chunk once instead of per-Y-level, making underground
