@@ -1157,6 +1157,8 @@ fn gui_start_generation(
                 download_only: false,
                 download_terrain_only: false,
                 offline: false,
+                loot_table: None,
+                dump_loot_table: None,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data

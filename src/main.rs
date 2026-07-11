@@ -140,6 +140,20 @@ fn run_cli() {
         std::process::exit(1);
     }
 
+    // Dump the built-in default loot table to JSON and exit. Meld's web loot
+    // editor calls this once to seed its default + "reset to default".
+    if let Some(p) = &args.dump_loot_table {
+        crate::element_processing::subprocessor::buildings_loot::dump_default_loot_table(p);
+        std::process::exit(0);
+    }
+
+    // Load a custom chest loot table if one was supplied, BEFORE any (parallel)
+    // cell generation so the shared config is set before worker threads read it.
+    // A malformed file warns and keeps the built-in default (never aborts a run).
+    if let Some(p) = &args.loot_table {
+        crate::element_processing::subprocessor::buildings_loot::init_loot_from_path(p);
+    }
+
     // Download-only mode: fetch OSM to --save-json-file and exit, before any world
     // creation. Lets Meld pre-fetch a whole region's OSM once and feed it to every
     // cell via --file (one serial request instead of N parallel ones that rate-limit).

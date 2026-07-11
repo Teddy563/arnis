@@ -15,8 +15,8 @@
 
 use crate::args::Args;
 use crate::block_definitions::{
-    AIR, ANDESITE, BEDROCK, BLACK_CONCRETE, BLUE_FLOWER, BRICK, BROWN_CANDLE, BROWN_CANDLE_2,
-    BROWN_CANDLE_3, BROWN_CANDLE_4, CARROTS, CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE,
+    AIR, ANDESITE, BEDROCK, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS, CLAY, COARSE_DIRT,
+    COBBLED_DEEPSLATE, COBBLESTONE,
     CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH,
     FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE,
     LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES, OAK_PLANKS, POTATOES, RED_FLOWER,
@@ -780,70 +780,20 @@ pub fn generate_ground_region(
                                 editor.set_block_if_absent_absolute(surface_block, x, ground_y, z);
                             }
 
-                            // v2.8.6 F6 — rare cattail/sugar_cane on shore land.
+                            // v2.8.6 F6 — rare sugar_cane on shore land.
                             // Coastal ecotone: shore_distance > 0 AND surface
                             // is sand/dirt-class AND nothing built above →
-                            // 2% tiered cattail, 1% sugar_cane (needs cardinal
-                            // WATER neighbour). coord_hash gives deterministic
-                            // placement per cell.
+                            // 1% sugar_cane (needs cardinal WATER neighbour).
+                            // coord_hash gives deterministic placement per cell.
+                            // Cattails intentionally excluded here: they now spawn
+                            // only inside natural=wetland areas (see natural.rs), not
+                            // on general lake/river shores.
                             if shore_distance > 0
                                 && matches!(surface_block, SAND | DIRT | COARSE_DIRT | GRASS_BLOCK)
                                 && !editor.block_exists_absolute(x, ground_y + 1, z)
                             {
                                 let pick = land_cover::coord_hash(x + 113, z + 47) % 1000;
-                                if pick < 20 {
-                                    // v2.8.7 F9b — max 2 stalks + 1/2/3/4 candle state.
-                                    let double_stalk = pick.is_multiple_of(2);
-                                    let candle_block = match pick % 4 {
-                                        0 => BROWN_CANDLE,
-                                        1 => BROWN_CANDLE_2,
-                                        2 => BROWN_CANDLE_3,
-                                        _ => BROWN_CANDLE_4,
-                                    };
-                                    if double_stalk {
-                                        editor.set_block_absolute(
-                                            TALL_GRASS_BOTTOM,
-                                            x,
-                                            ground_y + 1,
-                                            z,
-                                            None,
-                                            None,
-                                        );
-                                        editor.set_block_absolute(
-                                            TALL_GRASS_TOP,
-                                            x,
-                                            ground_y + 2,
-                                            z,
-                                            None,
-                                            None,
-                                        );
-                                        editor.set_block_absolute(
-                                            candle_block,
-                                            x,
-                                            ground_y + 3,
-                                            z,
-                                            None,
-                                            None,
-                                        );
-                                    } else {
-                                        editor.set_block_absolute(
-                                            GRASS,
-                                            x,
-                                            ground_y + 1,
-                                            z,
-                                            None,
-                                            None,
-                                        );
-                                        editor.set_block_absolute(
-                                            candle_block,
-                                            x,
-                                            ground_y + 2,
-                                            z,
-                                            None,
-                                            None,
-                                        );
-                                    }
-                                } else if pick < 30 {
+                                if (20..30).contains(&pick) {
                                     let edge = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)].iter().any(
                                         |(dx, dz)| {
                                             editor.check_for_block_absolute(

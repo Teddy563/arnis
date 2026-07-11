@@ -194,6 +194,30 @@ pub fn generate_leisure(
                     }
                 }
             }
+
+            // Sport pitch markings: paint lines / goals / hoops on recognized
+            // pitches (soccer, basketball, tennis, generic). Clears scattered
+            // park vegetation off the playing surface first.
+            if leisure_type == "pitch" {
+                let vegetation: &[Block] = &[
+                    GRASS,
+                    FERN,
+                    RED_FLOWER,
+                    YELLOW_FLOWER,
+                    BLUE_FLOWER,
+                    WHITE_FLOWER,
+                    OAK_LEAVES,
+                ];
+                for &(x, z) in filled_area.iter() {
+                    editor.set_block(AIR, x, 1, z, Some(vegetation), None);
+                }
+                crate::element_processing::sport_pitches::draw_pitch_markings(
+                    editor,
+                    element,
+                    filled_area.as_slice(),
+                    block_type,
+                );
+            }
         }
     }
 }

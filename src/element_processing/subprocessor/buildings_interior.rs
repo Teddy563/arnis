@@ -1,7 +1,10 @@
 use crate::block_definitions::*;
+use crate::deterministic_rng::coord_rng;
 use crate::element_processing::buildings::BUILDING_PASSAGE_HEIGHT;
+use crate::element_processing::subprocessor::buildings_loot::chest_loot;
 use crate::floodfill_cache::CoordinateBitmap;
 use crate::world_editor::WorldEditor;
+use rand::Rng;
 use std::collections::HashSet;
 
 /// Interior layout for building ground floors (1st layer above floor)
@@ -317,6 +320,8 @@ pub fn generate_building_interior(
         // Store wall and door positions for this floor to extend them to the ceiling
         let mut wall_positions = Vec::new();
         let mut door_positions = Vec::new();
+        // Fully-open interior cells (both layers clear) eligible for a loot chest.
+        let mut chest_candidates: Vec<(i32, i32)> = Vec::new();
 
         // Determine the floor extension height (ceiling) - either next floor or roof
         let current_floor_ceiling = if floor_index < floor_levels.len() - 1 {
@@ -416,6 +421,14 @@ pub fn generate_building_interior(
                         None,
                     );
                 }
+
+                // A chest needs air both at foot level and directly above to be
+                // openable, so only fully-clear cells (both layers empty) qualify.
+                if get_interior_block(cell1, false, wall_block).is_none()
+                    && get_interior_block(cell2, true, wall_block).is_none()
+                {
+                    chest_candidates.push((x, z));
+                }
             }
         }
 
@@ -430,6 +443,36 @@ pub fn generate_building_interior(
         for (x, z) in &door_positions {
             for y in (floor_y + y_offset + 2)..=current_floor_ceiling {
                 editor.set_block_absolute(wall_block, *x, y + abs_terrain_offset, *z, None, None);
+            }
+        }
+
+        // Deterministic themed loot chest (data-driven; see buildings_loot.rs and
+        // --loot-table). At most one per floor, and only some floors get one.
+        // Keyed on the building's world origin + floor so it is identical across
+        // Meld's per-cell tile renders (tile-invariant). Abandoned buildings are
+        // a little likelier to hold loot.
+        if !chest_candidates.is_empty() {
+            let building_salt = (min_x as u32)
+                .wrapping_mul(0x9E37_79B1)
+                ^ (min_z as u32).wrapping_mul(0x85EB_CA77);
+            let mut crng = coord_rng(
+                min_x,
+                min_z,
+                building_salt as u64 ^ (floor_index as u64).wrapping_mul(0x1_0001),
+            );
+            let chest_chance = if is_abandoned_building { 70 } else { 50 };
+            if crng.random_range(0..100u32) < chest_chance {
+                let idx = crng.random_range(0..chest_candidates.len());
+                let (cx, cz) = chest_candidates[idx];
+                let chest_y = floor_y + y_offset + abs_terrain_offset;
+                if !editor.block_exists_absolute(cx, chest_y, cz) {
+                    editor.set_chest_with_items_absolute(
+                        cx,
+                        chest_y,
+                        cz,
+                        chest_loot(cx, cz, building_salt),
+                    );
+                }
             }
         }
     }

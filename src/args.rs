@@ -320,6 +320,19 @@ pub struct Args {
         default_value_t = false
     )]
     pub offline: bool,
+
+    /// Custom chest loot table (JSON) for building interiors. When omitted, the
+    /// built-in default table is used. A malformed file logs a warning and falls
+    /// back to the default (never fails a run). Get the default's shape with
+    /// --dump-loot-table. Purely additive: when omitted, behaviour is unchanged.
+    #[arg(long = "loot-table")]
+    pub loot_table: Option<std::path::PathBuf>,
+
+    /// Write the built-in default loot table to the given path as JSON and exit.
+    /// Used by Meld's web loot editor as the single source of truth for its
+    /// default/reset. Hidden helper; no world is created.
+    #[arg(long = "dump-loot-table", hide = true)]
+    pub dump_loot_table: Option<std::path::PathBuf>,
 }
 
 /// Validates CLI arguments after parsing.
@@ -354,6 +367,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     // Zone-map mode renders cave-biome PNGs for --bbox; no world is created.
     if args.cave_zone_map.is_some() {
+        return Ok(());
+    }
+
+    // Dump-loot-table just writes the default loot JSON and exits; no world.
+    if args.dump_loot_table.is_some() {
         return Ok(());
     }
 
