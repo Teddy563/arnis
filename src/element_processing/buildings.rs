@@ -287,7 +287,12 @@ pub enum BuildingCategory {
 
 impl BuildingCategory {
     /// Determines the building category from OSM tags and calculated properties
-    fn from_element(element: &ProcessedWay, is_tall_building: bool, building_height: i32) -> Self {
+    fn from_element(
+        element: &ProcessedWay,
+        is_tall_building: bool,
+        building_height: i32,
+        group_seed: u64,
+    ) -> Self {
         // Check for man_made=tower before anything else
         if element.tags.get("man_made").map(|s| s.as_str()) == Some("tower") {
             return BuildingCategory::Tower;
@@ -301,8 +306,8 @@ impl BuildingCategory {
                 && Self::has_skyscraper_proportions(element, building_height);
 
             if is_true_skyscraper {
-                // Deterministic variant selection based on element ID
-                let hash = element.id.wrapping_mul(2654435761); // Knuth multiplicative hash
+                // shared seed so parts of one tower pick the same glass/concrete variant
+                let hash = group_seed.wrapping_mul(2654435761); // Knuth multiplicative hash
                 let roll = hash % 100;
                 return if roll < 50 {
                     BuildingCategory::GlassySkyscraper
@@ -1113,6 +1118,8 @@ struct BuildingConfig {
     has_lobby_base: bool,
     condition: BuildingCondition,
     element_id: u64,
+    // shared across all parts of one building for coherent roof style
+    style_seed: u64,
 }
 
 impl BuildingConfig {
@@ -1566,6 +1573,7 @@ fn generate_roof_only_structure(
     element: &ProcessedWay,
     cached_floor_area: &[(i32, i32)],
     args: &Args,
+    group_seed: u64,
 ) {
     let scale_factor = args.scale;
     let abs_terrain_offset = if !args.terrain { args.ground_level } else { 0 };
@@ -1629,7 +1637,7 @@ fn generate_roof_only_structure(
 
     // Pick a block for the roof surface.
     // Priority: roof:material > roof:colour > building/colour > default.
-    let mut rng = element_rng(element.id);
+    let mut rng = element_rng(group_seed);
     let roof_block = element
         .tags
         .get("roof:material")
@@ -3910,6 +3918,7 @@ fn qualifies_for_auto_gabled_roof(building_type: &str) -> bool {
 // ============================================================================
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub fn generate_buildings(
     editor: &mut WorldEditor,
     element: &ProcessedWay,
@@ -3918,6 +3927,7 @@ pub fn generate_buildings(
     hole_polygons: Option<&[HolePolygon]>,
     flood_fill_cache: &FloodFillCache,
     building_passages: &CoordinateBitmap,
+    group_seed: u64,
 ) {
     // Early return for underground buildings
     if should_skip_underground_building(element) {
@@ -4073,7 +4083,7 @@ pub fn generate_buildings(
     // with building:part="roof" (but no "building" tag) would otherwise fall
     // through to the full building pipeline and render as small boxy buildings.
     if element.tags.get("building:part").map(|v| v.as_str()) == Some("roof") {
-        generate_roof_only_structure(editor, element, &cached_floor_area, args);
+        generate_roof_only_structure(editor, element, &cached_floor_area, args, group_seed);
         return;
     }
 
@@ -4091,7 +4101,7 @@ pub fn generate_buildings(
                 return;
             }
             "roof" => {
-                generate_roof_only_structure(editor, element, &cached_floor_area, args);
+                generate_roof_only_structure(editor, element, &cached_floor_area, args, group_seed);
                 return;
             }
             "bridge" => {
@@ -4120,11 +4130,12 @@ pub fn generate_buildings(
     building_height = adjust_height_for_building_type(building_type, building_height, scale_factor);
 
     // Determine building category and get appropriate style preset
-    let category = BuildingCategory::from_element(element, is_tall_building, building_height);
+    let category =
+        BuildingCategory::from_element(element, is_tall_building, building_height, group_seed);
     let preset = BuildingStylePreset::for_category(category);
 
-    // Resolve style with deterministic RNG
-    let mut rng = element_rng(element.id);
+    // Resolve style with deterministic RNG (shared across parts of one building)
+    let mut rng = element_rng(group_seed);
     let has_multiple_floors = building_height > 6;
     let style = BuildingStyle::resolve(
         &preset,
@@ -4194,19 +4205,21 @@ pub fn generate_buildings(
         wall_depth_style: style.wall_depth_style,
         has_parapet: style.has_parapet
             || short_flat_parapet_for(
-                element.id,
+                group_seed,
                 style.roof_type,
                 effective_building_height,
                 category,
                 condition,
             ),
         has_lobby_base: if category == BuildingCategory::ModernSkyscraper {
-            element_rng(element.id.wrapping_add(6143)).random_bool(0.70)
+            element_rng(group_seed.wrapping_add(6143)).random_bool(0.70)
         } else {
             false
         },
         condition,
         element_id: element.id,
+        // shared across all parts of one building for coherent roof style
+        style_seed: group_seed,
     };
 
     // Passages only apply to ground-level buildings. Elevated building:part
@@ -4517,6 +4530,7 @@ fn generate_building_roof(
         roof_area,
         config.abs_terrain_offset,
         add_dormers,
+        config.style_seed,
     );
 
     // Add parapet on flat-roofed buildings
@@ -6647,6 +6661,7 @@ fn generate_roof(
     roof_area: &[(i32, i32)],
     abs_terrain_offset: i32,
     add_dormers: bool,
+    style_seed: u64,
 ) {
     if roof_area.is_empty() {
         return;
@@ -6654,7 +6669,7 @@ fn generate_roof(
 
     let mut config = RoofConfig::from_roof_area(
         roof_area,
-        element.id,
+        style_seed,
         start_y_offset,
         building_height,
         wall_block,
@@ -6662,7 +6677,7 @@ fn generate_roof(
     );
 
     // OSM roof:material / roof:colour override the preset.
-    let mut roof_rng = element_rng(element.id ^ 0xF00F_C010_BA5E_F00D);
+    let mut roof_rng = element_rng(style_seed ^ 0xF00F_C010_BA5E_F00D);
     let osm_roof_block = element
         .tags
         .get("roof:material")
@@ -6969,6 +6984,7 @@ pub fn generate_building_from_relation(
                 hole_polygons.as_deref(),
                 flood_fill_cache,
                 building_passages,
+                merged_way.id,
             );
         }
     }

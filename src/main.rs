@@ -406,7 +406,8 @@ fn run_cli() {
     bench.mark("terrain_total");
 
     // Parse raw data
-    let (mut parsed_elements, mut xzbbox, outline_suppression) = osm_parser::parse_osm_data(
+    let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
+        osm_parser::parse_osm_data(
         raw_data,
         args.bbox,
         args.scale,
@@ -568,6 +569,7 @@ fn run_cli() {
         &args,
         generation_options,
         outline_suppression,
+        part_groups,
     ) {
         Ok(_) => {
             if args.bedrock {

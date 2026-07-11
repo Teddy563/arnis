@@ -5,7 +5,7 @@ use crate::element_processing::*;
 use crate::floodfill_cache::{CoordinateBitmap, FloodFillCache};
 use crate::ground::Ground;
 use crate::ground_generation;
-use crate::osm_parser::{OutlineSuppression, ProcessedElement};
+use crate::osm_parser::{OutlineSuppression, PartGroups, ProcessedElement};
 use crate::progress::{emit_gui_progress_update, emit_gui_progress_update_ex, emit_show_in_folder};
 #[cfg(feature = "gui")]
 use crate::telemetry::{send_log, LogLevel};
@@ -59,12 +59,15 @@ fn process_element(
     tunnel_internal_endpoints: &highways::TunnelInternalEndpoints,
     tunnel_cells: &mut Vec<highways::HighwayTunnelCell>,
     subway_points: &mut Vec<(i32, i32)>,
+    part_groups: &PartGroups,
 ) {
     match element {
         ProcessedElement::Way(way) => {
             if args.buildings
                 && (way.tags.contains_key("building") || way.tags.contains_key("building:part"))
             {
+                // parts of one building share a style seed so untagged parts match
+                let group_seed = part_groups.get(&way.id).copied().unwrap_or(way.id);
                 buildings::generate_buildings(
                     editor,
                     way,
@@ -73,6 +76,7 @@ fn process_element(
                     None,
                     flood_fill_cache,
                     building_passages,
+                    group_seed,
                 );
             } else if way.tags.contains_key("highway") {
                 highways::generate_highways(
@@ -281,6 +285,7 @@ fn should_stream_to_disk(num_regions: usize) -> bool {
 }
 
 /// Generate world with explicit format options (used by GUI for Bedrock support)
+#[allow(clippy::too_many_arguments)]
 pub fn generate_world_with_options(
     elements: Vec<ProcessedElement>,
     xzbbox: XZBBox,
@@ -289,6 +294,7 @@ pub fn generate_world_with_options(
     args: &Args,
     options: GenerationOptions,
     outline_suppression: OutlineSuppression,
+    part_groups: PartGroups,
 ) -> Result<PathBuf, String> {
     let output_path = options.path.clone();
     let world_format = options.format;
@@ -600,6 +606,7 @@ pub fn generate_world_with_options(
                             &tunnel_internal_endpoints,
                             &mut tile_tunnel_cells,
                             &mut tile_subway_points,
+                            &part_groups,
                         );
                     }
 
@@ -846,6 +853,7 @@ pub fn generate_world_with_options(
                 &tunnel_internal_endpoints,
                 &mut tunnel_cells,
                 &mut subway_points,
+                &part_groups,
             );
 
             // Release flood fill cache entries for memory optimization.

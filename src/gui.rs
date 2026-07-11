@@ -1185,6 +1185,7 @@ fn gui_start_generation(
                     &args,
                     generation_options.clone(),
                     osm_parser::OutlineSuppression::new(),
+                    osm_parser::PartGroups::new(),
                 );
                 if let Some(g) = cleanup_guard.as_mut() {
                     g.disarm();
@@ -1215,7 +1216,7 @@ fn gui_start_generation(
                 "max",
             ) {
                 Ok(raw_data) => {
-                    let (mut parsed_elements, mut xzbbox, outline_suppression) =
+                    let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
                         osm_parser::parse_osm_data(
                             raw_data,
                             args.bbox,
@@ -1288,6 +1289,7 @@ fn gui_start_generation(
                         &args,
                         generation_options.clone(),
                         outline_suppression,
+                        part_groups,
                     );
                     if let Some(g) = cleanup_guard.as_mut() {
                         g.disarm();
