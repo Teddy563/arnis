@@ -177,6 +177,14 @@ pub fn fetch_elevation_data(
     // (unless strict regional mode forbids the fallback — then the error propagates so the
     // orchestrator can retry the cell instead of silently building broken AWS terrain).
     let raw = match provider.fetch_raw(bbox, grid_width, grid_height) {
+        // Mapterhorn is the global default and covers the whole world consistently.
+        // Its ocean tiles are legitimately NaN (404 -> filled to sea level in
+        // postprocess), so an empty-data -> AWS fallback here would make one coastal
+        // Meld cell render from Mapterhorn while its neighbour renders from AWS,
+        // producing an elevation SEAM at the tile boundary. A genuine outage surfaces
+        // as an Err (handled below with an AWS fallback), never as a high-NaN Ok, so
+        // it is safe to use Mapterhorn's grid as-is.
+        Ok(raw) if provider_name == "mapterhorn" => raw,
         Ok(raw) if !is_fallback => {
             // Check if the regional provider returned mostly empty data (out-of-coverage area).
             // This catches cases where the provider's rectangular bbox over-claims coverage
@@ -361,9 +369,10 @@ pub fn fetch_elevation_data(
     })
 }
 
-/// Warm the disk cache of the REGIONAL provider selected for `bbox` (the same one
-/// generation will pick), so later parallel cell runs read tiles from disk instead of
-/// hammering the provider live — which rate-limits and silently degrades to the AWS
+/// Warm the disk cache of the provider selected for `bbox` (the same one generation
+/// will pick: a regional high-res provider where one covers the area, otherwise the
+/// global Mapterhorn tiles), so later parallel cell runs read tiles from disk instead
+/// of hammering the provider live — which rate-limits and silently degrades to the AWS
 /// fallback. Uses the exact grid-dims/level math generation uses, so the cached level
 /// matches. Returns Ok(None) when the selected provider is already AWS (nothing extra
 /// to warm — the AWS prefetch handles that path).

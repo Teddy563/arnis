@@ -3,6 +3,7 @@ use crate::elevation::provider::ElevationProvider;
 use crate::elevation::providers::aws_terrain::AwsTerrain;
 use crate::elevation::providers::ign_france::IgnFrance;
 use crate::elevation::providers::ign_spain::IgnSpain;
+use crate::elevation::providers::mapterhorn::Mapterhorn;
 use crate::elevation::providers::regional::JapanGsi;
 use crate::elevation::providers::usgs_3dep::Usgs3dep;
 
@@ -16,16 +17,19 @@ pub fn bboxes_overlap(a: &LLBBox, b: &LLBBox) -> bool {
 
 /// Select the best elevation provider for the given bounding box.
 ///
-/// Iterates providers ordered by resolution (finest first), returns the first
-/// whose coverage overlaps the user's bbox. Falls back to AWS Terrain Tiles.
+/// Iterates the regional high-res providers ordered by resolution (finest first)
+/// and returns the first whose coverage overlaps the user's bbox and that accepts
+/// the area. Otherwise falls back to Mapterhorn, the global provider (terrarium
+/// WebP, GLO-30 floor + national LiDAR where available, pyramid hole-proofing).
+/// The fetch-time caller still drops to AWS Terrain Tiles if the selected provider
+/// fails or returns mostly-empty data (see `fetch_elevation_data`).
 ///
-/// When `force_aws` is true the regional providers are skipped entirely and
+/// When `force_aws` is true every high-res / global provider is skipped and legacy
 /// AWS Terrain Tiles is used regardless of coverage. Surfaced as the
-/// `--aws-only-elevation` CLI flag / "Fast elevation (AWS only)" GUI toggle
-/// for users who'd rather have a faster pipeline at the cost of detail.
+/// `--aws-only-elevation` CLI flag / "Legacy elevation (AWS only)" GUI toggle.
 pub fn select_provider(bbox: &LLBBox, force_aws: bool) -> Box<dyn ElevationProvider> {
     if force_aws {
-        println!("Using AWS Terrain Tiles only (high-res providers disabled, ~30m resolution)");
+        println!("Using AWS Terrain Tiles only (legacy mode, high-res + Mapterhorn disabled, ~30m)");
         return Box::new(AwsTerrain);
     }
 
@@ -33,7 +37,7 @@ pub fn select_provider(bbox: &LLBBox, force_aws: bool) -> Box<dyn ElevationProvi
 
     for provider in candidates {
         if let Some(coverages) = provider.coverage_bboxes() {
-            if coverages.iter().any(|c| bboxes_overlap(c, bbox)) {
+            if coverages.iter().any(|c| bboxes_overlap(c, bbox)) && provider.accepts(bbox) {
                 println!(
                     "Selected elevation provider: {} ({:.0}m resolution)",
                     provider.name(),
@@ -44,9 +48,9 @@ pub fn select_provider(bbox: &LLBBox, force_aws: bool) -> Box<dyn ElevationProvi
         }
     }
 
-    // Global fallback
-    println!("Using AWS Terrain Tiles (global fallback, ~30m resolution)");
-    Box::new(AwsTerrain)
+    // Global default: Mapterhorn (AWS remains the fetch-time fallback if it fails).
+    println!("Using Mapterhorn terrain tiles (global; high-res where national LiDAR exists)");
+    Box::new(Mapterhorn)
 }
 
 /// Build the list of available providers, ordered by resolution (finest first).
@@ -85,11 +89,12 @@ mod tests {
     }
 
     #[test]
-    fn test_select_provider_fallback() {
-        // Bbox outside all regional coverage should fall back to AWS
+    fn test_select_provider_global_default() {
+        // Bbox outside all regional coverage (Sydney) gets the global Mapterhorn
+        // provider, not AWS (AWS is only the fetch-time fallback / --aws-only escape).
         let bbox = LLBBox::new(-33.86, 151.20, -33.85, 151.22).unwrap();
         let provider = select_provider(&bbox, false);
-        assert_eq!(provider.name(), "aws");
+        assert_eq!(provider.name(), "mapterhorn");
     }
 
     #[test]
