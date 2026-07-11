@@ -3,7 +3,7 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::tree::{Tree, TreeType};
-use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache};
+use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::prelude::IndexedRandom;
@@ -15,6 +15,7 @@ pub fn generate_landuse(
     args: &Args,
     flood_fill_cache: &FloodFillCache,
     building_footprints: &BuildingFootprintBitmap,
+    road_mask: &RoadMaskBitmap,
 ) {
     // Determine block type based on landuse tag
     let binding: String = "".to_string();
@@ -179,20 +180,9 @@ pub fn generate_landuse(
             "cemetery" if (x % 3 == 0) && (z % 3 == 0) => {
                 let random_choice: i32 = rng.random_range(0..100);
                 if random_choice < 15 {
-                    // Place graves
-                    if editor.check_for_block(x, 0, z, Some(&[PODZOL])) {
-                        if rng.random_bool(0.5) {
-                            editor.set_block(COBBLESTONE, x - 1, 1, z, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x - 1, 2, z, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x, 1, z, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x + 1, 1, z, None, None);
-                        } else {
-                            editor.set_block(COBBLESTONE, x, 1, z - 1, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x, 2, z - 1, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x, 1, z, None, None);
-                            editor.set_block(STONE_BRICK_SLAB, x, 1, z + 1, None, None);
-                        }
-                    }
+                    // Bundled .schem tombstone (replaces the old procedural grave;
+                    // self-limits and avoids roads via the road mask internally).
+                    crate::structures::tombstone::maybe_place(editor, x, z, road_mask);
                 } else if random_choice < 30 {
                     if editor.check_for_block(x, 0, z, Some(&[PODZOL])) {
                         editor.set_block(RED_FLOWER, x, 1, z, None, None);
@@ -455,6 +445,7 @@ pub fn generate_landuse_from_relation(
     args: &Args,
     flood_fill_cache: &FloodFillCache,
     building_footprints: &BuildingFootprintBitmap,
+    road_mask: &RoadMaskBitmap,
 ) {
     if rel.tags.contains_key("landuse") {
         // Process each outer member way individually using cached flood fill.
@@ -477,6 +468,7 @@ pub fn generate_landuse_from_relation(
                     args,
                     flood_fill_cache,
                     building_footprints,
+                    road_mask,
                 );
             }
         }

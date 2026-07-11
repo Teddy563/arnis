@@ -146,53 +146,13 @@ pub fn generate_leisure(
                     }
                 }
 
-                // Add playground or recreation ground features
-                if matches!(leisure_type.as_str(), "playground" | "recreation_ground") {
-                    let random_choice: i32 = rng.random_range(0..5000);
+                // Playgrounds are stamped as bundled .schem props after this
+                // per-cell loop (replacing the old procedural swing/slide/sandpit).
+            }
 
-                    match random_choice {
-                        // swing set + slide are vertical playground equipment -> skip under
-                        // --no-buildings (the sandpit below is ground, so it stays).
-                        0..10 if args.buildings => {
-                            // Swing set
-                            for y in 1..=3 {
-                                editor.set_block(OAK_FENCE, x - 1, y, z, None, None);
-                                editor.set_block(OAK_FENCE, x + 1, y, z, None, None);
-                            }
-                            editor.set_block(OAK_PLANKS, x - 1, 4, z, None, None);
-                            editor.set_block(OAK_SLAB, x, 4, z, None, None);
-                            editor.set_block(OAK_PLANKS, x + 1, 4, z, None, None);
-                            editor.set_block(STONE_BLOCK_SLAB, x, 2, z, None, None);
-                        }
-                        10..20 if args.buildings => {
-                            // Slide
-                            editor.set_block(OAK_SLAB, x, 1, z, None, None);
-                            editor.set_block(OAK_SLAB, x + 1, 2, z, None, None);
-                            editor.set_block(OAK_SLAB, x + 2, 3, z, None, None);
-
-                            editor.set_block(OAK_PLANKS, x + 2, 2, z, None, None);
-                            editor.set_block(OAK_PLANKS, x + 2, 1, z, None, None);
-
-                            editor.set_block(LADDER, x + 2, 2, z - 1, None, None);
-                            editor.set_block(LADDER, x + 2, 1, z - 1, None, None);
-                        }
-                        20..30 => {
-                            // Sandpit
-                            editor.fill_blocks(
-                                SAND,
-                                x - 3,
-                                0,
-                                z - 3,
-                                x + 3,
-                                0,
-                                z + 3,
-                                Some(&[GREEN_STAINED_HARDENED_CLAY]),
-                                None,
-                            );
-                        }
-                        _ => {}
-                    }
-                }
+            // Stamp bundled playground structures (replaces the old procedural props).
+            if matches!(leisure_type.as_str(), "playground" | "recreation_ground") {
+                crate::structures::playground::scatter_playgrounds(editor, filled_area.as_slice());
             }
 
             // Sport pitch markings: paint lines / goals / hoops on recognized

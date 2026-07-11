@@ -1,21 +1,17 @@
 //! Generic Sponge .schem structure stamping (non-tree models such as the construction crane).
 
 pub mod boat;
-#[allow(dead_code)] // TODO: wire dispatch (replaces our procedural version)
 pub mod car;
 pub mod crane;
 pub mod excavator;
-#[allow(dead_code)] // TODO: wire dispatch (replaces our procedural version)
 pub mod fountain;
 #[allow(dead_code)] // TODO: wire dispatch (needs helipad / easter-egg feature)
 pub mod helicopter;
 pub mod lighthouse;
-#[allow(dead_code)] // TODO: wire dispatch (replaces our procedural version)
 pub mod playground;
 pub mod schematic;
 #[allow(dead_code)] // TODO: wire dispatch (needs helipad / easter-egg feature)
 pub mod starship;
-#[allow(dead_code)] // TODO: wire dispatch (replaces our procedural version)
 pub mod tombstone;
 pub mod tractor;
 pub mod windturbine;
