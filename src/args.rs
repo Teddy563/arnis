@@ -348,6 +348,17 @@ pub struct Args {
     /// Initial time of day in ticks (0 = dawn, 6000 = noon, 18000 = midnight).
     #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(i64).range(0..24000))]
     pub world_time: i64,
+
+    /// Place a locked filled-map of the whole world in the player's inventory (Java only).
+    #[arg(long = "map-item", default_value_t = false)]
+    pub map_item: bool,
+
+    /// Add the world map item to the EXISTING Java world at --output-dir and exit, without
+    /// generating anything. Derives the map footprint from the saved region files, so an
+    /// external scheduler (Meld) can run one post-merge pass over a fully assembled master
+    /// world. Requires --output-dir; --bbox is ignored for the map bounds.
+    #[arg(long = "map-item-only", default_value_t = false)]
+    pub map_item_only: bool,
 }
 
 /// Player game mode for the generated world.

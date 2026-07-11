@@ -21,7 +21,7 @@ use std::sync::{Mutex, OnceLock};
 
 /// Minecraft 1.21.8 data version (world_version 4440), so generated worlds load natively in 1.21.8
 /// without a DataFixer upgrade pass.
-const DATA_VERSION: i32 = 4440;
+pub const DATA_VERSION: i32 = 4440;
 
 /// Cached base chunk sections (grass at Y=-62)
 /// Computed once on first use and reused for all empty chunks

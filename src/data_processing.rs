@@ -1024,6 +1024,18 @@ pub fn generate_world_with_options(
         }
     }
 
+    // Optional: drop a locked filled-map of the whole world into the player's inventory.
+    // Java-only (reads/writes level.dat + data/*.dat); renders straight from saved regions,
+    // so it writes zero blocks and cannot introduce cross-tile seams.
+    if args.map_item && world_format == WorldFormat::JavaAnvil {
+        if let Err(e) = crate::map_item::write_map_item(&output_path, &xzbbox) {
+            let warning_msg = format!("Failed to write world map item: {}", e);
+            eprintln!("Warning: {}", warning_msg);
+            #[cfg(feature = "gui")]
+            send_log(LogLevel::Warning, &warning_msg);
+        }
+    }
+
     // For Bedrock format, emit event to open the mcworld file
     if world_format == WorldFormat::BedrockMcWorld {
         if let Some(path_str) = output_path.to_str() {

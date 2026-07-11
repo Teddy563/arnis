@@ -18,14 +18,15 @@ use std::sync::Mutex;
 static BLOCK_COLORS: Lazy<FnvHashMap<&'static str, Rgb<u8>>> = Lazy::new(get_block_colors);
 
 /// Renders a top-down view of the generated Minecraft world.
-/// Returns the path to the saved image file.
-pub fn render_world_map(
+/// Renders the world's top-down map into an in-memory RGB image (used by both the
+/// PNG export and the in-world map item).
+pub fn render_world_map_image(
     world_dir: &Path,
     min_x: i32,
     max_x: i32,
     min_z: i32,
     max_z: i32,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<RgbImage, String> {
     let width = (max_x - min_x + 1) as u32;
     let height = (max_z - min_z + 1) as u32;
 
@@ -83,13 +84,21 @@ pub fn render_world_map(
         }
     });
 
-    // Save the image
-    let output_path = world_dir.join("arnis_world_map.png");
-    img.into_inner()
-        .unwrap()
-        .save(&output_path)
-        .map_err(|e| format!("Failed to save map image: {}", e))?;
+    Ok(img.into_inner().unwrap())
+}
 
+/// Renders the world map and saves it as a PNG. Returns the saved path.
+pub fn render_world_map(
+    world_dir: &Path,
+    min_x: i32,
+    max_x: i32,
+    min_z: i32,
+    max_z: i32,
+) -> Result<std::path::PathBuf, String> {
+    let img = render_world_map_image(world_dir, min_x, max_x, min_z, max_z)?;
+    let output_path = world_dir.join("arnis_world_map.png");
+    img.save(&output_path)
+        .map_err(|e| format!("Failed to save map image: {}", e))?;
     Ok(output_path)
 }
 

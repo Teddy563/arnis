@@ -25,6 +25,8 @@ mod land_cover;
 mod land_cover_bridge_repair;
 mod land_cover_osm_water_override;
 mod luanti_block_map;
+mod map_item;
+mod map_item_palette;
 mod map_preview;
 mod map_renderer;
 mod map_transformation;
@@ -126,6 +128,29 @@ fn run_cli() {
     // offline mode. Absent = never set, every AWS-no gate is a no-op.
     if args.regional_elevation_only {
         std::env::set_var("ARNIS_NO_AWS", "1");
+    }
+
+    // Map-item-only mode: add the world map item to an EXISTING Java world at --output-dir and
+    // exit, with no generation. Meld runs this once over a fully merged master world; the map
+    // footprint is read from the saved region files, so no OSM re-parse or master-origin is needed.
+    if args.map_item_only {
+        let Some(world_path) = args.path.clone() else {
+            eprintln!(
+                "{}: --map-item-only requires --output-dir pointing at an existing Java world",
+                "Error".red().bold()
+            );
+            std::process::exit(1);
+        };
+        match map_item::write_map_item_for_existing_world(&world_path) {
+            Ok(()) => {
+                println!("World map item written to {}", world_path.display());
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
     }
 
     // Age out stale cached elevation tiles (best-effort; throttled to once/day + swept on a
