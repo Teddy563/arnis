@@ -1,15 +1,22 @@
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
+use crate::coordinate_system::cartesian::XZBBox;
 use crate::element_processing::bridge_styles::{
     decorate_bridge_above_deck, place_bridge_support_below_deck, resolve_bridge_style_with_outline,
     BridgeOutlineIndex, BridgePathSample, BridgeStyle,
 };
+use crate::floodfill_cache::CoordinateBitmap;
 use crate::osm_parser::{ProcessedElement, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use std::collections::{HashMap, HashSet};
 
 /// Vertical offset in blocks from the terrain surface to the tunnel ceiling.
 const SUBWAY_DEPTH: i32 = 3;
+
+// Overhead catenary (electrified rail) tuning.
+const CATENARY_MAST_INTERVAL: usize = 16;
+const CATENARY_MAST_OFFSET: i32 = 3;
+const CATENARY_WIRE_HEIGHT: i32 = 6;
 
 const RAIL_BRIDGE_FLAT_CLEARANCE: i32 = 4;
 const RAIL_BRIDGE_DIP_THRESHOLD: i32 = 4;
@@ -49,6 +56,7 @@ fn subway_shell_block(x: i32, y: i32, z: i32) -> Block {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_railways(
     editor: &mut WorldEditor,
     element: &ProcessedWay,
@@ -56,6 +64,9 @@ pub fn generate_railways(
     rail_bridge_internal_endpoints: &RailBridgeInternalEndpoints,
     bridge_outlines: &BridgeOutlineIndex,
     scale: f64,
+    road_mask: &CoordinateBitmap,
+    building_footprints: &CoordinateBitmap,
+    rail_mask: &CoordinateBitmap,
 ) {
     let Some(railway_type) = element.tags.get("railway") else {
         return;
@@ -100,6 +111,13 @@ pub fn generate_railways(
         );
     } else {
         generate_at_grade_rail(editor, element);
+        // Overhead catenary masts + wire for electrified lines.
+        if catenary_wanted(element) {
+            let points = build_smoothed_centerline(element);
+            if points.len() >= 2 {
+                generate_catenary(editor, &points, road_mask, building_footprints, rail_mask);
+            }
+        }
     }
 }
 
@@ -784,3 +802,185 @@ pub fn carve_subway_interior(editor: &mut WorldEditor, subway_points: &[(i32, i3
         }
     }
 }
+
+// ---- Overhead catenary (electrified rails) ----
+fn catenary_wanted(way: &ProcessedWay) -> bool {
+    if way.tags.get("railway").map(String::as_str) != Some("rail") {
+        return false;
+    }
+    match way.tags.get("electrified").map(String::as_str) {
+        Some("contact_line") => true,
+        Some("yes") => matches!(
+            way.tags.get("usage").map(String::as_str),
+            Some("main") | Some("branch")
+        ),
+        _ => false,
+    }
+}
+
+fn build_smoothed_centerline(way: &ProcessedWay) -> Vec<(i32, i32)> {
+    let mut points: Vec<(i32, i32)> = Vec::new();
+    for window in way.nodes.windows(2) {
+        let bp = bresenham_line(window[0].x, 0, window[0].z, window[1].x, 0, window[1].z);
+        let smoothed = smooth_diagonal_rails(&bp);
+        for (bx, _, bz) in smoothed.iter() {
+            if points.last() != Some(&(*bx, *bz)) {
+                points.push((*bx, *bz));
+            }
+        }
+    }
+    points
+}
+
+fn travel_dir(points: &[(i32, i32)], i: usize) -> (i32, i32) {
+    let (cx, cz) = points[i];
+    if i + 1 < points.len() {
+        let (nx, nz) = points[i + 1];
+        ((nx - cx).signum(), (nz - cz).signum())
+    } else if i > 0 {
+        let (px, pz) = points[i - 1];
+        ((cx - px).signum(), (cz - pz).signum())
+    } else {
+        (1, 0)
+    }
+}
+
+fn rail_within(mask: &CoordinateBitmap, cx: i32, cz: i32, dx: i32, dz: i32, max_dist: i32) -> bool {
+    (1..=max_dist).any(|d| mask.contains(cx + dx * d, cz + dz * d))
+}
+
+// Rejects a side blocked by a road, building, or a parallel track within the mast footprint.
+fn mast_base_clear(
+    cx: i32,
+    cz: i32,
+    dx: i32,
+    dz: i32,
+    road_mask: &CoordinateBitmap,
+    building_footprints: &CoordinateBitmap,
+    rail_mask: &CoordinateBitmap,
+) -> bool {
+    let (x, z) = (
+        cx + dx * CATENARY_MAST_OFFSET,
+        cz + dz * CATENARY_MAST_OFFSET,
+    );
+    if road_mask.contains(x, z) || building_footprints.contains(x, z) {
+        return false;
+    }
+    !rail_within(rail_mask, cx, cz, dx, dz, CATENARY_MAST_OFFSET + 2)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_catenary_mast(
+    editor: &mut WorldEditor,
+    cx: i32,
+    cz: i32,
+    px: i32,
+    pz: i32,
+    wire_abs: i32,
+    road_mask: &CoordinateBitmap,
+    building_footprints: &CoordinateBitmap,
+    rail_mask: &CoordinateBitmap,
+) {
+    // one consistent side, flipped if that side is blocked
+    let side = if mast_base_clear(cx, cz, px, pz, road_mask, building_footprints, rail_mask) {
+        (px, pz)
+    } else if mast_base_clear(cx, cz, -px, -pz, road_mask, building_footprints, rail_mask) {
+        (-px, -pz)
+    } else {
+        return;
+    };
+    let (sx, sz) = side;
+    let (mx, mz) = (
+        cx + sx * CATENARY_MAST_OFFSET,
+        cz + sz * CATENARY_MAST_OFFSET,
+    );
+
+    let mast_ground = editor.get_ground_level(mx, mz);
+    editor.set_block_absolute(GRAY_CONCRETE, mx, mast_ground, mz, None, None);
+    for y in (mast_ground + 1)..=wire_abs {
+        editor.set_block_absolute(COBBLESTONE_WALL, mx, y, mz, None, None);
+    }
+
+    let arm = if sx != 0 { CHAIN_X } else { CHAIN_Z };
+    for d in 1..CATENARY_MAST_OFFSET {
+        editor.set_block_absolute(arm, cx + sx * d, wire_abs, cz + sz * d, None, None);
+    }
+}
+
+// Contact wire over the centreline plus cantilever masts at intervals.
+fn generate_catenary(
+    editor: &mut WorldEditor,
+    points: &[(i32, i32)],
+    road_mask: &CoordinateBitmap,
+    building_footprints: &CoordinateBitmap,
+    rail_mask: &CoordinateBitmap,
+) {
+    let n = points.len();
+    if n < 2 {
+        return;
+    }
+
+    for i in 0..n {
+        let (cx, cz) = points[i];
+        let (dx, dz) = travel_dir(points, i);
+        let (px, pz) = (-dz, dx);
+        let wire_abs = editor.get_ground_level(cx, cz) + CATENARY_WIRE_HEIGHT;
+
+        let wire = if dx != 0 { CHAIN_X } else { CHAIN_Z };
+        editor.set_block_absolute(wire, cx, wire_abs, cz, None, None);
+
+        if i.is_multiple_of(CATENARY_MAST_INTERVAL) {
+            place_catenary_mast(
+                editor,
+                cx,
+                cz,
+                px,
+                pz,
+                wire_abs,
+                road_mask,
+                building_footprints,
+                rail_mask,
+            );
+        }
+    }
+}
+
+// At-grade rail centerlines, used only to keep catenary masts off other tracks.
+pub fn collect_at_grade_rail_mask(
+    elements: &[ProcessedElement],
+    xzbbox: &XZBBox,
+) -> CoordinateBitmap {
+    // No catenary anywhere means nothing reads the mask, so skip the allocation.
+    if !elements
+        .iter()
+        .any(|e| matches!(e, ProcessedElement::Way(w) if catenary_wanted(w)))
+    {
+        return CoordinateBitmap::new_empty();
+    }
+    let mut bitmap = CoordinateBitmap::new(xzbbox);
+    for element in elements {
+        let ProcessedElement::Way(way) = element else {
+            continue;
+        };
+        if way.nodes.len() < 2 {
+            continue;
+        }
+        if way.tags.get("railway").map(String::as_str) != Some("rail") {
+            continue;
+        }
+        if way.tags.get("subway").map(|v| v == "yes").unwrap_or(false) {
+            continue;
+        }
+        if way.tags.get("tunnel").map(|v| v == "yes").unwrap_or(false) {
+            continue;
+        }
+        if is_rail_bridge(way) {
+            continue;
+        }
+        for (bx, bz) in build_smoothed_centerline(way) {
+            bitmap.set(bx, bz);
+        }
+    }
+    bitmap
+}
+

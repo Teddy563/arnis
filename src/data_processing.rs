@@ -55,6 +55,7 @@ fn process_element(
     bridge_surface: &bridges::BridgeSurfaceMap,
     bridge_outlines: &bridge_styles::BridgeOutlineIndex,
     rail_bridge_internal_endpoints: &railways::RailBridgeInternalEndpoints,
+    rail_mask: &CoordinateBitmap,
     subway_points: &mut Vec<(i32, i32)>,
 ) {
     match element {
@@ -126,6 +127,9 @@ fn process_element(
                     rail_bridge_internal_endpoints,
                     bridge_outlines,
                     args.scale,
+                    road_mask,
+                    building_footprints,
+                    rail_mask,
                 );
             } else if way.tags.contains_key("roller_coaster") {
                 railways::generate_roller_coaster(editor, way);
@@ -396,6 +400,8 @@ pub fn generate_world_with_options(
     // generate_highways_internal, so the bitmap is a 1:1 match of what gets placed.
     // Amenity processors use this for O(1) nearest-road-block lookups.
     let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale);
+    // At-grade electrified rails, for catenary mast placement + spacing.
+    let rail_mask = railways::collect_at_grade_rail_mask(&elements, &xzbbox);
 
     let bridge_outlines =
         crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&elements);
@@ -578,6 +584,7 @@ pub fn generate_world_with_options(
                             &bridge_surface,
                             &bridge_outlines,
                             &rail_bridge_internal_endpoints,
+                            &rail_mask,
                             &mut tile_subway_points,
                         );
                     }
@@ -812,6 +819,7 @@ pub fn generate_world_with_options(
                 &bridge_surface,
                 &bridge_outlines,
                 &rail_bridge_internal_endpoints,
+                &rail_mask,
                 &mut subway_points,
             );
 
