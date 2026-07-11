@@ -56,6 +56,8 @@ fn process_element(
     bridge_outlines: &bridge_styles::BridgeOutlineIndex,
     rail_bridge_internal_endpoints: &railways::RailBridgeInternalEndpoints,
     rail_mask: &CoordinateBitmap,
+    tunnel_internal_endpoints: &highways::TunnelInternalEndpoints,
+    tunnel_cells: &mut Vec<highways::HighwayTunnelCell>,
     subway_points: &mut Vec<(i32, i32)>,
 ) {
     match element {
@@ -82,6 +84,8 @@ fn process_element(
                     road_mask,
                     bridge_structures,
                     bridge_surface,
+                    tunnel_internal_endpoints,
+                    tunnel_cells,
                 );
             } else if way.tags.contains_key("landuse") {
                 landuse::generate_landuse(
@@ -179,6 +183,8 @@ fn process_element(
                     road_mask,
                     bridge_structures,
                     bridge_surface,
+                    tunnel_internal_endpoints,
+                    tunnel_cells,
                 );
             } else if args.buildings && node.tags.contains_key("tourism") {
                 tourisms::generate_tourisms(editor, node);
@@ -373,6 +379,7 @@ pub fn generate_world_with_options(
 
     // Collect subway centerline points for post-ground-fill air carving (phase 2).
     let mut subway_points: Vec<(i32, i32)> = Vec::new();
+    let mut tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();
 
     // Set ground reference in the editor to enable elevation-aware block placement
     editor.set_ground(Arc::clone(&ground));
@@ -402,6 +409,10 @@ pub fn generate_world_with_options(
     let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale);
     // At-grade electrified rails, for catenary mast placement + spacing.
     let rail_mask = railways::collect_at_grade_rail_mask(&elements, &xzbbox);
+    // Highway tunnels: bore footprint (keeps water/veg out) + shared endpoints
+    // (suppresses portals mid-tunnel). Collected once over all world elements.
+    let tunnel_footprint = highways::collect_tunnel_footprint(&elements, &xzbbox, args.scale);
+    let tunnel_internal_endpoints = highways::collect_tunnel_internal_endpoints(&elements);
 
     let bridge_outlines =
         crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&elements);
@@ -557,6 +568,7 @@ pub fn generate_world_with_options(
                     tile_editor.set_props(crate::structures::PropSet::parse(&args.props));
 
                     let mut tile_subway_points: Vec<(i32, i32)> = Vec::new();
+                    let mut tile_tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();
 
                     for &elem_idx in &tile_assignments[tile_idx] {
                         let element = &elements[elem_idx];
@@ -585,6 +597,8 @@ pub fn generate_world_with_options(
                             &bridge_outlines,
                             &rail_bridge_internal_endpoints,
                             &rail_mask,
+                            &tunnel_internal_endpoints,
+                            &mut tile_tunnel_cells,
                             &mut tile_subway_points,
                         );
                     }
@@ -601,6 +615,7 @@ pub fn generate_world_with_options(
                         args,
                         &xzbbox,
                         &building_footprints,
+                        &tunnel_footprint,
                         g_min_x,
                         g_max_x,
                         g_min_z,
@@ -634,6 +649,7 @@ pub fn generate_world_with_options(
                         &xzbbox,
                         &big_water_field,
                         &road_mask,
+                        &tunnel_footprint,
                         g_min_x,
                         g_max_x,
                         g_min_z,
@@ -655,6 +671,7 @@ pub fn generate_world_with_options(
                     // so carve in-tile now, after ground/fill so the interior isn't refilled.
                     if eviction_active {
                         railways::carve_subway_interior(&mut tile_editor, &tile_subway_points);
+                        highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
                     }
                     // Seal floating water/lava LAST (after the water-depth carve, veg sweep, and the
                     // in-tile subway carve all of which can undercut a water body over a cave). Under
@@ -675,6 +692,7 @@ pub fn generate_world_with_options(
                         tile_idx,
                         tile_editor.into_world(),
                         tile_subway_points,
+                        tile_tunnel_cells,
                         tile_road_overrides,
                     )
                 })
@@ -684,7 +702,9 @@ pub fn generate_world_with_options(
             let merge_start = std::time::Instant::now();
             // Phase 2: merge this batch's results into the main editor (sequential).
             // batch_results is dropped after this loop, freeing memory before next batch.
-            for (tile_idx, tile_world, tile_subway_pts, tile_road_overrides) in batch_results {
+            for (tile_idx, tile_world, tile_subway_pts, tile_tunnel_cells, tile_road_overrides) in
+                batch_results
+            {
                 editor.merge_world(
                     tile_world,
                     tiles[tile_idx].min_x,
@@ -733,6 +753,9 @@ pub fn generate_world_with_options(
                 }
 
                 subway_points.extend(tile_subway_pts);
+                if !eviction_active {
+                    tunnel_cells.extend(tile_tunnel_cells);
+                }
 
                 // Step 20%->70% per merged tile, throttled to whole-percent steps.
                 tiles_merged += 1;
@@ -820,6 +843,8 @@ pub fn generate_world_with_options(
                 &bridge_outlines,
                 &rail_bridge_internal_endpoints,
                 &rail_mask,
+                &tunnel_internal_endpoints,
+                &mut tunnel_cells,
                 &mut subway_points,
             );
 
@@ -859,6 +884,7 @@ pub fn generate_world_with_options(
             args,
             &xzbbox,
             &building_footprints,
+            &tunnel_footprint,
         )?;
     }
     bench.mark("ground_gen");
@@ -879,6 +905,7 @@ pub fn generate_world_with_options(
             &xzbbox,
             &big_water_field,
             &road_mask,
+            &tunnel_footprint,
         );
     }
 
@@ -889,11 +916,15 @@ pub fn generate_world_with_options(
     crate::water_depth::sweep_floating_veg(&mut editor, &xzbbox, &road_mask);
 
     drop(road_mask);
+    drop(tunnel_footprint);
 
     // Carve subway tunnel interiors now that underground is filled with stone.
     // Under eviction this already ran in-tile (regions get freed before here).
     if !eviction_active && !subway_points.is_empty() {
         railways::carve_subway_interior(&mut editor, &subway_points);
+    }
+    if !eviction_active && !tunnel_cells.is_empty() {
+        highways::carve_highway_tunnel_interior(&mut editor, &tunnel_cells);
     }
 
     // Seal floating water/lava as the FINAL underground pass (covers standalone + non-eviction tiled):
