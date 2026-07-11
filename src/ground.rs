@@ -40,6 +40,8 @@ pub struct Ground {
     rotation_mask: Option<RotationMask>,
     /// Minecraft Y at/above which terrain is snow-capped; `i32::MAX` disables it.
     snow_threshold_y: i32,
+    /// Köppen climate at the bbox center; drives arid/polar surfaces + biomes.
+    climate: crate::climate::Climate,
 }
 
 /// Climatic snow line in metres by absolute latitude, piecewise-linear through
@@ -137,6 +139,7 @@ fn compute_snow_threshold(
 impl Ground {
     pub fn new_flat(ground_level: i32) -> Self {
         Self {
+            climate: crate::climate::Climate::Temperate,
             elevation_enabled: false,
             ground_level,
             elevation_data: None,
@@ -215,6 +218,7 @@ impl Ground {
                 let snow_threshold_y =
                     compute_snow_threshold(&elevation_data, lat, water_floor, snow);
                 Self {
+                    climate: crate::climate::Climate::classify(bbox),
                     elevation_enabled: true,
                     ground_level: water_floor,
                     elevation_data: Some(elevation_data),
@@ -243,6 +247,7 @@ impl Ground {
                 // Land cover we already fetched is discarded since it has no
                 // elevation grid to align against.
                 Self {
+                    climate: crate::climate::Climate::classify(bbox),
                     elevation_enabled: false,
                     ground_level,
                     elevation_data: None,
@@ -259,6 +264,11 @@ impl Ground {
     #[inline(always)]
     pub fn snow_threshold_y(&self) -> i32 {
         self.snow_threshold_y
+    }
+
+    #[inline(always)]
+    pub fn climate(&self) -> crate::climate::Climate {
+        self.climate
     }
 
     /// Returns whether land cover data is available
@@ -767,6 +777,7 @@ mod tests {
         let h = heights.len();
         let w = heights[0].len();
         Ground {
+            climate: crate::climate::Climate::Temperate,
             elevation_enabled: true,
             ground_level: 0,
             elevation_data: Some(ElevationData {

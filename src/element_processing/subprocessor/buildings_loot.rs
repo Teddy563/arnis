@@ -91,7 +91,10 @@ fn validate(c: &LootConfig) -> Result<(), String> {
         }
         for (ii, it) in t.items.iter().enumerate() {
             if it.id.is_empty() || !it.id.contains(':') {
-                return Err(format!("theme {ti} item {ii} has an invalid id '{}'", it.id));
+                return Err(format!(
+                    "theme {ti} item {ii} has an invalid id '{}'",
+                    it.id
+                ));
             }
             if it.min < 0 || it.min > it.max || it.max > 64 {
                 return Err(format!("theme {ti} item {ii} has an invalid count range"));

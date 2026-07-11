@@ -452,9 +452,8 @@ pub fn generate_building_interior(
         // Meld's per-cell tile renders (tile-invariant). Abandoned buildings are
         // a little likelier to hold loot.
         if !chest_candidates.is_empty() {
-            let building_salt = (min_x as u32)
-                .wrapping_mul(0x9E37_79B1)
-                ^ (min_z as u32).wrapping_mul(0x85EB_CA77);
+            let building_salt =
+                (min_x as u32).wrapping_mul(0x9E37_79B1) ^ (min_z as u32).wrapping_mul(0x85EB_CA77);
             let mut crng = coord_rng(
                 min_x,
                 min_z,

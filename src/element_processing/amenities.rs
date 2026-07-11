@@ -436,10 +436,16 @@ pub fn generate_amenities(
                             for zz in (min_z / period_z)..=(max_z / period_z) {
                                 let x0 = zx * space_width;
                                 let z0 = zz * period_z;
-                                let inside = (0..=space_width)
-                                    .all(|dx| (0..=space_length).all(|dz| in_lot(x0 + dx, z0 + dz)));
+                                let inside = (0..=space_width).all(|dx| {
+                                    (0..=space_length).all(|dz| in_lot(x0 + dx, z0 + dz))
+                                });
                                 if inside {
-                                    crate::structures::car::maybe_place_car(editor, x0 + 2, z0 + 4, 0);
+                                    crate::structures::car::maybe_place_car(
+                                        editor,
+                                        x0 + 2,
+                                        z0 + 4,
+                                        0,
+                                    );
                                 }
                             }
                         }

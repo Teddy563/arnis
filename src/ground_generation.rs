@@ -16,12 +16,12 @@
 use crate::args::Args;
 use crate::block_definitions::{
     AIR, ANDESITE, BEDROCK, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS, CLAY, COARSE_DIRT,
-    COBBLED_DEEPSLATE, COBBLESTONE,
-    CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH,
-    FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE,
-    LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES, OAK_PLANKS, POTATOES, RED_FLOWER,
-    SAND, SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, TALL_GRASS_BOTTOM,
-    TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
+    COBBLED_DEEPSLATE, COBBLESTONE, CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE,
+    DIORITE, DIRT, DIRT_PATH, FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE,
+    GRAY_CONCRETE_POWDER, HAY_BALE, LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES,
+    OAK_PLANKS, POTATOES, RED_FLOWER, SAND, SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE,
+    STONE_BRICKS, SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT,
+    WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::tree;
@@ -151,6 +151,7 @@ pub fn generate_ground_region(
 ) {
     let has_land_cover = ground.has_land_cover();
     let terrain_enabled = ground.elevation_enabled;
+    let climate = ground.climate();
 
     let total_blocks: u64 =
         (iter_max_x - iter_min_x + 1).max(0) as u64 * (iter_max_z - iter_min_z + 1).max(0) as u64;
@@ -463,6 +464,10 @@ pub fn generate_ground_region(
                                         8..=9 => (COBBLESTONE, STONE), // 17%
                                         _ => (GRAVEL, STONE),          // 17% scree
                                     }
+                                } else if let Some(p) = climate.surface_palette(cover, x, z) {
+                                    // Desert sand/sandstone, ice-cap snow/packed-ice,
+                                    // cold-desert gravel, boreal podzol, etc.
+                                    p
                                 } else {
                                     // Select surface block based on ESA land cover class
                                     match cover {

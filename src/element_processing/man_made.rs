@@ -32,10 +32,9 @@ pub fn generate_man_made(editor: &mut WorldEditor, element: &ProcessedElement, a
             "lighthouse" => {
                 if let ProcessedElement::Way(way) = element {
                     if !way.nodes.is_empty() {
-                        let (sx, sz) = way
-                            .nodes
-                            .iter()
-                            .fold((0i64, 0i64), |(ax, az), nd| (ax + nd.x as i64, az + nd.z as i64));
+                        let (sx, sz) = way.nodes.iter().fold((0i64, 0i64), |(ax, az), nd| {
+                            (ax + nd.x as i64, az + nd.z as i64)
+                        });
                         let n = way.nodes.len() as i64;
                         crate::structures::lighthouse::place(
                             editor,
