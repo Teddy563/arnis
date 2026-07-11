@@ -549,6 +549,7 @@ impl Block {
             435 => "warped_slab",
             436 => "warped_stairs",
             437 => "warped_trapdoor",
+            438 => "redstone_lamp",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -1479,6 +1480,7 @@ pub const TRIPWIRE_HOOK: Block = Block::new(434);
 pub const WARPED_SLAB: Block = Block::new(435);
 pub const WARPED_STAIRS: Block = Block::new(436);
 pub const WARPED_TRAPDOOR: Block = Block::new(437);
+pub const REDSTONE_LAMP: Block = Block::new(438);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

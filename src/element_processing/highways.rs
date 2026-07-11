@@ -375,6 +375,65 @@ pub fn build_highway_connectivity_map(elements: &[ProcessedElement]) -> HighwayC
 }
 
 /// Internal function that generates highways with connectivity context for elevation handling
+/// A single street lamp: smooth-stone base, stone-brick-wall post, a lit redstone
+/// lamp behind an iron-trapdoor hood.
+fn place_street_lamp(editor: &mut WorldEditor, x: i32, z: i32, base: i32) {
+    editor.set_block_absolute(SMOOTH_STONE, x, base + 1, z, None, None);
+    for dy in 2..=4 {
+        editor.set_block_absolute(STONE_BRICK_WALL, x, base + dy, z, None, None);
+    }
+    editor.set_block_with_properties_absolute(
+        BlockWithProperties::new(REDSTONE_LAMP, Some(fastnbt::nbt!({ "lit": "true" }))),
+        x,
+        base + 5,
+        z,
+        None,
+        None,
+    );
+    editor.set_block_absolute(IRON_TRAPDOOR, x, base + 6, z, None, None);
+}
+
+const WAY_LAMP_INTERVAL: usize = 25;
+
+/// Periodic street lamps alongside a `lit=yes` way, alternating sides and
+/// skipping road/water cells.
+fn place_way_lamps(
+    editor: &mut WorldEditor,
+    way: &ProcessedWay,
+    block_range: i32,
+    road_mask: &RoadMaskBitmap,
+) {
+    let offset = block_range + 2;
+    let mut tds: usize = 0;
+    let mut side = 1i32;
+    for w in way.nodes.windows(2) {
+        let (dx, dz) = (w[1].x - w[0].x, w[1].z - w[0].z);
+        let len = dx.abs().max(dz.abs());
+        if len == 0 {
+            continue;
+        }
+        let mag = (dx as f64).hypot(dz as f64);
+        let (px, pz) = (
+            (-dz as f64 / mag).round() as i32,
+            (dx as f64 / mag).round() as i32,
+        );
+        for (bx, _, bz) in bresenham_line(w[0].x, 0, w[0].z, w[1].x, 0, w[1].z) {
+            if tds > 0 && tds.is_multiple_of(WAY_LAMP_INTERVAL) {
+                for s in [side, -side] {
+                    let (lx, lz) = (bx + px * offset * s, bz + pz * offset * s);
+                    if !road_mask.contains(lx, lz) && !editor.is_lc_water(lx, lz) {
+                        let base = editor.get_absolute_y(lx, 0, lz);
+                        place_street_lamp(editor, lx, lz, base);
+                        side = -side;
+                        break;
+                    }
+                }
+            }
+            tds += 1;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn generate_highways_internal(
     editor: &mut WorldEditor,
@@ -419,11 +478,7 @@ fn generate_highways_internal(
                 let x: i32 = first_node.x;
                 let z: i32 = first_node.z;
                 let base = node_feature_base_y(editor, bridge_surface, x, z, layer_boost, 0);
-                editor.set_block_absolute(COBBLESTONE_WALL, x, base + 1, z, None, None);
-                for dy in 2..=4 {
-                    editor.set_block_absolute(OAK_FENCE, x, base + dy, z, None, None);
-                }
-                editor.set_block_absolute(GLOWSTONE, x, base + 5, z, None, None);
+                place_street_lamp(editor, x, z, base);
             }
         } else if highway_type == "crossing" {
             // Handle traffic signals for crossings
@@ -768,6 +823,19 @@ fn generate_highways_internal(
 
             if scale_factor < 1.0 {
                 block_range = ((block_range as f64) * scale_factor).floor() as i32;
+            }
+
+            // Street lamps along explicitly-lit ways. This is below the
+            // road_detail_skip early-return, so compact/none ways never reach
+            // here and way-lamps respect --road-detail for free.
+            if way.tags.get("lit").map(String::as_str) == Some("yes")
+                && !is_bridge_member
+                && !is_bridge_ramp
+                && !is_indoor
+                && layer_value_effective == 0
+                && highway_type.as_str() != "steps"
+            {
+                place_way_lamps(editor, way, block_range, road_mask);
             }
 
             // Elevation based on layer (already normalised; `LAYER_HEIGHT_STEP`
