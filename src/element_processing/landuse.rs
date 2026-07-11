@@ -422,6 +422,16 @@ pub fn generate_landuse(
     if landuse_tag == "cemetery" {
         generate_cemetery_fence(editor, element);
     }
+
+    // Large construction sites get a centre crane plus scattered excavators;
+    // farmland gets an occasional parked tractor.
+    if landuse_tag == "construction" {
+        crate::structures::crane::maybe_place_crane(editor, floor_area.as_slice());
+        crate::structures::excavator::scatter_excavators(editor, floor_area.as_slice());
+    }
+    if landuse_tag == "farmland" {
+        crate::structures::tractor::maybe_place_tractor(editor, floor_area.as_slice());
+    }
 }
 
 /// Draws a stone-brick wall fence (with slab cap) along the outline of a

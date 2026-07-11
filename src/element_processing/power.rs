@@ -52,6 +52,24 @@ pub fn generate_power(editor: &mut WorldEditor, element: &ProcessedElement) {
             }
             "tower" => generate_power_tower(editor, element),
             "pole" => generate_power_pole(editor, element),
+            "generator"
+                if element.tags().get("generator:source").map(|s| s.as_str()) == Some("wind") =>
+            {
+                if let ProcessedElement::Way(way) = element {
+                    if !way.nodes.is_empty() {
+                        let (sx, sz) = way
+                            .nodes
+                            .iter()
+                            .fold((0i64, 0i64), |(ax, az), nd| (ax + nd.x as i64, az + nd.z as i64));
+                        let n = way.nodes.len() as i64;
+                        crate::structures::windturbine::place(
+                            editor,
+                            (sx / n) as i32,
+                            (sz / n) as i32,
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -89,6 +107,11 @@ pub fn generate_power_nodes(editor: &mut WorldEditor, node: &ProcessedNode) {
         match power_type.as_str() {
             "tower" => generate_power_tower_from_node(editor, node),
             "pole" => generate_power_pole_from_node(editor, node),
+            "generator"
+                if node.tags.get("generator:source").map(|s| s.as_str()) == Some("wind") =>
+            {
+                crate::structures::windturbine::place(editor, node.x, node.z);
+            }
             _ => {}
         }
     }

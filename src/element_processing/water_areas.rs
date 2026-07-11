@@ -171,6 +171,8 @@ fn generate_water_areas(
     scanline_fill_water(
         min_x, min_z, max_x, max_z, &outers_xz, &inners_xz, editor, bwf, road_mask,
     );
+    // Scatter a few moored boats over the filled open water.
+    crate::structures::boat::scatter_boats(editor, min_x, min_z, max_x, max_z);
 }
 
 /// Verifies all rings are properly closed (first node matches last).

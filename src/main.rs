@@ -36,6 +36,7 @@ mod projection;
 mod region;
 mod retrieve_data;
 mod schematic;
+mod structures;
 #[cfg(feature = "gui")]
 mod telemetry;
 #[cfg(test)]

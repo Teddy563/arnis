@@ -125,6 +125,8 @@ pub struct WorldEditor<'a> {
     xzbbox: &'a XZBBox,
     llbbox: LLBBox,
     ground: Option<Arc<Ground>>,
+    /// Which bundled schematic-prop families to place (default all; `--props`).
+    props: crate::structures::PropSet,
     format: WorldFormat,
     /// Per-cell overrides for the effective "ground surface" Y returned by
     /// `get_ground_level` / `get_absolute_y`. Roads that flatten their
@@ -177,6 +179,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            props: crate::structures::PropSet::ALL,
             format: WorldFormat::JavaAnvil,
             road_surface_overrides: FnvHashMap::default(),
             flushed_regions: FnvHashSet::default(),
@@ -212,6 +215,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            props: crate::structures::PropSet::ALL,
             format,
             road_surface_overrides: FnvHashMap::default(),
             flushed_regions: FnvHashSet::default(),
@@ -247,6 +251,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            props: crate::structures::PropSet::ALL,
             format: WorldFormat::LuantiWorld,
             road_surface_overrides: FnvHashMap::default(),
             flushed_regions: FnvHashSet::default(),
@@ -284,6 +289,37 @@ impl<'a> WorldEditor<'a> {
     /// Sets the ground reference for elevation-based block placement
     pub fn set_ground(&mut self, ground: Arc<Ground>) {
         self.ground = Some(ground);
+    }
+
+    /// Sets which schematic-prop families are placed (see `--props`).
+    pub fn set_props(&mut self, props: crate::structures::PropSet) {
+        self.props = props;
+    }
+
+    /// True if the given schematic-prop family should be placed.
+    pub fn prop_enabled(&self, p: crate::structures::Prop) -> bool {
+        self.props.has(p)
+    }
+
+    /// True if the ESA land-cover class at this world cell is water.
+    pub fn is_lc_water(&self, x: i32, z: i32) -> bool {
+        self.ground.as_ref().is_some_and(|g| {
+            g.cover_class(crate::coordinate_system::cartesian::XZPoint::new(
+                x - self.ground_origin_x,
+                z - self.ground_origin_z,
+            )) == crate::land_cover::LC_WATER
+        })
+    }
+
+    /// ESA distance-to-shore (BFS capped at 15): 0 = non-water or open water past the
+    /// cap, 1 = shore, 2..=15 = inward.
+    pub fn water_distance(&self, x: i32, z: i32) -> u8 {
+        self.ground.as_ref().map_or(0, |g| {
+            g.water_distance(crate::coordinate_system::cartesian::XZPoint::new(
+                x - self.ground_origin_x,
+                z - self.ground_origin_z,
+            ))
+        })
     }
 
     /// Enables baking per-chunk lighting into Java chunks.

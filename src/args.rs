@@ -333,6 +333,13 @@ pub struct Args {
     /// default/reset. Hidden helper; no world is created.
     #[arg(long = "dump-loot-table", hide = true)]
     pub dump_loot_table: Option<std::path::PathBuf>,
+
+    /// Which bundled schematic-prop families to place: `all`, `none`, or a comma
+    /// list (car, boat, crane, excavator, fountain, helicopter, lighthouse,
+    /// playground, starship, tombstone, tractor, windturbine). Default all.
+    /// Purely additive: when omitted, behaviour is unchanged (all families on).
+    #[arg(long = "props", default_value = "all")]
+    pub props: String,
 }
 
 /// Validates CLI arguments after parsing.
