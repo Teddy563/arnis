@@ -1160,6 +1160,8 @@ fn gui_start_generation(
                 loot_table: None,
                 dump_loot_table: None,
                 props: "all".to_string(),
+                gamemode: crate::args::GameMode::Creative,
+                world_time: 6000,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data

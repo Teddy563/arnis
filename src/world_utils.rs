@@ -453,3 +453,56 @@ pub fn set_spawn_in_level_dat(
 
     Ok(())
 }
+
+/// Writes the player game mode and initial time of day into an existing Java
+/// Edition level.dat (GameType + DayTime, plus the Player's playerGameType).
+pub fn apply_java_world_settings(
+    world_path: &Path,
+    game_mode: crate::args::GameMode,
+    world_time: i64,
+) -> Result<(), String> {
+    let level_path = world_path.join("level.dat");
+    if !level_path.exists() {
+        return Err(format!("level.dat not found at {level_path:?}"));
+    }
+
+    let raw = fs::read(&level_path).map_err(|e| format!("Failed to read level.dat: {e}"))?;
+    let mut decoder = GzDecoder::new(raw.as_slice());
+    let mut decompressed = Vec::new();
+    decoder
+        .read_to_end(&mut decompressed)
+        .map_err(|e| format!("Failed to decompress level.dat: {e}"))?;
+
+    let mut root: Value = fastnbt::from_bytes(&decompressed)
+        .map_err(|e| format!("Failed to parse level.dat NBT: {e}"))?;
+
+    {
+        let data = match root {
+            Value::Compound(ref mut r) => match r.get_mut("Data") {
+                Some(Value::Compound(ref mut d)) => d,
+                _ => return Err("level.dat missing Data compound".to_string()),
+            },
+            _ => return Err("level.dat root is not a compound".to_string()),
+        };
+
+        let game_type = game_mode.java_game_type();
+        data.insert("GameType".to_string(), Value::Int(game_type));
+        data.insert("DayTime".to_string(), Value::Long(world_time));
+        if let Some(Value::Compound(ref mut player)) = data.get_mut("Player") {
+            player.insert("playerGameType".to_string(), Value::Int(game_type));
+        }
+    }
+
+    let serialized =
+        fastnbt::to_bytes(&root).map_err(|e| format!("Failed to serialize level.dat: {e}"))?;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder
+        .write_all(&serialized)
+        .map_err(|e| format!("Failed to compress level.dat: {e}"))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|e| format!("Failed to finalize level.dat compression: {e}"))?;
+    fs::write(&level_path, compressed).map_err(|e| format!("Failed to write level.dat: {e}"))?;
+
+    Ok(())
+}

@@ -340,6 +340,32 @@ pub struct Args {
     /// Purely additive: when omitted, behaviour is unchanged (all families on).
     #[arg(long = "props", default_value = "all")]
     pub props: String,
+
+    /// Player game mode written into the generated world's level.dat (Java).
+    #[arg(long, value_enum, default_value_t = GameMode::Creative)]
+    pub gamemode: GameMode,
+
+    /// Initial time of day in ticks (0 = dawn, 6000 = noon, 18000 = midnight).
+    #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(i64).range(0..24000))]
+    pub world_time: i64,
+}
+
+/// Player game mode for the generated world.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum GameMode {
+    Survival,
+    Creative,
+    Spectator,
+}
+
+impl GameMode {
+    pub fn java_game_type(self) -> i32 {
+        match self {
+            GameMode::Survival => 0,
+            GameMode::Creative => 1,
+            GameMode::Spectator => 3,
+        }
+    }
 }
 
 /// Validates CLI arguments after parsing.

@@ -568,6 +568,19 @@ fn run_cli() {
                         );
                     }
                 }
+
+                // Apply game mode + initial world time to level.dat (Java).
+                if let Err(e) = world_utils::apply_java_world_settings(
+                    &generation_path,
+                    args.gamemode,
+                    args.world_time,
+                ) {
+                    eprintln!(
+                        "{} Failed to apply world settings: {}",
+                        "Warning:".yellow().bold(),
+                        e
+                    );
+                }
             }
         }
         Err(e) => {
