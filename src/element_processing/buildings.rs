@@ -1238,6 +1238,8 @@ struct BuildingConfig {
     window_phase: i32,
     /// Commercial/hotel ground floors get wider full-glass storefront bays.
     has_storefront: bool,
+    /// Coherent per-building window-frame style (Commercial/Hotel/Historic), None otherwise.
+    window_frame: Option<WindowFrameStyle>,
 }
 
 impl BuildingConfig {
@@ -2644,6 +2646,24 @@ fn make_top_slab(base: Block) -> BlockWithProperties {
     BlockWithProperties::new(base, Some(Value::Compound(map)))
 }
 
+/// Closed trapdoor with the given facing and half ("top"/"bottom").
+fn make_closed_trapdoor(base: Block, facing: &str, half: &str) -> BlockWithProperties {
+    let mut map: HashMap<String, Value> = HashMap::new();
+    map.insert("facing".to_string(), Value::String(facing.to_string()));
+    map.insert("open".to_string(), Value::String("false".to_string()));
+    map.insert("half".to_string(), Value::String(half.to_string()));
+    BlockWithProperties::new(base, Some(Value::Compound(map)))
+}
+
+/// Block with arbitrary block-state properties (facing/open/hanging/face/persistent/...).
+fn make_prop_block(base: Block, props: &[(&str, &str)]) -> BlockWithProperties {
+    let mut map: HashMap<String, Value> = HashMap::new();
+    for (k, v) in props {
+        map.insert(k.to_string(), Value::String(v.to_string()));
+    }
+    BlockWithProperties::new(base, Some(Value::Compound(map)))
+}
+
 /// Computes the centroid (average position) of the building outline nodes.
 /// Returns `None` if the node list is empty.
 fn compute_building_centroid(nodes: &[ProcessedNode]) -> Option<(i32, i32)> {
@@ -3137,6 +3157,372 @@ fn generate_corner_quoins(
 /// Each `WallDepthStyle` produces a distinct visual effect appropriate for
 /// the building's category. All outward placements use an AIR whitelist to
 /// avoid overwriting neighboring buildings or existing decorations.
+/// Window frame styles distilled from the reference schematics, one per building.
+/// SpruceCottage / DarkTimber / TerracottaCopper are the residential looks; they stay defined
+/// (full upstream palette) but are unused here because House/Residential keep the fork's own
+/// shutter/sill/balcony decorator, so pick_window_frame only draws from the other styles.
+#[allow(dead_code)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum WindowFrameStyle {
+    SpruceCottage,
+    DarkTimber,
+    StoneOrnate,
+    Blackstone,
+    RusticMossy,
+    TerracottaCopper,
+    QuartzModern,
+}
+
+impl WindowFrameStyle {
+    /// Post block at flanking columns, None when the style uses shutters there.
+    fn post_block(self) -> Option<Block> {
+        match self {
+            Self::SpruceCottage | Self::TerracottaCopper => None,
+            Self::DarkTimber => Some(DARK_OAK_PLANKS),
+            Self::StoneOrnate => Some(POLISHED_DIORITE),
+            Self::Blackstone => Some(POLISHED_BLACKSTONE),
+            Self::RusticMossy => Some(MOSSY_COBBLESTONE),
+            Self::QuartzModern => Some(QUARTZ_BLOCK),
+        }
+    }
+
+    /// Trapdoor shutters at flanking columns.
+    fn shutter_block(self) -> Option<Block> {
+        match self {
+            Self::SpruceCottage => Some(SPRUCE_TRAPDOOR),
+            Self::TerracottaCopper => Some(JUNGLE_TRAPDOOR),
+            _ => None,
+        }
+    }
+
+    /// Material for the upside-down stair band over each window.
+    fn band_material(self) -> Block {
+        match self {
+            Self::SpruceCottage => SPRUCE_PLANKS,
+            Self::DarkTimber => DARK_OAK_PLANKS,
+            Self::StoneOrnate => STONE_BRICKS,
+            Self::Blackstone => BLACKSTONE,
+            Self::RusticMossy => COBBLESTONE,
+            Self::TerracottaCopper => WAXED_COPPER_BLOCK,
+            Self::QuartzModern => QUARTZ_BLOCK,
+        }
+    }
+
+    fn has_lanterns(self) -> bool {
+        matches!(self, Self::SpruceCottage | Self::TerracottaCopper)
+    }
+
+    /// Trapdoor material for shelves, canopies and aprons.
+    fn detail_trapdoor(self) -> Block {
+        match self {
+            Self::DarkTimber => DARK_OAK_TRAPDOOR,
+            Self::Blackstone => WARPED_TRAPDOOR,
+            Self::QuartzModern => IRON_TRAPDOOR,
+            Self::TerracottaCopper => JUNGLE_TRAPDOOR,
+            _ => SPRUCE_TRAPDOOR,
+        }
+    }
+
+    /// Lantern hung under the band beside a window top.
+    fn hanging_lantern(self) -> Option<Block> {
+        match self {
+            Self::SpruceCottage | Self::TerracottaCopper | Self::StoneOrnate => Some(LANTERN),
+            Self::Blackstone => Some(SOUL_LANTERN),
+            _ => None,
+        }
+    }
+
+    /// Open fence gate as a French-balcony rail in front of the window.
+    fn balconette_gate(self) -> Option<Block> {
+        match self {
+            Self::SpruceCottage => Some(SPRUCE_FENCE_GATE),
+            Self::DarkTimber => Some(DARK_OAK_FENCE_GATE),
+            Self::TerracottaCopper => Some(OAK_FENCE_GATE),
+            _ => None,
+        }
+    }
+
+    /// Button studs on the band front.
+    fn stud_button(self) -> Option<Block> {
+        match self {
+            Self::RusticMossy | Self::StoneOrnate => Some(STONE_BUTTON),
+            Self::Blackstone => Some(POLISHED_BLACKSTONE_BUTTON),
+            _ => None,
+        }
+    }
+
+    fn has_azalea_box(self) -> bool {
+        matches!(
+            self,
+            Self::SpruceCottage | Self::TerracottaCopper | Self::RusticMossy
+        )
+    }
+}
+
+/// Picks a per-building frame style for the categories the fork's own residential shutter/sill/
+/// balcony decorator does NOT cover (Commercial/Hotel/Historic), so the two never double-decorate.
+/// House/Residential keep the fork decorator. 55% of eligible buildings get a frame.
+fn pick_window_frame(category: BuildingCategory, element_id: u64) -> Option<WindowFrameStyle> {
+    use WindowFrameStyle::*;
+    let pool: &[WindowFrameStyle] = match category {
+        BuildingCategory::Commercial | BuildingCategory::Hotel => {
+            &[QuartzModern, Blackstone, StoneOrnate]
+        }
+        BuildingCategory::Historic => &[RusticMossy, StoneOrnate, Blackstone],
+        _ => return None,
+    };
+    let mut rng = element_rng(element_id ^ 0xF7A3_E001_57BD_2210);
+    rng.random_bool(0.55)
+        .then(|| pool[rng.random_range(0..pool.len())])
+}
+
+fn generate_window_frames(
+    editor: &mut WorldEditor,
+    element: &ProcessedWay,
+    config: &BuildingConfig,
+    building_passages: &CoordinateBitmap,
+) {
+    let Some(style) = config.window_frame else {
+        return;
+    };
+    if config.use_horizontal_windows || config.category == BuildingCategory::Tower {
+        return;
+    }
+    let (cx, cz) = match compute_building_centroid(&element.nodes) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let top_h = config.start_y_offset + config.building_height;
+    let post_block = style.post_block();
+    let shutter_block = style.shutter_block();
+
+    let mut previous_node: Option<(i32, i32)> = None;
+    for node in &element.nodes {
+        let (x2, z2) = (node.x, node.z);
+        if let Some((x1, z1)) = previous_node {
+            let (out_nx, out_nz) = compute_outward_normal(x1, z1, x2, z2, cx, cz);
+            if out_nx == 0 && out_nz == 0 {
+                previous_node = Some((x2, z2));
+                continue;
+            }
+            let facing = facing_for_normal(out_nx, out_nz);
+            let inward_facing = facing_for_normal(-out_nx, -out_nz);
+            let band_stair = make_upside_down_stair(style.band_material(), facing);
+            let shutter = shutter_block.map(|b| make_open_trapdoor(b, facing));
+
+            let points =
+                bresenham_line(x1, config.start_y_offset, z1, x2, config.start_y_offset, z2);
+            for (bx, _, bz) in &points {
+                let (bx, bz) = (*bx, *bz);
+                if building_passages.contains(bx, bz) {
+                    continue;
+                }
+                let col = config.window_col(bx, bz);
+                let lx = bx + out_nx;
+                let lz = bz + out_nz;
+
+                if col < 3 {
+                    // Band stair over each window at every floor line, plus occasional dressing.
+                    for h in (config.start_y_offset + 5)..=(top_h - 1) {
+                        if config.floor_row(h) != 0 {
+                            continue;
+                        }
+                        editor.set_block_with_properties_absolute(
+                            band_stair.clone(),
+                            lx,
+                            h + config.abs_terrain_offset,
+                            lz,
+                            Some(&[AIR]),
+                            None,
+                        );
+
+                        if col == 1 {
+                            // One partitioned roll decides the centre dressing on the band.
+                            let roll = coord_rng(
+                                bx,
+                                bz.wrapping_add(h),
+                                config.element_id ^ 0x00F7_A3E0_D411_0001,
+                            )
+                            .random_range(0u32..100);
+                            let above = h + 1 + config.abs_terrain_offset;
+                            if h + 1 < top_h {
+                                if roll < 15 {
+                                    if style.has_lanterns() {
+                                        editor.set_block_absolute(
+                                            LANTERN,
+                                            lx,
+                                            above,
+                                            lz,
+                                            Some(&[AIR]),
+                                            None,
+                                        );
+                                    }
+                                } else if roll < 32 {
+                                    let mut pot_rng =
+                                        coord_rng(bx, bz.wrapping_add(h * 7), config.element_id);
+                                    let pot = POTTED_PLANT_OPTIONS
+                                        [pot_rng.random_range(0..POTTED_PLANT_OPTIONS.len())];
+                                    editor.set_block_absolute(
+                                        pot,
+                                        lx,
+                                        above,
+                                        lz,
+                                        Some(&[AIR]),
+                                        None,
+                                    );
+                                } else if roll < 40 {
+                                    editor.set_block_with_properties_absolute(
+                                        make_closed_trapdoor(
+                                            style.detail_trapdoor(),
+                                            facing,
+                                            "bottom",
+                                        ),
+                                        lx,
+                                        above,
+                                        lz,
+                                        Some(&[AIR]),
+                                        None,
+                                    );
+                                } else if roll < 46 && style.has_azalea_box() {
+                                    editor.set_block_with_properties_absolute(
+                                        make_prop_block(AZALEA_LEAVES, &[("persistent", "true")]),
+                                        lx,
+                                        above,
+                                        lz,
+                                        Some(&[AIR]),
+                                        None,
+                                    );
+                                    if h + 2 < top_h && roll % 5 < 2 {
+                                        editor.set_block_absolute(
+                                            FLOWER_POT,
+                                            lx,
+                                            above + 1,
+                                            lz,
+                                            Some(&[AIR]),
+                                            None,
+                                        );
+                                    }
+                                } else if roll < 54 {
+                                    if let Some(gate) = style.balconette_gate() {
+                                        editor.set_block_with_properties_absolute(
+                                            make_prop_block(
+                                                gate,
+                                                &[("facing", inward_facing), ("open", "true")],
+                                            ),
+                                            lx,
+                                            above,
+                                            lz,
+                                            Some(&[AIR]),
+                                            None,
+                                        );
+                                    }
+                                }
+                            }
+
+                            // Under-band corbel shelf under the sill of the window above.
+                            if h - 1 > config.start_y_offset + 2 {
+                                let shelf_roll = coord_rng(
+                                    bx,
+                                    bz.wrapping_add(h * 3),
+                                    config.element_id ^ 0x0000_5E1F_0000_0002,
+                                )
+                                .random_range(0u32..100);
+                                if shelf_roll < 15 {
+                                    editor.set_block_with_properties_absolute(
+                                        make_closed_trapdoor(
+                                            style.detail_trapdoor(),
+                                            facing,
+                                            "top",
+                                        ),
+                                        lx,
+                                        h - 1 + config.abs_terrain_offset,
+                                        lz,
+                                        Some(&[AIR]),
+                                        None,
+                                    );
+                                }
+                            }
+                        } else if let Some(button) = style.stud_button() {
+                            // Button studs on the band front at the window edges.
+                            let centre = bx + bz + if col == 0 { 1 } else { -1 };
+                            let stud_roll = coord_rng(
+                                centre,
+                                centre.wrapping_add(h),
+                                config.element_id ^ 0x0000_B417_0000_0004,
+                            )
+                            .random_range(0u32..100);
+                            if stud_roll < 8 {
+                                editor.set_block_with_properties_absolute(
+                                    make_prop_block(
+                                        button,
+                                        &[("face", "wall"), ("facing", facing)],
+                                    ),
+                                    bx + 2 * out_nx,
+                                    h + config.abs_terrain_offset,
+                                    bz + 2 * out_nz,
+                                    Some(&[AIR]),
+                                    None,
+                                );
+                            }
+                        }
+                    }
+
+                    // Hanging lantern under a band, beside the window top; one side per window.
+                    if col != 1 {
+                        if let Some(lantern) = style.hanging_lantern() {
+                            for h in (config.start_y_offset + 3)..=(top_h - 2) {
+                                if config.floor_row(h) != 3 {
+                                    continue;
+                                }
+                                let centre = bx + bz + if col == 0 { 1 } else { -1 };
+                                let roll = coord_rng(
+                                    centre,
+                                    centre.wrapping_add(h),
+                                    config.element_id ^ 0x0000_7A96_0000_0005,
+                                )
+                                .random_range(0u32..100);
+                                if roll < 12 && (roll % 2 == 0) == (col == 0) {
+                                    editor.set_block_with_properties_absolute(
+                                        make_prop_block(lantern, &[("hanging", "true")]),
+                                        lx,
+                                        h + config.abs_terrain_offset,
+                                        lz,
+                                        Some(&[AIR]),
+                                        None,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } else if col == 3 || col == 5 {
+                    // Flank treatment on window rows: posts or shutters.
+                    for h in (config.start_y_offset + 2)..=(top_h - 1) {
+                        if config.floor_row(h) == 0 {
+                            continue;
+                        }
+                        let abs_y = h + config.abs_terrain_offset;
+                        if let Some(post) = post_block {
+                            editor.set_block_absolute(post, lx, abs_y, lz, Some(&[AIR]), None);
+                        } else if let Some(ref trapdoor) = shutter {
+                            editor.set_block_with_properties_absolute(
+                                trapdoor.clone(),
+                                lx,
+                                abs_y,
+                                lz,
+                                Some(&[AIR]),
+                                None,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        previous_node = Some((x2, z2));
+    }
+}
+
+
 /// Horizontal string courses + a crown cornice on plain and subtle-pilaster facades (the
 /// large residential/office majority), so their walls read as layered floor-by-floor stone
 /// banding instead of flat verticals. Ornate/religious/skyscraper styles already band
@@ -3153,6 +3539,10 @@ fn generate_facade_cornices(
         config.wall_depth_style,
         WallDepthStyle::SubtlePilasters | WallDepthStyle::None
     ) {
+        return;
+    }
+    // Buildings with a coherent window frame already get their own banding.
+    if config.window_frame.is_some() {
         return;
     }
     if config.condition != BuildingCondition::Normal
@@ -4536,6 +4926,11 @@ pub fn generate_buildings(
             && condition == BuildingCondition::Normal
             && min_level_offset == 0
             && element_rng(group_seed ^ 0x5709_EF90_0000_0002).random_bool(0.60),
+        window_frame: (has_windows
+            && condition == BuildingCondition::Normal
+            && !is_tall_building)
+            .then(|| pick_window_frame(category, element.id))
+            .flatten(),
     };
 
     // Passages only apply to ground-level buildings. Elevated building:part
@@ -4602,9 +4997,11 @@ pub fn generate_buildings(
     }
 
     // Add corner quoins (accent-block columns at building corners) + facade string courses
+    // + coherent window frames (mutually exclusive with the cornices, see below).
     if !element.tags.contains_key("building:part") {
         generate_corner_quoins(editor, element, &config, effective_passages);
         generate_facade_cornices(editor, element, &config, has_sloped_roof, effective_passages);
+        generate_window_frames(editor, element, &config, effective_passages);
     }
 
     // Create roof area = floor area + wall outline (so roof covers the walls too)
