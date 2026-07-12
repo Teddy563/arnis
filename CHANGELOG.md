@@ -10,6 +10,30 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.1] - 2026-07-12
+
+Parity-completion release: closes the remaining gaps against upstream 3.0.0 that the 3.0.0 release still lacked, with a heavy focus on **building facades**. Every change was audited for cross-tile seam-safety (the fork's #1 invariant) by an adversarial review pass before shipping.
+
+### Added
+
+- **Skyscraper facade taxonomy + OSM StyleHint.** True skyscrapers now render in six distinct facades (glass curtain, glass-with-concrete-corner-pillars, glass-in-concrete-grid, contemporary concrete frame, horizontal-band modern, and stone/art-deco masonry) instead of two. A tag classifier reads `building:material` / `facade:material`, `roof:material=glass`, `historic` / `heritage` / `ref:nrhp` / `listed_status`, masonry & concrete material and cladding lists, `building:architecture`, and `start_date`/`construction_date` (pre-1945 = masonry) to pin a tower's style, and that style is propagated across all parts of a multi-part (S3DB) building so untagged parts match.
+- **Facade detailing.** A darker stone **base course / plinth** on normal buildings; **full-glass storefront bays** across commercial/hotel ground floors; **string courses + a crown cornice** on plain/pilaster facades; and coherent per-building **window frames** (bands, posts, hanging lanterns, French-balcony rails, stud studs) on commercial/hotel/historic buildings. A per-building **window-phase** offsets each building's window rhythm so blocks of buildings no longer share one citywide window grid.
+- **Climate-aware water biomes** (warm / lukewarm / cold / frozen oceans with deep variants, frozen rivers) and tropical `sparse_jungle` shrubland.
+- **`aeroway=helipad` pads** (light-gray pad, white ring, painted "H") for both way and node helipads, replacing the wrong linear-strip rendering.
+- **Street trees on paving.** Deliberately-mapped `natural=tree` nodes may now stand on plazas and sidewalks instead of silently vanishing.
+- Bundled the **Starbase Pad 2 Starship** landmark easter egg (was present but unwired), `landuse=farmyard` surfaces, and straight (non-ground-hugging) power-line spans.
+
+### Fixed
+
+- **Stream-to-disk corruption guard.** Sign / entity / chest writers now bail on an already-flushed region like the block writer does, so large exports can no longer resurrect a stale region and truncate saved chunk data.
+- **CLI spawn-Y.** The post-generation spawn-Y correction targets the actual world folder, so nested/desktop-output worlds get a correct spawn height.
+- **Farmland irrigation** water is placed only where it sits in a basin, so it no longer runs downhill and washes out crops on sloped fields.
+- **Helipad seam.** The pad renderer's aggregate rooftop-skip and the parked-helicopter prop (both keyed on cell-local state) were removed after the seam audit flagged them; the tile-invariant pad/ring/"H" remain.
+
+### Notes
+
+- Deferred to a follow-up (needs in-game verification): trees skipping bridge decks and canopy draping over low roofs, and the parked helicopter (which needs a seam-safe region-ownership guard). The fork's residential window decorator is kept for houses; window frames apply only to the building types it does not cover, so the two never double-decorate.
+
 ## [3.0.0] - 2026-07-12
 
 Upstream parity release: brings the fork level with **louis-e/arnis 3.0.0** while keeping every Meld differentiator (tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid). Every upstream feature below was ported faithfully and audited for cross-tile seam-safety before merging — the fork's #1 invariant is that independently generated cells merge into one seamless world.
