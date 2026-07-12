@@ -1126,6 +1126,8 @@ struct BuildingConfig {
     /// line their window columns up at the same world parity. 0 for building:part elements
     /// so the parts of one building stay aligned.
     window_phase: i32,
+    /// Commercial/hotel ground floors get wider full-glass storefront bays.
+    has_storefront: bool,
 }
 
 impl BuildingConfig {
@@ -2416,17 +2418,27 @@ fn determine_wall_block_at_position_pristine(
         }
     } else {
         // Regular building pattern
-        let is_window_position =
-            above_floor && floor_row != 0 && (bx + bz + config.window_phase).rem_euclid(6) < 3;
+        let window_col = (bx + bz + config.window_phase).rem_euclid(6);
+
+        // Storefront glazing: wider full-glass bays across the whole ground floor of shops
+        // and hotels (window_col < 4 is one column wider than the normal < 3 window strip).
+        if config.has_storefront
+            && above_floor
+            && h <= config.start_y_offset + 5
+            && floor_row != 0
+            && window_col < 4
+        {
+            return GLASS;
+        }
+
+        let is_window_position = above_floor && floor_row != 0 && window_col < 3;
 
         if is_window_position {
             config.window_block
         } else {
             let use_accent_line = config.use_accent_lines && above_floor && floor_row == 0;
-            let use_vertical_accent_here = config.use_vertical_accent
-                && above_floor
-                && floor_row == 0
-                && (bx + bz + config.window_phase).rem_euclid(6) < 3;
+            let use_vertical_accent_here =
+                config.use_vertical_accent && above_floor && floor_row == 0 && window_col < 3;
 
             if use_accent_line || use_vertical_accent_here {
                 config.accent_block
@@ -4280,6 +4292,13 @@ pub fn generate_buildings(
         } else {
             element_rng(element.id ^ 0x77D0_A3E1_9B1C_5544).random_range(0..6)
         },
+        has_storefront: matches!(
+            category,
+            BuildingCategory::Commercial | BuildingCategory::Hotel
+        ) && has_windows
+            && condition == BuildingCondition::Normal
+            && min_level_offset == 0
+            && element_rng(group_seed ^ 0x5709_EF90_0000_0002).random_bool(0.60),
     };
 
     // Passages only apply to ground-level buildings. Elevated building:part
