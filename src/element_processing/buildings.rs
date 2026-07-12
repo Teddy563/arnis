@@ -6781,6 +6781,17 @@ pub fn generate_building_from_relation(
         return;
     }
 
+    // Landmark easter egg: a Starship parked on the Starbase Pad 2 launch mount when that
+    // specific real-world relation is in the bbox. Prop-gated inside place_on_launch_mount;
+    // keyed on a hardcoded absolute OSM way id + that way's world geometry, so seam-safe.
+    for member in &relation.members {
+        if member.way.id == crate::structures::starship::STARBASE_PAD2_INNER_RING_WAY
+            && member.role == ProcessedMemberRole::Inner
+        {
+            crate::structures::starship::place_on_launch_mount(editor, &member.way);
+        }
+    }
+
     // Extract levels from relation tags
     let relation_levels = relation
         .tags

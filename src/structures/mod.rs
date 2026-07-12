@@ -10,7 +10,6 @@ pub mod helicopter;
 pub mod lighthouse;
 pub mod playground;
 pub mod schematic;
-#[allow(dead_code)] // TODO: wire dispatch (needs helipad / easter-egg feature)
 pub mod starship;
 pub mod tombstone;
 pub mod tractor;
