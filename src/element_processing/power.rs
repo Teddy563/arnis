@@ -369,37 +369,33 @@ fn generate_power_line(editor: &mut WorldEditor, way: &ProcessedWay) {
             CHAIN_Z // Line runs primarily along Z-axis
         };
 
-        // Generate points along the line using Bresenham
+        // Absolute wire height at each pole, so the span hangs straight between them
+        // instead of dipping to follow the ground under it (upstream 6ecf1a9). Both are
+        // world-absolute (node positions + ground levels), so adjacent cells match at seams.
+        let start_y = editor.get_ground_level(start.x, start.z) + base_height;
+        let end_y = editor.get_ground_level(end.x, end.z) + base_height;
+
         let line_points = bresenham_line(start.x, 0, start.z, end.x, 0, end.z);
-
+        let denom = (line_points.len().saturating_sub(1)).max(1) as f64;
         for (idx, (lx, _, lz)) in line_points.iter().enumerate() {
-            // Calculate position along the span (0.0 to 1.0)
-            // Use len-1 as denominator so last point reaches t=1.0
-            let denom = (line_points.len().saturating_sub(1)).max(1) as f64;
             let t = idx as f64 / denom;
-
-            // Catenary approximation: sag is maximum at center, zero at ends
-            // Using parabola: sag = 4 * max_sag * t * (1 - t)
+            // Parabolic sag off the straight line between the two poles.
             let sag = (4.0 * max_sag as f64 * t * (1.0 - t)) as i32;
-
-            // Ensure wire doesn't go underground (minimum height of 3 blocks above ground)
-            let wire_y = (base_height - sag).max(3);
+            let line_y = (start_y as f64 + (end_y - start_y) as f64 * t).round() as i32;
+            let wire_y = (line_y - sag).max(editor.get_ground_level(*lx, *lz) + 3);
 
             // Place the wire block (chain aligned with line direction)
-            editor.set_block(chain_block, *lx, wire_y, *lz, None, None);
+            editor.set_block_absolute(chain_block, *lx, wire_y, *lz, None, None);
 
             // For high voltage lines, add parallel wires offset to sides
             if base_height >= 18 {
-                // Three-phase power: 3 parallel lines
-                // Offset perpendicular to the line direction
+                // Three-phase power: 3 parallel lines, offset perpendicular to the line.
                 if dx.abs() >= dz.abs() {
-                    // Line runs along X, offset in Z
-                    editor.set_block(chain_block, *lx, wire_y, *lz + 1, None, None);
-                    editor.set_block(chain_block, *lx, wire_y, *lz - 1, None, None);
+                    editor.set_block_absolute(chain_block, *lx, wire_y, *lz + 1, None, None);
+                    editor.set_block_absolute(chain_block, *lx, wire_y, *lz - 1, None, None);
                 } else {
-                    // Line runs along Z, offset in X
-                    editor.set_block(chain_block, *lx + 1, wire_y, *lz, None, None);
-                    editor.set_block(chain_block, *lx - 1, wire_y, *lz, None, None);
+                    editor.set_block_absolute(chain_block, *lx + 1, wire_y, *lz, None, None);
+                    editor.set_block_absolute(chain_block, *lx - 1, wire_y, *lz, None, None);
                 }
             }
         }
