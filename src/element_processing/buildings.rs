@@ -1120,6 +1120,8 @@ struct BuildingConfig {
     element_id: u64,
     // shared across all parts of one building for coherent roof style
     style_seed: u64,
+    // darker plinth block for the bottom wall rows, None to skip
+    base_course_block: Option<Block>,
 }
 
 impl BuildingConfig {
@@ -1129,6 +1131,26 @@ impl BuildingConfig {
     #[inline]
     fn floor_row(&self, h: i32) -> i32 {
         ((h - self.start_y_offset - 2) % 4 + 4) % 4
+    }
+
+    /// How many darker base-course rows the plinth spans: 2 on taller buildings, else 1.
+    #[inline]
+    fn base_course_rows(&self) -> i32 {
+        if self.building_height >= 12 {
+            2
+        } else {
+            1
+        }
+    }
+}
+
+/// Darker stone family for a building's plinth, chosen from its wall material so the base
+/// course reads as a grounded foundation rather than a colour clash.
+fn base_course_for_wall(wall: Block) -> Block {
+    match wall {
+        OAK_PLANKS | SPRUCE_PLANKS | OAK_LOG | SPRUCE_LOG => COBBLESTONE,
+        ANDESITE | GRAY_CONCRETE | LIGHT_GRAY_CONCRETE => POLISHED_ANDESITE,
+        _ => STONE_BRICKS,
     }
 }
 
@@ -2328,6 +2350,13 @@ fn determine_wall_block_at_position_pristine(
     bz: i32,
     config: &BuildingConfig,
 ) -> Block {
+    // Darker plinth rows ground the building visually against the terrain.
+    if let Some(base) = config.base_course_block {
+        if h <= config.start_y_offset + config.base_course_rows() {
+            return base;
+        }
+    }
+
     let floor_row = config.floor_row(h);
 
     // If windows are disabled, always use wall block (with possible accent)
@@ -4220,6 +4249,25 @@ pub fn generate_buildings(
         element_id: element.id,
         // shared across all parts of one building for coherent roof style
         style_seed: group_seed,
+        base_course_block: {
+            // A darker plinth on normal, windowed buildings, but not on glass towers or
+            // the small utility categories where it looks wrong.
+            let eligible = min_level_offset == 0
+                && has_windows
+                && condition == BuildingCondition::Normal
+                && !matches!(
+                    category,
+                    BuildingCategory::Greenhouse
+                        | BuildingCategory::Shed
+                        | BuildingCategory::Garage
+                        | BuildingCategory::GlassySkyscraper
+                );
+            let base = base_course_for_wall(wall_block);
+            (eligible
+                && base != wall_block
+                && element_rng(group_seed ^ 0xBA5E_C0A2_5E11_0001).random_bool(0.70))
+            .then_some(base)
+        },
     };
 
     // Passages only apply to ground-level buildings. Elevated building:part
