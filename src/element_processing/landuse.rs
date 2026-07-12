@@ -209,7 +209,7 @@ pub fn generate_landuse(
                     let tree_type = *trees_ok_to_generate
                         .choose(&mut *rng)
                         .unwrap_or(&TreeType::Oak);
-                    Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints));
+                    Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints), false);
                 } else {
                     let random_choice: i32 = rng.random_range(0..30);
                     if random_choice == 2 {

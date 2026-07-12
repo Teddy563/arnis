@@ -509,7 +509,8 @@ impl Tree {
             _ => unreachable!(),
         };
 
-        Self::create_of_type(editor, (x, y, z), tree_type, building_footprints);
+        // Scattered/random trees never stand on paving.
+        Self::create_of_type(editor, (x, y, z), tree_type, building_footprints, false);
     }
 
     /// Creates a tree of a specific type at the specified coordinates.
@@ -518,6 +519,7 @@ impl Tree {
         (x, y, z): Coord,
         tree_type: TreeType,
         building_footprints: Option<&BuildingFootprintBitmap>,
+        allow_on_paved: bool,
     ) {
         if let Some(footprints) = building_footprints {
             if footprints.contains(x, z) {
@@ -532,12 +534,13 @@ impl Tree {
             return;
         }
 
-        // Skip road/path/water surfaces.
-        if editor.check_for_block(
-            x,
-            0,
-            z,
-            Some(&[
+        // Water is always off-limits; road/path/paved surfaces are allowed only for deliberately
+        // mapped street trees (allow_on_paved), which are tagged on top of plazas and sidewalks.
+        // Scattered trees (forests, parks, land cover) keep skipping paving.
+        let forbidden_ground: &[Block] = if allow_on_paved {
+            &[WATER]
+        } else {
+            &[
                 BLACK_CONCRETE,
                 GRAY_CONCRETE_POWDER,
                 CYAN_TERRACOTTA,
@@ -546,8 +549,11 @@ impl Tree {
                 DIRT_PATH,
                 SMOOTH_STONE,
                 WATER,
-            ]),
-        ) {
+            ]
+        };
+
+        // Skip road/path/water surfaces.
+        if editor.check_for_block(x, 0, z, Some(forbidden_ground)) {
             return;
         }
 
@@ -585,21 +591,7 @@ impl Tree {
             if let Some((sx, sz, idx, rot)) = region.pick_slot(x, z, hint, elev_y) {
                 // The slot can be several blocks from (x,z); re-check it isn't on a road/water cell.
                 if in_water_mask(sx, sz)
-                    || editor.check_for_block(
-                        sx,
-                        0,
-                        sz,
-                        Some(&[
-                            BLACK_CONCRETE,
-                            GRAY_CONCRETE_POWDER,
-                            CYAN_TERRACOTTA,
-                            GRAY_CONCRETE,
-                            LIGHT_GRAY_CONCRETE,
-                            DIRT_PATH,
-                            SMOOTH_STONE,
-                            WATER,
-                        ]),
-                    )
+                    || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
                 {
                     return;
                 }
@@ -648,21 +640,7 @@ impl Tree {
             // The slot can be up to ~2 blocks from (x,z); re-check it is not on a road/water
             // surface (the top-of-function check ran at the un-snapped point).
             if in_water_mask(sx, sz)
-                || editor.check_for_block(
-                    sx,
-                    0,
-                    sz,
-                    Some(&[
-                        BLACK_CONCRETE,
-                        GRAY_CONCRETE_POWDER,
-                        CYAN_TERRACOTTA,
-                        GRAY_CONCRETE,
-                        LIGHT_GRAY_CONCRETE,
-                        DIRT_PATH,
-                        SMOOTH_STONE,
-                        WATER,
-                    ]),
-                )
+                || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
             {
                 return;
             }

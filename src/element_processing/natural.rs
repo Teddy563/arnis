@@ -87,7 +87,8 @@ pub fn generate_natural(
                     .choose(&mut rng)
                     .unwrap_or(&TreeType::Oak);
 
-                Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints));
+                // Deliberately-mapped natural=tree node: a street tree that may stand on paving.
+                Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints), true);
             }
         } else {
             let mut previous_node: Option<(i32, i32)> = None;
@@ -367,6 +368,7 @@ pub fn generate_natural(
                                     (x, 1, z),
                                     tree_type,
                                     Some(building_footprints),
+                                    false,
                                 );
                             } else if random_choice == 1 {
                                 let flower_block = match r.random_range(1..=4) {
@@ -578,6 +580,7 @@ pub fn generate_natural(
                                                 (x, 1, z),
                                                 tree_type,
                                                 Some(building_footprints),
+                                                false,
                                             );
                                         } else if r < 15 {
                                             // dropped from <35 → <15 (was over-grassy)
