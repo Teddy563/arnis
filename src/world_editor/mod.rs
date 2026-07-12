@@ -801,6 +801,15 @@ impl<'a> WorldEditor<'a> {
         self.insert_block_entity(x, z, be);
     }
 
+    /// True if the region containing world-block (x, z) has already been flushed to disk
+    /// (stream-to-disk mode). Writing into it would call get_or_create_region and resurrect a
+    /// stale, mostly-empty region, which then truncates the real saved chunk data on the final
+    /// save. Every block-entity / entity writer must bail early, exactly like set_block does.
+    #[inline]
+    fn is_region_flushed(&self, x: i32, z: i32) -> bool {
+        !self.flushed_regions.is_empty() && self.flushed_regions.contains(&(x >> 9, z >> 9))
+    }
+
     /// Sets a sign at the given coordinates
     #[allow(clippy::too_many_arguments, dead_code)]
     pub fn set_sign(
@@ -814,6 +823,9 @@ impl<'a> WorldEditor<'a> {
         z: i32,
         _rotation: i8,
     ) {
+        if self.is_region_flushed(x, z) {
+            return;
+        }
         let absolute_y = self.get_absolute_y(x, y, z);
         let chunk_x = x >> 4;
         let chunk_z = z >> 4;
@@ -872,7 +884,7 @@ impl<'a> WorldEditor<'a> {
         z: i32,
         extra_data: Option<HashMap<String, Value>>,
     ) {
-        if !self.xzbbox.contains(&XZPoint::new(x, z)) {
+        if !self.xzbbox.contains(&XZPoint::new(x, z)) || self.is_region_flushed(x, z) {
             return;
         }
 
@@ -958,7 +970,7 @@ impl<'a> WorldEditor<'a> {
         z: i32,
         items: Vec<HashMap<String, Value>>,
     ) {
-        if !self.xzbbox.contains(&XZPoint::new(x, z)) {
+        if !self.xzbbox.contains(&XZPoint::new(x, z)) || self.is_region_flushed(x, z) {
             return;
         }
 
@@ -1031,7 +1043,7 @@ impl<'a> WorldEditor<'a> {
         block_entity_id: &str,
         items: Vec<HashMap<String, Value>>,
     ) {
-        if !self.xzbbox.contains(&XZPoint::new(x, z)) {
+        if !self.xzbbox.contains(&XZPoint::new(x, z)) || self.is_region_flushed(x, z) {
             return;
         }
 
