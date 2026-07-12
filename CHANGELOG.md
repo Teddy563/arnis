@@ -10,58 +10,33 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [3.0.1] - 2026-07-12
+## [3.1.0] - 2026-07-12
 
-Parity-completion release: closes the remaining gaps against upstream 3.0.0 that the 3.0.0 release still lacked, with a heavy focus on **building facades**. Every change was audited for cross-tile seam-safety (the fork's #1 invariant) by an adversarial review pass before shipping.
+Upstream parity release: brings the fork to feature parity with **louis-e/arnis 3.0.0** (plus fork-only fixes upstream does not have), while keeping every Meld differentiator: tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid. Every feature below was ported faithfully and audited for cross-tile seam-safety by an adversarial review pass before shipping; the fork's #1 invariant is that independently generated cells merge into one seamless world.
 
 ### Added
 
-- **Skyscraper facade taxonomy + OSM StyleHint.** True skyscrapers now render in six distinct facades (glass curtain, glass-with-concrete-corner-pillars, glass-in-concrete-grid, contemporary concrete frame, horizontal-band modern, and stone/art-deco masonry) instead of two. A tag classifier reads `building:material` / `facade:material`, `roof:material=glass`, `historic` / `heritage` / `ref:nrhp` / `listed_status`, masonry & concrete material and cladding lists, `building:architecture`, and `start_date`/`construction_date` (pre-1945 = masonry) to pin a tower's style, and that style is propagated across all parts of a multi-part (S3DB) building so untagged parts match.
-- **Facade detailing.** A darker stone **base course / plinth** on normal buildings; **full-glass storefront bays** across commercial/hotel ground floors; **string courses + a crown cornice** on plain/pilaster facades; and coherent per-building **window frames** (bands, posts, hanging lanterns, French-balcony rails, stud studs) on commercial/hotel/historic buildings. A per-building **window-phase** offsets each building's window rhythm so blocks of buildings no longer share one citywide window grid.
-- **Climate-aware water biomes** (warm / lukewarm / cold / frozen oceans with deep variants, frozen rivers) and tropical `sparse_jungle` shrubland.
-- **`aeroway=helipad` pads** (light-gray pad, white ring, painted "H") for both way and node helipads, replacing the wrong linear-strip rendering.
-- **Street trees on paving.** Deliberately-mapped `natural=tree` nodes may now stand on plazas and sidewalks instead of silently vanishing.
-- Bundled the **Starbase Pad 2 Starship** landmark easter egg (was present but unwired), `landuse=farmyard` surfaces, and straight (non-ground-hugging) power-line spans.
+- **New CLI commands and flags.** `--props all|none|<list>` (bundled 3D props per family), `--loot-table <json>` / `--dump-loot-table` (configurable chest loot), `--gamemode survival|creative|spectator`, `--world-time <ticks>`, `--map-item` (locked world map in the player inventory), and `--map-item-only` (add the map to an existing merged world in one post-pass, the Meld path).
+- **Bundled 3D props at real OSM features.** Boats on open water, parked cars in car parks, cranes and excavators on construction sites, tractors on farmland, wind turbines at wind generators, lighthouses, fountains, playgrounds, cemetery tombstones, and the Starbase Pad 2 Starship landmark easter egg. Per-family toggle; omitting the flag keeps every family on.
+- **Skyscraper facade taxonomy + OSM StyleHint.** True skyscrapers render in six distinct facades (glass curtain, glass with concrete corner pillars, glass in a concrete grid, contemporary concrete frame, horizontal-band modern, and stone/art-deco masonry) instead of two. A tag classifier reads `building:material` / `facade:material`, `roof:material=glass`, `historic` / `heritage` / `ref:nrhp` / `listed_status`, masonry and concrete material and cladding lists, `building:architecture`, and `start_date` (pre-1945 = masonry) to pin a tower's style, propagated across all parts of a multi-part (S3DB) building so untagged parts match.
+- **Facade detailing.** A darker stone base course / plinth on normal buildings; full-glass storefront bays across commercial and hotel ground floors; string courses and a crown cornice on plain facades; coherent per-building window frames (bands, posts, hanging lanterns, French-balcony rails, stud buttons) on commercial, hotel and historic buildings; and a per-building window phase so blocks of buildings no longer share one citywide window grid.
+- **S3DB multi-part buildings.** Outlines are suppressed only when their `building:part` members actually cover at least half of them, plus a spatial pass for relation-less S3DB; all parts of one building share a style seed so colour and roof stay coherent.
+- **Furnished interiors, sport pitch markings, world settings.** Interior furniture with real beds, `leisure=pitch` line markings, and game mode / time of day written into `level.dat`.
+- **Climate.** Koppen-driven biomes by real-world climate, plus climate-aware water: warm / lukewarm / cold / frozen oceans (with deep variants offshore), frozen rivers in polar and boreal regions, and tropical `sparse_jungle` shrubland.
+- **Infrastructure.** Covered highway tunnels, street lamps along lit ways, electrified railway catenary, modular bridge deck schematics (flat low-detail bridges preserved), more OSM surface materials, `amenity=bicycle_parking` surfaces, `landuse=farmyard`, `aeroway=helipad` pads (light-gray pad, white ring, painted "H") for way and node helipads, and power line spans that hang straight between poles instead of hugging the terrain.
+- **Trees.** Deliberately-mapped street trees may stand on plazas and sidewalks; trees no longer grow up through bridge decks; a canopy drapes over an adjacent low roof instead of being sliced flat at the building edge.
+- **Mapterhorn global elevation** (default). Global terrarium tiles (GLO-30 floor, national LiDAR to z18) with pyramid-parent hole-proofing that structurally eliminates the broken-tile cliff artifacts of the legacy AWS source. Regional high-res providers (USGS, IGN France/Spain, Japan GSI) still win in their coverage; legacy AWS stays available via `--aws-only-elevation`, and a fork-only offline gate makes Mapterhorn honour `--offline`.
 
 ### Fixed
 
-- **Stream-to-disk corruption guard.** Sign / entity / chest writers now bail on an already-flushed region like the block writer does, so large exports can no longer resurrect a stale region and truncate saved chunk data.
-- **CLI spawn-Y.** The post-generation spawn-Y correction targets the actual world folder, so nested/desktop-output worlds get a correct spawn height.
+- **Stream-to-disk corruption guard.** Sign, entity and chest writers now bail on an already-flushed region like the block writer does, so large exports can no longer resurrect a stale region and truncate saved chunk data.
+- **CLI spawn-Y.** The post-generation spawn-Y correction targets the actual world folder, so nested and desktop-output worlds get a correct spawn height.
 - **Farmland irrigation** water is placed only where it sits in a basin, so it no longer runs downhill and washes out crops on sloped fields.
-- **Helipad seam.** The pad renderer's aggregate rooftop-skip and the parked-helicopter prop (both keyed on cell-local state) were removed after the seam audit flagged them; the tile-invariant pad/ring/"H" remain.
+- **Helipad seam.** The pad renderer's aggregate rooftop-skip and the parked-helicopter prop (both keyed on cell-local state) were removed after the seam audit flagged them; the tile-invariant pad, ring and "H" remain.
 
 ### Notes
 
-- Late addition (same release): **trees no longer grow up through bridge decks**, and a tree canopy now **drapes over an adjacent low roof** instead of being sliced flat at the building edge (per-column roof-height sampling). Only the parked helicopter remains deferred: it needs a seam-safe region-ownership guard before it can be placed. The fork's residential window decorator is kept for houses; window frames apply only to the building types it does not cover, so the two never double-decorate.
-
-## [3.0.0] - 2026-07-12
-
-Upstream parity release: brings the fork level with **louis-e/arnis 3.0.0** while keeping every Meld differentiator (tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid). Every upstream feature below was ported faithfully and audited for cross-tile seam-safety before merging — the fork's #1 invariant is that independently generated cells merge into one seamless world.
-
-### Added
-
-- **Bundled 3D props at real OSM features** (`--props all|none|<list>`). Sponge `.schem` props stamped where they belong: boats on open water, parked cars in car parks, cranes and excavators on construction sites, tractors on farmland, wind turbines at `power=generator source=wind`, lighthouses on `man_made` towers, plus fountains, playgrounds, and cemetery tombstones replacing the older procedural versions. Per-family toggle; omitting the flag keeps every family on (byte-identical default).
-- **Configurable chest loot** (`--loot-table <json>`, `--dump-loot-table`). Interior chests roll a deterministic, coord-seeded loot table; the default reproduces upstream's themed tables, and Meld ships a visual sprite-backed editor with 56 vanilla-structure presets.
-- **Sport pitch markings.** `leisure=pitch` surfaces get sport-specific line markings.
-- **World settings** (`--gamemode survival|creative|spectator`, `--world-time <ticks>`) written into the generated `level.dat`.
-- **Climate / Köppen biomes.** ESA-derived Köppen map selects biomes by real-world climate (arid, polar, tropical …); temperate output stays byte-identical to before.
-- **Electrified railway catenary.** Masts + smoothed overhead wire along `electrified` rails, skipping roads, buildings, and at-grade crossings.
-- **Street lamps** along lit highways (`lit=yes`), interval-spaced, auto-dropped by `--road-detail compact`.
-- **Highway tunnels.** `tunnel=yes` highways carve a proper shell + interior instead of surfacing, with tile-boundary-safe internal endpoints.
-- **Modular bridge schematics.** Wider bridges pick from bundled bridge-segment modules; the fork's flat low-detail bridges are preserved behind the `!low_detail && Beam` gate.
-- **Furnished interiors.** Bedrooms place real `minecraft:bed` block entities (red beds with correct head/foot).
-- **More surface materials** and `amenity=bicycle_parking` surfaces.
-- **World map item** (`--map-item`). Drops a locked filled-map of the whole world into the player's inventory (Java only), rendered straight from the saved regions so it writes zero blocks. New `--map-item-only <existing world>` post-pass adds the map to an already-merged world, deriving its footprint from the region files — this is how Meld gives a single correct map to a multi-cell region.
-- **Mapterhorn global elevation** (default). Global terrarium WebP tiles (GLO-30 floor, national LiDAR to z18) with pyramid-parent hole-proofing that structurally eliminates the broken-no-data-tile cliff artifacts of the legacy AWS source. Regional high-res providers (USGS, IGN France/Spain, Japan GSI) still win in their coverage; legacy AWS is available via `--aws-only-elevation`. A fork-only offline gate makes Mapterhorn honour `--offline` (cache hit served, cache miss degrades to flat rather than hitting the network).
-
-### Changed
-
-- **S3DB multi-part buildings.** Building outlines are now suppressed only when their `building:part` members actually cover ≥50% of them (coverage-gated), plus a new spatial pass catches relation-less S3DB outlines. All parts of one building share a style seed, so colour and roof style stay coherent across parts. Seam-safe: the seed and suppression key only on world-absolute OSM ids.
-- **Default elevation source is now Mapterhorn** rather than the legacy AWS fallback; AWS remains the hard fetch-time fallback and the `--aws-only-elevation` escape. `--regional-elevation-only` now falls through to Mapterhorn (never the broken AWS tiles) for areas no regional provider covers.
-
-### Notes
-
-- Fork differentiators preserved through every merge: tile-invariant rendering, `--road-detail`, `--caves`, the water/shore work, `--offline`, and the seam-safe master-origin elevation grid (`compute_grid_dims` unchanged).
+- Only the parked helicopter prop remains deferred: it needs a seam-safe region-ownership guard before it can be placed. The fork's residential window decorator is kept for houses; window frames apply only to the building types it does not cover, so the two never double-decorate.
 - Block ids that collide with upstream were assigned at the fork's next-free ids rather than adopting upstream's palette wholesale, so existing fork worlds and assets are unaffected.
 
 ## [2.9.3] - 2026-07-04
