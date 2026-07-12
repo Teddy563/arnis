@@ -2,8 +2,8 @@ use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
-use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::tree::Tree;
 use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
@@ -142,7 +142,12 @@ pub fn generate_leisure(
                         }
                         105..120 => {
                             // Tree
-                            Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                            Tree::create(
+                                editor,
+                                (x, 1, z),
+                                Some(building_footprints),
+                                Some(bridge_surface),
+                            );
                         }
                         _ => {}
                     }

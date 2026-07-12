@@ -339,7 +339,13 @@ pub fn generate_highways(
             if args.road_detail == "none" {
                 return;
             }
-            generate_highway_tunnel_shell(editor, way, args, tunnel_internal_endpoints, tunnel_cells);
+            generate_highway_tunnel_shell(
+                editor,
+                way,
+                args,
+                tunnel_internal_endpoints,
+                tunnel_cells,
+            );
             return;
         }
     }
@@ -394,7 +400,6 @@ pub fn build_highway_connectivity_map(elements: &[ProcessedElement]) -> HighwayC
 
     connectivity_map
 }
-
 
 // ---- Highway tunnels ----
 
@@ -2674,7 +2679,12 @@ mod tests {
         let xzbbox = XZBBox::rect_from_xz_lengths(400.0, 100.0).unwrap();
         let mut editor = test_editor(&xzbbox);
 
-        generate_aeroway(&mut editor, &straight_aeroway("runway"), &args, &CoordinateBitmap::new_empty());
+        generate_aeroway(
+            &mut editor,
+            &straight_aeroway("runway"),
+            &args,
+            &CoordinateBitmap::new_empty(),
+        );
 
         // Centerline at the way start (s=0, dash on) is white; a dash-gap cell stays gray.
         assert!(
@@ -2707,7 +2717,12 @@ mod tests {
         let xzbbox = XZBBox::rect_from_xz_lengths(400.0, 100.0).unwrap();
         let mut editor = test_editor(&xzbbox);
 
-        generate_aeroway(&mut editor, &straight_aeroway("taxiway"), &args, &CoordinateBitmap::new_empty());
+        generate_aeroway(
+            &mut editor,
+            &straight_aeroway("taxiway"),
+            &args,
+            &CoordinateBitmap::new_empty(),
+        );
 
         assert!(
             editor.check_for_block(10, 0, 50, Some(&[YELLOW_CONCRETE])),
@@ -2775,7 +2790,12 @@ mod tests {
             unclipped_polygon_area: None,
         };
         generate_aeroway(&mut editor, &taxiway, &args, &CoordinateBitmap::new_empty());
-        generate_aeroway(&mut editor, &straight_aeroway("runway"), &args, &CoordinateBitmap::new_empty());
+        generate_aeroway(
+            &mut editor,
+            &straight_aeroway("runway"),
+            &args,
+            &CoordinateBitmap::new_empty(),
+        );
 
         // The crossing cell belongs to the runway, not the taxiway.
         assert!(

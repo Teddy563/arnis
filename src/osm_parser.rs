@@ -680,7 +680,10 @@ mod style_hint_tests {
         );
         // Glass wins over a historic tag; `no` on historic is an explicit negation.
         assert_eq!(
-            building_style_hint(&tags(&[("historic", "yes"), ("building:material", "glass")])),
+            building_style_hint(&tags(&[
+                ("historic", "yes"),
+                ("building:material", "glass")
+            ])),
             StyleHint::Glass
         );
         assert_eq!(
@@ -748,7 +751,12 @@ pub fn parse_osm_data(
     master_origin_lat: Option<f64>,
     master_origin_lng: Option<f64>,
     tile_invariant_rendering: Option<u64>,
-) -> (Vec<ProcessedElement>, XZBBox, OutlineSuppression, PartGroups) {
+) -> (
+    Vec<ProcessedElement>,
+    XZBBox,
+    OutlineSuppression,
+    PartGroups,
+) {
     println!("{} Parsing data...", "[2/7]".bold());
     println!("Bounding box: {bbox:?}");
     emit_gui_progress_update(5.0, "Parsing data...");

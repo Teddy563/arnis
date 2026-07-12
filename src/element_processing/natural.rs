@@ -90,7 +90,14 @@ pub fn generate_natural(
                     .unwrap_or(&TreeType::Oak);
 
                 // Deliberately-mapped natural=tree node: a street tree that may stand on paving.
-                Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints), Some(bridge_surface), true);
+                Tree::create_of_type(
+                    editor,
+                    (x, 1, z),
+                    tree_type,
+                    Some(building_footprints),
+                    Some(bridge_surface),
+                    true,
+                );
             }
         } else {
             let mut previous_node: Option<(i32, i32)> = None;
@@ -318,7 +325,12 @@ pub fn generate_natural(
                             }
                             let random_choice = rng.random_range(0..500);
                             if random_choice == 0 {
-                                Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                                Tree::create(
+                                    editor,
+                                    (x, 1, z),
+                                    Some(building_footprints),
+                                    Some(bridge_surface),
+                                );
                             } else if random_choice == 1 {
                                 let flower_block = match rng.random_range(1..=4) {
                                     1 => RED_FLOWER,
@@ -903,7 +915,12 @@ pub fn generate_natural(
                             let hill_chance = rng.random_range(0..1000);
                             if hill_chance == 0 {
                                 // 0.1% chance for rare trees
-                                Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                                Tree::create(
+                                    editor,
+                                    (x, 1, z),
+                                    Some(building_footprints),
+                                    Some(bridge_surface),
+                                );
                             } else if hill_chance < 50 {
                                 // 5% chance for flowers
                                 let flower_block = match rng.random_range(1..=4) {

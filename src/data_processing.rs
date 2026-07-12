@@ -694,7 +694,10 @@ pub fn generate_world_with_options(
                     // so carve in-tile now, after ground/fill so the interior isn't refilled.
                     if eviction_active {
                         railways::carve_subway_interior(&mut tile_editor, &tile_subway_points);
-                        highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
+                        highways::carve_highway_tunnel_interior(
+                            &mut tile_editor,
+                            &tile_tunnel_cells,
+                        );
                     }
                     // Seal floating water/lava LAST (after the water-depth carve, veg sweep, and the
                     // in-tile subway carve all of which can undercut a water body over a cave). Under

@@ -29,7 +29,9 @@ pub fn bboxes_overlap(a: &LLBBox, b: &LLBBox) -> bool {
 /// `--aws-only-elevation` CLI flag / "Legacy elevation (AWS only)" GUI toggle.
 pub fn select_provider(bbox: &LLBBox, force_aws: bool) -> Box<dyn ElevationProvider> {
     if force_aws {
-        println!("Using AWS Terrain Tiles only (legacy mode, high-res + Mapterhorn disabled, ~30m)");
+        println!(
+            "Using AWS Terrain Tiles only (legacy mode, high-res + Mapterhorn disabled, ~30m)"
+        );
         return Box::new(AwsTerrain);
     }
 

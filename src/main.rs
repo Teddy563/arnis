@@ -408,14 +408,14 @@ fn run_cli() {
     // Parse raw data
     let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
         osm_parser::parse_osm_data(
-        raw_data,
-        args.bbox,
-        args.scale,
-        args.debug,
-        args.master_origin_lat,
-        args.master_origin_lng,
-        args.tile_invariant_rendering,
-    ); /* Option<u64> already */
+            raw_data,
+            args.bbox,
+            args.scale,
+            args.debug,
+            args.master_origin_lat,
+            args.master_origin_lng,
+            args.tile_invariant_rendering,
+        ); /* Option<u64> already */
     bench.mark("parse_osm");
 
     // Fetch supplementary building data from Overture Maps — ONLY when buildings are enabled.

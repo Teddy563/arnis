@@ -191,7 +191,12 @@ pub fn generate_landuse(
                         editor.set_block(RED_FLOWER, x, 1, z, None, None);
                     }
                 } else if random_choice < 33 {
-                    Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                    Tree::create(
+                        editor,
+                        (x, 1, z),
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                    );
                 } else if !is_protected && random_choice < 35 {
                     editor.set_block(OAK_LEAVES, x, 1, z, None, None);
                 } else if !is_protected && random_choice < 37 {
@@ -211,7 +216,14 @@ pub fn generate_landuse(
                     let tree_type = *trees_ok_to_generate
                         .choose(&mut *rng)
                         .unwrap_or(&TreeType::Oak);
-                    Tree::create_of_type(editor, (x, 1, z), tree_type, Some(building_footprints), Some(bridge_surface), false);
+                    Tree::create_of_type(
+                        editor,
+                        (x, 1, z),
+                        tree_type,
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                        false,
+                    );
                 } else {
                     let random_choice: i32 = rng.random_range(0..30);
                     if random_choice == 2 {
@@ -345,7 +357,12 @@ pub fn generate_landuse(
             "meadow" if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) => {
                 let random_choice: i32 = rng.random_range(0..1001);
                 if random_choice < 5 {
-                    Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                    Tree::create(
+                        editor,
+                        (x, 1, z),
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                    );
                 } else if random_choice < 6 {
                     editor.set_block(RED_FLOWER, x, 1, z, None, None);
                 } else if random_choice < 9 {
@@ -361,7 +378,12 @@ pub fn generate_landuse(
             }
             "orchard" => {
                 if x % 18 == 0 && z % 10 == 0 {
-                    Tree::create(editor, (x, 1, z), Some(building_footprints), Some(bridge_surface));
+                    Tree::create(
+                        editor,
+                        (x, 1, z),
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                    );
                 } else if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                     match rng.random_range(0..100) {
                         0 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),

@@ -273,18 +273,18 @@ pub enum BuildingCategory {
     Religious, // Churches, mosques, temples, etc.
 
     // Special types
-    TallBuilding,          // Tall buildings (>7 floors or >28m)
-    GlassySkyscraper,      // Full glass-curtain skyscrapers
-    GlassCornerSkyscraper, // Glass curtain with concrete corner pillars
-    GridSkyscraper,        // Glass panes in a concrete grid
+    TallBuilding,           // Tall buildings (>7 floors or >28m)
+    GlassySkyscraper,       // Full glass-curtain skyscrapers
+    GlassCornerSkyscraper,  // Glass curtain with concrete corner pillars
+    GridSkyscraper,         // Glass panes in a concrete grid
     ContemporarySkyscraper, // Concrete/light-stone piers with wide glass windows
-    ModernSkyscraper,      // Horizontal-window skyscrapers with stone bands
-    MasonrySkyscraper,     // Stone / art-deco towers (historic + masonry-tagged)
-    Historic,         // Castles, ruins, historic buildings
-    Tower,            // man_made=tower or building=tower (stone towers)
-    Garage,           // Garages and carports
-    Shed,             // Sheds, huts, simple storage
-    Greenhouse,       // Greenhouses and glasshouses
+    ModernSkyscraper,       // Horizontal-window skyscrapers with stone bands
+    MasonrySkyscraper,      // Stone / art-deco towers (historic + masonry-tagged)
+    Historic,               // Castles, ruins, historic buildings
+    Tower,                  // man_made=tower or building=tower (stone towers)
+    Garage,                 // Garages and carports
+    Shed,                   // Sheds, huts, simple storage
+    Greenhouse,             // Greenhouses and glasshouses
 
     Default, // Unknown or generic buildings
 }
@@ -3522,7 +3522,6 @@ fn generate_window_frames(
     }
 }
 
-
 /// Horizontal string courses + a crown cornice on plain and subtle-pilaster facades (the
 /// large residential/office majority), so their walls read as layered floor-by-floor stone
 /// banding instead of flat verticals. Ornate/religious/skyscraper styles already band
@@ -4926,9 +4925,7 @@ pub fn generate_buildings(
             && condition == BuildingCondition::Normal
             && min_level_offset == 0
             && element_rng(group_seed ^ 0x5709_EF90_0000_0002).random_bool(0.60),
-        window_frame: (has_windows
-            && condition == BuildingCondition::Normal
-            && !is_tall_building)
+        window_frame: (has_windows && condition == BuildingCondition::Normal && !is_tall_building)
             .then(|| pick_window_frame(category, element.id))
             .flatten(),
     };
@@ -5000,7 +4997,13 @@ pub fn generate_buildings(
     // + coherent window frames (mutually exclusive with the cornices, see below).
     if !element.tags.contains_key("building:part") {
         generate_corner_quoins(editor, element, &config, effective_passages);
-        generate_facade_cornices(editor, element, &config, has_sloped_roof, effective_passages);
+        generate_facade_cornices(
+            editor,
+            element,
+            &config,
+            has_sloped_roof,
+            effective_passages,
+        );
         generate_window_frames(editor, element, &config, effective_passages);
     }
 

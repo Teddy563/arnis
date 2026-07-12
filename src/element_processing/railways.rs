@@ -983,4 +983,3 @@ pub fn collect_at_grade_rail_mask(
     }
     bitmap
 }
-

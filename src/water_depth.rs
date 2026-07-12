@@ -820,7 +820,16 @@ pub fn carve_lc_water_pass(
     let x1 = bwf.min_x + bwf.width as i32 - 1;
     let z1 = bwf.min_z + bwf.height as i32 - 1;
     carve_lc_water_region(
-        editor, ground, xzbbox, bwf, road_mask, tunnel_footprint, bwf.min_x, x1, bwf.min_z, z1,
+        editor,
+        ground,
+        xzbbox,
+        bwf,
+        road_mask,
+        tunnel_footprint,
+        bwf.min_x,
+        x1,
+        bwf.min_z,
+        z1,
     );
 }
 
