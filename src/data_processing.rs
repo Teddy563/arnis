@@ -142,7 +142,7 @@ fn process_element(
             } else if way.tags.contains_key("roller_coaster") {
                 railways::generate_roller_coaster(editor, way);
             } else if way.tags.contains_key("aeroway") || way.tags.contains_key("area:aeroway") {
-                highways::generate_aeroway(editor, way, args);
+                highways::generate_aeroway(editor, way, args, building_footprints);
             } else if way.tags.get("service").map(String::as_str) == Some("siding") {
                 highways::generate_siding(editor, way, bridge_surface);
             } else if args.buildings && way.tags.get("tomb").map(String::as_str) == Some("pyramid")
@@ -169,6 +169,8 @@ fn process_element(
                     flood_fill_cache,
                     building_footprints,
                 );
+            } else if node.tags.get("aeroway").map(String::as_str) == Some("helipad") {
+                highways::generate_helipad_node(editor, node, args, building_footprints);
             } else if args.buildings && node.tags.contains_key("amenity") {
                 // amenity NODES are vertical props (lamps, benches, fountains, shelters) - skip
                 // them with --no-buildings (the user wants a clean roads/ground world, no furniture).
