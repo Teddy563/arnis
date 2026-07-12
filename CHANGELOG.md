@@ -32,7 +32,7 @@ Parity-completion release: closes the remaining gaps against upstream 3.0.0 that
 
 ### Notes
 
-- Deferred to a follow-up (needs in-game verification): trees skipping bridge decks and canopy draping over low roofs, and the parked helicopter (which needs a seam-safe region-ownership guard). The fork's residential window decorator is kept for houses; window frames apply only to the building types it does not cover, so the two never double-decorate.
+- Late addition (same release): **trees no longer grow up through bridge decks**, and a tree canopy now **drapes over an adjacent low roof** instead of being sliced flat at the building edge (per-column roof-height sampling). Only the parked helicopter remains deferred: it needs a seam-safe region-ownership guard before it can be placed. The fork's residential window decorator is kept for houses; window frames apply only to the building types it does not cover, so the two never double-decorate.
 
 ## [3.0.0] - 2026-07-12
 
