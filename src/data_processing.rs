@@ -1016,19 +1016,20 @@ pub fn generate_world_with_options(
             args.bbox.max().lng()
         );
 
-        // Always update spawn Y since we now always set a spawn point (user-selected or default)
-        if let Some(ref world_path) = args.path {
-            if let Err(e) = update_player_spawn_y_after_generation(
-                world_path,
-                bbox_string,
-                args.scale,
-                ground.as_ref(),
-            ) {
-                let warning_msg = format!("Failed to update spawn point Y coordinate: {}", e);
-                eprintln!("Warning: {}", warning_msg);
-                #[cfg(feature = "gui")]
-                send_log(LogLevel::Warning, &warning_msg);
-            }
+        // Always update spawn Y since we now always set a spawn point (user-selected or default).
+        // Use output_path, the actual generated world folder: for CLI/Meld direct --output-dir
+        // runs it equals args.path, but for the GUI (nested "Arnis World N") and Desktop-fallback
+        // paths args.path is the PARENT, so level.dat sits under output_path (upstream 6152f0d).
+        if let Err(e) = update_player_spawn_y_after_generation(
+            &output_path,
+            bbox_string,
+            args.scale,
+            ground.as_ref(),
+        ) {
+            let warning_msg = format!("Failed to update spawn point Y coordinate: {}", e);
+            eprintln!("Warning: {}", warning_msg);
+            #[cfg(feature = "gui")]
+            send_log(LogLevel::Warning, &warning_msg);
         }
     }
 
