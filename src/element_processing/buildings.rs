@@ -1258,6 +1258,13 @@ impl BuildingConfig {
             1
         }
     }
+
+    /// Column within the 6-block window cycle (0..5), including this building's window_phase.
+    /// Columns 0-2 are the window strip, 3-5 the wall between windows.
+    #[inline]
+    fn window_col(&self, bx: i32, bz: i32) -> i32 {
+        (bx + bz + self.window_phase).rem_euclid(6)
+    }
 }
 
 /// Darker stone family for a building's plinth, chosen from its wall material so the base
@@ -3130,6 +3137,94 @@ fn generate_corner_quoins(
 /// Each `WallDepthStyle` produces a distinct visual effect appropriate for
 /// the building's category. All outward placements use an AIR whitelist to
 /// avoid overwriting neighboring buildings or existing decorations.
+/// Horizontal string courses + a crown cornice on plain and subtle-pilaster facades (the
+/// large residential/office majority), so their walls read as layered floor-by-floor stone
+/// banding instead of flat verticals. Ornate/religious/skyscraper styles already band
+/// themselves and are excluded. Seam-safe: the per-building roll uses element_id's own RNG
+/// stream (no shared-stream perturbation) and all placement is world-absolute.
+fn generate_facade_cornices(
+    editor: &mut WorldEditor,
+    element: &ProcessedWay,
+    config: &BuildingConfig,
+    has_sloped_roof: bool,
+    building_passages: &CoordinateBitmap,
+) {
+    if !matches!(
+        config.wall_depth_style,
+        WallDepthStyle::SubtlePilasters | WallDepthStyle::None
+    ) {
+        return;
+    }
+    if config.condition != BuildingCondition::Normal
+        || !config.has_windows
+        || config.building_height < 8
+    {
+        return;
+    }
+    let bounds = BuildingBounds::from_nodes(&element.nodes);
+    if bounds.width() < 4 || bounds.length() < 4 {
+        return;
+    }
+    let (cx, cz) = match compute_building_centroid(&element.nodes) {
+        Some(c) => c,
+        None => return,
+    };
+
+    // 40% string courses, 35% window header trim, 25% plain.
+    let roll: u32 = element_rng(config.element_id ^ 0xC0A2_11CE_0000_77AB).random_range(0..100);
+    let string_courses = roll < 40;
+    let window_trim = (40..75).contains(&roll);
+    if !string_courses && !window_trim {
+        return;
+    }
+
+    let top_h = config.start_y_offset + config.building_height;
+
+    let mut previous_node: Option<(i32, i32)> = None;
+    for node in &element.nodes {
+        let (x2, z2) = (node.x, node.z);
+        if let Some((x1, z1)) = previous_node {
+            let (out_nx, out_nz) = compute_outward_normal(x1, z1, x2, z2, cx, cz);
+            if out_nx == 0 && out_nz == 0 {
+                previous_node = Some((x2, z2));
+                continue;
+            }
+            let facing = facing_for_normal(out_nx, out_nz);
+            let cornice_stair = make_upside_down_stair(config.accent_block, facing);
+
+            let points =
+                bresenham_line(x1, config.start_y_offset, z1, x2, config.start_y_offset, z2);
+            for (bx, _, bz) in &points {
+                let (bx, bz) = (*bx, *bz);
+                if building_passages.contains(bx, bz) {
+                    continue;
+                }
+                if window_trim && config.window_col(bx, bz) >= 3 {
+                    continue;
+                }
+                let lx = bx + out_nx;
+                let lz = bz + out_nz;
+                for h in (config.start_y_offset + 5)..=top_h {
+                    // Band rows double as window headers and sills of the floor above.
+                    let is_band = config.floor_row(h) == 0 && h < top_h - 1;
+                    let is_crown = string_courses && !has_sloped_roof && h == top_h;
+                    if is_band || is_crown {
+                        editor.set_block_with_properties_absolute(
+                            cornice_stair.clone(),
+                            lx,
+                            h + config.abs_terrain_offset,
+                            lz,
+                            Some(&[AIR]),
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+        previous_node = Some((x2, z2));
+    }
+}
+
 fn generate_wall_depth_features(
     editor: &mut WorldEditor,
     element: &ProcessedWay,
@@ -4506,9 +4601,10 @@ pub fn generate_buildings(
         );
     }
 
-    // Add corner quoins (accent-block columns at building corners)
+    // Add corner quoins (accent-block columns at building corners) + facade string courses
     if !element.tags.contains_key("building:part") {
         generate_corner_quoins(editor, element, &config, effective_passages);
+        generate_facade_cornices(editor, element, &config, has_sloped_roof, effective_passages);
     }
 
     // Create roof area = floor area + wall outline (so roof covers the walls too)
