@@ -14,10 +14,42 @@ use std::collections::HashMap;
 /// palette; temperate/humid keeps the original latitude-driven mapping.
 pub fn biome_for_class(lc: u8, climate: Climate, lat_deg: f64, water_dist: u8) -> &'static str {
     if lc == LC_WATER {
-        return if water_dist >= 8 {
-            "minecraft:ocean"
+        // Water surface biome by climate + latitude + distance-from-shore, so oceans read
+        // warm/lukewarm/cold/frozen (with deep variants offshore) and cold regions freeze
+        // their rivers, instead of a flat temperate "ocean"/"river" everywhere (upstream 9e036cc).
+        let abs_lat = lat_deg.abs();
+        let cold = matches!(climate, Climate::IceCap | Climate::Tundra | Climate::Boreal);
+        let deep = water_dist >= 12;
+        if water_dist < 8 {
+            return if cold {
+                "minecraft:frozen_river"
+            } else {
+                "minecraft:river"
+            };
+        }
+        return if cold {
+            if deep {
+                "minecraft:deep_frozen_ocean"
+            } else {
+                "minecraft:frozen_ocean"
+            }
+        } else if abs_lat < 23.5
+            || matches!(
+                climate,
+                Climate::HotDesert | Climate::HotSteppe | Climate::TropicalSavanna
+            )
+        {
+            "minecraft:warm_ocean"
+        } else if abs_lat < 45.0 {
+            if deep {
+                "minecraft:deep_lukewarm_ocean"
+            } else {
+                "minecraft:lukewarm_ocean"
+            }
+        } else if deep {
+            "minecraft:deep_cold_ocean"
         } else {
-            "minecraft:river"
+            "minecraft:cold_ocean"
         };
     }
     match climate {
@@ -49,7 +81,13 @@ fn biome_temperate(lc: u8, lat_deg: f64, water_dist: u8) -> &'static str {
                 "minecraft:forest"
             }
         }
-        LC_SHRUBLAND => "minecraft:savanna",
+        LC_SHRUBLAND => {
+            if abs_lat < 23.5 {
+                "minecraft:sparse_jungle"
+            } else {
+                "minecraft:savanna"
+            }
+        }
         LC_GRASSLAND | LC_CROPLAND | LC_BUILT_UP => "minecraft:plains",
         LC_BARE => "minecraft:desert",
         LC_SNOW_ICE => "minecraft:snowy_plains",
@@ -246,7 +284,8 @@ mod tests {
     }
 
     #[test]
-    fn water_distance_drives_river_vs_ocean() {
+    fn water_distance_and_climate_drive_river_vs_ocean() {
+        // Near shore (water_dist < 8) = river; cold climates freeze it.
         assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 0.0, 1),
             "minecraft:river"
@@ -256,8 +295,45 @@ mod tests {
             "minecraft:river"
         );
         assert_eq!(
+            biome_for_class(LC_WATER, Climate::Boreal, 60.0, 1),
+            "minecraft:frozen_river"
+        );
+        // Offshore: warm tropics, lukewarm mid-lat (deep past 12), cold high-lat, frozen cold.
+        assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 0.0, 8),
-            "minecraft:ocean"
+            "minecraft:warm_ocean"
+        );
+        assert_eq!(
+            biome_for_class(LC_WATER, Climate::Temperate, 35.0, 8),
+            "minecraft:lukewarm_ocean"
+        );
+        assert_eq!(
+            biome_for_class(LC_WATER, Climate::Temperate, 35.0, 12),
+            "minecraft:deep_lukewarm_ocean"
+        );
+        assert_eq!(
+            biome_for_class(LC_WATER, Climate::Temperate, 50.0, 8),
+            "minecraft:cold_ocean"
+        );
+        assert_eq!(
+            biome_for_class(LC_WATER, Climate::IceCap, 75.0, 8),
+            "minecraft:frozen_ocean"
+        );
+        assert_eq!(
+            biome_for_class(LC_WATER, Climate::IceCap, 75.0, 12),
+            "minecraft:deep_frozen_ocean"
+        );
+    }
+
+    #[test]
+    fn tropical_shrubland_is_sparse_jungle() {
+        assert_eq!(
+            biome_for_class(LC_SHRUBLAND, Climate::Temperate, 10.0, 0),
+            "minecraft:sparse_jungle"
+        );
+        assert_eq!(
+            biome_for_class(LC_SHRUBLAND, Climate::Temperate, 40.0, 0),
+            "minecraft:savanna"
         );
     }
 }
