@@ -2217,14 +2217,11 @@ fn paint_helipad(
     if cells.is_empty() {
         return;
     }
-    // Mostly-rooftop pads are left to the building module.
-    let covered = cells
-        .iter()
-        .filter(|&&(x, z)| building_footprints.contains(x, z))
-        .count();
-    if covered * 2 > cells.len() {
-        return;
-    }
+    // Rooftop pad cells are skipped per-cell below (building_footprints.contains), which is
+    // tile-invariant. The old aggregate `covered*2 > cells.len()` whole-pad skip was NOT: a pad
+    // straddling a Meld cell boundary counts different coverage in each process, so one painted
+    // and the other did not. Dropped for seam-safety; a mostly-rooftop pad simply paints only
+    // its (few) non-building fringe cells.
     let r = ((cells.len() as f64) / std::f64::consts::PI).sqrt();
     let ring_r = (r * HELIPAD_RING_FRACTION).max(2.5);
     let bar_half_h = ((r * 0.45) as i32).clamp(2, 6);
@@ -2252,10 +2249,11 @@ fn paint_helipad(
         }
     }
 
-    // Only pads with room for the skids get a helicopter.
-    if r >= 5.0 && !building_footprints.contains(cx, cz) {
-        crate::structures::helicopter::maybe_place_helicopter(editor, cx, cz);
-    }
+    // The parked-helicopter prop is intentionally NOT placed here: it is a schematic centred on
+    // the pad centroid, and a pad straddling a Meld cell boundary would read a cell-local ground
+    // Y (get_absolute_y off the current cell's ground buffer) in each process, vertically shearing
+    // or truncating the model at the seam. Seam-safe placement needs a region-ownership guard the
+    // pad renderer does not have, so the bundled helicopter stays reserved (see structures/mod.rs).
 }
 
 /// Renders an `aeroway=helipad` way as a filled pad with markings.

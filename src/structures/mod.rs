@@ -5,6 +5,7 @@ pub mod car;
 pub mod crane;
 pub mod excavator;
 pub mod fountain;
+#[allow(dead_code)] // parked-helicopter prop reserved: needs a seam-safe region-ownership guard
 pub mod helicopter;
 pub mod lighthouse;
 pub mod playground;
