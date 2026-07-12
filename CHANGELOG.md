@@ -10,7 +10,7 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [3.1.0] - 2026-07-12
+## [3.0.1] - 2026-07-12
 
 Upstream parity release: brings the fork to feature parity with **louis-e/arnis 3.0.0** (plus fork-only fixes upstream does not have), while keeping every Meld differentiator: tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid. Every feature below was ported faithfully and audited for cross-tile seam-safety by an adversarial review pass before shipping; the fork's #1 invariant is that independently generated cells merge into one seamless world.
 
