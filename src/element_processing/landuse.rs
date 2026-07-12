@@ -44,6 +44,7 @@ pub fn generate_landuse(
         "railway" => GRAVEL,
         "vineyard" => COARSE_DIRT,
         "brownfield" => COARSE_DIRT,
+        "farmyard" => COARSE_DIRT,
         "landfill" => {
             // Gravel if man_made = spoil_heap or heap, coarse dirt else
             let manmade_tag = element.tags.get("man_made").unwrap_or(&binding);
@@ -232,8 +233,9 @@ pub fn generate_landuse(
             }
             "farmland" if !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
                 // Check if the current block is not water or another undesired block
-                if x % 9 == 0 && z % 9 == 0 {
-                    // Place water in dot pattern
+                if x % 9 == 0 && z % 9 == 0 && editor.water_source_is_enclosed(x, z) {
+                    // Place water in dot pattern only where it sits in a basin, so on sloped
+                    // fields it can't run downhill and wash out the crops (upstream 046a746).
                     editor.set_block(WATER, x, 0, z, Some(&[FARMLAND]), None);
                 } else if rng.random_range(0..76) == 0 {
                     let special_choice: i32 = rng.random_range(1..=10);

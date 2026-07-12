@@ -446,6 +446,18 @@ impl<'a> WorldEditor<'a> {
         }
     }
 
+    /// True when the four orthogonal neighbours are at least as high as (x, z), so a water
+    /// source placed here sits in a basin instead of spilling downhill. Used to gate farmland
+    /// irrigation dots so they don't flood/erode crops on sloped fields (upstream 046a746).
+    /// Keys only on world-absolute ground levels, so it is tile-invariant.
+    pub fn water_source_is_enclosed(&self, x: i32, z: i32) -> bool {
+        let base = self.get_ground_level(x, z);
+        self.get_ground_level(x + 1, z) >= base
+            && self.get_ground_level(x - 1, z) >= base
+            && self.get_ground_level(x, z + 1) >= base
+            && self.get_ground_level(x, z - 1) >= base
+    }
+
     /// Raw terrain elevation at world (x, z) via the ground origin (correct in tile editors, unlike get_min_coords); None without elevation data.
     pub fn terrain_level(&self, x: i32, z: i32) -> Option<i32> {
         self.ground.as_ref().map(|g| {
