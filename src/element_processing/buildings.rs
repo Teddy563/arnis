@@ -1122,6 +1122,10 @@ struct BuildingConfig {
     style_seed: u64,
     // darker plinth block for the bottom wall rows, None to skip
     base_course_block: Option<Block>,
+    /// Per-building offset (0..5) of the window rhythm so neighbouring buildings don't all
+    /// line their window columns up at the same world parity. 0 for building:part elements
+    /// so the parts of one building stay aligned.
+    window_phase: i32,
 }
 
 impl BuildingConfig {
@@ -2389,8 +2393,9 @@ fn determine_wall_block_at_position_pristine(
     } else if config.category == BuildingCategory::Tower {
         // Tower pattern: glass windows every 4 blocks along the wall,
         // only in the middle two rows of each 4-row floor
-        let is_slit =
-            above_floor && (floor_row == 1 || floor_row == 2) && ((bx + bz) % 4 + 4) % 4 == 1;
+        let is_slit = above_floor
+            && (floor_row == 1 || floor_row == 2)
+            && ((bx + bz + config.window_phase) % 4 + 4) % 4 == 1;
 
         if is_slit {
             config.window_block
@@ -2404,14 +2409,15 @@ fn determine_wall_block_at_position_pristine(
         }
     } else if config.is_tall_building && config.use_vertical_windows {
         // Tall building pattern, vertical window strips alternating with wall columns
-        if above_floor && (bx + bz) % 2 == 0 {
+        if above_floor && (bx + bz + config.window_phase) % 2 == 0 {
             config.window_block
         } else {
             config.wall_block
         }
     } else {
         // Regular building pattern
-        let is_window_position = above_floor && floor_row != 0 && (bx + bz).rem_euclid(6) < 3;
+        let is_window_position =
+            above_floor && floor_row != 0 && (bx + bz + config.window_phase).rem_euclid(6) < 3;
 
         if is_window_position {
             config.window_block
@@ -2420,7 +2426,7 @@ fn determine_wall_block_at_position_pristine(
             let use_vertical_accent_here = config.use_vertical_accent
                 && above_floor
                 && floor_row == 0
-                && (bx + bz).rem_euclid(6) < 3;
+                && (bx + bz + config.window_phase).rem_euclid(6) < 3;
 
             if use_accent_line || use_vertical_accent_here {
                 config.accent_block
@@ -2635,7 +2641,7 @@ fn generate_residential_window_decorations(
                     continue;
                 }
 
-                let mod6 = ((bx + bz) % 6 + 6) % 6; // always 0..5
+                let mod6 = ((bx + bz + config.window_phase) % 6 + 6) % 6; // always 0..5
 
                 // --- Shutters ---
                 // mod6 == 3 or 5 are the wall blocks flanking a window strip.
@@ -3054,7 +3060,7 @@ fn generate_wall_depth_features(
                     continue;
                 }
 
-                let mod6 = ((bx + bz) % 6 + 6) % 6;
+                let mod6 = ((bx + bz + config.window_phase) % 6 + 6) % 6;
 
                 match config.wall_depth_style {
                     WallDepthStyle::SubtlePilasters => {
@@ -3471,7 +3477,7 @@ fn place_religious_buttress(
     let top_h = config.start_y_offset + config.building_height - height_reduction;
 
     // Buttress at every other window group center (mod6==0)
-    let window_group = ((bx + bz) / 6).rem_euclid(2);
+    let window_group = ((bx + bz + config.window_phase) / 6).rem_euclid(2);
     if mod6 == 0 && window_group == 0 {
         let buttress_cutoff = config.start_y_offset + (config.building_height * 3 / 5);
 
@@ -4267,6 +4273,12 @@ pub fn generate_buildings(
                 && base != wall_block
                 && element_rng(group_seed ^ 0xBA5E_C0A2_5E11_0001).random_bool(0.70))
             .then_some(base)
+        },
+        // Parts of one building must share a phase so their windows stay world-coord aligned.
+        window_phase: if element.tags.contains_key("building:part") {
+            0
+        } else {
+            element_rng(element.id ^ 0x77D0_A3E1_9B1C_5544).random_range(0..6)
         },
     };
 
