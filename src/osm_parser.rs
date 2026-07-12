@@ -451,6 +451,295 @@ pub type PartGroups = HashMap<u64, u64>;
 // keeps relation-derived seeds out of the way-id namespace
 const RELATION_SEED_BIT: u64 = 1 << 63;
 
+// 2-bit facade-style hint packed into a part's shared seed (bits 61-62)
+const STYLE_HINT_SHIFT: u64 = 61;
+const STYLE_HINT_MASK: u64 = 0b11 << STYLE_HINT_SHIFT;
+
+/// Facade-style hint derived from a building's OSM tags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StyleHint {
+    None = 0,
+    Masonry = 1,      // historic / stone / brick
+    Contemporary = 2, // concrete frame, modern
+    Glass = 3,        // self-declared glass curtain
+}
+
+/// Reads the packed style hint back out of a shared seed.
+pub fn style_hint_from_seed(seed: u64) -> StyleHint {
+    match (seed & STYLE_HINT_MASK) >> STYLE_HINT_SHIFT {
+        1 => StyleHint::Masonry,
+        2 => StyleHint::Contemporary,
+        3 => StyleHint::Glass,
+        _ => StyleHint::None,
+    }
+}
+
+/// The seed with its style-hint bits cleared (used for the random variant roll).
+pub fn seed_without_hint(seed: u64) -> u64 {
+    seed & !STYLE_HINT_MASK
+}
+
+fn seed_with_hint(seed: u64, hint: StyleHint) -> u64 {
+    (seed & !STYLE_HINT_MASK) | ((hint as u64) << STYLE_HINT_SHIFT)
+}
+
+// lowercase, strip whitespace/_/- so art_deco, neo-gothic, "concrete masonry unit" all collapse
+fn norm_tag(v: &str) -> String {
+    v.chars()
+        .filter(|c| !c.is_whitespace() && *c != '_' && *c != '-')
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+// First 4-digit year in a date-ish value, e.g. "1911-1913" -> 1911, "1955-12-31" -> 1955.
+fn first_year(v: &str) -> Option<i32> {
+    let bytes = v.as_bytes();
+    let mut i = 0;
+    while i + 4 <= bytes.len() {
+        if bytes[i..i + 4].iter().all(|b| b.is_ascii_digit()) {
+            return v[i..i + 4].parse().ok();
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Picks a facade style for a building from its OSM tags, or None to leave it to the random roll.
+pub fn building_style_hint(tags: &HashMap<String, String>) -> StyleHint {
+    let material = tags
+        .get("building:material")
+        .or_else(|| tags.get("building:facade:material"))
+        .or_else(|| tags.get("facade:material"))
+        .map(|m| norm_tag(m));
+
+    // Glass override wins over everything, so heritage-listed glass towers stay glass.
+    if material.as_deref() == Some("glass") || material.as_deref() == Some("mirror") {
+        return StyleHint::Glass;
+    }
+    if tags.get("roof:material").map(|r| norm_tag(r)).as_deref() == Some("glass") {
+        return StyleHint::Glass;
+    }
+
+    // Masonry / historic. `no` on these keys is an explicit negation, not a signal.
+    let present_and_not_no =
+        |key: &str| tags.get(key).is_some_and(|v| !v.eq_ignore_ascii_case("no"));
+    if present_and_not_no("historic")
+        || present_and_not_no("heritage")
+        || tags.contains_key("ref:nrhp")
+        || present_and_not_no("listed_status")
+    {
+        return StyleHint::Masonry;
+    }
+    const MASONRY: &[&str] = &[
+        "brick",
+        "bricks",
+        "redbrick",
+        "silicatebrick",
+        "stone",
+        "naturalstone",
+        "sandstone",
+        "limestone",
+        "masonry",
+        "granite",
+        "marble",
+        "terracotta",
+        "adobe",
+        "stucco",
+        "pebbledash",
+    ];
+    if material.as_deref().is_some_and(|m| MASONRY.contains(&m)) {
+        return StyleHint::Masonry;
+    }
+    if let Some(c) = tags.get("building:cladding") {
+        const MASONRY_CLADDING: &[&str] = &[
+            "brick",
+            "brickmonolith",
+            "plaster",
+            "rendered",
+            "rendering",
+            "stone",
+            "tiling",
+        ];
+        if MASONRY_CLADDING.contains(&norm_tag(c).as_str()) {
+            return StyleHint::Masonry;
+        }
+    }
+    let arch = tags
+        .get("building:architecture")
+        .or_else(|| tags.get("architecture"))
+        .map(|a| norm_tag(a));
+    if let Some(a) = arch.as_deref() {
+        const HISTORIC_STYLES: &[&str] = &[
+            "artdeco",
+            "artnouveau",
+            "gothic",
+            "neogothic",
+            "gothicrevival",
+            "neoclassicism",
+            "neoclassical",
+            "classicism",
+            "classicalrevival",
+            "greekrevival",
+            "baroque",
+            "neobaroque",
+            "rococo",
+            "barocco",
+            "historicism",
+            "eclectic",
+            "renaissance",
+            "neorenaissance",
+            "romanesque",
+            "neoromanesque",
+            "romanesquerevival",
+            "victorian",
+            "georgian",
+            "federal",
+            "italianate",
+            "beauxarts",
+            "brutalist",
+            "constructivism",
+            "stalinistneoclassicism",
+            "wilhelminianstyle",
+            "queenanne",
+        ];
+        const MODERN_STYLES: &[&str] = &[
+            "modern",
+            "contemporary",
+            "modernism",
+            "functionalism",
+            "newobjectivity",
+            "postmodern",
+            "bauhaus",
+        ];
+        if HISTORIC_STYLES.contains(&a) {
+            return StyleHint::Masonry;
+        }
+        if MODERN_STYLES.contains(&a) {
+            return StyleHint::Contemporary;
+        }
+    }
+    // Pre-curtain-wall era: load-bearing masonry. start_date is the best-populated source.
+    for key in ["start_date", "construction_date", "year_of_construction"] {
+        if let Some(y) = tags.get(key).and_then(|v| first_year(v)) {
+            if y < 1945 {
+                return StyleHint::Masonry;
+            }
+            break; // known modern year; fall through to the concrete check
+        }
+    }
+
+    // Concrete frame reads as a solid facade with windows: the contemporary middle style.
+    const CONCRETE: &[&str] = &[
+        "concrete",
+        "reinforcedconcrete",
+        "concretereinforced",
+        "concretemasonryunit",
+    ];
+    if material.as_deref().is_some_and(|m| CONCRETE.contains(&m)) {
+        return StyleHint::Contemporary;
+    }
+    StyleHint::None
+}
+
+#[cfg(test)]
+mod style_hint_tests {
+    use super::*;
+
+    fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn material_historic_and_year_drive_the_hint() {
+        assert_eq!(
+            building_style_hint(&tags(&[("building:material", "glass")])),
+            StyleHint::Glass
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("building:material", "brick")])),
+            StyleHint::Masonry
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("historic", "yes")])),
+            StyleHint::Masonry
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("building:material", "concrete")])),
+            StyleHint::Contemporary
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("start_date", "1890-1892")])),
+            StyleHint::Masonry
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("building", "yes")])),
+            StyleHint::None
+        );
+        // Glass wins over a historic tag; `no` on historic is an explicit negation.
+        assert_eq!(
+            building_style_hint(&tags(&[("historic", "yes"), ("building:material", "glass")])),
+            StyleHint::Glass
+        );
+        assert_eq!(
+            building_style_hint(&tags(&[("historic", "no")])),
+            StyleHint::None
+        );
+    }
+
+    #[test]
+    fn seed_hint_round_trips_without_clobbering_the_id() {
+        let seed = 1486752423u64;
+        for hint in [
+            StyleHint::None,
+            StyleHint::Masonry,
+            StyleHint::Contemporary,
+            StyleHint::Glass,
+        ] {
+            let packed = seed_with_hint(seed, hint);
+            assert_eq!(style_hint_from_seed(packed), hint);
+            assert_eq!(seed_without_hint(packed), seed);
+        }
+    }
+}
+
+/// Packs each S3DB part's facade hint (derived from its parent outline way / relation tags)
+/// into the shared part seed, so untagged parts of a tagged building inherit the same facade
+/// family. Standalone buildings carry no part_groups entry and read their own tags at render
+/// time instead. Keyed only on world-absolute OSM ids + tags, so it stays tile-invariant.
+fn pack_part_style_hints(
+    part_groups: &mut PartGroups,
+    ways: &[OsmElement],
+    relations: &[OsmElement],
+) {
+    if part_groups.is_empty() {
+        return;
+    }
+    let way_tags: HashMap<u64, &HashMap<String, String>> = ways
+        .iter()
+        .filter_map(|w| w.tags.as_ref().map(|t| (w.id, t)))
+        .collect();
+    let rel_tags: HashMap<u64, &HashMap<String, String>> = relations
+        .iter()
+        .filter_map(|r| r.tags.as_ref().map(|t| (r.id, t)))
+        .collect();
+    for seed in part_groups.values_mut() {
+        let parent_tags = if *seed & RELATION_SEED_BIT != 0 {
+            rel_tags.get(&(*seed & !RELATION_SEED_BIT))
+        } else {
+            way_tags.get(seed)
+        };
+        if let Some(tags) = parent_tags {
+            let hint = building_style_hint(tags);
+            if hint != StyleHint::None {
+                *seed = seed_with_hint(*seed, hint);
+            }
+        }
+    }
+}
+
 pub fn parse_osm_data(
     osm_data: OsmData,
     bbox: LLBBox,
@@ -489,6 +778,8 @@ pub fn parse_osm_data(
         &data.nodes,
         &mut part_groups,
     ));
+    // Propagate each building's tag-derived facade style to its untagged S3DB parts.
+    pack_part_style_hints(&mut part_groups, &data.ways, &data.relations);
 
     let mut nodes_map: HashMap<u64, ProcessedNode> = HashMap::new();
     let mut ways_map: HashMap<u64, Arc<ProcessedWay>> = HashMap::new();
