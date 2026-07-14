@@ -8,6 +8,7 @@ mod block_definitions;
 mod bresenham;
 mod caves;
 mod climate;
+mod climate_map;
 mod clipping;
 mod colors;
 mod coordinate_system;
@@ -259,6 +260,19 @@ fn run_cli() {
             }
         }
         match caves::zone_map::render(&args) {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Climate-map mode: render the Koppen CLIMATE layout for --bbox to a PNG overlay and exit,
+    // before any world creation. Uses the same grouped Climate the real generation applies, so
+    // the preview matches the biome tint / arid-polar surfaces the world will get.
+    if args.climate_map.is_some() {
+        match climate_map::render(&args) {
             Ok(()) => std::process::exit(0),
             Err(e) => {
                 eprintln!("{}: {}", "Error".red().bold(), e);

@@ -1100,6 +1100,7 @@ fn gui_start_generation(
                 cave_biomes: None,
                 cave_zone_map: None,
                 cave_zone_map_step: None,
+                climate_map: None,
                 tree_sizes: None,
                 vertical_exaggeration: 1.0,
                 snow_mode: "realistic".to_string(),

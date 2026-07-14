@@ -145,6 +145,14 @@ pub struct Args {
     #[arg(long = "cave-zone-map-step", value_name = "BLOCKS")]
     pub cave_zone_map_step: Option<u32>,
 
+    /// Render the Koppen CLIMATE layout for --bbox to `<PREFIX>.png` and exit, without creating a
+    /// world. One color per grouped climate (the same grouping that drives biome tint and
+    /// arid/polar surface blocks), plus a JSON line with the measured share of each group on
+    /// stdout (prefix `CLIMATEMAP `). Sampled in lat/lon over --bbox, so it is a pure function of
+    /// the bounding box and lines up with a geographic map overlay.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<std::path::PathBuf>,
+
     /// Enable land cover classification (optional)
     /// When enabled, fetches ESA WorldCover satellite data to classify terrain
     /// (forests, deserts, wetlands, built-up areas, etc.) and select appropriate
@@ -411,6 +419,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     // Zone-map mode renders cave-biome PNGs for --bbox; no world is created.
     if args.cave_zone_map.is_some() {
+        return Ok(());
+    }
+
+    // Climate-map mode renders a Koppen climate PNG for --bbox; no world is created.
+    if args.climate_map.is_some() {
         return Ok(());
     }
 
