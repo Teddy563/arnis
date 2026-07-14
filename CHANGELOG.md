@@ -10,6 +10,20 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.3] - 2026-07-15
+
+Water and cave rendering fixes plus organic climate boundaries. Every change is seam-safe (a pure function of world coordinates) and additive; default runs stay byte-identical away from the affected water/cave surfaces.
+
+### Fixed
+
+- **Water colour bands.** The water biome no longer uses the warm, lukewarm, and cold ocean temperature variants, which gave inland lakes and wide rivers visible colour lines and wrongly tinted temperate inland water. Non-freezing water is now river, ocean, or deep_ocean (all one shared tint) and freezing water is the frozen trio, so a water body reads as a single uniform colour. The ocean vs deep_ocean split is kept for mob spawning and is colour identical, so it adds no seam.
+- **Thin land and road lines across water.** Untagged roads and tracks crossing water at small scale are now drowned instead of painting a 1-block causeway straight across a lake or river, and interior terrain ridges that poked above the water surface are submerged instead of rendering as a thin grass line. Real shores, islands, and tagged bridges are unaffected. The road drown is kept in sync with the road mask so no dry gap is left where a crossing is removed.
+- **Cave lava seam trench.** The deep lava sea left a 2-block-wide air trench at every cell and region seam because its containment check treated an out-of-bbox neighbour as open, so both tiles skipped their boundary columns. The check now ignores out-of-bbox neighbours, so both tiles fill the seam and the lava is continuous. Interior generation is byte identical.
+
+### Changed
+
+- **Climate boundaries render as organic blobs.** The Koppen lookup is domain warped by a smooth low-frequency noise field before sampling the 0.1 degree grid, so the blocky rectangular climate edges bend into natural blobs. It is a pure function of latitude and longitude, so it stays seam-safe across tiles, and the world and the climate preview change together.
+
 ## [3.0.2] - 2026-07-14
 
 Additive feature release for the Meld climate, heightmap, tree, and seam work. Every change is additive and seam-safe; omit the new flags and behaviour is unchanged, and default runs stay byte-identical.
