@@ -1187,6 +1187,13 @@ fn generate_highways_internal(
                 block_range = ((block_range as f64) * scale_factor).floor() as i32;
             }
 
+            // Untagged road/path crossing water at small scale: a 1-block causeway (or a raised
+            // embankment) straight across a lake/river looks worse than the water, so drown it —
+            // skip the road on water cells and let the water carve flow through continuously. Kept
+            // in sync with collect_road_surface_coords (same `scale <= 0.5` gate + same water test)
+            // so road_mask agrees and no dry air gap is left. Tagged bridges are unaffected.
+            let drown_over_water = !is_bridge_member && !is_bridge_ramp && scale_factor <= 0.5;
+
             // Street lamps along explicitly-lit ways. This is below the
             // road_detail_skip early-return, so compact/none ways never reach
             // here and way-lamps respect --road-detail for free.
@@ -1560,6 +1567,14 @@ fn generate_highways_internal(
                             for dz in -block_range..=block_range {
                                 let set_x: i32 = x + dx;
                                 let set_z: i32 = z + dz;
+
+                                // Drown untagged small-scale crossings over water (see
+                                // drown_over_water): skip the surface AND the ground override so
+                                // the water carve renders continuous water here instead of a
+                                // 1-block causeway line.
+                                if drown_over_water && editor.is_lc_water(set_x, set_z) {
+                                    continue;
+                                }
 
                                 // Per-cell Y. For wide roads this is the
                                 // perpendicular median at the cell's own
@@ -2480,8 +2495,10 @@ pub fn collect_road_surface_coords(
     elements: &[ProcessedElement],
     xzbbox: &XZBBox,
     scale: f64,
+    ground: &crate::ground::Ground,
 ) -> CoordinateBitmap {
     let mut bitmap = CoordinateBitmap::new(xzbbox);
+    let (off_x, off_z) = (xzbbox.min_x(), xzbbox.min_z());
 
     for element in elements {
         let ProcessedElement::Way(way) = element else {
@@ -2526,6 +2543,12 @@ pub fn collect_road_surface_coords(
         // Use the same block_range the renderer uses for this highway type
         let block_range = highway_block_range(highway_type, &way.tags, scale);
 
+        // Match the renderer's drown_over_water: an untagged crossing at small scale is skipped on
+        // water cells, so keep those cells OUT of the road mask too — otherwise the water carve
+        // (which avoids road_mask) would leave a dry air gap where the road was drowned.
+        let untagged = way.tags.get("bridge").is_none_or(|b| b == "no");
+        let drown_over_water = untagged && scale <= 0.5;
+
         for i in 1..way.nodes.len() {
             let prev = way.nodes[i - 1].xz();
             let cur = way.nodes[i].xz();
@@ -2535,6 +2558,12 @@ pub fn collect_road_surface_coords(
             for (bx, _, bz) in &points {
                 for dx in -block_range..=block_range {
                     for dz in -block_range..=block_range {
+                        if drown_over_water
+                            && ground.cover_class(XZPoint::new(bx + dx - off_x, bz + dz - off_z))
+                                == crate::land_cover::LC_WATER
+                        {
+                            continue;
+                        }
                         bitmap.set(bx + dx, bz + dz);
                     }
                 }

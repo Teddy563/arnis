@@ -434,7 +434,7 @@ pub fn generate_world_with_options(
     // road or path surface. Uses the same Bresenham + block_range geometry as
     // generate_highways_internal, so the bitmap is a 1:1 match of what gets placed.
     // Amenity processors use this for O(1) nearest-road-block lookups.
-    let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale);
+    let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale, &ground);
     // At-grade electrified rails, for catenary mast placement + spacing.
     let rail_mask = railways::collect_at_grade_rail_mask(&elements, &xzbbox);
     // Highway tunnels: bore footprint (keeps water/veg out) + shared endpoints

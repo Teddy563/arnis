@@ -867,9 +867,24 @@ pub fn carve_lc_water_region(
                 continue;
             }
             let water_y = ground.water_level(coord);
-            // Skip land bumps an over-claiming water polygon sits above.
-            if editor.get_ground_level(x, z) > water_y {
-                continue;
+            // A DEM ridge poking through the water polygon (ground above the water surface).
+            let g_lvl = editor.get_ground_level(x, z);
+            if g_lvl > water_y {
+                // If it is INTERIOR water (water on all sides, not a shoreline cell) and only pokes
+                // up a little, it is a thin terrain ridge that renders as a 1-block grass land-line
+                // across the lake/river. Submerge it: clear the crown down to the water surface so
+                // the carve below fills continuous water. Genuine shore land / islands
+                // (water_distance < 2) and tall clipped land (big excess) stay dry. water_distance
+                // is computed from the same halo'd land cover in every tile, so the decision is
+                // consistent across cell seams (same guarantee the water biome already relies on).
+                const RIDGE_FLOOD_MARGIN: i32 = 3;
+                let interior = ground.water_distance(coord) >= 2;
+                if !interior || (g_lvl - water_y) > RIDGE_FLOOD_MARGIN {
+                    continue;
+                }
+                for y in (water_y + 1)..=g_lvl {
+                    editor.set_block_absolute(AIR, x, y, z, None, Some(TREE_PROTECT));
+                }
             }
             // v2.8.5 — widened from 4-cardinal to 5x5 ring (24 cells).
             // Catches diagonal + 1-cell-out neighbours of bridge decks so
