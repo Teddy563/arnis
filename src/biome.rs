@@ -120,7 +120,6 @@ pub fn build_chunk_biome_nbt(
     let mut names: [&'static str; 16] = ["minecraft:plains"; 16];
 
     if let Some(g) = ground {
-        let climate = g.climate();
         for zi in 0..4i32 {
             for xi in 0..4i32 {
                 // cover_class / water_distance index a CELL-LOCAL land-cover
@@ -133,11 +132,16 @@ pub fn build_chunk_biome_nbt(
                 // picks a different (wrong) biome → hard vertical seam at the
                 // cell border. Single-world has origin = (0,0) → no-op,
                 // byte-identical.
-                let local_x = chunk_x * 16 + xi * 4 + 2 - origin_x;
-                let local_z = chunk_z * 16 + zi * 4 + 2 - origin_z;
+                let abs_x = chunk_x * 16 + xi * 4 + 2;
+                let abs_z = chunk_z * 16 + zi * 4 + 2;
+                let local_x = abs_x - origin_x;
+                let local_z = abs_z - origin_z;
                 let coord = XZPoint::new(local_x, local_z);
                 let lc = g.cover_class(coord);
                 let wd = g.water_distance(coord);
+                // Climate sampled PER-POSITION at the ABSOLUTE world coord (not origin-subtracted):
+                // a global affine identical in every cell, so no per-cell biome seam.
+                let climate = g.climate_at(abs_x, abs_z);
                 names[(zi * 4 + xi) as usize] = biome_for_class(lc, climate, center_lat_deg, wd);
             }
         }

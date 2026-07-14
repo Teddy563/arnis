@@ -40,8 +40,12 @@ pub struct Ground {
     rotation_mask: Option<RotationMask>,
     /// Minecraft Y at/above which terrain is snow-capped; `i32::MAX` disables it.
     snow_threshold_y: i32,
-    /// Köppen climate at the bbox center; drives arid/polar surfaces + biomes.
+    /// Köppen climate at the bbox center; the single-world / non-tiled fallback value.
     climate: crate::climate::Climate,
+    /// Master-origin affine (origin_lat, origin_lng, scale) for turning an absolute world (x, z)
+    /// back into lat/lng, so climate can be sampled per-position in tile mode (no per-cell seam).
+    /// `None` off-Meld (no master origin) -> `climate_at` returns the cached `climate`.
+    koppen_affine: Option<(f64, f64, f64)>,
 }
 
 /// Climatic snow line in metres by absolute latitude, piecewise-linear through
@@ -140,6 +144,7 @@ impl Ground {
     pub fn new_flat(ground_level: i32) -> Self {
         Self {
             climate: crate::climate::Climate::Temperate,
+            koppen_affine: None,
             elevation_enabled: false,
             ground_level,
             elevation_data: None,
@@ -219,6 +224,9 @@ impl Ground {
                     compute_snow_threshold(&elevation_data, lat, water_floor, snow);
                 Self {
                     climate: crate::climate::Climate::classify(bbox),
+                    koppen_affine: master_origin_lat
+                        .zip(master_origin_lng)
+                        .map(|(la, ln)| (la, ln, scale)),
                     elevation_enabled: true,
                     ground_level: water_floor,
                     elevation_data: Some(elevation_data),
@@ -248,6 +256,9 @@ impl Ground {
                 // elevation grid to align against.
                 Self {
                     climate: crate::climate::Climate::classify(bbox),
+                    koppen_affine: master_origin_lat
+                        .zip(master_origin_lng)
+                        .map(|(la, ln)| (la, ln, scale)),
                     elevation_enabled: false,
                     ground_level,
                     elevation_data: None,
@@ -267,8 +278,21 @@ impl Ground {
     }
 
     #[inline(always)]
-    pub fn climate(&self) -> crate::climate::Climate {
-        self.climate
+    /// Köppen climate at an ABSOLUTE world (x, z). In tile mode (master origin set) this inverts
+    /// the exact master-origin affine `CoordTransformer::transform_point` uses, so every cell maps
+    /// a shared block to bit-identical lat/lng and picks the same Köppen class -> no per-cell seam.
+    /// Off-Meld (no master origin) it returns the cached bbox-centre `climate` -> byte-identical to
+    /// before. Cheap: one clamped array index into the bundled 0.1deg grid.
+    pub fn climate_at(&self, x: i32, z: i32) -> crate::climate::Climate {
+        let Some((origin_lat, origin_lng, scale)) = self.koppen_affine else {
+            return self.climate;
+        };
+        // Must match transformation.rs METERS_PER_DEG_LAT and the master-origin branch exactly.
+        const MPD_LAT: f64 = 111_320.0;
+        let mpd_lon = MPD_LAT * origin_lat.to_radians().cos();
+        let lng = origin_lng + (x as f64 + 0.5) / (mpd_lon * scale);
+        let lat = origin_lat - (z as f64 + 0.5) / (MPD_LAT * scale);
+        crate::climate::Climate::at(lat, lng)
     }
 
     /// Returns whether land cover data is available
@@ -778,6 +802,7 @@ mod tests {
         let w = heights[0].len();
         Ground {
             climate: crate::climate::Climate::Temperate,
+            koppen_affine: None,
             elevation_enabled: true,
             ground_level: 0,
             elevation_data: Some(ElevationData {

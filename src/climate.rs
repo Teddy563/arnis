@@ -53,11 +53,18 @@ impl Climate {
         }
     }
 
-    /// Sample the climate at the bbox center (one lookup per generation).
+    /// Sample the climate at a single lat/lon (one cheap Koppen-grid lookup). This is the
+    /// per-position entry point so the climate can vary across a tiled world instead of being
+    /// fixed per cell.
+    pub fn at(lat: f64, lon: f64) -> Climate {
+        Climate::from_class(koppen_class(lat, lon))
+    }
+
+    /// Sample the climate at the bbox center (used for the single-world / non-tiled fallback).
     pub fn classify(bbox: &LLBBox) -> Climate {
         let lat = (bbox.min().lat() + bbox.max().lat()) / 2.0;
         let lon = (bbox.min().lng() + bbox.max().lng()) / 2.0;
-        Climate::from_class(koppen_class(lat, lon))
+        Climate::at(lat, lon)
     }
 
     /// Surface palette (surface, under) for veg/bare cover, or None to keep the baseline.

@@ -157,7 +157,8 @@ pub fn generate_ground_region(
 ) {
     let has_land_cover = ground.has_land_cover();
     let terrain_enabled = ground.elevation_enabled;
-    let climate = ground.climate();
+    // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
+    // hoisted once per cell, so arid/polar surface blocks don't flip abruptly at cell borders.
 
     let total_blocks: u64 =
         (iter_max_x - iter_min_x + 1).max(0) as u64 * (iter_max_z - iter_min_z + 1).max(0) as u64;
@@ -470,7 +471,9 @@ pub fn generate_ground_region(
                                         8..=9 => (COBBLESTONE, STONE), // 17%
                                         _ => (GRAVEL, STONE),          // 17% scree
                                     }
-                                } else if let Some(p) = climate.surface_palette(cover, x, z) {
+                                } else if let Some(p) =
+                                    ground.climate_at(x, z).surface_palette(cover, x, z)
+                                {
                                     // Desert sand/sandstone, ice-cap snow/packed-ice,
                                     // cold-desert gravel, boreal podzol, etc.
                                     p
