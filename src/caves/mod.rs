@@ -326,6 +326,16 @@ pub fn carve_region(
     {
         const LAVA_LEVEL: i32 = -54;
         let is_open = |ed: &WorldEditor, x: i32, y: i32, z: i32| {
+            // A neighbour outside this tile's bbox belongs to the ADJACENT Meld tile, which carves
+            // AND fills this same deep column identically (the carve is a pure position fn). Reading
+            // it here returns "not placed" (out-of-bbox reads are dropped) which made the deep-lava
+            // sea treat every seam-edge column as touching open terrain and skip it -> a 2-wide air
+            // trench along every cell/region boundary below y=-54. Never treat an out-of-bbox
+            // neighbour as open: decide the edge column from in-bbox neighbours only, exactly as a
+            // single monolithic render would. Interior cells are unaffected (guard never fires).
+            if x < min_x || x > max_x || z < min_z || z > max_z {
+                return false;
+            }
             !ed.block_exists_absolute(x, y, z) && !air.contains(&pack(x, y, z))
         };
         let mut cand: HashSet<i64> = HashSet::new();
