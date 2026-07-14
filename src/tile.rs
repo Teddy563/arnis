@@ -204,12 +204,26 @@ pub fn assign_elements_to_tiles(
     for (elem_idx, element) in elements.iter().enumerate() {
         match element {
             ProcessedElement::Node(node) => {
-                // A node belongs to the strict tile whose region contains it; the owning
-                // tile's editor halo handles canopy overflow. (Strict + non-overlapping, so
-                // this matches scanning for the first containing tile, in O(1).)
-                if let Some(&tile_idx) = tile_grid.get(&(node.x >> 9, node.z >> 9)) {
-                    if tiles[tile_idx].contains(node.x, node.z) {
-                        tile_elements[tile_idx].push(elem_idx);
+                // Assign the node to EVERY tile whose halo-expanded bounds reach it, not just the
+                // one strict tile that contains it. A prop schematic (wind turbine, lighthouse,
+                // crane, excavator, tractor, tombstone, ...) stamped at a node within
+                // TILE_EDITOR_HALO of a cell boundary has voxels that cross into the neighbour
+                // tile's STRICT region; with single-tile assignment only the owner stamped it and
+                // those voxels were dropped at merge, clipping the model at the seam. Every node
+                // handler places deterministically (coord_hash / element_rng, world-absolute), so
+                // both straddling tiles stamp byte-identical blocks -> idempotent, no conflict.
+                let aabb = (node.x, node.x, node.z, node.z);
+                let (rx0, rx1, rz0, rz1) = region_range(aabb, TILE_EDITOR_HALO);
+                for rx in rx0..=rx1 {
+                    for rz in rz0..=rz1 {
+                        if let Some(&tile_idx) = tile_grid.get(&(rx, rz)) {
+                            if tiles[tile_idx]
+                                .expanded(TILE_EDITOR_HALO)
+                                .contains(node.x, node.z)
+                            {
+                                tile_elements[tile_idx].push(elem_idx);
+                            }
+                        }
                     }
                 }
             }
@@ -316,10 +330,11 @@ mod tests {
         for (ei, e) in elements.iter().enumerate() {
             match e {
                 ProcessedElement::Node(n) => {
+                    // Nodes get the same halo as area ways: every tile whose halo-expanded
+                    // bounds reach the node (so boundary-straddling props stamp in both cells).
                     for (ti, t) in tiles.iter().enumerate() {
-                        if t.contains(n.x, n.z) {
+                        if t.expanded(TILE_EDITOR_HALO).contains(n.x, n.z) {
                             out[ti].push(ei);
-                            break;
                         }
                     }
                 }
