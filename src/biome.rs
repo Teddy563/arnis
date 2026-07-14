@@ -14,10 +14,14 @@ use std::collections::HashMap;
 /// palette; temperate/humid keeps the original latitude-driven mapping.
 pub fn biome_for_class(lc: u8, climate: Climate, lat_deg: f64, water_dist: u8) -> &'static str {
     if lc == LC_WATER {
-        // Water surface biome by climate + latitude + distance-from-shore, so oceans read
-        // warm/lukewarm/cold/frozen (with deep variants offshore) and cold regions freeze
-        // their rivers, instead of a flat temperate "ocean"/"river" everywhere (upstream 9e036cc).
-        let abs_lat = lat_deg.abs();
+        // UNIFORM water colour per climate band so a water body never shows an internal colour
+        // seam. river / ocean / deep_ocean all share the Minecraft water tint #3F76E4, and the
+        // frozen trio (frozen_river / frozen_ocean / deep_frozen_ocean) all share #3938C9. We
+        // deliberately DROP the warm/lukewarm/cold ocean TEMPERATURE variants: their differing
+        // tints banded inland lakes and wide rivers (a wide river's centre flipping to "ocean"
+        // showed a line down the middle), and were plain wrong for temperate inland water like
+        // Romania. ocean vs deep_ocean is kept for mob-spawn zoning and is colour-identical, so it
+        // adds no seam. Pure fn of (lc, climate, water_dist) -> seam-invariant across Meld tiles.
         let cold = matches!(climate, Climate::IceCap | Climate::Tundra | Climate::Boreal);
         let deep = water_dist >= 12;
         if water_dist < 8 {
@@ -33,23 +37,10 @@ pub fn biome_for_class(lc: u8, climate: Climate, lat_deg: f64, water_dist: u8) -
             } else {
                 "minecraft:frozen_ocean"
             }
-        } else if abs_lat < 23.5
-            || matches!(
-                climate,
-                Climate::HotDesert | Climate::HotSteppe | Climate::TropicalSavanna
-            )
-        {
-            "minecraft:warm_ocean"
-        } else if abs_lat < 45.0 {
-            if deep {
-                "minecraft:deep_lukewarm_ocean"
-            } else {
-                "minecraft:lukewarm_ocean"
-            }
         } else if deep {
-            "minecraft:deep_cold_ocean"
+            "minecraft:deep_ocean"
         } else {
-            "minecraft:cold_ocean"
+            "minecraft:ocean"
         };
     }
     match climate {
@@ -302,23 +293,25 @@ mod tests {
             biome_for_class(LC_WATER, Climate::Boreal, 60.0, 1),
             "minecraft:frozen_river"
         );
-        // Offshore: warm tropics, lukewarm mid-lat (deep past 12), cold high-lat, frozen cold.
+        // Offshore non-freezing water is uniform ocean / deep_ocean (same tint as river, no seam),
+        // regardless of latitude — the warm/lukewarm/cold temperature variants are gone.
         assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 0.0, 8),
-            "minecraft:warm_ocean"
+            "minecraft:ocean"
         );
         assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 35.0, 8),
-            "minecraft:lukewarm_ocean"
+            "minecraft:ocean"
         );
         assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 35.0, 12),
-            "minecraft:deep_lukewarm_ocean"
+            "minecraft:deep_ocean"
         );
         assert_eq!(
             biome_for_class(LC_WATER, Climate::Temperate, 50.0, 8),
-            "minecraft:cold_ocean"
+            "minecraft:ocean"
         );
+        // Freezing climates: uniform frozen trio (all share #3938C9).
         assert_eq!(
             biome_for_class(LC_WATER, Climate::IceCap, 75.0, 8),
             "minecraft:frozen_ocean"
