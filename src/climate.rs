@@ -22,6 +22,77 @@ fn koppen_class(lat: f64, lon: f64) -> u8 {
     KOPPEN[row as usize * KOPPEN_COLS + col as usize]
 }
 
+// ── Domain-warp: bend the grid's rectangular class edges into organic blobs ───────────────
+// The Koppen grid is 0.1-deg cells, so a raw nearest-cell lookup gives blocky, axis-aligned
+// climate boundaries. We perturb the LOOKUP COORDINATE by a smooth low-frequency noise field
+// before sampling, so straight edges curve into blobs. It is a pure function of (lat, lon), so
+// two adjacent Meld cells warp a shared point identically -> byte-identical across tile seams.
+//
+// Noise wavelength (LATTICE_DEG) is a few climate cells wide so the warp reshapes edges into
+// large smooth curves rather than high-frequency ragged fringe; amplitude (AMP_DEG) is about one
+// climate cell so blobs wiggle without teleporting a climate far from where it really is.
+const WARP_LATTICE_DEG: f64 = 0.45; // coarse noise lattice (~50 km) -> big smooth blob shapes
+const WARP_AMP_DEG: f64 = 0.22; // displacement ~2-3 grid cells: bends edges AND breaks the
+                                // 0.1-deg nearest-cell staircase into organic fringe (the fbm's
+                                // finer octaves reach ~0.05 deg, below the cell size)
+
+/// Deterministic integer hash -> [0, 1). Pure; no RNG state.
+fn hash01(ix: i64, iy: i64, seed: u64) -> f64 {
+    let mut h = (ix as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (iy as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+        ^ seed.wrapping_mul(0x1656_67B1_9E37_79F9);
+    h ^= h >> 29;
+    h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h ^= h >> 32;
+    // top 53 bits -> [0, 1)
+    (h >> 11) as f64 / ((1u64 << 53) as f64)
+}
+
+/// Smooth (smoothstep-interpolated) value noise on a unit lattice, returns [-1, 1].
+fn value_noise(x: f64, y: f64, seed: u64) -> f64 {
+    let x0 = x.floor();
+    let y0 = y.floor();
+    let ix = x0 as i64;
+    let iy = y0 as i64;
+    let fx = x - x0;
+    let fy = y - y0;
+    let sx = fx * fx * (3.0 - 2.0 * fx); // smoothstep
+    let sy = fy * fy * (3.0 - 2.0 * fy);
+    let n00 = hash01(ix, iy, seed);
+    let n10 = hash01(ix + 1, iy, seed);
+    let n01 = hash01(ix, iy + 1, seed);
+    let n11 = hash01(ix + 1, iy + 1, seed);
+    let nx0 = n00 + (n10 - n00) * sx;
+    let nx1 = n01 + (n11 - n01) * sx;
+    (nx0 + (nx1 - nx0) * sy) * 2.0 - 1.0
+}
+
+/// 4-octave fractal noise: octave 1 sets the blob shape, the finer octaves (down to ~1/8 the
+/// lattice, i.e. below the 0.1-deg cell) break the nearest-cell staircase into organic fringe.
+/// Returns ~[-1, 1].
+fn fbm(x: f64, y: f64, seed: u64) -> f64 {
+    let mut v = 0.0;
+    let mut amp = 0.5;
+    let mut freq = 1.0;
+    let mut norm = 0.0;
+    for o in 0..4 {
+        v += amp * value_noise(x * freq, y * freq, seed.wrapping_add(o * 0x9E37));
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    v / norm // keep the range ~[-1, 1] regardless of octave count
+}
+
+/// Warp (lat, lon) by the smooth noise field so climate boundaries read as blobs, not blocks.
+fn warp_lookup(lat: f64, lon: f64) -> (f64, f64) {
+    let nx = lon / WARP_LATTICE_DEG;
+    let ny = lat / WARP_LATTICE_DEG;
+    let dlon = WARP_AMP_DEG * fbm(nx, ny, 0x0C11_A7E0_u64);
+    let dlat = WARP_AMP_DEG * fbm(nx + 47.13, ny - 19.7, 0x5EED_B10B_u64);
+    (lat + dlat, lon + dlon)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Climate {
     /// C*, humid-continental D*, tropical rainforest, and ocean/nodata: existing behaviour.
@@ -57,7 +128,8 @@ impl Climate {
     /// per-position entry point so the climate can vary across a tiled world instead of being
     /// fixed per cell.
     pub fn at(lat: f64, lon: f64) -> Climate {
-        Climate::from_class(koppen_class(lat, lon))
+        let (wlat, wlon) = warp_lookup(lat, lon);
+        Climate::from_class(koppen_class(wlat, wlon))
     }
 
     /// Sample the climate at the bbox center (used for the single-world / non-tiled fallback).
@@ -180,6 +252,23 @@ mod tests {
     fn embedded_grid_size_matches() {
         // If this fails the embedded grid is wrong; koppen_class then safely returns 0.
         assert_eq!(KOPPEN.len(), KOPPEN_COLS * KOPPEN_ROWS);
+    }
+
+    #[test]
+    fn warp_is_deterministic_and_bounded() {
+        // Same point -> same warp (seam-safety: two cells sampling a shared point must agree).
+        let a = warp_lookup(45.6, 24.4);
+        let b = warp_lookup(45.6, 24.4);
+        assert_eq!(a, b);
+        // Displacement never exceeds the amplitude (climate can't teleport far).
+        let (wlat, wlon) = warp_lookup(45.6, 24.4);
+        assert!((wlat - 45.6).abs() <= WARP_AMP_DEG + 1e-9);
+        assert!((wlon - 24.4).abs() <= WARP_AMP_DEG + 1e-9);
+        // value_noise stays in [-1, 1].
+        for i in 0..50 {
+            let n = value_noise(i as f64 * 0.37, i as f64 * 0.91, 42);
+            assert!((-1.0..=1.0).contains(&n));
+        }
     }
 
     #[test]
