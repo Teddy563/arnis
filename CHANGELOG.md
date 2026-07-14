@@ -10,6 +10,22 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.2] - 2026-07-14
+
+Additive feature release for the Meld climate, heightmap, tree, and seam work. Every change is additive and seam-safe; omit the new flags and behaviour is unchanged, and default runs stay byte-identical.
+
+### Added
+
+- **Per-position Koppen climate.** Climate (biome tint and arid/polar surface blocks) is now sampled per block from the bundled Koppen grid instead of once per cell, so a large tiled region varies smoothly across the map instead of snapping to one climate per cell. New `Climate::at(lat, lon)` and `Ground::climate_at(x, z)` drive both the biome and surface-palette paths.
+- **`--climate-map <PREFIX>`.** Early-exit render mode: writes a top-down Koppen climate PNG for the bbox (one colour per grouped climate, the same grouping generation uses) plus a `CLIMATEMAP {json}` stats line. Pure function of the bbox, lines up with a geographic overlay.
+- **Tree size popularity weights.** New `--tree-size-weights small=..,big=..,giant=..` sets relative per-tier popularity (100 = the pack default share, 0 = off, 200 = about double) by reweighting the existing tile-invariant size roll. Scale gates still apply (Giant only at 1:1, tiny maps never place tall/giant). Legacy `--tree-sizes` stays as an on/off alias. Default weights run the original picker verbatim, so output is byte-identical.
+- **`--prewarm-elevation`.** Early-exit that fills the exact per-tile elevation cache the generation cells read (Mapterhorn globally, or the regional/AWS provider the fork picks) without sampling a grid. Companion to `--prewarm-overture`; lets Meld bake a region offline so cells never rate-limit the tile server.
+- **`--elevation-map <PREFIX>`.** Early-exit that renders the heightmap for the bbox to a PNG using the real provider stack (so the preview matches the world), hillshade or grayscale, with an `ELEVMAP {json}` line carrying min/max metres and bbox for a map overlay.
+
+### Fixed
+
+- **Boundary props no longer clip at cell seams.** Node-placed prop schematics (wind turbine, lighthouse, crane, excavator, tractor, tombstone, and the rest) were assigned to exactly one strict tile with no halo, while area ways get the editor halo, so a prop straddling a cell boundary lost the voxels that crossed into the neighbour tile at merge. Nodes now get the same halo as area ways, so both cells stamp the prop; safe because every node handler places deterministically on world-absolute coordinates (idempotent, byte-identical writes).
+
 ## [3.0.1] - 2026-07-12
 
 Upstream parity release: brings the fork to feature parity with **louis-e/arnis 3.0.0** (plus fork-only fixes upstream does not have), while keeping every Meld differentiator: tile-invariant rendering, shared master origin, `--road-detail`, the native cave engine, the scale-aware water/shore work, offline mode, and the master-origin elevation grid. Every feature below was ported faithfully and audited for cross-tile seam-safety by an adversarial review pass before shipping; the fork's #1 invariant is that independently generated cells merge into one seamless world.
