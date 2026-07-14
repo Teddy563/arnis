@@ -103,6 +103,27 @@ impl ElevationProvider for Mapterhorn {
     }
 }
 
+/// Pre-warm the on-disk tile cache for `bbox` WITHOUT sampling a grid (the wasteful
+/// `grid_w*grid_h` allocation `fetch_raw` does). Fetches + validates + caches every covering
+/// Mapterhorn tile at the SAME zoom `fetch_raw` would pick for this grid, hitting the identical
+/// `fetch_tile_pyramid` code path, so every baked tile is a guaranteed cache hit for later
+/// generation. Returns (cached, ocean/absent-404, failed).
+pub fn prefetch_tiles(
+    bbox: &LLBBox,
+    grid_width: usize,
+    grid_height: usize,
+) -> Result<(usize, usize, usize), Box<dyn std::error::Error>> {
+    let zoom = choose_zoom(bbox, grid_width, grid_height);
+    let cache_dir = get_cache_dir("mapterhorn");
+    std::fs::create_dir_all(&cache_dir)?;
+    let outcome = fetch_tile_pyramid(bbox, zoom, &cache_dir)?;
+    Ok((
+        outcome.available.len(),
+        outcome.confirmed_missing.len(),
+        outcome.failed_downloads,
+    ))
+}
+
 // ─── Zoom selection ────────────────────────────────────────────────────
 
 /// Smallest zoom whose pixels match the grid cell size, within budget.

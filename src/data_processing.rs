@@ -360,12 +360,19 @@ pub fn generate_world_with_options(
     // dir with region.json -> realm/community 85/12/3 blend); fall back to the plain
     // species-folder pack (e.g. a bare vanilla-plus dir without region.json).
     if let Some(pack) = args.tree_pack.as_ref() {
-        let sizes = args
-            .tree_sizes
-            .as_deref()
-            .map(crate::tree_library::SizeFilter::parse)
-            .unwrap_or_default();
-        match crate::region::RegionLibrary::load(pack, args.scale, args.ground_level, sizes) {
+        // Relative size weights (--tree-size-weights) win; else the legacy on/off --tree-sizes
+        // filter (mapped to 0/1 weights); else defaults. Bad weight specs warn + fall back.
+        let weights = if let Some(spec) = args.tree_size_weights.as_deref() {
+            crate::tree_library::SizeWeights::parse(spec).unwrap_or_else(|e| {
+                eprintln!("warning: --tree-size-weights ignored ({e}); using defaults");
+                crate::tree_library::SizeWeights::default()
+            })
+        } else if let Some(list) = args.tree_sizes.as_deref() {
+            crate::tree_library::SizeFilter::parse(list).to_weights()
+        } else {
+            crate::tree_library::SizeWeights::default()
+        };
+        match crate::region::RegionLibrary::load(pack, args.scale, args.ground_level, weights) {
             Ok(lib) => {
                 lib.report();
                 crate::element_processing::tree::set_region_pack(lib);

@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use crate::land_cover::coord_hash;
 use crate::schematic::{load_schem, Schematic};
-use crate::tree_library::{size_for_height, SizeFilter, TreeSize};
+use crate::tree_library::{size_for_height, SizeWeights, TreeSize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Habitat {
@@ -107,7 +107,7 @@ pub struct RegionLibrary {
     vanilla_pack: Pack, // sprinkle; may be empty (then the 12% slice falls back to realm)
     scale: f64,
     ground_level: i32, // the world's base Y (selection min elevation maps here) for montane test
-    sizes: SizeFilter, // which of the 5 size tiers the UI enabled
+    weights: SizeWeights, // relative popularity per size tier (the Meld sliders)
     total_realm: usize,
     total_vanilla: usize,
 }
@@ -186,7 +186,7 @@ impl RegionLibrary {
         dir: &Path,
         scale: f64,
         ground_level: i32,
-        sizes: SizeFilter,
+        weights: SizeWeights,
     ) -> Result<RegionLibrary, String> {
         let m = read_manifest(dir)?;
         let mut entries: Vec<(Schematic, TreeSize, u8)> = Vec::new();
@@ -219,7 +219,7 @@ impl RegionLibrary {
             vanilla_pack,
             scale,
             ground_level,
-            sizes,
+            weights,
             total_realm,
             total_vanilla,
         })
@@ -240,51 +240,103 @@ impl RegionLibrary {
     /// ultra-rare and only at 1:1; small maps lean small/medium. If the wanted tier is disabled or
     /// disallowed at this scale, `pick_in_community` falls back to a thinner allowed tier, so a
     /// disabled Giant roll simply becomes a smaller tree (never a gap). Position-seeded (seam-safe).
+    /// The default per-tier share (out of 1000) for this scale band, [Small, Medium, Big, Tall,
+    /// Giant]. These are exactly the cumulative thresholds the original hardcoded picker used, so
+    /// the weighted path multiplies against the true defaults.
+    fn base_share_for_scale(&self) -> [f64; 5] {
+        if self.scale < 0.3 {
+            [650.0, 335.0, 15.0, 0.0, 0.0]
+        } else if self.scale < 0.7 {
+            [380.0, 440.0, 165.0, 15.0, 0.0]
+        } else if self.scale < 1.0 {
+            [260.0, 440.0, 230.0, 70.0, 0.0]
+        } else {
+            [200.0, 400.0, 280.0, 95.0, 25.0]
+        }
+    }
+
     fn size_pick(&self, x: i32, z: i32) -> TreeSize {
         let roll = coord_hash(x + 101, z + 233) % 1000;
-        if self.scale < 0.3 {
-            // tiny maps: small/medium, big rare, never tall/giant
-            if roll < 650 {
-                TreeSize::Small
-            } else if roll < 985 {
-                TreeSize::Medium
+        // Default sliders: run the ORIGINAL integer-threshold picker so output is byte-identical.
+        // (The weighted float path below shifts boundaries once the tier sums differ from the
+        // original cumulative layout, so the short-circuit is required, not merely an optimisation.)
+        if self.weights.is_default() {
+            return if self.scale < 0.3 {
+                // tiny maps: small/medium, big rare, never tall/giant
+                if roll < 650 {
+                    TreeSize::Small
+                } else if roll < 985 {
+                    TreeSize::Medium
+                } else {
+                    TreeSize::Big
+                }
+            } else if self.scale < 0.7 {
+                if roll < 380 {
+                    TreeSize::Small
+                } else if roll < 820 {
+                    TreeSize::Medium
+                } else if roll < 985 {
+                    TreeSize::Big
+                } else {
+                    TreeSize::Tall // ~1.5%
+                }
+            } else if self.scale < 1.0 {
+                if roll < 260 {
+                    TreeSize::Small
+                } else if roll < 700 {
+                    TreeSize::Medium
+                } else if roll < 930 {
+                    TreeSize::Big
+                } else {
+                    TreeSize::Tall // ~7% (no Giant below 1:1)
+                }
             } else {
-                TreeSize::Big
-            }
-        } else if self.scale < 0.7 {
-            if roll < 380 {
-                TreeSize::Small
-            } else if roll < 820 {
-                TreeSize::Medium
-            } else if roll < 985 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall // ~1.5%
-            }
-        } else if self.scale < 1.0 {
-            if roll < 260 {
-                TreeSize::Small
-            } else if roll < 700 {
-                TreeSize::Medium
-            } else if roll < 930 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall // ~7% (no Giant below 1:1)
-            }
-        } else {
-            // 1:1 - all tiers; Tall ~9.5%, Giant ~2.5%
-            if roll < 200 {
-                TreeSize::Small
-            } else if roll < 600 {
-                TreeSize::Medium
-            } else if roll < 880 {
-                TreeSize::Big
-            } else if roll < 975 {
-                TreeSize::Tall
-            } else {
-                TreeSize::Giant
+                // 1:1 - all tiers; Tall ~9.5%, Giant ~2.5%
+                if roll < 200 {
+                    TreeSize::Small
+                } else if roll < 600 {
+                    TreeSize::Medium
+                } else if roll < 880 {
+                    TreeSize::Big
+                } else if roll < 975 {
+                    TreeSize::Tall
+                } else {
+                    TreeSize::Giant
+                }
+            };
+        }
+        // Weighted path (user moved a slider): reweight the default band shares by the per-tier
+        // multipliers and bucket the SAME roll, so it stays tile-invariant/seam-safe. A tier the
+        // scale band never offered has base share 0 (0*mult = 0), so a slider can't conjure a Giant
+        // on a scaled-down map, or a Tall on a tiny map - the depth/scale gates still apply.
+        const ORDER: [TreeSize; 5] = [
+            TreeSize::Small,
+            TreeSize::Medium,
+            TreeSize::Big,
+            TreeSize::Tall,
+            TreeSize::Giant,
+        ];
+        let base = self.base_share_for_scale();
+        let w: [f64; 5] = [
+            base[0] * self.weights.small,
+            base[1] * self.weights.medium,
+            base[2] * self.weights.big,
+            base[3] * self.weights.tall,
+            base[4] * self.weights.giant,
+        ];
+        let sum: f64 = w.iter().sum();
+        if sum <= 0.0 {
+            return TreeSize::Small;
+        }
+        let target = (roll as f64 / 1000.0) * sum;
+        let mut cum = 0.0;
+        for (i, weight) in w.iter().enumerate() {
+            cum += weight;
+            if target < cum {
+                return ORDER[i];
             }
         }
+        TreeSize::Small
     }
 
     /// Whether a size may appear, combining the UI tier toggle with a scale gate: Giant (very big)
@@ -292,7 +344,7 @@ impl RegionLibrary {
     /// toggled off (or Giant below 1:1) is simply skipped - `pick_in_community` falls back to a
     /// thinner allowed tier, so nothing leaks and no gap appears.
     fn size_allowed(&self, size: TreeSize) -> bool {
-        if !self.sizes.allows(size) {
+        if !self.weights.allows(size) {
             return false;
         }
         match size {
@@ -503,7 +555,7 @@ impl RegionLibrary {
                 TreeSize::Giant => g += 1,
             }
         }
-        let on = |v: bool| if v { "on" } else { "off" };
+        let pct = |v: f64| format!("{}%", (v * 100.0).round() as i64);
         println!(
             "Region tree pack loaded: realm {} - {} regional trees ({} communities) + {} vanilla \
              sprinkle trees ({} communities)",
@@ -514,12 +566,12 @@ impl RegionLibrary {
             self.vanilla_pack.communities.len(),
         );
         println!(
-            "  size tiers [schems]: small {} [{}], medium {} [{}], big {} [{}], tall {} [{}], giant {} [{}]",
-            s, on(self.sizes.small),
-            m, on(self.sizes.medium),
-            b, on(self.sizes.big),
-            t, on(self.sizes.tall),
-            g, on(self.sizes.giant),
+            "  size tiers [weight]: small {} [{}], medium {} [{}], big {} [{}], tall {} [{}], giant {} [{}]",
+            s, pct(self.weights.small),
+            m, pct(self.weights.medium),
+            b, pct(self.weights.big),
+            t, pct(self.weights.tall),
+            g, pct(self.weights.giant),
         );
     }
 }
@@ -541,7 +593,7 @@ mod tests {
     #[ignore = "set ARNIS_REGION to a realm dir with region.json"]
     fn smoke_load_real_region() {
         let dir = std::env::var("ARNIS_REGION").expect("ARNIS_REGION");
-        let lib = RegionLibrary::load(Path::new(&dir), 1.0, -62, SizeFilter::default())
+        let lib = RegionLibrary::load(Path::new(&dir), 1.0, -62, SizeWeights::default())
             .expect("load region");
         lib.report();
         assert!(lib.total_realm > 0);

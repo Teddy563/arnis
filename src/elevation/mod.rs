@@ -390,6 +390,35 @@ pub fn prefetch_regional(
     Ok(Some(provider.name()))
 }
 
+/// Pre-warm the elevation TILE cache for `bbox` (the provider generation would pick: Mapterhorn
+/// globally, a regional high-res provider where one covers, or AWS when `aws_only`), WITHOUT
+/// sampling+discarding a grid. Returns (provider, cached, ocean/absent, failed). Companion to
+/// `overture::prewarm` — Meld drives it per sub-bbox at the generation scale so the zoom matches
+/// what the cells later read.
+pub fn prefetch_elevation(
+    bbox: &LLBBox,
+    scale: f64,
+    aws_only: bool,
+) -> Result<(&'static str, usize, usize, usize), Box<dyn std::error::Error>> {
+    let provider = select_provider(bbox, aws_only);
+    let (_, _, grid_width, grid_height) = compute_grid_dims(bbox, scale, None, None);
+    match provider.name() {
+        "mapterhorn" => {
+            let (c, a, f) = providers::mapterhorn::prefetch_tiles(bbox, grid_width, grid_height)?;
+            Ok(("mapterhorn", c, a, f))
+        }
+        "aws" => {
+            let (ok, f) = providers::aws_terrain::prefetch_tiles(bbox)?;
+            Ok(("aws", ok, 0, f))
+        }
+        // Regional fixed-tile providers: warm via fetch_raw (no per-tile count exposed).
+        name => {
+            provider.fetch_raw(bbox, grid_width, grid_height)?;
+            Ok((name, 0, 0, 0))
+        }
+    }
+}
+
 /// Clean up old cached elevation tiles/files from all providers.
 pub fn cleanup_old_cached_tiles() {
     cache::cleanup_old_cached_files();

@@ -46,6 +46,15 @@ pub struct Args {
     #[arg(long = "tree-sizes", value_name = "LIST")]
     pub tree_sizes: Option<String>,
 
+    /// Relative tree-size popularity for a region pack, as name=percent pairs
+    /// (small,medium,big,tall,giant). 100 = the pack's default share for that tier, 0 = off,
+    /// 200 = ~double. Omitted small/medium/big/tall stay 100; giant stays 0 (off, like the old
+    /// checkbox). Reweights the same seam-safe size roll; omitting the flag reproduces the default
+    /// distribution byte-for-byte. Giant only renders at 1:1 and tiny maps never place tall/giant
+    /// regardless of the slider (the scale gate always applies). Wins over --tree-sizes if both set.
+    #[arg(long = "tree-size-weights", value_name = "LIST")]
+    pub tree_size_weights: Option<String>,
+
     /// Vertical exaggeration for terrain: multiplies the elevation->Y mapping ONLY (not the
     /// horizontal footprint). 1.0 = true scale; 2-3 = dramatic mountains at the same map size.
     /// Auto-compresses if it would exceed the build height.
@@ -153,6 +162,17 @@ pub struct Args {
     #[arg(long = "climate-map", value_name = "PREFIX")]
     pub climate_map: Option<std::path::PathBuf>,
 
+    /// Render the elevation heightmap for --bbox to `<PREFIX>.png` and exit, without creating a
+    /// world. Uses the REAL provider stack generation uses (Mapterhorn / regional / AWS), so the
+    /// preview matches the terrain the world will get. Prints an `ELEVMAP {json}` line with min/max
+    /// metres + bbox for a geographic map overlay.
+    #[arg(long = "elevation-map", value_name = "PREFIX")]
+    pub elevation_map: Option<std::path::PathBuf>,
+
+    /// Shading for --elevation-map: `hillshade` (default) or `grayscale`.
+    #[arg(long = "elevation-map-mode", value_name = "MODE")]
+    pub elevation_map_mode: Option<String>,
+
     /// Enable land cover classification (optional)
     /// When enabled, fetches ESA WorldCover satellite data to classify terrain
     /// (forests, deserts, wetlands, built-up areas, etc.) and select appropriate
@@ -174,6 +194,13 @@ pub struct Args {
     /// later parallel cells read it from disk instead of each stalling on a cold fetch.
     #[arg(long = "prewarm-overture", default_value_t = false)]
     pub prewarm_overture: bool,
+
+    /// Pre-warm the elevation TILE cache for --bbox (Mapterhorn terrarium tiles, or the regional/
+    /// AWS provider generation would pick) and exit, before any world creation. Fills the exact
+    /// per-tile disk cache the generation cells read, so later parallel cells hit disk instead of
+    /// rate-limiting the tile server. Companion to --prewarm-overture (buildings). Purely additive.
+    #[arg(long = "prewarm-elevation", default_value_t = false)]
+    pub prewarm_elevation: bool,
 
     /// Enable debug mode (optional)
     #[arg(long)]
@@ -417,6 +444,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         return Ok(());
     }
 
+    // Elevation pre-warm just fetches + caches elevation tiles for --bbox; no world is created.
+    if args.prewarm_elevation {
+        return Ok(());
+    }
+
     // Zone-map mode renders cave-biome PNGs for --bbox; no world is created.
     if args.cave_zone_map.is_some() {
         return Ok(());
@@ -424,6 +456,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     // Climate-map mode renders a Koppen climate PNG for --bbox; no world is created.
     if args.climate_map.is_some() {
+        return Ok(());
+    }
+
+    // Elevation-map mode renders an elevation PNG for --bbox; no world is created.
+    if args.elevation_map.is_some() {
         return Ok(());
     }
 

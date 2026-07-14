@@ -18,6 +18,7 @@ mod deterministic_rng;
 mod element_processing;
 mod elevation;
 mod elevation_data;
+mod elevation_map;
 mod floodfill;
 mod floodfill_cache;
 mod ground;
@@ -281,6 +282,18 @@ fn run_cli() {
         }
     }
 
+    // Elevation-map mode: render the heightmap for --bbox to a PNG overlay and exit, using the
+    // real provider stack generation uses, so the preview matches the world's terrain.
+    if args.elevation_map.is_some() {
+        match elevation_map::render(&args) {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Overture pre-warm mode: fetch + cache the Overture building byte-ranges overlapping --bbox in
     // ONE process and exit, before any world creation. Lets Meld warm a region's buildings up front
     // (a data-pack-style download) so the later parallel cells read ranges from disk instead of each
@@ -299,6 +312,30 @@ fn run_cli() {
         .len();
         println!("Overture prewarm: ranges cached for bbox ({n} buildings in range)");
         std::process::exit(0);
+    }
+
+    // Elevation pre-warm mode: fetch + cache the elevation tiles overlapping --bbox in ONE process
+    // and exit, before any world creation. Fills the exact per-tile disk cache the generation cells
+    // read (Mapterhorn globally, a regional provider where one covers, or AWS when forced), so the
+    // later parallel cells hit disk instead of rate-limiting the tile server.
+    if args.prewarm_elevation {
+        println!(
+            "{} Pre-warming elevation tile cache for bbox…",
+            "  [+]".bold()
+        );
+        match elevation::prefetch_elevation(&args.bbox, args.scale, args.aws_only_elevation) {
+            Ok((name, cached, absent, failed)) => {
+                println!(
+                    "Elevation prewarm: provider '{name}', {cached} tile(s) cached, \
+                     {absent} ocean/absent, {failed} failed."
+                );
+                std::process::exit(if failed > 0 { 2 } else { 0 });
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red().bold(), e);
+                std::process::exit(1);
+            }
+        }
     }
 
     // Heads-up for very large areas: generation is long and memory-heavy, and big

@@ -118,6 +118,102 @@ impl SizeFilter {
             SizeFilter::default()
         }
     }
+
+    /// Convert the on/off filter into relative weights (on = 1.0, off = 0.0) so the legacy
+    /// `--tree-sizes` flag flows through the same weighting machinery as `--tree-size-weights`.
+    pub fn to_weights(self) -> SizeWeights {
+        SizeWeights {
+            small: if self.small { 1.0 } else { 0.0 },
+            medium: if self.medium { 1.0 } else { 0.0 },
+            big: if self.big { 1.0 } else { 0.0 },
+            tall: if self.tall { 1.0 } else { 0.0 },
+            giant: if self.giant { 1.0 } else { 0.0 },
+        }
+    }
+}
+
+/// Relative popularity multiplier per size tier (the Meld sliders): 1.0 = the pack's default
+/// share for that tier, 0.0 = off, 2.0 = ~double. Multiplies the scale-band base weights in
+/// `RegionLibrary::size_pick`, so it reweights the SAME tile-invariant roll (seam-safe) and
+/// reproduces the default distribution byte-for-byte when left at its default.
+#[derive(Clone, Copy, Debug)]
+pub struct SizeWeights {
+    pub small: f64,
+    pub medium: f64,
+    pub big: f64,
+    pub tall: f64,
+    pub giant: f64,
+}
+
+impl Default for SizeWeights {
+    fn default() -> Self {
+        // Matches SizeFilter::default(): every tier at its natural share, Giant off.
+        SizeWeights {
+            small: 1.0,
+            medium: 1.0,
+            big: 1.0,
+            tall: 1.0,
+            giant: 0.0,
+        }
+    }
+}
+
+impl SizeWeights {
+    pub fn weight(&self, size: TreeSize) -> f64 {
+        match size {
+            TreeSize::Small => self.small,
+            TreeSize::Medium => self.medium,
+            TreeSize::Big => self.big,
+            TreeSize::Tall => self.tall,
+            TreeSize::Giant => self.giant,
+        }
+    }
+
+    /// A tier with a zero (or negative) weight is off.
+    pub fn allows(&self, size: TreeSize) -> bool {
+        self.weight(size) > 0.0
+    }
+
+    /// True when every tier is at its default multiplier (so `size_pick` runs the original
+    /// integer-threshold code and stays byte-identical). Exact f64 compare is safe: the parser
+    /// yields exactly 1.0 / 0.0 for 100 / 0, as does `SizeFilter::to_weights`.
+    pub fn is_default(&self) -> bool {
+        self.small == 1.0
+            && self.medium == 1.0
+            && self.big == 1.0
+            && self.tall == 1.0
+            && self.giant == 0.0
+    }
+
+    /// Parse `name=percent` pairs (small,medium,big,tall,giant), percent 0..=200 -> 0.0..=2.0.
+    /// Omitted small/medium/big/tall stay 1.0; omitted giant stays 0.0 (off, like the checkbox).
+    /// Unknown names are an error (mirrors caves `BiomeAmounts::parse`).
+    pub fn parse(spec: &str) -> Result<SizeWeights, String> {
+        let mut w = SizeWeights::default();
+        for part in spec.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let (name, val) = part
+                .split_once('=')
+                .ok_or_else(|| format!("expected name=percent, got '{part}'"))?;
+            let pct: f64 = val
+                .trim()
+                .parse()
+                .map_err(|_| format!("bad percent '{val}' for '{name}'"))?;
+            let f = pct.clamp(0.0, 200.0) / 100.0;
+            match name.trim().to_ascii_lowercase().as_str() {
+                "small" | "s" => w.small = f,
+                "medium" | "m" => w.medium = f,
+                "big" | "b" => w.big = f,
+                "tall" | "t" => w.tall = f,
+                "giant" | "g" | "huge" => w.giant = f,
+                other => return Err(format!("unknown tree size '{other}'")),
+            }
+        }
+        Ok(w)
+    }
 }
 
 /// Choose a size tier from the scale band (medium common at full scale; small-only on very
@@ -347,6 +443,32 @@ mod tests {
         assert_eq!(size_for_height(21), TreeSize::Tall);
         assert_eq!(size_for_height(28), TreeSize::Tall);
         assert_eq!(size_for_height(35), TreeSize::Giant);
+    }
+
+    #[test]
+    fn size_weights_default_is_default() {
+        let d = SizeWeights::default();
+        assert!(d.is_default());
+        assert!(d.allows(TreeSize::Small));
+        assert!(!d.allows(TreeSize::Giant)); // giant off by default
+                                             // The legacy on/off filter default maps to the same weights (so it also short-circuits).
+        assert!(SizeFilter::default().to_weights().is_default());
+    }
+
+    #[test]
+    fn size_weights_parse() {
+        let w = SizeWeights::parse("giant=200,big=0").unwrap();
+        assert_eq!(w.giant, 2.0);
+        assert_eq!(w.big, 0.0);
+        assert!(!w.allows(TreeSize::Big)); // 0% == off
+        assert_eq!(w.small, 1.0); // omitted stays default
+        assert!(!w.is_default()); // giant moved off its 0.0 default
+                                  // clamp to 0..=200
+        assert_eq!(SizeWeights::parse("small=500").unwrap().small, 2.0);
+        // unknown name errors
+        assert!(SizeWeights::parse("humongous=100").is_err());
+        // empty spec == default
+        assert!(SizeWeights::parse("").unwrap().is_default());
     }
 
     #[test]
