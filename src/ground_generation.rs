@@ -118,6 +118,7 @@ pub fn generate_ground_layer(
     args: &Args,
     xzbbox: &XZBBox,
     building_footprints: &BuildingFootprintBitmap,
+    residential_footprint: &BuildingFootprintBitmap,
     tunnel_footprint: &BuildingFootprintBitmap,
     bridge_surface: &crate::element_processing::bridges::BridgeSurfaceMap,
 ) -> Result<(), String> {
@@ -127,6 +128,7 @@ pub fn generate_ground_layer(
         args,
         xzbbox,
         building_footprints,
+        residential_footprint,
         tunnel_footprint,
         bridge_surface,
         xzbbox.min_x(),
@@ -147,6 +149,7 @@ pub fn generate_ground_region(
     args: &Args,
     xzbbox: &XZBBox,
     building_footprints: &BuildingFootprintBitmap,
+    residential_footprint: &BuildingFootprintBitmap,
     tunnel_footprint: &BuildingFootprintBitmap,
     bridge_surface: &crate::element_processing::bridges::BridgeSurfaceMap,
     iter_min_x: i32,
@@ -157,10 +160,13 @@ pub fn generate_ground_region(
 ) {
     let has_land_cover = ground.has_land_cover();
     let terrain_enabled = ground.elevation_enabled;
-    // Profiles for texturing UNTAGGED land (--land-texture): ESA cropland gets the user's
-    // farmland mix, ESA grassland gets the built-in grass profile. Parsed once.
+    // Profiles for texturing UNTAGGED land (--land-texture): ESA cropland gets the land
+    // mix (its own shares; falls back to the farmland mix when --land-mix is omitted),
+    // ESA grassland gets the built-in grass profile. Parsed once.
     let land_farm_profile = crate::element_processing::field_texture::FieldProfile::farmland(
-        crate::element_processing::field_texture::FieldMix::parse(args.field_mix.as_deref()),
+        crate::element_processing::field_texture::FieldMix::parse(
+            args.land_mix.as_deref().or(args.field_mix.as_deref()),
+        ),
     );
     let land_grass_profile = crate::element_processing::field_texture::FieldProfile::grass();
     // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
@@ -522,7 +528,13 @@ pub fn generate_ground_region(
                                         }
                                         land_cover::LC_CROPLAND => {
                                             if args.land_texture {
-                                                (land_farm_profile.cell_at(x, z).surface, DIRT)
+                                                // Villages: ESA reads rural settlements as
+                                                // cropland — give them grassy ground, not wheat.
+                                                if residential_footprint.contains(x, z) {
+                                                    (land_grass_profile.cell_at(x, z).surface, DIRT)
+                                                } else {
+                                                    (land_farm_profile.cell_at(x, z).surface, DIRT)
+                                                }
                                             } else {
                                                 (FARMLAND, DIRT)
                                             }

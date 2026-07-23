@@ -425,6 +425,13 @@ pub fn generate_world_with_options(
     let building_footprints = flood_fill_cache
         .collect_building_footprints(if args.buildings { &elements } else { &[] }, &xzbbox);
 
+    // Residential landuse footprint: keeps --land-texture's field pattern out of
+    // villages (ESA reads rural villages as cropland). Empty when the flag is off.
+    let residential_footprint = flood_fill_cache.collect_residential_footprints(
+        if args.land_texture { &elements } else { &[] },
+        &xzbbox,
+    );
+
     // Collect coordinates covered by tunnel=building_passage highways so that
     // building generation can cut ground-level openings through walls and floors.
     let building_passages =
@@ -644,6 +651,7 @@ pub fn generate_world_with_options(
                         args,
                         &xzbbox,
                         &building_footprints,
+                        &residential_footprint,
                         &tunnel_footprint,
                         &bridge_surface,
                         g_min_x,
@@ -918,6 +926,7 @@ pub fn generate_world_with_options(
             args,
             &xzbbox,
             &building_footprints,
+            &residential_footprint,
             &tunnel_footprint,
             &bridge_surface,
         )?;

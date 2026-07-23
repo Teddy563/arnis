@@ -424,9 +424,14 @@ pub struct Args {
     pub grass_texture: bool,
 
     /// Also texture UNTAGGED land from satellite land-cover: ESA cropland gets the
-    /// farmland mix, ESA grassland gets the grass profile. Additive; off = unchanged.
+    /// land mix (below), ESA grassland gets the grass profile. Additive; off = unchanged.
     #[arg(long = "land-texture", default_value_t = false)]
     pub land_texture: bool,
+
+    /// Mix for UNTAGGED satellite cropland (same `name=pct` format as --field-mix).
+    /// Omitted = reuse --field-mix, so untagged land can have its own shares.
+    #[arg(long = "land-mix", value_name = "LIST")]
+    pub land_mix: Option<String>,
 }
 
 /// Player game mode for the generated world.

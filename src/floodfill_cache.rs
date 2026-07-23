@@ -447,6 +447,31 @@ impl FloodFillCache {
         footprints
     }
 
+    /// Collects the footprint of `landuse=residential` polygons from the cache.
+    ///
+    /// The landuse element pass deliberately skips residential (ESA built-up handles
+    /// dense cores), but rural villages read as cropland in ESA — this bitmap lets the
+    /// ground pass keep the field texture out of villages (`--land-texture`).
+    pub fn collect_residential_footprints(
+        &self,
+        elements: &[ProcessedElement],
+        xzbbox: &XZBBox,
+    ) -> BuildingFootprintBitmap {
+        let mut footprints = BuildingFootprintBitmap::new(xzbbox);
+        for element in elements {
+            if let ProcessedElement::Way(way) = element {
+                if way.tags.get("landuse").map(|v| v.as_str()) == Some("residential") {
+                    if let Some(cached) = self.way_cache.get(&way.id) {
+                        for &(x, z) in cached.iter() {
+                            footprints.set(x, z);
+                        }
+                    }
+                }
+            }
+        }
+        footprints
+    }
+
     /// Removes a way's cached flood fill result, freeing memory.
     ///
     /// Call this after processing an element to release its cached data.
