@@ -402,21 +402,31 @@ pub struct Args {
     #[arg(long = "field-mix", value_name = "LIST")]
     pub field_mix: Option<String>,
 
-    /// Scatter rock formations (andesite/tuff schematics) on farmland fields.
+    /// Scatter rock formations (andesite/tuff schematics) on textured fields.
     #[arg(long = "rocks", default_value_t = false)]
     pub rocks: bool,
 
-    /// Relative rock amount (rocks per ~3000 field cells). 0 = none. Only used with --rocks.
-    #[arg(long = "rock-density", default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=64))]
+    /// Rocks per 512×512 region of field area. 0 = none. Only used with --rocks.
+    #[arg(long = "rock-density", default_value_t = 4, value_parser = clap::value_parser!(u8).range(0..=64))]
     pub rock_density: u8,
 
-    /// Scatter bushes (foliage schematics) on farmland fields.
+    /// Scatter bushes (foliage schematics) on textured fields.
     #[arg(long = "bushes", default_value_t = false)]
     pub bushes: bool,
 
-    /// Relative bush amount (bushes per ~1200 field cells). 0 = none. Only used with --bushes.
-    #[arg(long = "bush-density", default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=64))]
+    /// Bushes per 512×512 region of field area. 0 = none. Only used with --bushes.
+    #[arg(long = "bush-density", default_value_t = 8, value_parser = clap::value_parser!(u8).range(0..=64))]
     pub bush_density: u8,
+
+    /// Also texture OSM grassland (meadow/grass/greenfield/orchard) with the built-in
+    /// grass profile (large loose plots), not just farmland. Additive; off = unchanged.
+    #[arg(long = "grass-texture", default_value_t = false)]
+    pub grass_texture: bool,
+
+    /// Also texture UNTAGGED land from satellite land-cover: ESA cropland gets the
+    /// farmland mix, ESA grassland gets the grass profile. Additive; off = unchanged.
+    #[arg(long = "land-texture", default_value_t = false)]
+    pub land_texture: bool,
 }
 
 /// Player game mode for the generated world.

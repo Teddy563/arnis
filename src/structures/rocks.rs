@@ -21,9 +21,7 @@ static ROCK_BYTES: [&[u8]; 8] = [
 ];
 
 /// Hard cap so a huge field never fills with rocks.
-const CAP: usize = 50;
-/// Cells-per-unit-density divisor (bigger = sparser). Rocks stay rare.
-const DIV: u64 = 3000;
+const CAP: usize = 60;
 
 fn rocks() -> &'static [StructureSchematic] {
     static CELL: OnceLock<Vec<StructureSchematic>> = OnceLock::new();
@@ -43,9 +41,9 @@ fn rocks() -> &'static [StructureSchematic] {
 
 /// Scatter rocks across a farmland field at random rotations, evenly distributed.
 ///
-/// `density` is a relative amount (rocks per ~3000 cells); `0` disables the family.
+/// `density` is rocks per 512×512 region of field area; `0` disables the family.
 pub fn scatter_rocks(editor: &mut WorldEditor, cells: &[(i32, i32)], density: u8) {
-    scatter_pool(editor, cells, rocks(), density, DIV, CAP, false, 0x00A5_1C3D);
+    scatter_pool(editor, cells, rocks(), density, CAP, false, 0x00A5_1C3D);
 }
 
 #[cfg(test)]

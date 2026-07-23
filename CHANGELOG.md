@@ -40,8 +40,18 @@ default runs stay byte-identical.
   clumped (bushes grow in small groups). Off by default. Each bush carries its own bark
   pole within leaf-decay distance, so the foliage survives in-game.
 
-  Both scatter families use a jittered-grid distribution (no clumping artefacts, reliably
-  hits the target count) seeded purely by position → identical across tile seams.
+  Both scatter families are budgeted **per 512×512 region** of field area (≈`density`
+  items per region, defaults 4 rocks / 8 bushes) on a jittered grid — sparse and evenly
+  spread, seeded purely by position → identical across tile seams.
+- **`--grass-texture`.** Extends the pattern to OSM grassland (`meadow`/`grass`/
+  `greenfield`/`orchard`) with a built-in grassy profile (large loose plots, mostly
+  plains + wildflowers), not just farmland. Off by default.
+- **`--land-texture`.** Extends the pattern to land OSM never tagged, keyed by ESA
+  satellite land-cover: cropland gets the farmland mix, grassland gets the grassy
+  profile. Covers the large plain areas OSM leaves blank. Off by default.
+
+  A `FieldProfile` bundles a mix with a parcel-size band and track rate, so each land
+  kind gets a distinct look (tight tilled plots vs large loose meadows).
 
 All three reuse the existing generic Sponge stamping engine; anchors are sampled from
 the stable field-cell list and rotations are position-hashed, so placement is identical

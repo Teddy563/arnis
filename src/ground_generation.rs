@@ -157,6 +157,12 @@ pub fn generate_ground_region(
 ) {
     let has_land_cover = ground.has_land_cover();
     let terrain_enabled = ground.elevation_enabled;
+    // Profiles for texturing UNTAGGED land (--land-texture): ESA cropland gets the user's
+    // farmland mix, ESA grassland gets the built-in grass profile. Parsed once.
+    let land_farm_profile = crate::element_processing::field_texture::FieldProfile::farmland(
+        crate::element_processing::field_texture::FieldMix::parse(args.field_mix.as_deref()),
+    );
+    let land_grass_profile = crate::element_processing::field_texture::FieldProfile::grass();
     // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
     // hoisted once per cell, so arid/polar surface blocks don't flip abruptly at cell borders.
 
@@ -507,8 +513,20 @@ pub fn generate_ground_region(
                                                 (GRASS_BLOCK, DIRT)
                                             }
                                         }
-                                        land_cover::LC_GRASSLAND => (GRASS_BLOCK, DIRT),
-                                        land_cover::LC_CROPLAND => (FARMLAND, DIRT),
+                                        land_cover::LC_GRASSLAND => {
+                                            if args.land_texture {
+                                                (land_grass_profile.cell_at(x, z).surface, DIRT)
+                                            } else {
+                                                (GRASS_BLOCK, DIRT)
+                                            }
+                                        }
+                                        land_cover::LC_CROPLAND => {
+                                            if args.land_texture {
+                                                (land_farm_profile.cell_at(x, z).surface, DIRT)
+                                            } else {
+                                                (FARMLAND, DIRT)
+                                            }
+                                        }
                                         land_cover::LC_BUILT_UP => {
                                             let h = land_cover::coord_hash(x, z) % 100;
                                             if h < 72 {

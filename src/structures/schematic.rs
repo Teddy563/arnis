@@ -606,18 +606,17 @@ pub fn place_structure(
 
 /// Even, natural scatter of a schematic pool across a field's cells.
 ///
-/// Places roughly `n * density / div` items (capped) on a jittered grid over the field
-/// bounding box, keeping only points that land on a field cell and off water. The grid
-/// gives even, Poisson-like spacing — no clumping, and no target undershoot from random
-/// misses. `cluster` adds an occasional companion so families like bushes grow in small
-/// clumps. Every hash is a pure function of position, so placement is identical across
-/// tile seams. Each item gets a random pool member + random N×90° rotation.
+/// Budgets about `density` items per 512×512 Minecraft region of the field's area (so a
+/// one-region field gets ~`density`, and a small field may get none), capped, placed on a
+/// jittered grid over the field bounding box — even Poisson-like spacing, no clumping.
+/// `cluster` adds an occasional companion so families like bushes grow in small clumps.
+/// Every hash is a pure function of position, so placement is identical across tile
+/// seams. Each item gets a random pool member + random N×90° rotation.
 pub fn scatter_pool(
     editor: &mut WorldEditor,
     cells: &[(i32, i32)],
     pool: &[StructureSchematic],
     density: u8,
-    div: u64,
     cap: usize,
     cluster: bool,
     salt: i32,
@@ -626,7 +625,13 @@ pub fn scatter_pool(
         return;
     }
     let n = cells.len();
-    let target = ((n as u64 * density as u64) / div.max(1)).clamp(1, cap as u64) as usize;
+    // Per-region budget: ~`density` items per 262144-block (512²) region of field area.
+    let target = ((n as f64 / 262_144.0) * density as f64)
+        .round()
+        .clamp(0.0, cap as f64) as usize;
+    if target == 0 {
+        return;
+    }
     let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
     let (mut min_x, mut max_x, mut min_z, mut max_z) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
     for &(x, z) in cells {

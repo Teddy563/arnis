@@ -74,9 +74,7 @@ static BUSH_BYTES: [&[u8]; 60] = [
 ];
 
 /// Hard cap so a huge field never turns into a thicket.
-const CAP: usize = 160;
-/// Cells-per-unit-density divisor (bigger = sparser).
-const DIV: u64 = 1200;
+const CAP: usize = 120;
 
 fn bushes() -> &'static [StructureSchematic] {
     static CELL: OnceLock<Vec<StructureSchematic>> = OnceLock::new();
@@ -97,9 +95,9 @@ fn bushes() -> &'static [StructureSchematic] {
 /// Scatter bushes across a farmland field at random rotations, evenly spread and
 /// gently clumped (bushes grow in small groups).
 ///
-/// `density` is a relative amount (bushes per ~1200 cells); `0` disables the family.
+/// `density` is bushes per 512×512 region of field area; `0` disables the family.
 pub fn scatter_bushes(editor: &mut WorldEditor, cells: &[(i32, i32)], density: u8) {
-    scatter_pool(editor, cells, bushes(), density, DIV, CAP, true, 0x00C7_2B19);
+    scatter_pool(editor, cells, bushes(), density, CAP, true, 0x00C7_2B19);
 }
 
 #[cfg(test)]
