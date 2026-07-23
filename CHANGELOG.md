@@ -22,10 +22,16 @@ default runs stay byte-identical.
   into a weighted mix of five styles: `coarse` (coarse dirt + dead bush), `plains`
   (grass), `flower` (grass + wildflowers), `farm` (stock tilled crops), and `moss`
   (overgrown moss). Value is a `name=pct` list of relative area shares, e.g.
-  `plains=60,coarse=20,flower=10,farm=10,moss=15`. The category is chosen per
-  domain-warped ~24-block blob, so each style forms large coherent fields with organic
-  edges (not per-block static) while still covering ≈ its weight share of the area; all
-  seam-safe. Omitted (or a farm-only mix) reproduces stock tilled farmland exactly.
+  `plains=60,coarse=20,flower=10,farm=10,moss=15`. Styles are laid out as rectangular
+  **field parcels** (plot sizes vary by region: 18/30/46 blocks) with dirt-track
+  boundaries between adjacent parcels of different kinds — like real farmland from above.
+  Each style also carries a fine internal sub-noise so it reads as varied ground (coarse
+  = coarse dirt + dirt patches + grass; moss = moss + grass + bare patches) rather than
+  one flat block. Area share ≈ weight; all seam-safe. Omitted (or a farm-only mix)
+  reproduces stock tilled farmland exactly.
+- **Snow: peaks mode ignores flat terrain.** `--snow-mode peaks` now places no snow when
+  the terrain's vertical relief is under 150 m, so flat lowland farmland (e.g. the
+  Romanian plain) no longer gets stray snow speckle; genuine mountains still cap.
 - **`--rocks` / `--rock-density <0-64>` — scattered rock formations.** Evenly scatters
   bundled andesite/tuff rock schematics (8 shapes) on farmland at random rotations, in
   small numbers set by the density. Off by default.

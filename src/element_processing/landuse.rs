@@ -120,12 +120,14 @@ pub fn generate_landuse(
         } else {
             &mut stream_rng
         };
-        // Farmland patch category for this cell (Farm elsewhere / when inactive).
-        let field_cat = if field_mix_active {
-            field_mix.category_at(x, z)
+        // Farmland cell (parcel style + surface + track flag) when the mix is active.
+        let field_cell = if field_mix_active {
+            Some(field_mix.cell_at(x, z))
         } else {
-            FieldCategory::Farm
+            None
         };
+        let field_cat = field_cell.map_or(FieldCategory::Farm, |c| c.cat);
+        let field_is_track = field_cell.map_or(false, |c| c.is_track);
         // Apply per-block randomness for certain landuse types
         let actual_block = if landuse_tag == "industrial" {
             // Industrial: primarily stone, with some stone bricks and smooth stone
@@ -162,14 +164,10 @@ pub fn generate_landuse(
         } else {
             block_type
         };
-        // Override the farmland surface per patch category when the mix is active.
-        let actual_block = if field_mix_active {
-            match field_cat {
-                FieldCategory::Coarse => COARSE_DIRT,
-                FieldCategory::Moss => MOSS_BLOCK,
-                FieldCategory::Plains | FieldCategory::Flower => GRASS_BLOCK,
-                FieldCategory::Farm => FARMLAND,
-            }
+        // Override the farmland surface with the resolved cell (parcel style,
+        // sub-noise ground, or a dirt-track boundary) when the mix is active.
+        let actual_block = if let Some(fc) = field_cell {
+            fc.surface
         } else {
             actual_block
         };
@@ -268,59 +266,70 @@ pub fn generate_landuse(
                 }
             }
             "farmland" if !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
-                // Decoration follows the patch category. Farm = stock behaviour
-                // (byte-identical when --field-mix is omitted, since field_cat is
-                // then always Farm); the others texture the alternate surfaces.
-                match field_cat {
-                    FieldCategory::Farm => {
-                        // Check if the current block is not water or another undesired block
-                        if x % 9 == 0 && z % 9 == 0 && editor.water_source_is_enclosed(x, z) {
-                            // Place water in dot pattern only where it sits in a basin, so on sloped
-                            // fields it can't run downhill and wash out the crops (upstream 046a746).
-                            editor.set_block(WATER, x, 0, z, Some(&[FARMLAND]), None);
-                        } else if rng.random_range(0..76) == 0 {
-                            let special_choice: i32 = rng.random_range(1..=10);
-                            if special_choice <= 4 {
-                                editor.set_block(HAY_BALE, x, 1, z, None, Some(&[SPONGE]));
+                // Dirt-track parcel boundaries stay bare; otherwise decorate per parcel
+                // style. Farm = stock behaviour (byte-identical when --field-mix is
+                // omitted, since field_cat is always Farm then and no tracks form).
+                if field_is_track {
+                    // bare field track between plots
+                } else {
+                    match field_cat {
+                        FieldCategory::Farm => {
+                            // Check if the current block is not water or another undesired block
+                            if x % 9 == 0 && z % 9 == 0 && editor.water_source_is_enclosed(x, z) {
+                                // Place water in dot pattern only where it sits in a basin, so on sloped
+                                // fields it can't run downhill and wash out the crops (upstream 046a746).
+                                editor.set_block(WATER, x, 0, z, Some(&[FARMLAND]), None);
+                            } else if rng.random_range(0..76) == 0 {
+                                let special_choice: i32 = rng.random_range(1..=10);
+                                if special_choice <= 4 {
+                                    editor.set_block(HAY_BALE, x, 1, z, None, Some(&[SPONGE]));
+                                } else {
+                                    editor.set_block(OAK_LEAVES, x, 1, z, None, Some(&[SPONGE]));
+                                }
                             } else {
-                                editor.set_block(OAK_LEAVES, x, 1, z, None, Some(&[SPONGE]));
-                            }
-                        } else {
-                            // Set crops only if the block below is farmland
-                            if editor.check_for_block(x, 0, z, Some(&[FARMLAND])) {
-                                let crop_choice = [WHEAT, CARROTS, POTATOES][rng.random_range(0..3)];
-                                editor.set_block(crop_choice, x, 1, z, None, None);
+                                // Set crops only if the block below is farmland
+                                if editor.check_for_block(x, 0, z, Some(&[FARMLAND])) {
+                                    let crop_choice = [WHEAT, CARROTS, POTATOES][rng.random_range(0..3)];
+                                    editor.set_block(crop_choice, x, 1, z, None, None);
+                                }
                             }
                         }
+                        FieldCategory::Plains => match rng.random_range(0..1000) {
+                            0..=6 => {
+                                editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
+                                editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                            }
+                            7..=32 => editor.set_block(FERN, x, 1, z, None, None),
+                            33..=560 => editor.set_block(GRASS, x, 1, z, None, None),
+                            _ => {}
+                        },
+                        FieldCategory::Flower => match rng.random_range(0..1000) {
+                            0..=55 => {
+                                let flower = [RED_FLOWER, YELLOW_FLOWER, BLUE_FLOWER, WHITE_FLOWER]
+                                    [rng.random_range(0..4)];
+                                editor.set_block(flower, x, 1, z, None, None);
+                            }
+                            56..=70 => {
+                                editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
+                                editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                            }
+                            71..=540 => editor.set_block(GRASS, x, 1, z, None, None),
+                            _ => {}
+                        },
+                        FieldCategory::Coarse => match rng.random_range(0..150) {
+                            0..=4 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
+                            5..=8 => editor.set_block(FERN, x, 1, z, None, None),
+                            9..=18 => editor.set_block(GRASS, x, 1, z, None, None),
+                            _ => {}
+                        },
+                        FieldCategory::Moss => match rng.random_range(0..100) {
+                            0..=2 => editor.set_block(AZALEA, x, 1, z, None, None),
+                            3..=6 => editor.set_block(FERN, x, 1, z, None, None),
+                            7..=26 => editor.set_block(MOSS_CARPET, x, 1, z, None, None),
+                            27..=48 => editor.set_block(GRASS, x, 1, z, None, None),
+                            _ => {}
+                        },
                     }
-                    FieldCategory::Plains => match rng.random_range(0..1000) {
-                        0..=6 => {
-                            editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
-                            editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
-                        }
-                        7..=560 => editor.set_block(GRASS, x, 1, z, None, None),
-                        _ => {}
-                    },
-                    FieldCategory::Flower => match rng.random_range(0..1000) {
-                        0..=45 => {
-                            let flower = [RED_FLOWER, YELLOW_FLOWER, BLUE_FLOWER, WHITE_FLOWER]
-                                [rng.random_range(0..4)];
-                            editor.set_block(flower, x, 1, z, None, None);
-                        }
-                        46..=520 => editor.set_block(GRASS, x, 1, z, None, None),
-                        _ => {}
-                    },
-                    FieldCategory::Coarse => match rng.random_range(0..150) {
-                        0..=3 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
-                        4..=12 => editor.set_block(GRASS, x, 1, z, None, None),
-                        _ => {}
-                    },
-                    FieldCategory::Moss => match rng.random_range(0..100) {
-                        0..=2 => editor.set_block(AZALEA, x, 1, z, None, None),
-                        3..=22 => editor.set_block(MOSS_CARPET, x, 1, z, None, None),
-                        23..=45 => editor.set_block(GRASS, x, 1, z, None, None),
-                        _ => {}
-                    },
                 }
             }
             "construction" => {

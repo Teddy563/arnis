@@ -130,6 +130,13 @@ fn compute_snow_threshold(
         SnowMode::Realistic => snow_threshold_for(ed, lat_deg, ground_level),
         SnowMode::Manual => cfg.manual_y,
         SnowMode::Peaks => {
+            // Only cap genuine peaks. On flat/rolling terrain (little vertical relief),
+            // "top N%" would snow slightly-higher lowland — e.g. flat farmland plains —
+            // which reads as random snow speckle. Require real relief before any snow.
+            const MIN_RELIEF_M: f64 = 150.0;
+            if ed.max_height_m - ed.min_height_m < MIN_RELIEF_M {
+                return i32::MAX;
+            }
             let max_y =
                 ground_level as f64 + (ed.max_height_m - ed.min_height_m) * ed.blocks_per_meter;
             let min_y = ground_level as f64;
