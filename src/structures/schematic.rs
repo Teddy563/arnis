@@ -1,12 +1,13 @@
 //! Generic Sponge .schem loader keeping full blocks + states, for stamping props.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::Arc;
 
 use fastnbt::Value;
 
 use crate::block_definitions::*;
+use crate::land_cover::coord_hash;
 use crate::schematic::rotate_xz;
 use crate::world_editor::WorldEditor;
 
@@ -600,6 +601,75 @@ pub fn place_structure(
         if let Some(g) = ground {
             editor.set_block_absolute(g, wx, base_y - 1, wz, None, Some(&[]));
         }
+    }
+}
+
+/// Even, natural scatter of a schematic pool across a field's cells.
+///
+/// Places roughly `n * density / div` items (capped) on a jittered grid over the field
+/// bounding box, keeping only points that land on a field cell and off water. The grid
+/// gives even, Poisson-like spacing — no clumping, and no target undershoot from random
+/// misses. `cluster` adds an occasional companion so families like bushes grow in small
+/// clumps. Every hash is a pure function of position, so placement is identical across
+/// tile seams. Each item gets a random pool member + random N×90° rotation.
+pub fn scatter_pool(
+    editor: &mut WorldEditor,
+    cells: &[(i32, i32)],
+    pool: &[StructureSchematic],
+    density: u8,
+    div: u64,
+    cap: usize,
+    cluster: bool,
+    salt: i32,
+) {
+    if density == 0 || pool.is_empty() || cells.is_empty() {
+        return;
+    }
+    let n = cells.len();
+    let target = ((n as u64 * density as u64) / div.max(1)).clamp(1, cap as u64) as usize;
+    let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
+    let (mut min_x, mut max_x, mut min_z, mut max_z) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+    for &(x, z) in cells {
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_z = min_z.min(z);
+        max_z = max_z.max(z);
+    }
+    // One item per ~spacing² blocks, sized so the whole field yields about `target`.
+    let area = (max_x - min_x + 1) as i64 * (max_z - min_z + 1) as i64;
+    let spacing = ((area as f64 / target as f64).sqrt() as i32).max(2);
+    let mut placed = 0usize;
+    let mut gz = min_z;
+    while gz <= max_z && placed < target {
+        let mut gx = min_x;
+        while gx <= max_x && placed < target {
+            let h = coord_hash(gx ^ salt, gz.wrapping_mul(31) ^ salt);
+            let jx = (h % spacing as u64) as i32;
+            let jz = ((h >> 20) % spacing as u64) as i32;
+            let (cx, cz) = (gx + jx, gz + jz);
+            if set.contains(&(cx, cz)) && !editor.is_lc_water(cx, cz) {
+                let schem = &pool[((h >> 8) as usize) % pool.len()];
+                let by = editor.get_absolute_y(cx, 1, cz);
+                place_structure(editor, schem, cx, cz, by, ((h >> 5) & 3) as u8, None);
+                placed += 1;
+                // Small clump companion (bushes): a second piece a couple blocks off.
+                if cluster && (h & 7) < 3 {
+                    let dx = ((h >> 3) & 3) as i32 - 1;
+                    let dz = ((h >> 6) & 3) as i32 - 1;
+                    let (nx, nz) = (cx + dx * 2, cz + dz * 2);
+                    if (dx != 0 || dz != 0)
+                        && set.contains(&(nx, nz))
+                        && !editor.is_lc_water(nx, nz)
+                    {
+                        let s2 = &pool[((h >> 14) as usize) % pool.len()];
+                        let by2 = editor.get_absolute_y(nx, 1, nz);
+                        place_structure(editor, s2, nx, nz, by2, ((h >> 9) & 3) as u8, None);
+                    }
+                }
+            }
+            gx += spacing;
+        }
+        gz += spacing;
     }
 }
 

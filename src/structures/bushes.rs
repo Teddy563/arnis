@@ -7,8 +7,7 @@
 
 use std::sync::OnceLock;
 
-use super::schematic::{load_structure, place_structure, StructureSchematic};
-use crate::land_cover::coord_hash;
+use super::schematic::{load_structure, scatter_pool, StructureSchematic};
 use crate::world_editor::WorldEditor;
 
 static BUSH_BYTES: [&[u8]; 60] = [
@@ -74,10 +73,10 @@ static BUSH_BYTES: [&[u8]; 60] = [
     include_bytes!("../../assets/structures/sprucebush6.schem"),
 ];
 
-/// Minimum gap between two bushes (they are ~5×5 clumps).
-const SPACING: i32 = 5;
 /// Hard cap so a huge field never turns into a thicket.
-const CAP: u64 = 160;
+const CAP: usize = 160;
+/// Cells-per-unit-density divisor (bigger = sparser).
+const DIV: u64 = 1200;
 
 fn bushes() -> &'static [StructureSchematic] {
     static CELL: OnceLock<Vec<StructureSchematic>> = OnceLock::new();
@@ -95,44 +94,12 @@ fn bushes() -> &'static [StructureSchematic] {
     })
 }
 
-/// Scatter bushes across a farmland field at random rotations.
+/// Scatter bushes across a farmland field at random rotations, evenly spread and
+/// gently clumped (bushes grow in small groups).
 ///
 /// `density` is a relative amount (bushes per ~1200 cells); `0` disables the family.
 pub fn scatter_bushes(editor: &mut WorldEditor, cells: &[(i32, i32)], density: u8) {
-    if density == 0 {
-        return;
-    }
-    let pool = bushes();
-    if pool.is_empty() {
-        return;
-    }
-    let n = cells.len();
-    if n == 0 {
-        return;
-    }
-    let target = ((n as u64 * density as u64) / 1200).clamp(1, CAP) as usize;
-    let mut placed: Vec<(i32, i32)> = Vec::new();
-    let max_attempts = target as u32 * 8 + 8;
-    let mut t: u32 = 0;
-    while placed.len() < target && t < max_attempts {
-        let h = coord_hash(t as i32 + 1, (n as i32) ^ 0x00C7_2B19);
-        t += 1;
-        let (ax, az) = cells[(h % n as u64) as usize];
-        if editor.is_lc_water(ax, az) {
-            continue;
-        }
-        if placed
-            .iter()
-            .any(|&(px, pz)| (px - ax).abs() < SPACING && (pz - az).abs() < SPACING)
-        {
-            continue;
-        }
-        let schem = &pool[((h >> 11) as usize) % pool.len()];
-        let rot = ((h >> 5) & 3) as u8;
-        let base_y = editor.get_absolute_y(ax, 1, az);
-        place_structure(editor, schem, ax, az, base_y, rot, None);
-        placed.push((ax, az));
-    }
+    scatter_pool(editor, cells, bushes(), density, DIV, CAP, true, 0x00C7_2B19);
 }
 
 #[cfg(test)]

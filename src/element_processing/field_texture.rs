@@ -7,6 +7,7 @@
 //! matches its weight. When `--field-mix` is omitted the mix is `farm=100`, which
 //! keeps every farmland cell tilled → byte-identical to stock arnis.
 
+use crate::ground_generation::value_noise_01;
 use crate::land_cover::coord_hash;
 
 /// One farmland patch style.
@@ -35,9 +36,14 @@ pub struct FieldMix {
     default: bool,
 }
 
-/// Edge length (blocks) of one patch. ~7 m plots read like real field parcels and
-/// keep each category spatially coherent instead of salt-and-pepper.
-const PATCH: i32 = 7;
+/// Blob size (blocks). One category fills a whole ~24-block blob, so the map reads as
+/// coherent fields of texture rather than per-block static.
+const BLOB: i32 = 24;
+/// Max block offset applied to the sample point before quantising to a blob, warping
+/// the otherwise-square blob edges into organic wandering boundaries.
+const WARP: f64 = 14.0;
+/// Lattice period of the warp noise.
+const WARP_SCALE: i32 = 40;
 
 impl FieldMix {
     /// Stock behaviour: all farmland stays tilled farmland.
@@ -92,8 +98,10 @@ impl FieldMix {
         self.default
     }
 
-    /// Category of the patch containing `(x, z)`. A uniform per-patch hash makes each
-    /// category cover ≈ its weight share, with the whole patch a single category.
+    /// Category for the blob containing `(x, z)`. The sample point is domain-warped and
+    /// quantised to a large blob, then a uniform per-blob hash picks the category — so
+    /// each category forms big coherent blobs (not per-block static) while still covering
+    /// ≈ its weight share of the area.
     pub fn category_at(&self, x: i32, z: i32) -> FieldCategory {
         let total = self.coarse as u64
             + self.plains as u64
@@ -103,8 +111,13 @@ impl FieldMix {
         if total == 0 {
             return FieldCategory::Farm;
         }
-        let bx = x.div_euclid(PATCH);
-        let bz = z.div_euclid(PATCH);
+        // Warp the point with two decorrelated noise fields so blob edges wander.
+        let wx = value_noise_01(x + 1000, z - 500, WARP_SCALE);
+        let wz = value_noise_01(x - 700, z + 1300, WARP_SCALE);
+        let sx = x + ((wx - 0.5) * 2.0 * WARP).round() as i32;
+        let sz = z + ((wz - 0.5) * 2.0 * WARP).round() as i32;
+        let bx = sx.div_euclid(BLOB);
+        let bz = sz.div_euclid(BLOB);
         // Salt keeps this stream distinct from the prop/scatter coord_hash uses.
         let mut roll = coord_hash(bx, bz ^ 0x5F35_6495) % total;
         for (share, cat) in [
@@ -149,9 +162,9 @@ mod tests {
         let m = FieldMix::parse(Some("plains=50,farm=50"));
         assert!(!m.is_default());
         let (mut plains, mut farm, mut other) = (0, 0, 0);
-        // Sample distinct patches (step by PATCH) so each draw is an independent patch.
-        for x in (0..700).step_by(7) {
-            for z in (0..700).step_by(7) {
+        // Sample a wide area (step across blobs) so the law of large numbers applies.
+        for x in (0..3000).step_by(11) {
+            for z in (0..3000).step_by(11) {
                 match m.category_at(x, z) {
                     FieldCategory::Plains => plains += 1,
                     FieldCategory::Farm => farm += 1,

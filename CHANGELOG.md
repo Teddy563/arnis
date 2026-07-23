@@ -19,20 +19,23 @@ default runs stay byte-identical.
 ### Added
 
 - **`--field-mix <LIST>` — configurable farmland texturing.** Splits `landuse=farmland`
-  into a weighted mix of five patch styles over ~7-block plots: `coarse` (coarse
-  dirt + dead bush), `plains` (grass), `flower` (grass + wildflowers), `farm` (stock
-  tilled crops), and `moss` (overgrown moss). Value is a `name=pct` list of relative
-  area shares, e.g. `plains=60,coarse=20,flower=10,farm=10,moss=15`; each plot's
-  category is a uniform per-patch hash so a share of N ≈ N% of the farmland area and
-  patches stay coherent across tile seams. Omitted (or a farm-only mix) reproduces the
-  stock tilled farmland exactly.
-- **`--rocks` / `--rock-density <0-64>` — scattered rock formations.** Places bundled
-  andesite/tuff rock schematics (8 shapes) on farmland fields at random rotations, in
+  into a weighted mix of five styles: `coarse` (coarse dirt + dead bush), `plains`
+  (grass), `flower` (grass + wildflowers), `farm` (stock tilled crops), and `moss`
+  (overgrown moss). Value is a `name=pct` list of relative area shares, e.g.
+  `plains=60,coarse=20,flower=10,farm=10,moss=15`. The category is chosen per
+  domain-warped ~24-block blob, so each style forms large coherent fields with organic
+  edges (not per-block static) while still covering ≈ its weight share of the area; all
+  seam-safe. Omitted (or a farm-only mix) reproduces stock tilled farmland exactly.
+- **`--rocks` / `--rock-density <0-64>` — scattered rock formations.** Evenly scatters
+  bundled andesite/tuff rock schematics (8 shapes) on farmland at random rotations, in
   small numbers set by the density. Off by default.
-- **`--bushes` / `--bush-density <0-64>` — scattered bushes.** Places bundled bush
-  schematics (10 species × 6 shapes) on farmland fields at random rotations. Off by
-  default. Each bush carries its own bark pole within leaf-decay distance, so the
-  foliage survives in-game.
+- **`--bushes` / `--bush-density <0-64>` — scattered bushes.** Evenly scatters bundled
+  bush schematics (10 species × 6 shapes) on farmland at random rotations, gently
+  clumped (bushes grow in small groups). Off by default. Each bush carries its own bark
+  pole within leaf-decay distance, so the foliage survives in-game.
+
+  Both scatter families use a jittered-grid distribution (no clumping artefacts, reliably
+  hits the target count) seeded purely by position → identical across tile seams.
 
 All three reuse the existing generic Sponge stamping engine; anchors are sampled from
 the stable field-cell list and rotations are position-hashed, so placement is identical
