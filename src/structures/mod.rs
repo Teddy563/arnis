@@ -8,7 +8,9 @@ pub mod fountain;
 #[allow(dead_code)] // parked-helicopter prop reserved: needs a seam-safe region-ownership guard
 pub mod helicopter;
 pub mod lighthouse;
+pub mod bushes;
 pub mod playground;
+pub mod rocks;
 pub mod schematic;
 pub mod starship;
 pub mod tombstone;

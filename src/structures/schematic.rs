@@ -308,6 +308,31 @@ fn map_structure_block(name: &str) -> Option<BlockWithProperties> {
         "quartz_stairs" => QUARTZ_STAIRS,
         "red_concrete" => RED_CONCRETE,
         "redstone_wall_torch" => REDSTONE_WALL_TORCH,
+        // Rock props (andesite/tuff). No tuff slab/stairs constants exist, so those
+        // reuse the visually near-identical andesite shapes.
+        "andesite_stairs" => ANDESITE_STAIRS,
+        "tuff_slab" => ANDESITE_SLAB,
+        "tuff_stairs" => ANDESITE_STAIRS,
+        // Bush props: species foliage + a short bark pole. `*_wood` maps to the
+        // matching `*_log` (mangrove has no real log const, so it borrows oak);
+        // flowering azalea leaves reuse the plain azalea-leaves block.
+        "acacia_leaves" => ACACIA_LEAVES,
+        "azalea_leaves" => AZALEA_LEAVES,
+        "flowering_azalea_leaves" => AZALEA_LEAVES,
+        "birch_leaves" => BIRCH_LEAVES,
+        "cherry_leaves" => CHERRY_LEAVES,
+        "dark_oak_leaves" => DARK_OAK_LEAVES,
+        "jungle_leaves" => JUNGLE_LEAVES,
+        "mangrove_leaves" => MANGROVE_LEAVES,
+        "spruce_leaves" => SPRUCE_LEAVES,
+        "acacia_wood" => ACACIA_LOG,
+        "oak_wood" => OAK_LOG,
+        "birch_wood" => BIRCH_LOG,
+        "cherry_wood" => CHERRY_LOG,
+        "dark_oak_wood" => DARK_OAK_LOG,
+        "jungle_wood" => JUNGLE_LOG,
+        "mangrove_wood" => OAK_LOG,
+        "spruce_wood" => SPRUCE_LOG,
         _ => return None,
     };
     Some(BlockWithProperties::new(block, parse_state(name)))

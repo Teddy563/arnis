@@ -10,6 +10,34 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.4] - 2026-07-23
+
+Configurable farmland texturing plus scattered rocks and bushes. Every change is
+seam-safe (a pure function of world coordinates) and additive; omit the new flags and
+default runs stay byte-identical.
+
+### Added
+
+- **`--field-mix <LIST>` — configurable farmland texturing.** Splits `landuse=farmland`
+  into a weighted mix of five patch styles over ~7-block plots: `coarse` (coarse
+  dirt + dead bush), `plains` (grass), `flower` (grass + wildflowers), `farm` (stock
+  tilled crops), and `moss` (overgrown moss). Value is a `name=pct` list of relative
+  area shares, e.g. `plains=60,coarse=20,flower=10,farm=10,moss=15`; each plot's
+  category is a uniform per-patch hash so a share of N ≈ N% of the farmland area and
+  patches stay coherent across tile seams. Omitted (or a farm-only mix) reproduces the
+  stock tilled farmland exactly.
+- **`--rocks` / `--rock-density <0-64>` — scattered rock formations.** Places bundled
+  andesite/tuff rock schematics (8 shapes) on farmland fields at random rotations, in
+  small numbers set by the density. Off by default.
+- **`--bushes` / `--bush-density <0-64>` — scattered bushes.** Places bundled bush
+  schematics (10 species × 6 shapes) on farmland fields at random rotations. Off by
+  default. Each bush carries its own bark pole within leaf-decay distance, so the
+  foliage survives in-game.
+
+All three reuse the existing generic Sponge stamping engine; anchors are sampled from
+the stable field-cell list and rotations are position-hashed, so placement is identical
+from any tile (no seam artefacts).
+
 ## [3.0.3] - 2026-07-15
 
 Water and cave rendering fixes plus organic climate boundaries. Every change is seam-safe (a pure function of world coordinates) and additive; default runs stay byte-identical away from the affected water/cave surfaces.

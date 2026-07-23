@@ -7,6 +7,7 @@ pub mod bridges;
 pub mod buildings;
 pub mod doors;
 pub mod emergency;
+pub mod field_texture;
 pub mod highways;
 pub mod historic;
 pub mod landuse;

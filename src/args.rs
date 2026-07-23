@@ -394,6 +394,29 @@ pub struct Args {
     /// world. Requires --output-dir; --bbox is ignored for the map bounds.
     #[arg(long = "map-item-only", default_value_t = false)]
     pub map_item_only: bool,
+
+    /// Farmland texture mix as a `name=pct` list over the five categories
+    /// `coarse,plains,flower,farm,moss` (relative shares, any subset/order), e.g.
+    /// `plains=60,coarse=20,flower=10,farm=10,moss=15`. Splits OSM farmland into
+    /// coherent ~7 m patches. Omitted (or all-zero) = stock all-farmland, byte-identical.
+    #[arg(long = "field-mix", value_name = "LIST")]
+    pub field_mix: Option<String>,
+
+    /// Scatter rock formations (andesite/tuff schematics) on farmland fields.
+    #[arg(long = "rocks", default_value_t = false)]
+    pub rocks: bool,
+
+    /// Relative rock amount (rocks per ~3000 field cells). 0 = none. Only used with --rocks.
+    #[arg(long = "rock-density", default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=64))]
+    pub rock_density: u8,
+
+    /// Scatter bushes (foliage schematics) on farmland fields.
+    #[arg(long = "bushes", default_value_t = false)]
+    pub bushes: bool,
+
+    /// Relative bush amount (bushes per ~1200 field cells). 0 = none. Only used with --bushes.
+    #[arg(long = "bush-density", default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=64))]
+    pub bush_density: u8,
 }
 
 /// Player game mode for the generated world.

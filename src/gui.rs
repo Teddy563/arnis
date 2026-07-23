@@ -1169,6 +1169,11 @@ fn gui_start_generation(
                 world_time: 6000,
                 map_item: false,
                 map_item_only: false,
+                field_mix: None,
+                rocks: false,
+                rock_density: 0,
+                bushes: false,
+                bush_density: 0,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data
