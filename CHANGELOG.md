@@ -52,6 +52,10 @@ default runs stay byte-identical.
 
   A `FieldProfile` bundles a mix with a parcel-size band and track rate, so each land
   kind gets a distinct look (tight tilled plots vs large loose meadows).
+- **`--land-mix <LIST>`.** Separate `name=pct` mix for untagged satellite cropland;
+  omitted = reuse `--field-mix`. And under `--land-texture`, cropland cells inside
+  `landuse=residential` polygons get the grassy profile instead of wheat, so villages
+  stop rendering as crop fields.
 
 All three reuse the existing generic Sponge stamping engine; anchors are sampled from
 the stable field-cell list and rotations are position-hashed, so placement is identical
