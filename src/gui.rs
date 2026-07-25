@@ -1178,6 +1178,7 @@ fn gui_start_generation(
                 land_texture: false,
                 land_mix: None,
                 farm_crops: None,
+                field_scale: 100,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data

@@ -604,33 +604,18 @@ pub fn place_structure(
     }
 }
 
-/// Even, natural scatter of a schematic pool across a field's cells.
-///
-/// Budgets about `density` items per 512×512 Minecraft region of the field's area (so a
-/// one-region field gets ~`density`, and a small field may get none), capped, placed on a
-/// jittered grid over the field bounding box — even Poisson-like spacing, no clumping.
-/// `cluster` adds an occasional companion so families like bushes grow in small clumps.
-/// Every hash is a pure function of position, so placement is identical across tile
-/// seams. Each item gets a random pool member + random N×90° rotation.
-pub fn scatter_pool(
+/// Chunk-based schematic scatter over a field's cells: every 16×16 chunk touching the
+/// field rolls `pct`% for one rock-or-bush (hash-picked when both are on) at a jittered
+/// position inside the chunk. Purely position-hashed → identical across tile seams.
+pub fn scatter_chunks_field(
     editor: &mut WorldEditor,
     cells: &[(i32, i32)],
-    pool: &[StructureSchematic],
-    density: u8,
-    cap: usize,
-    cluster: bool,
+    rocks_on: bool,
+    bushes_on: bool,
+    pct: u64,
     salt: i32,
-    prefer: Option<&dyn Fn(i32, i32) -> bool>,
 ) {
-    if density == 0 || pool.is_empty() || cells.is_empty() {
-        return;
-    }
-    let n = cells.len();
-    // Per-region budget: ~`density` items per 262144-block (512²) region of field area.
-    let target = ((n as f64 / 262_144.0) * density as f64)
-        .round()
-        .clamp(0.0, cap as f64) as usize;
-    if target == 0 {
+    if (!rocks_on && !bushes_on) || cells.is_empty() {
         return;
     }
     let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
@@ -641,58 +626,47 @@ pub fn scatter_pool(
         min_z = min_z.min(z);
         max_z = max_z.max(z);
     }
-    // One item per ~spacing² blocks, sized so the whole field yields about `target`.
-    let area = (max_x - min_x + 1) as i64 * (max_z - min_z + 1) as i64;
-    let spacing = ((area as f64 / target as f64).sqrt() as i32).max(2);
-    let mut placed = 0usize;
-    let mut gz = min_z;
-    while gz <= max_z && placed < target {
-        let mut gx = min_x;
-        while gx <= max_x && placed < target {
-            let h = coord_hash(gx ^ salt, gz.wrapping_mul(31) ^ salt);
-            let jx = (h % spacing as u64) as i32;
-            let jz = ((h >> 20) % spacing as u64) as i32;
-            let (mut cx, mut cz) = (gx + jx, gz + jz);
-            // Edge bias: real fields collect stones/bushes along plot boundaries. Try up
-            // to two alternate jitters looking for a preferred (edge/track-adjacent)
-            // point; fall back to the original so the budget still gets spent.
-            if let Some(pref) = prefer {
-                if !pref(cx, cz) {
-                    for shift in [27u32, 13u32] {
-                        let ax = gx + ((h >> shift) % spacing as u64) as i32;
-                        let az = gz + ((h >> (shift + 7)) % spacing as u64) as i32;
-                        if set.contains(&(ax, az)) && pref(ax, az) {
-                            cx = ax;
-                            cz = az;
-                            break;
-                        }
-                    }
-                }
+    for cz in (min_z >> 4)..=(max_z >> 4) {
+        for cx in (min_x >> 4)..=(max_x >> 4) {
+            let h = coord_hash(cx ^ salt, cz.wrapping_mul(31) ^ salt);
+            if h % 100 >= pct {
+                continue;
             }
-            if set.contains(&(cx, cz)) && !editor.is_lc_water(cx, cz) {
-                let schem = &pool[((h >> 8) as usize) % pool.len()];
-                let by = editor.get_absolute_y(cx, 1, cz);
-                place_structure(editor, schem, cx, cz, by, ((h >> 5) & 3) as u8, None);
-                placed += 1;
-                // Small clump companion (bushes): a second piece a couple blocks off.
-                if cluster && (h & 7) < 3 {
-                    let dx = ((h >> 3) & 3) as i32 - 1;
-                    let dz = ((h >> 6) & 3) as i32 - 1;
-                    let (nx, nz) = (cx + dx * 2, cz + dz * 2);
-                    if (dx != 0 || dz != 0)
-                        && set.contains(&(nx, nz))
-                        && !editor.is_lc_water(nx, nz)
-                    {
-                        let s2 = &pool[((h >> 14) as usize) % pool.len()];
-                        let by2 = editor.get_absolute_y(nx, 1, nz);
-                        place_structure(editor, s2, nx, nz, by2, ((h >> 9) & 3) as u8, None);
-                    }
-                }
+            let bx = (cx << 4) + ((h >> 17) % 16) as i32;
+            let bz = (cz << 4) + ((h >> 22) % 16) as i32;
+            if !set.contains(&(bx, bz)) || editor.is_lc_water(bx, bz) {
+                continue;
             }
-            gx += spacing;
+            place_scatter_piece(editor, bx, bz, rocks_on, bushes_on, h);
         }
-        gz += spacing;
     }
+}
+
+/// Place one rock-or-bush at (bx, bz), the kind and variant picked from the hash.
+pub(crate) fn place_scatter_piece(
+    editor: &mut WorldEditor,
+    bx: i32,
+    bz: i32,
+    rocks_on: bool,
+    bushes_on: bool,
+    h: u64,
+) {
+    let use_rock = match (rocks_on, bushes_on) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => (h >> 9) & 1 == 0,
+    };
+    let pool = if use_rock {
+        crate::structures::rocks::pool()
+    } else {
+        crate::structures::bushes::pool()
+    };
+    if pool.is_empty() {
+        return;
+    }
+    let schem = &pool[((h >> 27) as usize) % pool.len()];
+    let by = editor.get_absolute_y(bx, 1, bz);
+    place_structure(editor, schem, bx, bz, by, ((h >> 5) & 3) as u8, None);
 }
 
 #[cfg(test)]

@@ -660,6 +660,24 @@ pub fn generate_world_with_options(
                         g_max_z,
                         false,
                     );
+                    // Rocks/bushes on UNTAGGED satellite cropland/grassland (the
+                    // "missing data" plains), chunk-rolled like the field scatter.
+                    if args.land_texture {
+                        crate::structures::land_scatter::scatter_untagged_chunks(
+                            &mut tile_editor,
+                            ground.as_ref(),
+                            &xzbbox,
+                            g_min_x,
+                            g_max_x,
+                            g_min_z,
+                            g_max_z,
+                            &road_mask,
+                            &building_footprints,
+                            &residential_footprint,
+                            args.rocks,
+                            args.bushes,
+                        );
+                    }
                     if args.fillground {
                         // Deepslate the bottom 30% (stone→deepslate below Y0) — vanilla-ish solid ground.
                         crate::deepslate::apply_deepslate_region(
@@ -930,6 +948,22 @@ pub fn generate_world_with_options(
             &tunnel_footprint,
             &bridge_surface,
         )?;
+        if args.land_texture {
+            crate::structures::land_scatter::scatter_untagged_chunks(
+                &mut editor,
+                ground.as_ref(),
+                &xzbbox,
+                xzbbox.min_x(),
+                xzbbox.max_x(),
+                xzbbox.min_z(),
+                xzbbox.max_z(),
+                &road_mask,
+                &building_footprints,
+                &residential_footprint,
+                args.rocks,
+                args.bushes,
+            );
+        }
     }
     bench.mark("ground_gen");
 

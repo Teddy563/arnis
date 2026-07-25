@@ -20,7 +20,8 @@ use crate::block_definitions::{
     CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, FERN, GRANITE, GRASS,
     GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LARGE_FERN_LOWER,
     LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, LILY_OF_THE_VALLEY, MOSSY_COBBLESTONE, MUD, OAK_LEAVES,
-    OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES, PUMPKIN, RED_FLOWER, SAND,
+    OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES, PUMPKIN, RED_FLOWER, ROOTED_DIRT,
+    SAND,
     SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER,
     SUNFLOWER_UPPER, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE,
     WHITE_FLOWER, YELLOW_FLOWER,
@@ -170,8 +171,10 @@ pub fn generate_ground_region(
             args.land_mix.as_deref().or(args.field_mix.as_deref()),
         ),
         crate::element_processing::field_texture::FarmCrops::parse(args.farm_crops.as_deref()),
-    );
-    let land_grass_profile = crate::element_processing::field_texture::FieldProfile::grass();
+    )
+    .with_scale(args.field_scale);
+    let land_grass_profile =
+        crate::element_processing::field_texture::FieldProfile::grass().with_scale(args.field_scale);
     // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
     // hoisted once per cell, so arid/polar surface blocks don't flip abruptly at cell borders.
 
@@ -1213,17 +1216,52 @@ pub fn generate_ground_region(
                                                                     None,
                                                                 );
                                                         }
-                                                    } else if c == FarmCrop::Wheat
-                                                        && rng.random_range(0..40) == 0
+                                                    } else if on(editor, COARSE_DIRT)
+                                                        || on(editor, ROOTED_DIRT)
                                                     {
-                                                        editor.set_block_absolute(
-                                                            HAY_BALE,
-                                                            x,
-                                                            ground_y + 1,
-                                                            z,
-                                                            None,
-                                                            None,
-                                                        );
+                                                        // Worn spots: stray bale (wheat),
+                                                        // lone sunflower, dry growth.
+                                                        match rng.random_range(0..100) {
+                                                            0..=2 if c == FarmCrop::Wheat => {
+                                                                editor.set_block_absolute(
+                                                                    HAY_BALE,
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                            }
+                                                            3..=8 => {
+                                                                editor.set_block_absolute(
+                                                                    SUNFLOWER_LOWER,
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                                editor.set_block_absolute(
+                                                                    SUNFLOWER_UPPER,
+                                                                    x,
+                                                                    ground_y + 2,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                            }
+                                                            9..=13 => {
+                                                                editor.set_block_absolute(
+                                                                    DEAD_BUSH,
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                            }
+                                                            _ => {}
+                                                        }
                                                     }
                                                 }
                                                 Some(FarmCrop::Sunflower) => {
@@ -1291,28 +1329,33 @@ pub fn generate_ground_region(
                                                     }
                                                 }
                                                 Some(FarmCrop::Fallow) => {
-                                                    if on(editor, FARMLAND) {
-                                                        if rng.random_range(0..100) < 12 {
-                                                            editor.set_block_absolute(
-                                                                WHEAT,
-                                                                x,
-                                                                ground_y + 1,
-                                                                z,
-                                                                None,
-                                                                None,
-                                                            );
-                                                        }
-                                                    } else if on(editor, COARSE_DIRT)
-                                                        && rng.random_range(0..100) < 3
+                                                    // Bare worked ground: dry stubble.
+                                                    if on(editor, COARSE_DIRT)
+                                                        || on(editor, ROOTED_DIRT)
                                                     {
-                                                        editor.set_block_absolute(
-                                                            DEAD_BUSH,
-                                                            x,
-                                                            ground_y + 1,
-                                                            z,
-                                                            None,
-                                                            None,
-                                                        );
+                                                        match rng.random_range(0..100) {
+                                                            0..=5 => {
+                                                                editor.set_block_absolute(
+                                                                    DEAD_BUSH,
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                            }
+                                                            6..=14 => {
+                                                                editor.set_block_absolute(
+                                                                    GRASS,
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                            }
+                                                            _ => {}
+                                                        }
                                                     }
                                                 }
                                                 None => {}

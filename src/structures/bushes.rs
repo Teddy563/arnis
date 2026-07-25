@@ -7,8 +7,7 @@
 
 use std::sync::OnceLock;
 
-use super::schematic::{load_structure, scatter_pool, StructureSchematic};
-use crate::world_editor::WorldEditor;
+use super::schematic::{load_structure, StructureSchematic};
 
 static BUSH_BYTES: [&[u8]; 60] = [
     include_bytes!("../../assets/structures/acaciabush1.schem"),
@@ -73,10 +72,8 @@ static BUSH_BYTES: [&[u8]; 60] = [
     include_bytes!("../../assets/structures/sprucebush6.schem"),
 ];
 
-/// Hard cap so a huge field never turns into a thicket.
-const CAP: usize = 120;
-
-fn bushes() -> &'static [StructureSchematic] {
+/// The parsed bush pool, used by the chunk-based scatter.
+pub(crate) fn pool() -> &'static [StructureSchematic] {
     static CELL: OnceLock<Vec<StructureSchematic>> = OnceLock::new();
     CELL.get_or_init(|| {
         BUSH_BYTES
@@ -92,28 +89,14 @@ fn bushes() -> &'static [StructureSchematic] {
     })
 }
 
-/// Scatter bushes across a farmland field at random rotations, evenly spread and
-/// gently clumped (bushes grow in small groups).
-///
-/// `density` is bushes per 512×512 region of field area; `0` disables the family.
-/// `prefer` biases placement toward parcel edges/tracks when a field profile is active.
-pub fn scatter_bushes(
-    editor: &mut WorldEditor,
-    cells: &[(i32, i32)],
-    density: u8,
-    prefer: Option<&dyn Fn(i32, i32) -> bool>,
-) {
-    scatter_pool(editor, cells, bushes(), density, CAP, true, 0x00C7_2B19, prefer);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn bush_assets_parse() {
-        assert_eq!(bushes().len(), 60, "all 60 bush schems should parse");
-        for b in bushes() {
+        assert_eq!(pool().len(), 60, "all 60 bush schems should parse");
+        for b in pool() {
             assert!(!b.voxels.is_empty(), "bush parsed to zero voxels");
         }
     }

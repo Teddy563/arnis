@@ -10,6 +10,7 @@ pub mod helicopter;
 pub mod lighthouse;
 pub mod bushes;
 pub mod haybales;
+pub mod land_scatter;
 pub mod playground;
 pub mod rocks;
 pub mod schematic;

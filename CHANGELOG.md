@@ -18,6 +18,12 @@ default runs stay byte-identical.
 
 ### Added
 
+- **Real field layout.** The map divides into orientation domains, each with its own
+  angle (0/±15/±30/45°) and layout — long strips or blocky plots — so field grids sit
+  at multiple angles and shapes like real agricultural land, not one world-aligned
+  grid. `--field-scale <25-400>` zooms the whole pattern. Chunk-based rock/bush
+  scatter: every 16×16 chunk of farm, grass, and untagged satellite land rolls 20%
+  for one schematic (rock or bush) — driven by `--rocks`/`--bushes` as a mode.
 - **`--field-mix <LIST>` — configurable farmland texturing.** Splits `landuse=farmland`
   into a weighted mix of five styles: `coarse` (coarse dirt + dead bush), `plains`
   (grass), `flower` (grass + wildflowers), `farm` (stock tilled crops), and `moss`

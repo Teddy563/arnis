@@ -49,6 +49,8 @@ pub struct FieldCell {
     /// 0..=7 growth level, uniform within a farm parcel (a field is planted at once);
     /// mapped per crop when placed (beetroot uses 0..=3). Meaningful only for farm cells.
     pub crop_age: u8,
+    /// Stable per-parcel seed; flower plots derive their 2-3 species subset from it.
+    pub species_seed: u32,
     pub surface: Block,
     pub is_track: bool,
 }
@@ -140,28 +142,57 @@ pub struct FieldProfile {
     sizes: [i32; 3],
     track_pct: u64,
     salt: i32,
+    /// Pattern zoom: parcel dimensions scale by this percent (100 = default).
+    scale_pct: u16,
 }
 
-const MACRO: i32 = 160;
+/// A resolved parcel reference: id, dimensions, cell-local coords, and the
+/// orientation-domain salt that keeps neighbouring domains' parcels independent.
+#[derive(Clone, Copy)]
+struct ParcelRef {
+    px: i32,
+    pz: i32,
+    w: i32,
+    l: i32,
+    lx: i32,
+    lz: i32,
+    dsalt: i32,
+}
+
+const MACRO: i32 = 192;
 const WARP: f64 = 4.0;
 const WARP_SCALE: i32 = 24;
 const SUB_SCALE: i32 = 6;
 
-/// Surface for a farm plot cell, including its interior character (worn spots,
-/// mid-plot path, sunflower rows, pumpkin mosaic).
-#[allow(clippy::too_many_arguments)]
-fn farm_surface(crop: FarmCrop, x: i32, z: i32, lx: i32, lz: i32, ps: i32, px: i32, pz: i32) -> Block {
+/// Field-system orientation domains: each macro cell picks one of these angles, so
+/// parcel grids sit at multiple angles like real farmland (not one world-aligned grid).
+const ANGLES: [(f64, f64); 6] = [
+    // (sin, cos) for 0, 15, 30, 45, -15, -30 degrees
+    (0.0, 1.0),
+    (0.258_819, 0.965_926),
+    (0.5, 0.866_025),
+    (0.707_107, 0.707_107),
+    (-0.258_819, 0.965_926),
+    (-0.5, 0.866_025),
+];
+
+/// Surface for a farm plot cell, including its interior character (noise-driven worn
+/// spots, mid-plot path, sunflower rows, pumpkin mosaic).
+fn farm_surface(crop: FarmCrop, x: i32, z: i32, p: &ParcelRef) -> Block {
     let n = (value_noise_01(x, z, SUB_SCALE) * 1000.0) as i32;
     // Large parcels get a worn mid-plot working path on ~45% of plots.
-    let has_mid_path = ps >= 30 && coord_hash(px ^ 0x0000_11C7, pz ^ 0x0000_33B1) % 100 < 45;
-    if has_mid_path && lx == ps / 2 && !matches!(crop, FarmCrop::Sunflower) {
+    let has_mid_path =
+        p.w >= 30 && coord_hash(p.px ^ 0x0000_11C7, (p.pz ^ 0x0000_33B1) ^ p.dsalt) % 100 < 45;
+    if has_mid_path && p.lx == p.w / 2 && !matches!(crop, FarmCrop::Sunflower) {
         return COARSE_DIRT;
     }
     match crop {
         FarmCrop::Wheat | FarmCrop::Potato | FarmCrop::Carrot | FarmCrop::Beetroot => {
-            // Tilled plot with occasional worn coarse spots.
-            if n < 40 {
+            // Tilled plot with noise-driven worn spots (coarse + rooted dirt).
+            if n < 38 {
                 COARSE_DIRT
+            } else if n < 52 {
+                ROOTED_DIRT
             } else {
                 FARMLAND
             }
@@ -171,7 +202,7 @@ fn farm_surface(crop: FarmCrop, x: i32, z: i32, lx: i32, lz: i32, ps: i32, px: i
             // dirt would slowly regrow grass in-game), grassy patches creeping in.
             if n < 160 {
                 GRASS_BLOCK
-            } else if lz.rem_euclid(2) == 0 {
+            } else if p.lz.rem_euclid(2) == 0 {
                 COARSE_DIRT
             } else {
                 PACKED_MUD
@@ -186,11 +217,19 @@ fn farm_surface(crop: FarmCrop, x: i32, z: i32, lx: i32, lz: i32, ps: i32, px: i
             }
         }
         FarmCrop::Fallow => {
-            // Resting field: tilled ground breaking up into coarse patches.
-            if n < 250 {
+            // Resting field: worked bare ground reclaimed by grass. NO farmland here —
+            // bare (crop-less) farmland reverts to dirt in-game, so fallow uses the
+            // locked bare palette instead and never decays.
+            if n < 330 {
                 COARSE_DIRT
+            } else if n < 450 {
+                ROOTED_DIRT
+            } else if n < 540 {
+                PACKED_MUD
+            } else if n < 700 {
+                GRASS_BLOCK
             } else {
-                FARMLAND
+                COARSE_DIRT
             }
         }
     }
@@ -227,7 +266,15 @@ fn surface_block(cat: FieldCategory, x: i32, z: i32) -> Block {
                 MOSS_BLOCK
             }
         }
-        FieldCategory::Plains | FieldCategory::Flower => GRASS_BLOCK,
+        // Vanilla-plains look: grass with sparse coarse-dirt patches breaking it up.
+        FieldCategory::Plains => {
+            if n < 35 {
+                COARSE_DIRT
+            } else {
+                GRASS_BLOCK
+            }
+        }
+        FieldCategory::Flower => GRASS_BLOCK,
         FieldCategory::Farm => FARMLAND,
     }
 }
@@ -280,7 +327,7 @@ impl FieldMix {
 impl FieldProfile {
     /// Tilled-farmland texture: tight plots, frequent tracks, real crop plots.
     pub fn farmland(mix: FieldMix, crops: FarmCrops) -> Self {
-        FieldProfile { mix, crops, sizes: [18, 30, 46], track_pct: 45, salt: 0 }
+        FieldProfile { mix, crops, sizes: [18, 30, 46], track_pct: 45, salt: 0, scale_pct: 100 }
     }
 
     /// Meadow/grassland texture: large loose plots, few tracks.
@@ -291,7 +338,14 @@ impl FieldProfile {
             sizes: [40, 80, 140],
             track_pct: 18,
             salt: 0x0000_2B57,
+            scale_pct: 100,
         }
+    }
+
+    /// Pattern zoom: scale all parcel dimensions by `pct` percent (clamped 25..=400).
+    pub fn with_scale(mut self, pct: u16) -> Self {
+        self.scale_pct = pct.clamp(25, 400);
+        self
     }
 
     /// True when this profile actually changes the surface (mix is non-stock).
@@ -299,16 +353,12 @@ impl FieldProfile {
         !self.mix.is_default()
     }
 
-    fn parcel_size(&self, mx: i32, mz: i32) -> i32 {
-        self.sizes[(coord_hash(mx ^ 0x0000_51ED ^ self.salt, mz.wrapping_mul(7)) % 3) as usize]
-    }
-
-    fn category_for_parcel(&self, px: i32, pz: i32) -> FieldCategory {
+    fn category_for_parcel(&self, px: i32, pz: i32, dsalt: i32) -> FieldCategory {
         let total = self.mix.total();
         if total == 0 {
             return FieldCategory::Farm;
         }
-        let mut roll = coord_hash(px, (pz ^ 0x5F35_6495) ^ self.salt) % total;
+        let mut roll = coord_hash(px, ((pz ^ 0x5F35_6495) ^ self.salt) ^ dsalt) % total;
         for (share, cat) in [
             (self.mix.coarse, FieldCategory::Coarse),
             (self.mix.plains, FieldCategory::Plains),
@@ -324,35 +374,62 @@ impl FieldProfile {
         FieldCategory::Farm
     }
 
-    fn parcel_at(&self, x: i32, z: i32) -> (i32, i32, i32, i32, i32) {
+    /// Resolve the parcel containing `(x, z)`.
+    ///
+    /// The map is divided into MACRO-sized orientation domains; each domain hashes to
+    /// a rotation angle and a layout method — long strips (either orientation) or
+    /// blocky plots — so field grids sit at multiple angles and mixed shapes, like real
+    /// agricultural land. Everything stays a pure function of `(x, z)`.
+    fn parcel_at(&self, x: i32, z: i32) -> ParcelRef {
         let s = self.salt;
         let wx = value_noise_01(x + 1000 + s, z - 500 - s, WARP_SCALE);
         let wz = value_noise_01(x - 700 - s, z + 1300 + s, WARP_SCALE);
         let sx = x + ((wx - 0.5) * 2.0 * WARP).round() as i32;
         let sz = z + ((wz - 0.5) * 2.0 * WARP).round() as i32;
-        let ps = self.parcel_size(sx.div_euclid(MACRO), sz.div_euclid(MACRO));
-        (
-            sx.div_euclid(ps),
-            sz.div_euclid(ps),
-            ps,
-            sx.rem_euclid(ps),
-            sz.rem_euclid(ps),
-        )
+        // Orientation domain.
+        let mx = sx.div_euclid(MACRO);
+        let mz = sz.div_euclid(MACRO);
+        let dh = coord_hash(mx ^ 0x0000_51ED ^ s, mz.wrapping_mul(7));
+        let dsalt = (dh as i32) ^ (mx.wrapping_mul(0x1F12_3BB5)) ^ (mz.wrapping_mul(0x0077_F0ED));
+        // Base parcel size (scaled by the pattern zoom).
+        let base = self.sizes[(dh % 3) as usize] as i64 * self.scale_pct as i64 / 100;
+        let base = (base as i32).max(6);
+        // Layout method: strips one way, strips the other, or blocky plots.
+        let (w, l) = match (dh >> 8) % 10 {
+            0..=2 => ((base * 2 / 5).max(8), (base * 12 / 5).max(16)),
+            3..=5 => ((base * 12 / 5).max(16), (base * 2 / 5).max(8)),
+            _ => (base, base),
+        };
+        // Domain rotation.
+        let (sin_t, cos_t) = ANGLES[((dh >> 16) % 6) as usize];
+        let fx = sx as f64;
+        let fz = sz as f64;
+        let rx = (fx * cos_t + fz * sin_t).round() as i32;
+        let rz = (-fx * sin_t + fz * cos_t).round() as i32;
+        ParcelRef {
+            px: rx.div_euclid(w),
+            pz: rz.div_euclid(l),
+            w,
+            l,
+            lx: rx.rem_euclid(w),
+            lz: rz.rem_euclid(l),
+            dsalt,
+        }
     }
 
     /// Category for the parcel containing `(x, z)`.
     #[allow(dead_code)] // exercised by tests; kept as the profile's public probe API
     pub fn category_at(&self, x: i32, z: i32) -> FieldCategory {
-        let (px, pz, ..) = self.parcel_at(x, z);
-        self.category_for_parcel(px, pz)
+        let p = self.parcel_at(x, z);
+        self.category_for_parcel(p.px, p.pz, p.dsalt)
     }
 
     /// Crop of the farm parcel containing `(x, z)` (None off farm parcels).
     #[allow(dead_code)] // exercised by tests; kept as the profile's public probe API
     pub fn crop_at(&self, x: i32, z: i32) -> Option<FarmCrop> {
-        let (px, pz, ..) = self.parcel_at(x, z);
-        if self.category_for_parcel(px, pz) == FieldCategory::Farm {
-            Some(self.crops.pick(px, pz))
+        let p = self.parcel_at(x, z);
+        if self.category_for_parcel(p.px, p.pz, p.dsalt) == FieldCategory::Farm {
+            Some(self.crops.pick(p.px, p.pz ^ p.dsalt))
         } else {
             None
         }
@@ -360,34 +437,35 @@ impl FieldProfile {
 
     /// Full resolution of a cell: style + crop + surface + track flag.
     pub fn cell_at(&self, x: i32, z: i32) -> FieldCell {
-        let (px, pz, ps, lx, lz) = self.parcel_at(x, z);
-        let cat = self.category_for_parcel(px, pz);
+        let p = self.parcel_at(x, z);
+        let cat = self.category_for_parcel(p.px, p.pz, p.dsalt);
         let mut is_track = false;
-        if lx == 0 || lz == 0 || lx == ps - 1 || lz == ps - 1 {
-            let (nx, nz) = if lx == 0 {
-                (px - 1, pz)
-            } else if lx == ps - 1 {
-                (px + 1, pz)
-            } else if lz == 0 {
-                (px, pz - 1)
+        if p.lx == 0 || p.lz == 0 || p.lx == p.w - 1 || p.lz == p.l - 1 {
+            let (nx, nz) = if p.lx == 0 {
+                (p.px - 1, p.pz)
+            } else if p.lx == p.w - 1 {
+                (p.px + 1, p.pz)
+            } else if p.lz == 0 {
+                (p.px, p.pz - 1)
             } else {
-                (px, pz + 1)
+                (p.px, p.pz + 1)
             };
-            if self.category_for_parcel(nx, nz) != cat
-                && coord_hash(px ^ nx, ((pz ^ nz) ^ 0x0000_7A11) ^ self.salt) % 100 < self.track_pct
+            if self.category_for_parcel(nx, nz, p.dsalt) != cat
+                && coord_hash(p.px ^ nx, (((p.pz ^ nz) ^ 0x0000_7A11) ^ self.salt) ^ p.dsalt) % 100
+                    < self.track_pct
             {
                 is_track = true;
             }
         }
         let crop = if cat == FieldCategory::Farm {
-            Some(self.crops.pick(px, pz))
+            Some(self.crops.pick(p.px, p.pz ^ p.dsalt))
         } else {
             None
         };
         // Growth level uniform per field (planted together), weighted toward ripe with a
         // few immature fields — so neighbouring plots read as different growth stages.
         let crop_age = if crop.is_some() {
-            match coord_hash(px ^ 0x0000_A9E3, pz.wrapping_mul(29)) % 10 {
+            match coord_hash(p.px ^ 0x0000_A9E3, p.pz.wrapping_mul(29) ^ p.dsalt) % 10 {
                 0..=5 => 7,
                 6 => 6,
                 7 => 5,
@@ -397,14 +475,16 @@ impl FieldProfile {
         } else {
             0
         };
+        // Per-parcel species seed (flower plots pick a small species subset from it).
+        let species_seed = coord_hash(p.px ^ 0x0000_F10E, p.pz.wrapping_mul(53) ^ p.dsalt) as u32;
         let surface = if is_track {
             DIRT_PATH
         } else if let Some(c) = crop {
-            farm_surface(c, x, z, lx, lz, ps, px, pz)
+            farm_surface(c, x, z, &p)
         } else {
             surface_block(cat, x, z)
         };
-        FieldCell { cat, crop, crop_age, surface, is_track }
+        FieldCell { cat, crop, crop_age, species_seed, surface, is_track }
     }
 }
 
@@ -446,7 +526,10 @@ mod tests {
                 prev = c;
             }
         }
-        assert!(changes < 2000 / 12, "crop changes {changes} too frequent for parcels");
+        // Strips can be as narrow as 8 blocks and boundaries sit at angles, so allow
+        // more frequent changes than the blocky-only layout — but still far below
+        // per-cell salt-and-pepper (which would be ~85% changes).
+        assert!(changes < 2000 / 5, "crop changes {changes} too frequent for parcels");
         // Diversity: all 7 crops appear over a wide area.
         let mut seen = std::collections::HashSet::new();
         for x in (0..8000).step_by(11) {

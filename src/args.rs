@@ -439,6 +439,11 @@ pub struct Args {
     /// combined patchwork `wheat=40,potato=15,carrot=15,beetroot=8,sunflower=12,pumpkin=5,fallow=5`.
     #[arg(long = "farm-crops", value_name = "LIST")]
     pub farm_crops: Option<String>,
+
+    /// Field-pattern zoom: scales all parcel/plot sizes by this percent (25-400,
+    /// 100 = default). Larger = bigger fields.
+    #[arg(long = "field-scale", default_value_t = 100, value_parser = clap::value_parser!(u16).range(25..=400))]
+    pub field_scale: u16,
 }
 
 /// Player game mode for the generated world.

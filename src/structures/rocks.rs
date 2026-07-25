@@ -6,8 +6,7 @@
 
 use std::sync::OnceLock;
 
-use super::schematic::{load_structure, scatter_pool, StructureSchematic};
-use crate::world_editor::WorldEditor;
+use super::schematic::{load_structure, StructureSchematic};
 
 static ROCK_BYTES: [&[u8]; 8] = [
     include_bytes!("../../assets/structures/rock1.schem"),
@@ -20,10 +19,8 @@ static ROCK_BYTES: [&[u8]; 8] = [
     include_bytes!("../../assets/structures/rock8.schem"),
 ];
 
-/// Hard cap so a huge field never fills with rocks.
-const CAP: usize = 60;
-
-fn rocks() -> &'static [StructureSchematic] {
+/// The parsed rock pool, used by the chunk-based scatter.
+pub(crate) fn pool() -> &'static [StructureSchematic] {
     static CELL: OnceLock<Vec<StructureSchematic>> = OnceLock::new();
     CELL.get_or_init(|| {
         ROCK_BYTES
@@ -39,27 +36,14 @@ fn rocks() -> &'static [StructureSchematic] {
     })
 }
 
-/// Scatter rocks across a farmland field at random rotations, evenly distributed.
-///
-/// `density` is rocks per 512×512 region of field area; `0` disables the family.
-/// `prefer` biases placement toward parcel edges/tracks when a field profile is active.
-pub fn scatter_rocks(
-    editor: &mut WorldEditor,
-    cells: &[(i32, i32)],
-    density: u8,
-    prefer: Option<&dyn Fn(i32, i32) -> bool>,
-) {
-    scatter_pool(editor, cells, rocks(), density, CAP, false, 0x00A5_1C3D, prefer);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn rock_assets_parse() {
-        assert_eq!(rocks().len(), 8, "all 8 rock schems should parse");
-        for r in rocks() {
+        assert_eq!(pool().len(), 8, "all 8 rock schems should parse");
+        for r in pool() {
             assert!(!r.voxels.is_empty(), "rock parsed to zero voxels");
         }
     }
