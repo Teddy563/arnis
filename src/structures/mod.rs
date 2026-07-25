@@ -9,6 +9,7 @@ pub mod fountain;
 pub mod helicopter;
 pub mod lighthouse;
 pub mod bushes;
+pub mod haybales;
 pub mod playground;
 pub mod rocks;
 pub mod schematic;

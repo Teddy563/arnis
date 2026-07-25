@@ -620,6 +620,7 @@ pub fn scatter_pool(
     cap: usize,
     cluster: bool,
     salt: i32,
+    prefer: Option<&dyn Fn(i32, i32) -> bool>,
 ) {
     if density == 0 || pool.is_empty() || cells.is_empty() {
         return;
@@ -651,7 +652,23 @@ pub fn scatter_pool(
             let h = coord_hash(gx ^ salt, gz.wrapping_mul(31) ^ salt);
             let jx = (h % spacing as u64) as i32;
             let jz = ((h >> 20) % spacing as u64) as i32;
-            let (cx, cz) = (gx + jx, gz + jz);
+            let (mut cx, mut cz) = (gx + jx, gz + jz);
+            // Edge bias: real fields collect stones/bushes along plot boundaries. Try up
+            // to two alternate jitters looking for a preferred (edge/track-adjacent)
+            // point; fall back to the original so the budget still gets spent.
+            if let Some(pref) = prefer {
+                if !pref(cx, cz) {
+                    for shift in [27u32, 13u32] {
+                        let ax = gx + ((h >> shift) % spacing as u64) as i32;
+                        let az = gz + ((h >> (shift + 7)) % spacing as u64) as i32;
+                        if set.contains(&(ax, az)) && pref(ax, az) {
+                            cx = ax;
+                            cz = az;
+                            break;
+                        }
+                    }
+                }
+            }
             if set.contains(&(cx, cz)) && !editor.is_lc_water(cx, cz) {
                 let schem = &pool[((h >> 8) as usize) % pool.len()];
                 let by = editor.get_absolute_y(cx, 1, cz);

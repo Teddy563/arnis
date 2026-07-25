@@ -42,8 +42,14 @@ fn rocks() -> &'static [StructureSchematic] {
 /// Scatter rocks across a farmland field at random rotations, evenly distributed.
 ///
 /// `density` is rocks per 512×512 region of field area; `0` disables the family.
-pub fn scatter_rocks(editor: &mut WorldEditor, cells: &[(i32, i32)], density: u8) {
-    scatter_pool(editor, cells, rocks(), density, CAP, false, 0x00A5_1C3D);
+/// `prefer` biases placement toward parcel edges/tracks when a field profile is active.
+pub fn scatter_rocks(
+    editor: &mut WorldEditor,
+    cells: &[(i32, i32)],
+    density: u8,
+    prefer: Option<&dyn Fn(i32, i32) -> bool>,
+) {
+    scatter_pool(editor, cells, rocks(), density, CAP, false, 0x00A5_1C3D, prefer);
 }
 
 #[cfg(test)]

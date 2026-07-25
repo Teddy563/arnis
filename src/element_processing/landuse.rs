@@ -3,7 +3,9 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
-use crate::element_processing::field_texture::{FieldCategory, FieldMix, FieldProfile};
+use crate::element_processing::field_texture::{
+    FarmCrop, FarmCrops, FieldCategory, FieldCell, FieldMix, FieldProfile,
+};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
@@ -33,7 +35,10 @@ pub fn generate_landuse(
     // Land texturing. Farmland uses the user mix; grassy landuse gets the built-in grass
     // profile when --grass-texture is on. Default (farmland mix omitted, grass off) =>
     // stock behaviour, byte-identical.
-    let farm_profile = FieldProfile::farmland(FieldMix::parse(args.field_mix.as_deref()));
+    let farm_profile = FieldProfile::farmland(
+        FieldMix::parse(args.field_mix.as_deref()),
+        FarmCrops::parse(args.farm_crops.as_deref()),
+    );
     let grass_profile = FieldProfile::grass();
     let is_grassy = matches!(
         landuse_tag.as_str(),
@@ -210,7 +215,7 @@ pub fn generate_landuse(
         // untextured cells fall through to the stock per-tag features below.
         if let Some(fc) = field_cell {
             if !fc.is_track {
-                decorate_field(editor, fc.cat, x, z, rng);
+                decorate_field(editor, &fc, x, z, rng);
             }
         } else {
         // Add specific features for different landuse types
@@ -486,33 +491,37 @@ pub fn generate_landuse(
     }
     // Scattered rocks/bushes on farmland and (when enabled) textured grassland.
     // Off by default; density 0 = no-op. Budgeted per region inside the scatter fns.
+    // With an active profile they prefer parcel edges/tracks (cleared-field look),
+    // and wheat/fallow plots get occasional hay-bale bundles.
     if landuse_tag == "farmland" || (is_grassy && args.grass_texture) {
         let rock_density = if args.rocks { args.rock_density } else { 0 };
         let bush_density = if args.bushes { args.bush_density } else { 0 };
-        crate::structures::rocks::scatter_rocks(editor, floor_area.as_slice(), rock_density);
-        crate::structures::bushes::scatter_bushes(editor, floor_area.as_slice(), bush_density);
+        let near_edge = active_profile.map(|p| {
+            move |x: i32, z: i32| {
+                p.cell_at(x, z).is_track
+                    || p.cell_at(x + 2, z).is_track
+                    || p.cell_at(x - 2, z).is_track
+                    || p.cell_at(x, z + 2).is_track
+                    || p.cell_at(x, z - 2).is_track
+            }
+        });
+        let prefer: Option<&dyn Fn(i32, i32) -> bool> = match &near_edge {
+            Some(f) => Some(f),
+            None => None,
+        };
+        crate::structures::rocks::scatter_rocks(editor, floor_area.as_slice(), rock_density, prefer);
+        crate::structures::bushes::scatter_bushes(editor, floor_area.as_slice(), bush_density, prefer);
+        if landuse_tag == "farmland" && farm_profile.is_active() {
+            crate::structures::haybales::scatter_haybales(editor, floor_area.as_slice(), &farm_profile);
+        }
     }
 }
 
-/// Decoration for a field-textured cell, by parcel style. Farm reproduces the stock
-/// farmland crop/water/hay pattern; the others scatter style-appropriate plants.
-fn decorate_field(editor: &mut WorldEditor, cat: FieldCategory, x: i32, z: i32, rng: &mut impl Rng) {
-    match cat {
-        FieldCategory::Farm => {
-            if x % 9 == 0 && z % 9 == 0 && editor.water_source_is_enclosed(x, z) {
-                editor.set_block(WATER, x, 0, z, Some(&[FARMLAND]), None);
-            } else if rng.random_range(0..76) == 0 {
-                let special_choice: i32 = rng.random_range(1..=10);
-                if special_choice <= 4 {
-                    editor.set_block(HAY_BALE, x, 1, z, None, Some(&[SPONGE]));
-                } else {
-                    editor.set_block(OAK_LEAVES, x, 1, z, None, Some(&[SPONGE]));
-                }
-            } else if editor.check_for_block(x, 0, z, Some(&[FARMLAND])) {
-                let crop_choice = [WHEAT, CARROTS, POTATOES][rng.random_range(0..3)];
-                editor.set_block(crop_choice, x, 1, z, None, None);
-            }
-        }
+/// Decoration for a field-textured cell, by parcel style. Farm plots grow their
+/// parcel's single crop (real monoculture plots); the others scatter style plants.
+fn decorate_field(editor: &mut WorldEditor, cell: &FieldCell, x: i32, z: i32, rng: &mut impl Rng) {
+    match cell.cat {
+        FieldCategory::Farm => decorate_farm_plot(editor, cell, x, z, rng),
         FieldCategory::Plains => match rng.random_range(0..1000) {
             0..=6 => {
                 editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
@@ -535,12 +544,23 @@ fn decorate_field(editor: &mut WorldEditor, cat: FieldCategory, x: i32, z: i32, 
             71..=540 => editor.set_block(GRASS, x, 1, z, None, None),
             _ => {}
         },
-        FieldCategory::Coarse => match rng.random_range(0..150) {
-            0..=4 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
-            5..=8 => editor.set_block(FERN, x, 1, z, None, None),
-            9..=18 => editor.set_block(GRASS, x, 1, z, None, None),
-            _ => {}
-        },
+        FieldCategory::Coarse => {
+            // Dead bushes cluster on the coarse/rooted dirt; sparse growth on the
+            // grass peeks; packed mud and mud lows stay bare (cracked-earth look).
+            if editor.check_for_block(x, 0, z, Some(&[COARSE_DIRT, ROOTED_DIRT])) {
+                match rng.random_range(0..100) {
+                    0..=7 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
+                    8..=13 => editor.set_block(GRASS, x, 1, z, None, None),
+                    _ => {}
+                }
+            } else if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
+                match rng.random_range(0..100) {
+                    0..=3 => editor.set_block(FERN, x, 1, z, None, None),
+                    4..=20 => editor.set_block(GRASS, x, 1, z, None, None),
+                    _ => {}
+                }
+            }
+        }
         FieldCategory::Moss => match rng.random_range(0..100) {
             0..=2 => editor.set_block(AZALEA, x, 1, z, None, None),
             3..=6 => editor.set_block(FERN, x, 1, z, None, None),
@@ -548,6 +568,71 @@ fn decorate_field(editor: &mut WorldEditor, cat: FieldCategory, x: i32, z: i32, 
             27..=48 => editor.set_block(GRASS, x, 1, z, None, None),
             _ => {}
         },
+    }
+}
+
+/// Grow a farm plot's single crop. Tilled plots keep the basin-gated irrigation dots;
+/// sunflower plots plant rows on their dirt rows; pumpkin patches fruit sparsely on
+/// their grass/coarse mosaic; fallow fields carry stubble.
+fn decorate_farm_plot(editor: &mut WorldEditor, cell: &FieldCell, x: i32, z: i32, rng: &mut impl Rng) {
+    let Some(crop) = cell.crop else { return };
+    match crop {
+        FarmCrop::Wheat | FarmCrop::Potato | FarmCrop::Carrot | FarmCrop::Beetroot => {
+            if x % 9 == 0 && z % 9 == 0 && editor.water_source_is_enclosed(x, z) {
+                editor.set_block(WATER, x, 0, z, Some(&[FARMLAND]), None);
+            } else if editor.check_for_block(x, 0, z, Some(&[FARMLAND])) {
+                let block = match crop {
+                    FarmCrop::Wheat => WHEAT,
+                    FarmCrop::Potato => POTATOES,
+                    FarmCrop::Carrot => CARROTS,
+                    _ => BEETROOTS,
+                };
+                editor.set_block(block, x, 1, z, None, None);
+            } else if crop == FarmCrop::Wheat && rng.random_range(0..40) == 0 {
+                // Odd stray bale on the worn spots of a wheat plot.
+                editor.set_block(HAY_BALE, x, 1, z, None, Some(&[SPONGE]));
+            }
+        }
+        FarmCrop::Sunflower => {
+            if editor.check_for_block(x, 0, z, Some(&[COARSE_DIRT])) {
+                // Planted row: dense sunflowers facing the sun.
+                if rng.random_range(0..100) < 85 {
+                    editor.set_block(SUNFLOWER_LOWER, x, 1, z, None, None);
+                    editor.set_block(SUNFLOWER_UPPER, x, 2, z, None, None);
+                }
+            } else if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK]))
+                && rng.random_range(0..100) < 25
+            {
+                editor.set_block(GRASS, x, 1, z, None, None);
+            }
+        }
+        FarmCrop::Pumpkin => {
+            if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
+                match rng.random_range(0..100) {
+                    0..=5 => editor.set_block(PUMPKIN, x, 1, z, None, None),
+                    6..=25 => editor.set_block(GRASS, x, 1, z, None, None),
+                    26 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
+                    _ => {}
+                }
+            } else if editor.check_for_block(x, 0, z, Some(&[COARSE_DIRT]))
+                && rng.random_range(0..100) < 8
+            {
+                editor.set_block(GRASS, x, 1, z, None, None);
+            }
+        }
+        FarmCrop::Fallow => {
+            if editor.check_for_block(x, 0, z, Some(&[FARMLAND])) {
+                if rng.random_range(0..100) < 12 {
+                    editor.set_block(WHEAT, x, 1, z, None, None);
+                }
+            } else if editor.check_for_block(x, 0, z, Some(&[COARSE_DIRT])) {
+                match rng.random_range(0..100) {
+                    0..=2 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
+                    3..=10 => editor.set_block(GRASS, x, 1, z, None, None),
+                    _ => {}
+                }
+            }
+        }
     }
 }
 

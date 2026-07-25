@@ -550,6 +550,10 @@ impl Block {
             436 => "warped_stairs",
             437 => "warped_trapdoor",
             438 => "redstone_lamp",
+            439 => "beetroots",
+            440 => "pumpkin",
+            441..=442 => "sunflower",
+            443 => "packed_mud",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -558,6 +562,26 @@ impl Block {
 
     pub fn properties(&self) -> Option<Value> {
         match self.id {
+            // Beetroot crop, fully grown (beetroot max age is 3, not 7).
+            439 => Some(Value::Compound({
+                let mut map: HashMap<String, Value> = HashMap::new();
+                map.insert("age".to_string(), Value::String("3".to_string()));
+                map
+            })),
+
+            // Sunflower double plant halves.
+            441 => Some(Value::Compound({
+                let mut map: HashMap<String, Value> = HashMap::new();
+                map.insert("half".to_string(), Value::String("lower".to_string()));
+                map
+            })),
+
+            442 => Some(Value::Compound({
+                let mut map: HashMap<String, Value> = HashMap::new();
+                map.insert("half".to_string(), Value::String("upper".to_string()));
+                map
+            })),
+
             3 => Some(Value::Compound({
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert("persistent".to_string(), Value::String("true".to_string()));
@@ -1481,6 +1505,11 @@ pub const WARPED_SLAB: Block = Block::new(435);
 pub const WARPED_STAIRS: Block = Block::new(436);
 pub const WARPED_TRAPDOOR: Block = Block::new(437);
 pub const REDSTONE_LAMP: Block = Block::new(438);
+pub const BEETROOTS: Block = Block::new(439);
+pub const PUMPKIN: Block = Block::new(440);
+pub const SUNFLOWER_LOWER: Block = Block::new(441);
+pub const SUNFLOWER_UPPER: Block = Block::new(442);
+pub const PACKED_MUD: Block = Block::new(443);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

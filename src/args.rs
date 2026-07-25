@@ -432,6 +432,13 @@ pub struct Args {
     /// Omitted = reuse --field-mix, so untagged land can have its own shares.
     #[arg(long = "land-mix", value_name = "LIST")]
     pub land_mix: Option<String>,
+
+    /// Farm-plot crop shares as a `name=pct` list over
+    /// `wheat,potato,carrot,beetroot,sunflower,pumpkin,fallow`. Each farm parcel grows
+    /// ONE crop picked by these weights (real monoculture plots). Omitted = the default
+    /// combined patchwork `wheat=40,potato=15,carrot=15,beetroot=8,sunflower=12,pumpkin=5,fallow=5`.
+    #[arg(long = "farm-crops", value_name = "LIST")]
+    pub farm_crops: Option<String>,
 }
 
 /// Player game mode for the generated world.

@@ -391,6 +391,11 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
         264 => "mcl_lights:candle_brown",              // BROWN_CANDLE_4
         265 => "mcl_nether:soul_sand",                 // SOUL_SAND
         266 => "mcl_core:snow",                        // SNOW_LAYER
+        439 => "mcl_farming:beetroot",                 // BEETROOTS
+        440 => "mcl_farming:pumpkin",                  // PUMPKIN
+        441 => "mcl_flowers:sunflower",                // SUNFLOWER_LOWER
+        442 => "mcl_flowers:sunflower_top",            // SUNFLOWER_UPPER
+        443 => "mcl_mud:packed_mud",                   // PACKED_MUD
         _ => "mcl_core:stone",
     };
     LuantiNode { name, param2: 0 }

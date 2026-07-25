@@ -96,8 +96,14 @@ fn bushes() -> &'static [StructureSchematic] {
 /// gently clumped (bushes grow in small groups).
 ///
 /// `density` is bushes per 512×512 region of field area; `0` disables the family.
-pub fn scatter_bushes(editor: &mut WorldEditor, cells: &[(i32, i32)], density: u8) {
-    scatter_pool(editor, cells, bushes(), density, CAP, true, 0x00C7_2B19);
+/// `prefer` biases placement toward parcel edges/tracks when a field profile is active.
+pub fn scatter_bushes(
+    editor: &mut WorldEditor,
+    cells: &[(i32, i32)],
+    density: u8,
+    prefer: Option<&dyn Fn(i32, i32) -> bool>,
+) {
+    scatter_pool(editor, cells, bushes(), density, CAP, true, 0x00C7_2B19, prefer);
 }
 
 #[cfg(test)]

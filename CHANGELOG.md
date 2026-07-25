@@ -52,6 +52,16 @@ default runs stay byte-identical.
 
   A `FieldProfile` bundles a mix with a parcel-size band and track rate, so each land
   kind gets a distinct look (tight tilled plots vs large loose meadows).
+- **Real farm plots via `--farm-crops <LIST>`.** Each farmland parcel now grows ONE
+  crop (monoculture plots, like real fields): a `name=pct` mix over
+  `wheat,potato,carrot,beetroot,sunflower,pumpkin,fallow` (default combined patchwork).
+  Wheat/potato/carrot/beetroot plots are tilled crop fields; sunflower plots are planted
+  rows on coarse dirt with packed-mud gaps; pumpkin patches fruit on a grass/coarse
+  mosaic; fallow fields rest with stubble. Wheat/fallow plots get occasional hay-bale
+  bundles (procedural, per-region on OSM farmland + rate-scaled on untagged cropland).
+  Bare "coarse" patches now use **packed mud / mud / rooted dirt** (never regrow grass)
+  with clustered dead bushes. Adds blocks `beetroots`, `pumpkin`, `sunflower`,
+  `packed_mud`. Rocks/bushes now bias toward parcel edges/tracks (cleared-field look).
 - **`--land-mix <LIST>`.** Separate `name=pct` mix for untagged satellite cropland;
   omitted = reuse `--field-mix`. And under `--land-texture`, cropland cells inside
   `landuse=residential` polygons get the grassy profile instead of wheat, so villages

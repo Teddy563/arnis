@@ -15,13 +15,14 @@
 
 use crate::args::Args;
 use crate::block_definitions::{
-    AIR, ANDESITE, BEDROCK, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS, CLAY, COARSE_DIRT,
-    COBBLED_DEEPSLATE, COBBLESTONE, CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE,
-    DIORITE, DIRT, DIRT_PATH, FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE,
-    GRAY_CONCRETE_POWDER, HAY_BALE, LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD, OAK_LEAVES,
-    OAK_PLANKS, POTATOES, RED_FLOWER, SAND, SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE,
-    STONE_BRICKS, SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT,
-    WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
+    Block, AIR, ANDESITE, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS, CLAY,
+    COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH,
+    DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL,
+    GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD,
+    OAK_LEAVES, OAK_PLANKS, POTATOES, PUMPKIN, RED_FLOWER, SAND, SANDSTONE, SMOOTH_STONE,
+    SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER, SUNFLOWER_UPPER,
+    TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER,
+    YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::tree;
@@ -167,6 +168,7 @@ pub fn generate_ground_region(
         crate::element_processing::field_texture::FieldMix::parse(
             args.land_mix.as_deref().or(args.field_mix.as_deref()),
         ),
+        crate::element_processing::field_texture::FarmCrops::parse(args.farm_crops.as_deref()),
     );
     let land_grass_profile = crate::element_processing::field_texture::FieldProfile::grass();
     // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
@@ -1107,6 +1109,195 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
+                                        }
+                                    }
+                                    // Textured untagged cropland: grow each parcel's
+                                    // SINGLE crop (mirrors landuse::decorate_farm_plot),
+                                    // so satellite farmland forms monoculture plots too.
+                                    land_cover::LC_CROPLAND
+                                        if args.land_texture
+                                            && !residential_footprint.contains(x, z) =>
+                                    {
+                                        use crate::element_processing::field_texture::FarmCrop;
+                                        let cell = land_farm_profile.cell_at(x, z);
+                                        let on = |ed: &mut WorldEditor, b: Block| {
+                                            ed.check_for_block_absolute(
+                                                x,
+                                                ground_y,
+                                                z,
+                                                Some(&[b]),
+                                                None,
+                                            )
+                                        };
+                                        if !cell.is_track {
+                                            match cell.crop {
+                                                Some(
+                                                    c @ (FarmCrop::Wheat
+                                                    | FarmCrop::Potato
+                                                    | FarmCrop::Carrot
+                                                    | FarmCrop::Beetroot),
+                                                ) => {
+                                                    if on(editor, FARMLAND) {
+                                                        if x % 9 == 0 && z % 9 == 0 {
+                                                            editor.set_block_absolute(
+                                                                WATER,
+                                                                x,
+                                                                ground_y,
+                                                                z,
+                                                                Some(&[FARMLAND]),
+                                                                None,
+                                                            );
+                                                        } else {
+                                                            let b = match c {
+                                                                FarmCrop::Wheat => WHEAT,
+                                                                FarmCrop::Potato => POTATOES,
+                                                                FarmCrop::Carrot => CARROTS,
+                                                                _ => BEETROOTS,
+                                                            };
+                                                            editor.set_block_absolute(
+                                                                b,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            );
+                                                        }
+                                                    } else if c == FarmCrop::Wheat
+                                                        && rng.random_range(0..40) == 0
+                                                    {
+                                                        editor.set_block_absolute(
+                                                            HAY_BALE,
+                                                            x,
+                                                            ground_y + 1,
+                                                            z,
+                                                            None,
+                                                            None,
+                                                        );
+                                                    }
+                                                }
+                                                Some(FarmCrop::Sunflower) => {
+                                                    if on(editor, COARSE_DIRT) {
+                                                        if rng.random_range(0..100) < 85 {
+                                                            editor.set_block_absolute(
+                                                                SUNFLOWER_LOWER,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            );
+                                                            editor.set_block_absolute(
+                                                                SUNFLOWER_UPPER,
+                                                                x,
+                                                                ground_y + 2,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            );
+                                                        }
+                                                    } else if on(editor, GRASS_BLOCK)
+                                                        && rng.random_range(0..100) < 25
+                                                    {
+                                                        editor.set_block_absolute(
+                                                            GRASS,
+                                                            x,
+                                                            ground_y + 1,
+                                                            z,
+                                                            None,
+                                                            None,
+                                                        );
+                                                    }
+                                                }
+                                                Some(FarmCrop::Pumpkin) => {
+                                                    if on(editor, GRASS_BLOCK) {
+                                                        match rng.random_range(0..100) {
+                                                            0..=5 => editor.set_block_absolute(
+                                                                PUMPKIN,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            ),
+                                                            6..=25 => editor.set_block_absolute(
+                                                                GRASS,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            ),
+                                                            26 => editor.set_block_absolute(
+                                                                DEAD_BUSH,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            ),
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
+                                                Some(FarmCrop::Fallow) => {
+                                                    if on(editor, FARMLAND) {
+                                                        if rng.random_range(0..100) < 12 {
+                                                            editor.set_block_absolute(
+                                                                WHEAT,
+                                                                x,
+                                                                ground_y + 1,
+                                                                z,
+                                                                None,
+                                                                None,
+                                                            );
+                                                        }
+                                                    } else if on(editor, COARSE_DIRT)
+                                                        && rng.random_range(0..100) < 3
+                                                    {
+                                                        editor.set_block_absolute(
+                                                            DEAD_BUSH,
+                                                            x,
+                                                            ground_y + 1,
+                                                            z,
+                                                            None,
+                                                            None,
+                                                        );
+                                                    }
+                                                }
+                                                None => {}
+                                            }
+                                            // Occasional hay-bale bundle on wheat/fallow
+                                            // plots (density scales with how much cropland
+                                            // the area has — realistic; position-hashed so
+                                            // it's seam-safe). Placed on the crop cells.
+                                            if matches!(
+                                                cell.crop,
+                                                Some(FarmCrop::Wheat) | Some(FarmCrop::Fallow)
+                                            ) && on(editor, FARMLAND)
+                                                && land_cover::coord_hash(
+                                                    x ^ 0x0000_4A7B,
+                                                    z.wrapping_mul(41),
+                                                ) % 5000
+                                                    < 1
+                                            {
+                                                editor.set_block_absolute(
+                                                    HAY_BALE,
+                                                    x,
+                                                    ground_y + 1,
+                                                    z,
+                                                    None,
+                                                    None,
+                                                );
+                                                editor.set_block_absolute(
+                                                    HAY_BALE,
+                                                    x + 1,
+                                                    ground_y + 1,
+                                                    z,
+                                                    None,
+                                                    None,
+                                                );
+                                            }
                                         }
                                     }
                                     land_cover::LC_CROPLAND
