@@ -15,14 +15,15 @@
 
 use crate::args::Args;
 use crate::block_definitions::{
-    Block, AIR, ANDESITE, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS, CLAY,
-    COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH,
-    DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, GRANITE, GRASS, GRASS_BLOCK, GRAVEL,
-    GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LIGHT_GRAY_CONCRETE, MOSSY_COBBLESTONE, MUD,
-    OAK_LEAVES, OAK_PLANKS, POTATOES, PUMPKIN, RED_FLOWER, SAND, SANDSTONE, SMOOTH_STONE,
-    SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER, SUNFLOWER_UPPER,
-    TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER,
-    YELLOW_FLOWER,
+    Block, AIR, ALLIUM, ANDESITE, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS,
+    CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CORNFLOWER, CRACKED_STONE_BRICKS,
+    CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, FERN, GRANITE, GRASS,
+    GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LARGE_FERN_LOWER,
+    LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, LILY_OF_THE_VALLEY, MOSSY_COBBLESTONE, MUD, OAK_LEAVES,
+    OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES, PUMPKIN, RED_FLOWER, SAND,
+    SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER,
+    SUNFLOWER_UPPER, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE,
+    WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::tree;
@@ -1065,9 +1066,10 @@ pub fn generate_ground_region(
                                         }
                                     }
                                     land_cover::LC_GRASSLAND if ground_is_natural => {
-                                        // Short grass on grassland (~55%)
+                                        // Mixed grassland cover: short grass, ferns, large
+                                        // ferns, tall grass, and multi-species wildflowers.
                                         let choice = rng.random_range(0..100);
-                                        if choice < 50 {
+                                        if choice < 46 {
                                             editor.set_block_absolute(
                                                 GRASS,
                                                 x,
@@ -1076,8 +1078,33 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
+                                        } else if choice < 52 {
+                                            editor.set_block_absolute(
+                                                FERN,
+                                                x,
+                                                ground_y + 1,
+                                                z,
+                                                None,
+                                                None,
+                                            );
                                         } else if choice < 55 {
-                                            // Occasional tall grass
+                                            editor.set_block_absolute(
+                                                LARGE_FERN_LOWER,
+                                                x,
+                                                ground_y + 1,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                            editor.set_block_absolute(
+                                                LARGE_FERN_UPPER,
+                                                x,
+                                                ground_y + 2,
+                                                z,
+                                                None,
+                                                None,
+                                            );
+                                        } else if choice < 60 {
                                             editor.set_block_absolute(
                                                 TALL_GRASS_BOTTOM,
                                                 x,
@@ -1094,13 +1121,19 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice == 55 {
+                                        } else if choice < 66 {
                                             let flower = [
                                                 RED_FLOWER,
                                                 BLUE_FLOWER,
                                                 YELLOW_FLOWER,
                                                 WHITE_FLOWER,
-                                            ][rng.random_range(0..4)];
+                                                OXEYE_DAISY,
+                                                CORNFLOWER,
+                                                ALLIUM,
+                                                ORANGE_TULIP,
+                                                PINK_TULIP,
+                                                LILY_OF_THE_VALLEY,
+                                            ][rng.random_range(0..10)];
                                             editor.set_block_absolute(
                                                 flower,
                                                 x,
@@ -1148,20 +1181,37 @@ pub fn generate_ground_region(
                                                                 None,
                                                             );
                                                         } else {
-                                                            let b = match c {
-                                                                FarmCrop::Wheat => WHEAT,
-                                                                FarmCrop::Potato => POTATOES,
-                                                                FarmCrop::Carrot => CARROTS,
-                                                                _ => BEETROOTS,
+                                                            let (b, max_age) = match c {
+                                                                FarmCrop::Wheat => (WHEAT, 7u32),
+                                                                FarmCrop::Potato => (POTATOES, 7),
+                                                                FarmCrop::Carrot => (CARROTS, 7),
+                                                                _ => (BEETROOTS, 3),
                                                             };
-                                                            editor.set_block_absolute(
-                                                                b,
-                                                                x,
-                                                                ground_y + 1,
-                                                                z,
-                                                                None,
-                                                                None,
+                                                            let age = cell.crop_age as u32
+                                                                * max_age
+                                                                / 7;
+                                                            let mut m: std::collections::HashMap<
+                                                                String,
+                                                                fastnbt::Value,
+                                                            > = std::collections::HashMap::new();
+                                                            m.insert(
+                                                                "age".to_string(),
+                                                                fastnbt::Value::String(
+                                                                    age.to_string(),
+                                                                ),
                                                             );
+                                                            editor
+                                                                .set_block_with_properties_absolute(
+                                                                    crate::block_definitions::BlockWithProperties::new(
+                                                                        b,
+                                                                        Some(fastnbt::Value::Compound(m)),
+                                                                    ),
+                                                                    x,
+                                                                    ground_y + 1,
+                                                                    z,
+                                                                    None,
+                                                                    None,
+                                                                );
                                                         }
                                                     } else if c == FarmCrop::Wheat
                                                         && rng.random_range(0..40) == 0

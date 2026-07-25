@@ -554,6 +554,12 @@ impl Block {
             440 => "pumpkin",
             441..=442 => "sunflower",
             443 => "packed_mud",
+            444 => "oxeye_daisy",
+            445 => "cornflower",
+            446 => "allium",
+            447 => "orange_tulip",
+            448 => "pink_tulip",
+            449 => "lily_of_the_valley",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -1510,6 +1516,12 @@ pub const PUMPKIN: Block = Block::new(440);
 pub const SUNFLOWER_LOWER: Block = Block::new(441);
 pub const SUNFLOWER_UPPER: Block = Block::new(442);
 pub const PACKED_MUD: Block = Block::new(443);
+pub const OXEYE_DAISY: Block = Block::new(444);
+pub const CORNFLOWER: Block = Block::new(445);
+pub const ALLIUM: Block = Block::new(446);
+pub const ORANGE_TULIP: Block = Block::new(447);
+pub const PINK_TULIP: Block = Block::new(448);
+pub const LILY_OF_THE_VALLEY: Block = Block::new(449);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

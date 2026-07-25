@@ -40,12 +40,15 @@ pub enum FarmCrop {
     Fallow,
 }
 
-/// A resolved cell: style, surface block, per-plot crop, and track flag. Decoration
-/// keys off the surface (e.g. sunflower rows = the coarse-dirt rows).
+/// A resolved cell: style, surface block, per-plot crop, growth level, and track flag.
+/// Decoration keys off the surface (e.g. sunflower rows = the coarse-dirt rows).
 #[derive(Clone, Copy)]
 pub struct FieldCell {
     pub cat: FieldCategory,
     pub crop: Option<FarmCrop>,
+    /// 0..=7 growth level, uniform within a farm parcel (a field is planted at once);
+    /// mapped per crop when placed (beetroot uses 0..=3). Meaningful only for farm cells.
+    pub crop_age: u8,
     pub surface: Block,
     pub is_track: bool,
 }
@@ -198,15 +201,15 @@ fn surface_block(cat: FieldCategory, x: i32, z: i32) -> Block {
     let n = (value_noise_01(x, z, SUB_SCALE) * 1000.0) as i32;
     match cat {
         FieldCategory::Coarse => {
-            // Bare, disturbed ground. Packed mud (not plain dirt) for the barest
-            // patches so they can't regrow grass in-game, with mud lows, rooted-dirt
-            // texture, and a little grass peeking through.
-            if n < 210 {
+            // Bare, disturbed ground: coarse dirt + grass + packed mud + rooted dirt,
+            // plus locked dirt-path patches. No plain mud, and none of these regrow
+            // grass in-game, so the patch stays disturbed.
+            if n < 160 {
                 PACKED_MUD
-            } else if n < 260 {
-                MUD
-            } else if n < 320 {
+            } else if n < 250 {
                 ROOTED_DIRT
+            } else if n < 300 {
+                DIRT_PATH
             } else if n < 380 {
                 GRASS_BLOCK
             } else {
@@ -216,8 +219,10 @@ fn surface_block(cat: FieldCategory, x: i32, z: i32) -> Block {
         FieldCategory::Moss => {
             if n < 300 {
                 GRASS_BLOCK
-            } else if n < 370 {
+            } else if n < 360 {
                 COARSE_DIRT
+            } else if n < 400 {
+                ROOTED_DIRT
             } else {
                 MOSS_BLOCK
             }
@@ -379,6 +384,19 @@ impl FieldProfile {
         } else {
             None
         };
+        // Growth level uniform per field (planted together), weighted toward ripe with a
+        // few immature fields — so neighbouring plots read as different growth stages.
+        let crop_age = if crop.is_some() {
+            match coord_hash(px ^ 0x0000_A9E3, pz.wrapping_mul(29)) % 10 {
+                0..=5 => 7,
+                6 => 6,
+                7 => 5,
+                8 => 4,
+                _ => 2,
+            }
+        } else {
+            0
+        };
         let surface = if is_track {
             DIRT_PATH
         } else if let Some(c) = crop {
@@ -386,7 +404,7 @@ impl FieldProfile {
         } else {
             surface_block(cat, x, z)
         };
-        FieldCell { cat, crop, surface, is_track }
+        FieldCell { cat, crop, crop_age, surface, is_track }
     }
 }
 

@@ -396,6 +396,12 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
         441 => "mcl_flowers:sunflower",                // SUNFLOWER_LOWER
         442 => "mcl_flowers:sunflower_top",            // SUNFLOWER_UPPER
         443 => "mcl_mud:packed_mud",                   // PACKED_MUD
+        444 => "mcl_flowers:oxeye_daisy",              // OXEYE_DAISY
+        445 => "mcl_flowers:cornflower",               // CORNFLOWER
+        446 => "mcl_flowers:allium",                   // ALLIUM
+        447 => "mcl_flowers:tulip_orange",             // ORANGE_TULIP
+        448 => "mcl_flowers:tulip_pink",               // PINK_TULIP
+        449 => "mcl_flowers:lily_of_the_valley",       // LILY_OF_THE_VALLEY
         _ => "mcl_core:stone",
     };
     LuantiNode { name, param2: 0 }

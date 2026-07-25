@@ -59,9 +59,16 @@ default runs stay byte-identical.
   rows on coarse dirt with packed-mud gaps; pumpkin patches fruit on a grass/coarse
   mosaic; fallow fields rest with stubble. Wheat/fallow plots get occasional hay-bale
   bundles (procedural, per-region on OSM farmland + rate-scaled on untagged cropland).
-  Bare "coarse" patches now use **packed mud / mud / rooted dirt** (never regrow grass)
-  with clustered dead bushes. Adds blocks `beetroots`, `pumpkin`, `sunflower`,
-  `packed_mud`. Rocks/bushes now bias toward parcel edges/tracks (cleared-field look).
+  Crops grow at **varied levels** — each field is uniform but neighbouring fields sit at
+  different maturities (ripe to young). Bare "coarse" patches use **coarse dirt + grass +
+  packed mud + rooted dirt + locked dirt-path** (no plain dirt/mud, so they never regrow
+  grass) with clustered dead bushes and ferns. Plains/flower/moss now carry mixed
+  vegetation — short grass, ferns, **two-block large ferns**, tall grass, and **ten
+  wildflower species** (poppy, dandelion, blue orchid, azure bluet, oxeye daisy,
+  cornflower, allium, orange/pink tulip, lily of the valley). Untagged satellite
+  grassland gets the same richer cover. Rocks/bushes scatter across the whole farm/grass
+  area (like normal land), not just edges. Adds blocks `beetroots`, `pumpkin`,
+  `sunflower`, `packed_mud`, and the six new flower species.
 - **`--land-mix <LIST>`.** Separate `name=pct` mix for untagged satellite cropland;
   omitted = reuse `--field-mix`. And under `--land-texture`, cropland cells inside
   `landuse=residential` polygons get the grassy profile instead of wheat, so villages
