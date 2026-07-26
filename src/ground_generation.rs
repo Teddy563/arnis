@@ -114,6 +114,7 @@ impl ChunkGroundCache {
 /// This must be called after all OSM element processing is complete and the
 /// flood-fill / highway caches have been dropped. Regions remain in memory
 /// and are saved in parallel by `save_java()` after generation completes.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_ground_layer(
     editor: &mut WorldEditor,
     ground: &Ground,

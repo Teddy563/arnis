@@ -601,9 +601,9 @@ fn place_crop(editor: &mut WorldEditor, base: Block, growth: u8, max_age: u8, x:
 /// Pick from the parcel's 2-3 flower species (real meadows are a few species, not ten).
 fn parcel_flower(cell: &FieldCell, rng: &mut impl Rng) -> Block {
     let n = FLOWERS.len() as u32;
-    let count = 2 + (cell.species_seed % 2) as u32; // 2 or 3 species per parcel
-                                                    // Each species slot draws from a different bit-window of the seed, so the subset
-                                                    // is genuinely varied (the old formula could collapse to a single species).
+    let count = 2 + (cell.species_seed % 2); // 2 or 3 species per parcel
+                                             // Each species slot draws from a different bit-window of the seed, so the subset
+                                             // is genuinely varied (the old formula could collapse to a single species).
     let slot = rng.random_range(0..count);
     let idx = (cell.species_seed >> (5 * slot + 3)) % n;
     FLOWERS[idx as usize]
