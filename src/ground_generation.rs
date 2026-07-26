@@ -16,17 +16,14 @@
 use crate::args::Args;
 use crate::block_definitions::{
     Block, AIR, ALLIUM, ANDESITE, AZALEA, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK,
-    CARROTS,
-    CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CORNFLOWER, CRACKED_STONE_BRICKS,
-    CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, FERN, GRANITE, GRASS,
-    GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LARGE_FERN_LOWER,
+    CARROTS, CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CORNFLOWER, CRACKED_STONE_BRICKS,
+    CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, FERN, GRANITE,
+    GRASS, GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LARGE_FERN_LOWER,
     LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, LILY_OF_THE_VALLEY, MOSSY_COBBLESTONE, MOSS_BLOCK,
-    MOSS_CARPET, MUD, OAK_LEAVES,
-    OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES, PUMPKIN, RED_FLOWER, ROOTED_DIRT,
-    SAND,
-    SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER,
-    SUNFLOWER_UPPER, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TUFF, WATER, WHEAT, WHITE_CONCRETE,
-    WHITE_FLOWER, YELLOW_FLOWER,
+    MOSS_CARPET, MUD, OAK_LEAVES, OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES,
+    PUMPKIN, RED_FLOWER, ROOTED_DIRT, SAND, SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE,
+    STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER, SUNFLOWER_UPPER, TALL_GRASS_BOTTOM, TALL_GRASS_TOP,
+    TUFF, WATER, WHEAT, WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::tree;
@@ -1206,8 +1203,7 @@ pub fn generate_ground_region(
                                                                 None,
                                                             );
                                                         } else {
-                                                            let (mut b, mut max_age) = match c
-                                                            {
+                                                            let (mut b, mut max_age) = match c {
                                                                 FarmCrop::Wheat => (WHEAT, 7u32),
                                                                 FarmCrop::Potato => (POTATOES, 7),
                                                                 FarmCrop::Carrot => (CARROTS, 7),
@@ -1226,11 +1222,11 @@ pub fn generate_ground_region(
                                                                 let alt = [
                                                                     WHEAT, POTATOES, CARROTS,
                                                                     BEETROOTS,
-                                                                ][((cell.species_seed >> 9) % 4)
-                                                                    as usize];
+                                                                ]
+                                                                    [((cell.species_seed >> 9) % 4)
+                                                                        as usize];
                                                                 if alt != b {
-                                                                    max_age = if alt == BEETROOTS
-                                                                    {
+                                                                    max_age = if alt == BEETROOTS {
                                                                         3
                                                                     } else {
                                                                         7
@@ -1244,8 +1240,7 @@ pub fn generate_ground_region(
                                                                     1 + rng.random_range(0..2),
                                                                 );
                                                             }
-                                                            let age =
-                                                                growth as u32 * max_age / 7;
+                                                            let age = growth as u32 * max_age / 7;
                                                             let mut m: std::collections::HashMap<
                                                                 String,
                                                                 fastnbt::Value,
@@ -1416,8 +1411,7 @@ pub fn generate_ground_region(
                                                     // flower, coarse, moss) and village
                                                     // cells: vanilla-density cover.
                                                     decorate_nonfarm_cell(
-                                                        editor, &cell, x, ground_y, z,
-                                                        &mut rng,
+                                                        editor, &cell, x, ground_y, z, &mut rng,
                                                     );
                                                 }
                                             }

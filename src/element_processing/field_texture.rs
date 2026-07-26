@@ -85,7 +85,9 @@ const CROP_ORDER: [FarmCrop; 7] = [
 impl FarmCrops {
     /// The default "combined" patchwork: wheat-led with the rest sprinkled in.
     pub const fn combined() -> Self {
-        FarmCrops { weights: [40, 15, 15, 8, 12, 5, 5] }
+        FarmCrops {
+            weights: [40, 15, 15, 8, 12, 5, 5],
+        }
     }
 
     /// Parse `wheat=40,potato=15,carrot=15,beetroot=8,sunflower=12,pumpkin=5,fallow=5`.
@@ -285,12 +287,26 @@ fn surface_block(cat: FieldCategory, x: i32, z: i32) -> Block {
 impl FieldMix {
     /// Stock behaviour: all-farmland.
     pub const fn stock() -> Self {
-        FieldMix { coarse: 0, plains: 0, flower: 0, farm: 100, moss: 0, default: true }
+        FieldMix {
+            coarse: 0,
+            plains: 0,
+            flower: 0,
+            farm: 100,
+            moss: 0,
+            default: true,
+        }
     }
 
     /// Built-in meadow/grassland mix.
     pub const fn grass_auto() -> Self {
-        FieldMix { coarse: 6, plains: 64, flower: 22, farm: 0, moss: 8, default: false }
+        FieldMix {
+            coarse: 6,
+            plains: 64,
+            flower: 22,
+            farm: 0,
+            moss: 8,
+            default: false,
+        }
     }
 
     /// Parse a `name=pct` list. `None`/empty/all-zero → [`FieldMix::stock`].
@@ -298,7 +314,8 @@ impl FieldMix {
         let Some(s) = spec.map(str::trim).filter(|s| !s.is_empty()) else {
             return Self::stock();
         };
-        let (mut coarse, mut plains, mut flower, mut farm, mut moss) = (0u16, 0u16, 0u16, 0u16, 0u16);
+        let (mut coarse, mut plains, mut flower, mut farm, mut moss) =
+            (0u16, 0u16, 0u16, 0u16, 0u16);
         for tok in s.split(',') {
             if let Some((k, v)) = tok.split_once('=') {
                 let val: u16 = v.trim().parse().unwrap_or(0);
@@ -315,7 +332,14 @@ impl FieldMix {
         if coarse as u32 + plains as u32 + flower as u32 + farm as u32 + moss as u32 == 0 {
             return Self::stock();
         }
-        FieldMix { coarse, plains, flower, farm, moss, default: false }
+        FieldMix {
+            coarse,
+            plains,
+            flower,
+            farm,
+            moss,
+            default: false,
+        }
     }
 
     pub fn is_default(&self) -> bool {
@@ -323,14 +347,26 @@ impl FieldMix {
     }
 
     fn total(&self) -> u64 {
-        self.coarse as u64 + self.plains as u64 + self.flower as u64 + self.farm as u64 + self.moss as u64
+        self.coarse as u64
+            + self.plains as u64
+            + self.flower as u64
+            + self.farm as u64
+            + self.moss as u64
     }
 }
 
 impl FieldProfile {
     /// Tilled-farmland texture: tight plots, frequent tracks, real crop plots.
     pub fn farmland(mix: FieldMix, crops: FarmCrops) -> Self {
-        FieldProfile { mix, crops, sizes: [18, 30, 46], track_pct: 45, salt: 0, scale_pct: 100, map_scale: 0.05 }
+        FieldProfile {
+            mix,
+            crops,
+            sizes: [18, 30, 46],
+            track_pct: 45,
+            salt: 0,
+            scale_pct: 100,
+            map_scale: 0.05,
+        }
     }
 
     /// Meadow/grassland texture: large loose plots, few tracks.
@@ -342,7 +378,11 @@ impl FieldProfile {
     /// Grassland profile with a user-supplied mix (`--grass-mix`); a stock/absent mix
     /// falls back to the built-in grassy blend so grassland never turns all-farm.
     pub fn grass_with(mix: FieldMix) -> Self {
-        let mix = if mix.is_default() { FieldMix::grass_auto() } else { mix };
+        let mix = if mix.is_default() {
+            FieldMix::grass_auto()
+        } else {
+            mix
+        };
         FieldProfile {
             mix,
             crops: FarmCrops::combined(),
@@ -433,11 +473,9 @@ impl FieldProfile {
         };
         // Domain rotation: align to the dominant nearby road (real fields are laid out
         // off their access roads); hashed angle where no road is near.
-        let (sin_t, cos_t) = crate::road_bearings::bearing_at(
-            mx * MACRO + MACRO / 2,
-            mz * MACRO + MACRO / 2,
-        )
-        .unwrap_or(ANGLES[((dh >> 16) % 6) as usize]);
+        let (sin_t, cos_t) =
+            crate::road_bearings::bearing_at(mx * MACRO + MACRO / 2, mz * MACRO + MACRO / 2)
+                .unwrap_or(ANGLES[((dh >> 16) % 6) as usize]);
         let fx = sx as f64;
         let fz = sz as f64;
         let rx = (fx * cos_t + fz * sin_t).round() as i32;
@@ -487,7 +525,10 @@ impl FieldProfile {
                 (p.px, p.pz + 1)
             };
             if self.category_for_parcel(nx, nz, p.dsalt) != cat
-                && coord_hash(p.px ^ nx, (((p.pz ^ nz) ^ 0x0000_7A11) ^ self.salt) ^ p.dsalt) % 100
+                && coord_hash(
+                    p.px ^ nx,
+                    (((p.pz ^ nz) ^ 0x0000_7A11) ^ self.salt) ^ p.dsalt,
+                ) % 100
                     < self.track_pct
             {
                 is_track = true;
@@ -539,7 +580,14 @@ impl FieldProfile {
         } else {
             surface_block(cat, x, z)
         };
-        FieldCell { cat, crop, crop_age, species_seed, surface, is_track }
+        FieldCell {
+            cat,
+            crop,
+            crop_age,
+            species_seed,
+            surface,
+            is_track,
+        }
     }
 }
 
@@ -568,7 +616,10 @@ mod tests {
 
     #[test]
     fn farm_parcels_are_monoculture_and_diverse() {
-        let p = FieldProfile::farmland(FieldMix::parse(Some("farm=100,plains=1")), FarmCrops::combined());
+        let p = FieldProfile::farmland(
+            FieldMix::parse(Some("farm=100,plains=1")),
+            FarmCrops::combined(),
+        );
         // Monoculture: a cell and its immediate neighbour agree on the crop unless a
         // parcel boundary sits between them — so over a straight walk, crop changes
         // must be far rarer than cells (parcels are >= 18 wide).
@@ -584,7 +635,10 @@ mod tests {
         // Strips can be as narrow as 8 blocks and boundaries sit at angles, so allow
         // more frequent changes than the blocky-only layout — but still far below
         // per-cell salt-and-pepper (which would be ~85% changes).
-        assert!(changes < 2000 / 5, "crop changes {changes} too frequent for parcels");
+        assert!(
+            changes < 2000 / 5,
+            "crop changes {changes} too frequent for parcels"
+        );
         // Diversity: all 7 crops appear over a wide area.
         let mut seen = std::collections::HashSet::new();
         for x in (0..8000).step_by(11) {
@@ -635,12 +689,18 @@ mod tests {
             }
         }
         assert_eq!(farm, 0, "grass profile has no farm category");
-        assert!(grassy as f64 / n as f64 > 0.7, "grass profile should be mostly grassy");
+        assert!(
+            grassy as f64 / n as f64 > 0.7,
+            "grass profile should be mostly grassy"
+        );
     }
 
     #[test]
     fn weights_roughly_match_area_share() {
-        let p = FieldProfile::farmland(FieldMix::parse(Some("plains=50,farm=50")), FarmCrops::combined());
+        let p = FieldProfile::farmland(
+            FieldMix::parse(Some("plains=50,farm=50")),
+            FarmCrops::combined(),
+        );
         let (mut plains, mut farm) = (0, 0);
         for x in (0..6000).step_by(13) {
             for z in (0..6000).step_by(13) {

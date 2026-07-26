@@ -49,7 +49,10 @@ pub fn set_from_elements(elements: &[ProcessedElement], xzbbox: &XZBBox) {
             continue;
         };
         // Skip point-like/footway noise; keep everything that reads as a road/lane.
-        if matches!(hw.as_str(), "street_lamp" | "crossing" | "bus_stop" | "steps") {
+        if matches!(
+            hw.as_str(),
+            "street_lamp" | "crossing" | "bus_stop" | "steps"
+        ) {
             continue;
         }
         for pair in way.nodes.windows(2) {

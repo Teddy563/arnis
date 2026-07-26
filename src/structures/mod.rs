@@ -1,16 +1,16 @@
 //! Generic Sponge .schem structure stamping (non-tree models such as the construction crane).
 
 pub mod boat;
+pub mod bushes;
 pub mod car;
 pub mod crane;
 pub mod excavator;
 pub mod fountain;
+pub mod haybales;
 #[allow(dead_code)] // parked-helicopter prop reserved: needs a seam-safe region-ownership guard
 pub mod helicopter;
-pub mod lighthouse;
-pub mod bushes;
-pub mod haybales;
 pub mod land_scatter;
+pub mod lighthouse;
 pub mod playground;
 pub mod rocks;
 pub mod schematic;

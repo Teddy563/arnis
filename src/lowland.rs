@@ -39,7 +39,13 @@ pub fn set_from_ground(ground: &Ground, xzbbox: &XZBBox) {
     sorted.sort_unstable();
     let thr = sorted[(sorted.len() as f64 * 0.35) as usize % sorted.len()];
     let low = heights.iter().map(|&y| y <= thr).collect();
-    *GRID.write().unwrap() = Some(LowlandGrid { min_x, min_z, w, h, low });
+    *GRID.write().unwrap() = Some(LowlandGrid {
+        min_x,
+        min_z,
+        w,
+        h,
+        low,
+    });
 }
 
 /// True when world point (x, z) sits in the low ~third of the terrain.

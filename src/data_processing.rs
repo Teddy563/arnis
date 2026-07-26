@@ -427,10 +427,8 @@ pub fn generate_world_with_options(
 
     // Residential landuse footprint: keeps --land-texture's field pattern out of
     // villages (ESA reads rural villages as cropland). Empty when the flag is off.
-    let residential_footprint = flood_fill_cache.collect_residential_footprints(
-        if args.land_texture { &elements } else { &[] },
-        &xzbbox,
-    );
+    let residential_footprint = flood_fill_cache
+        .collect_residential_footprints(if args.land_texture { &elements } else { &[] }, &xzbbox);
 
     // Road-bearing grid: field-texture orientation domains align their parcel grids
     // to the dominant nearby road (falls back to hashed angles off-road).

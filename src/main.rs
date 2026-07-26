@@ -26,6 +26,7 @@ mod ground_generation;
 mod land_cover;
 mod land_cover_bridge_repair;
 mod land_cover_osm_water_override;
+mod lowland;
 mod luanti_block_map;
 mod map_item;
 mod map_item_palette;
@@ -38,7 +39,6 @@ mod overture;
 #[cfg(feature = "gui")]
 mod progress;
 mod projection;
-mod lowland;
 mod region;
 mod retrieve_data;
 mod road_bearings;

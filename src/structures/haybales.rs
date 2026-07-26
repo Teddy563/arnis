@@ -21,7 +21,9 @@ pub fn scatter_haybales(editor: &mut WorldEditor, cells: &[(i32, i32)], profile:
         return;
     }
     let n = cells.len();
-    let target = ((n as f64 / 262_144.0) * PER_REGION).round().clamp(0.0, CAP as f64) as usize;
+    let target = ((n as f64 / 262_144.0) * PER_REGION)
+        .round()
+        .clamp(0.0, CAP as f64) as usize;
     if target == 0 {
         return;
     }

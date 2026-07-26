@@ -685,7 +685,13 @@ pub(crate) fn scatter_ground_ok(editor: &mut WorldEditor, x: i32, z: i32) -> boo
 }
 
 /// Place one piece of the chosen kind at (bx, bz), variant/rotation from the hash.
-pub(crate) fn place_scatter_kind(editor: &mut WorldEditor, bx: i32, bz: i32, use_rock: bool, h: u64) {
+pub(crate) fn place_scatter_kind(
+    editor: &mut WorldEditor,
+    bx: i32,
+    bz: i32,
+    use_rock: bool,
+    h: u64,
+) {
     if !scatter_ground_ok(editor, bx, bz) {
         return;
     }
