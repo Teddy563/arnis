@@ -604,15 +604,34 @@ pub fn place_structure(
     }
 }
 
+/// Chunk chance (percent) that a bush spawns (half the old rate — kept sparse).
+pub const BUSH_CHUNK_PCT: u64 = 5;
+/// Chunk chance (percent) that a rock spawns — kept much rarer than bushes.
+pub const ROCK_CHUNK_PCT: u64 = 2;
+
+/// Decide what (if anything) spawns in a chunk with hash `h`: independent rolls per
+/// kind (bushes ~10% of chunks, rocks ~2%); a rock hit wins when both land.
+/// Returns Some(use_rock) or None.
+pub(crate) fn chunk_scatter_kind(h: u64, rocks_on: bool, bushes_on: bool) -> Option<bool> {
+    let rock_hit = rocks_on && (h >> 7) % 100 < ROCK_CHUNK_PCT;
+    let bush_hit = bushes_on && h % 100 < BUSH_CHUNK_PCT;
+    if rock_hit {
+        Some(true)
+    } else if bush_hit {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 /// Chunk-based schematic scatter over a field's cells: every 16×16 chunk touching the
-/// field rolls `pct`% for one rock-or-bush (hash-picked when both are on) at a jittered
+/// field rolls independently for a bush (~10%) or a rarer rock (~2%) at a jittered
 /// position inside the chunk. Purely position-hashed → identical across tile seams.
 pub fn scatter_chunks_field(
     editor: &mut WorldEditor,
     cells: &[(i32, i32)],
     rocks_on: bool,
     bushes_on: bool,
-    pct: u64,
     salt: i32,
 ) {
     if (!rocks_on && !bushes_on) || cells.is_empty() {
@@ -629,33 +648,47 @@ pub fn scatter_chunks_field(
     for cz in (min_z >> 4)..=(max_z >> 4) {
         for cx in (min_x >> 4)..=(max_x >> 4) {
             let h = coord_hash(cx ^ salt, cz.wrapping_mul(31) ^ salt);
-            if h % 100 >= pct {
+            let Some(use_rock) = chunk_scatter_kind(h, rocks_on, bushes_on) else {
                 continue;
-            }
+            };
             let bx = (cx << 4) + ((h >> 17) % 16) as i32;
             let bz = (cz << 4) + ((h >> 22) % 16) as i32;
             if !set.contains(&(bx, bz)) || editor.is_lc_water(bx, bz) {
                 continue;
             }
-            place_scatter_piece(editor, bx, bz, rocks_on, bushes_on, h);
+            place_scatter_kind(editor, bx, bz, use_rock, h);
         }
     }
 }
 
-/// Place one rock-or-bush at (bx, bz), the kind and variant picked from the hash.
-pub(crate) fn place_scatter_piece(
-    editor: &mut WorldEditor,
-    bx: i32,
-    bz: i32,
-    rocks_on: bool,
-    bushes_on: bool,
-    h: u64,
-) {
-    let use_rock = match (rocks_on, bushes_on) {
-        (true, false) => true,
-        (false, true) => false,
-        _ => (h >> 9) & 1 == 0,
-    };
+/// True when the surface at (x, z) is natural dry ground a scatter piece may sit on.
+/// Blocks stamping onto rivers/lakes (OSM water), roads, and built surfaces — the
+/// LC-water check alone misses real mapped water.
+pub(crate) fn scatter_ground_ok(editor: &mut WorldEditor, x: i32, z: i32) -> bool {
+    let gy = editor.get_absolute_y(x, 0, z);
+    editor.check_for_block_absolute(
+        x,
+        gy,
+        z,
+        Some(&[
+            GRASS_BLOCK,
+            COARSE_DIRT,
+            DIRT,
+            FARMLAND,
+            MOSS_BLOCK,
+            PACKED_MUD,
+            ROOTED_DIRT,
+            PODZOL,
+        ]),
+        None,
+    )
+}
+
+/// Place one piece of the chosen kind at (bx, bz), variant/rotation from the hash.
+pub(crate) fn place_scatter_kind(editor: &mut WorldEditor, bx: i32, bz: i32, use_rock: bool, h: u64) {
+    if !scatter_ground_ok(editor, bx, bz) {
+        return;
+    }
     let pool = if use_rock {
         crate::structures::rocks::pool()
     } else {

@@ -19,11 +19,16 @@ default runs stay byte-identical.
 ### Added
 
 - **Real field layout.** The map divides into orientation domains, each with its own
-  angle (0/±15/±30/45°) and layout — long strips or blocky plots — so field grids sit
-  at multiple angles and shapes like real agricultural land, not one world-aligned
-  grid. `--field-scale <25-400>` zooms the whole pattern. Chunk-based rock/bush
-  scatter: every 16×16 chunk of farm, grass, and untagged satellite land rolls 20%
-  for one schematic (rock or bush) — driven by `--rocks`/`--bushes` as a mode.
+  angle and layout — long strips or blocky plots — so field grids sit at multiple
+  angles and shapes like real agricultural land. **Domains align to the dominant
+  nearby road** (a coarse road-bearing grid built from OSM highways; hashed angles
+  off-road), so plots start from streets like real cadastre. Parcel sizes are defined
+  in real metres and follow the map scale (same real-world plot size at any scale);
+  `--field-scale <25-400>` zooms the pattern on top. Chunk-based rock/bush scatter:
+  bushes in ~5% and rocks in ~2% of 16×16 chunks over farm, grass, and untagged
+  satellite land, stamped only on natural dry ground (never onto rivers/lakes/roads).
+  `--grass-mix <LIST>` gives grassland its own shares (built-in grassy blend by
+  default), and `--land-mix` covers untagged cropland.
 - **`--field-mix <LIST>` — configurable farmland texturing.** Splits `landuse=farmland`
   into a weighted mix of five styles: `coarse` (coarse dirt + dead bush), `plains`
   (grass), `flower` (grass + wildflowers), `farm` (stock tilled crops), and `moss`

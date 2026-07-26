@@ -172,9 +172,13 @@ pub fn generate_ground_region(
         ),
         crate::element_processing::field_texture::FarmCrops::parse(args.farm_crops.as_deref()),
     )
-    .with_scale(args.field_scale);
-    let land_grass_profile =
-        crate::element_processing::field_texture::FieldProfile::grass().with_scale(args.field_scale);
+    .with_scale(args.field_scale)
+    .with_map_scale(args.scale);
+    let land_grass_profile = crate::element_processing::field_texture::FieldProfile::grass_with(
+        crate::element_processing::field_texture::FieldMix::parse(args.grass_mix.as_deref()),
+    )
+    .with_scale(args.field_scale)
+    .with_map_scale(args.scale);
     // Climate is sampled PER-POSITION (ground.climate_at) at the surface-palette site below, not
     // hoisted once per cell, so arid/polar surface blocks don't flip abruptly at cell borders.
 

@@ -432,6 +432,10 @@ pub fn generate_world_with_options(
         &xzbbox,
     );
 
+    // Road-bearing grid: field-texture orientation domains align their parcel grids
+    // to the dominant nearby road (falls back to hashed angles off-road).
+    crate::road_bearings::set_from_elements(&elements, &xzbbox);
+
     // Collect coordinates covered by tunnel=building_passage highways so that
     // building generation can cut ground-level openings through walls and floors.
     let building_passages =

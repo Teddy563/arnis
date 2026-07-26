@@ -444,6 +444,11 @@ pub struct Args {
     /// 100 = default). Larger = bigger fields.
     #[arg(long = "field-scale", default_value_t = 100, value_parser = clap::value_parser!(u16).range(25..=400))]
     pub field_scale: u16,
+
+    /// Mix for textured GRASSLAND (meadow/grass/orchard + satellite grassland), same
+    /// `name=pct` format as --field-mix. Omitted = the built-in grassy blend.
+    #[arg(long = "grass-mix", value_name = "LIST")]
+    pub grass_mix: Option<String>,
 }
 
 /// Player game mode for the generated world.

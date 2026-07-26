@@ -5,15 +5,13 @@
 //! polygon — this is what fills the "missing data" plains. Skips roads, buildings,
 //! villages and water. Purely position-hashed → identical across tile seams.
 
-use super::schematic::place_scatter_piece;
+use super::schematic::{chunk_scatter_kind, place_scatter_kind};
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::floodfill_cache::BuildingFootprintBitmap;
 use crate::ground::Ground;
 use crate::land_cover::{self, coord_hash};
 use crate::world_editor::WorldEditor;
 
-/// Percent of chunks that receive one piece.
-const PCT: u64 = 20;
 const SALT: i32 = 0x00E1_57A7;
 
 #[allow(clippy::too_many_arguments)]
@@ -37,9 +35,9 @@ pub fn scatter_untagged_chunks(
     for cz in (min_z >> 4)..=(max_z >> 4) {
         for cx in (min_x >> 4)..=(max_x >> 4) {
             let h = coord_hash(cx ^ SALT, cz.wrapping_mul(31) ^ SALT);
-            if h % 100 >= PCT {
+            let Some(use_rock) = chunk_scatter_kind(h, rocks_on, bushes_on) else {
                 continue;
-            }
+            };
             let bx = (cx << 4) + ((h >> 17) % 16) as i32;
             let bz = (cz << 4) + ((h >> 22) % 16) as i32;
             if bx < min_x || bx > max_x || bz < min_z || bz > max_z {
@@ -56,7 +54,7 @@ pub fn scatter_untagged_chunks(
             {
                 continue;
             }
-            place_scatter_piece(editor, bx, bz, rocks_on, bushes_on, h);
+            place_scatter_kind(editor, bx, bz, use_rock, h);
         }
     }
 }

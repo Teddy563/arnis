@@ -144,6 +144,9 @@ pub struct FieldProfile {
     salt: i32,
     /// Pattern zoom: parcel dimensions scale by this percent (100 = default).
     scale_pct: u16,
+    /// Map scale (blocks per metre). Parcel sizes are defined at the 0.05 (1:20)
+    /// reference, so real-world parcel size stays constant across map scales.
+    map_scale: f64,
 }
 
 /// A resolved parcel reference: id, dimensions, cell-local coords, and the
@@ -327,24 +330,42 @@ impl FieldMix {
 impl FieldProfile {
     /// Tilled-farmland texture: tight plots, frequent tracks, real crop plots.
     pub fn farmland(mix: FieldMix, crops: FarmCrops) -> Self {
-        FieldProfile { mix, crops, sizes: [18, 30, 46], track_pct: 45, salt: 0, scale_pct: 100 }
+        FieldProfile { mix, crops, sizes: [18, 30, 46], track_pct: 45, salt: 0, scale_pct: 100, map_scale: 0.05 }
     }
 
     /// Meadow/grassland texture: large loose plots, few tracks.
     pub fn grass() -> Self {
+        Self::grass_with(FieldMix::grass_auto())
+    }
+
+    /// Grassland profile with a user-supplied mix (`--grass-mix`); a stock/absent mix
+    /// falls back to the built-in grassy blend so grassland never turns all-farm.
+    pub fn grass_with(mix: FieldMix) -> Self {
+        let mix = if mix.is_default() { FieldMix::grass_auto() } else { mix };
         FieldProfile {
-            mix: FieldMix::grass_auto(),
+            mix,
             crops: FarmCrops::combined(),
             sizes: [40, 80, 140],
             track_pct: 18,
             salt: 0x0000_2B57,
             scale_pct: 100,
+            map_scale: 0.05,
         }
     }
 
     /// Pattern zoom: scale all parcel dimensions by `pct` percent (clamped 25..=400).
     pub fn with_scale(mut self, pct: u16) -> Self {
         self.scale_pct = pct.clamp(25, 400);
+        self
+    }
+
+    /// Bind the profile to the map scale so parcels keep their REAL-WORLD size: the
+    /// base sizes are defined at the 0.05 (1:20) reference, so a 1:10 map gets
+    /// parcels twice as many blocks across (same metres of land).
+    pub fn with_map_scale(mut self, scale: f64) -> Self {
+        if scale.is_finite() && scale > 0.0 {
+            self.map_scale = scale;
+        }
         self
     }
 
@@ -392,16 +413,24 @@ impl FieldProfile {
         let dh = coord_hash(mx ^ 0x0000_51ED ^ s, mz.wrapping_mul(7));
         let dsalt = (dh as i32) ^ (mx.wrapping_mul(0x1F12_3BB5)) ^ (mz.wrapping_mul(0x0077_F0ED));
         // Base parcel size (scaled by the pattern zoom).
-        let base = self.sizes[(dh % 3) as usize] as i64 * self.scale_pct as i64 / 100;
-        let base = (base as i32).max(6);
+        let scale_factor = self.map_scale / 0.05;
+        let base = (self.sizes[(dh % 3) as usize] as f64 * scale_factor * self.scale_pct as f64
+            / 100.0)
+            .round() as i64;
+        let base = (base as i32).clamp(6, 400);
         // Layout method: strips one way, strips the other, or blocky plots.
         let (w, l) = match (dh >> 8) % 10 {
             0..=2 => ((base * 2 / 5).max(8), (base * 12 / 5).max(16)),
             3..=5 => ((base * 12 / 5).max(16), (base * 2 / 5).max(8)),
             _ => (base, base),
         };
-        // Domain rotation.
-        let (sin_t, cos_t) = ANGLES[((dh >> 16) % 6) as usize];
+        // Domain rotation: align to the dominant nearby road (real fields are laid out
+        // off their access roads); hashed angle where no road is near.
+        let (sin_t, cos_t) = crate::road_bearings::bearing_at(
+            mx * MACRO + MACRO / 2,
+            mz * MACRO + MACRO / 2,
+        )
+        .unwrap_or(ANGLES[((dh >> 16) % 6) as usize]);
         let fx = sx as f64;
         let fz = sz as f64;
         let rx = (fx * cos_t + fz * sin_t).round() as i32;

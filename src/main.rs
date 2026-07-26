@@ -40,6 +40,7 @@ mod progress;
 mod projection;
 mod region;
 mod retrieve_data;
+mod road_bearings;
 mod schematic;
 mod structures;
 #[cfg(feature = "gui")]

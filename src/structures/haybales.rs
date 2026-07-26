@@ -53,7 +53,10 @@ pub fn scatter_haybales(editor: &mut WorldEditor, cells: &[(i32, i32)], profile:
             let h = coord_hash(gx ^ 0x0000_4A7B, gz.wrapping_mul(41) ^ 0x0000_4A7B);
             let cx = gx + (h % spacing as u64) as i32;
             let cz = gz + ((h >> 20) % spacing as u64) as i32;
-            if bale_ok(cx, cz) && !editor.is_lc_water(cx, cz) {
+            if bale_ok(cx, cz)
+                && !editor.is_lc_water(cx, cz)
+                && super::schematic::scatter_ground_ok(editor, cx, cz)
+            {
                 // Arrangement by hash: single / pair / stacked pair / L of three.
                 let arr = (h >> 5) & 3;
                 editor.set_block(HAY_BALE, cx, 1, cz, None, None);

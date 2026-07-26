@@ -39,8 +39,11 @@ pub fn generate_landuse(
         FieldMix::parse(args.field_mix.as_deref()),
         FarmCrops::parse(args.farm_crops.as_deref()),
     )
-    .with_scale(args.field_scale);
-    let grass_profile = FieldProfile::grass().with_scale(args.field_scale);
+    .with_scale(args.field_scale)
+    .with_map_scale(args.scale);
+    let grass_profile = FieldProfile::grass_with(FieldMix::parse(args.grass_mix.as_deref()))
+        .with_scale(args.field_scale)
+        .with_map_scale(args.scale);
     let is_grassy = matches!(
         landuse_tag.as_str(),
         "meadow" | "grass" | "greenfield" | "orchard"
@@ -498,7 +501,6 @@ pub fn generate_landuse(
             floor_area.as_slice(),
             args.rocks,
             args.bushes,
-            20,
             0x00A5_1C3D,
         );
         if landuse_tag == "farmland" && farm_profile.is_active() {
@@ -583,18 +585,18 @@ fn decorate_field(editor: &mut WorldEditor, cell: &FieldCell, x: i32, z: i32, rn
         FieldCategory::Flower => {
             if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                 match rng.random_range(0..1000) {
-                    // Calmer flower cover: the parcel's own 2-3 species...
-                    0..=195 => {
+                    // Calmer flower cover: the parcel's own 2-3 species, kept sparse...
+                    0..=105 => {
                         let f = parcel_flower(cell, rng);
                         editor.set_block(f, x, 1, z, None, None);
                     }
                     // ...with sunflowers sprinkled in...
-                    196..=210 => {
+                    106..=117 => {
                         editor.set_block(SUNFLOWER_LOWER, x, 1, z, None, None);
                         editor.set_block(SUNFLOWER_UPPER, x, 2, z, None, None);
                     }
                     // ...on a bed of mixed grasses.
-                    211..=640 => place_grass_cover(editor, x, z, rng),
+                    118..=580 => place_grass_cover(editor, x, z, rng),
                     _ => {}
                 }
             }
