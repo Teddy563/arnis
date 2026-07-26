@@ -10,84 +10,60 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [3.0.4] - 2026-07-23
+## [3.0.4] - 2026-07-26
 
-Configurable farmland texturing plus scattered rocks and bushes. Every change is
-seam-safe (a pure function of world coordinates) and additive; omit the new flags and
+The Farmlands release: open land becomes real agricultural country. Farmland, grassland,
+and the untagged satellite plains split into rotated field parcels with monoculture crop
+plots, hedged by dirt tracks, dotted with rocks, bushes, and hay — all seam-safe (every
+decision is a pure function of world coordinates) and additive: omit the new flags and
 default runs stay byte-identical.
 
 ### Added
 
-- **Real field layout.** The map divides into orientation domains, each with its own
-  angle and layout — long strips or blocky plots — so field grids sit at multiple
-  angles and shapes like real agricultural land. **Domains align to the dominant
-  nearby road** (a coarse road-bearing grid built from OSM highways; hashed angles
-  off-road), so plots start from streets like real cadastre. Parcel sizes are defined
-  in real metres and follow the map scale (same real-world plot size at any scale);
-  `--field-scale <25-400>` zooms the pattern on top. Chunk-based rock/bush scatter:
-  bushes in ~5% and rocks in ~2% of 16×16 chunks over farm, grass, and untagged
-  satellite land, stamped only on natural dry ground (never onto rivers/lakes/roads).
-  `--grass-mix <LIST>` gives grassland its own shares (built-in grassy blend by
-  default), and `--land-mix` covers untagged cropland.
-- **`--field-mix <LIST>` — configurable farmland texturing.** Splits `landuse=farmland`
-  into a weighted mix of five styles: `coarse` (coarse dirt + dead bush), `plains`
-  (grass), `flower` (grass + wildflowers), `farm` (stock tilled crops), and `moss`
-  (overgrown moss). Value is a `name=pct` list of relative area shares, e.g.
-  `plains=60,coarse=20,flower=10,farm=10,moss=15`. Styles are laid out as rectangular
-  **field parcels** (plot sizes vary by region: 18/30/46 blocks) with dirt-track
-  boundaries between adjacent parcels of different kinds — like real farmland from above.
-  Each style also carries a fine internal sub-noise so it reads as varied ground (coarse
-  = coarse dirt + dirt patches + grass; moss = moss + grass + bare patches) rather than
-  one flat block. Area share ≈ weight; all seam-safe. Omitted (or a farm-only mix)
-  reproduces stock tilled farmland exactly.
-- **Snow: peaks mode ignores flat terrain.** `--snow-mode peaks` now places no snow when
-  the terrain's vertical relief is under 150 m, so flat lowland farmland (e.g. the
-  Romanian plain) no longer gets stray snow speckle; genuine mountains still cap.
-- **`--rocks` / `--rock-density <0-64>` — scattered rock formations.** Evenly scatters
-  bundled andesite/tuff rock schematics (8 shapes) on farmland at random rotations, in
-  small numbers set by the density. Off by default.
-- **`--bushes` / `--bush-density <0-64>` — scattered bushes.** Evenly scatters bundled
-  bush schematics (10 species × 6 shapes) on farmland at random rotations, gently
-  clumped (bushes grow in small groups). Off by default. Each bush carries its own bark
-  pole within leaf-decay distance, so the foliage survives in-game.
+- **Field parcels.** `--field-mix <name=pct>` splits `landuse=farmland` into a weighted
+  mix of five styles — `coarse` (packed mud / rooted dirt / locked path patches with dead
+  bushes), `plains` (vanilla-density grass), `flower` (2-3 wildflower species per plot),
+  `farm` (tilled crops), `moss` (overgrown) — laid out as rectangular parcels with
+  dirt-track boundaries and noise-textured interiors. The map divides into orientation
+  domains with noise-warped borders; each domain picks an angle and a layout (long
+  strips or blocky plots), and **aligns to the dominant nearby road** so fields follow
+  the street network like real cadastre. Parcel sizes are defined in real metres and
+  track the map scale; `--field-scale <25-400>` zooms the pattern. Farmland polygons
+  feather into the surrounding grassland over a dithered two-cell edge.
+- **Real crop plots.** `--farm-crops <name=pct>` weights seven monoculture plot kinds:
+  wheat, potato, carrot, beetroot, sunflower (planted rows), pumpkin (grass/coarse
+  mosaic patch), and fallow (resting bare ground). Each field grows ONE crop at ONE
+  growth stage — neighbouring fields ripen differently, younger spots and bird-sown
+  stray-crop patches break up the carpet, and wheat/fallow plots carry hay-bale
+  bundles. Sunflower fields cluster in the low, open parts of the map (terrain-aware)
+  and thin out uphill. Crop-planted farmland never decays in-game; fallow uses the
+  locked bare palette so nothing reverts to dirt.
+- **Texture beyond farmland.** `--grass-texture` extends the pattern to OSM grassland
+  (meadow / grass / greenfield / orchard / village_green, plus `natural=grassland` and
+  `meadow` cover) with its own mix via `--grass-mix`; `--land-texture` covers the land
+  OSM never mapped, keyed by ESA satellite land cover — cropland takes `--land-mix`
+  (falls back to the farmland mix), grassland takes the grass profile, and villages
+  (`landuse=residential`) get grassy ground instead of wheat. Every textured style
+  carries vanilla-density cover: short grass, ferns, two-block large ferns, tall grass,
+  ten wildflower species, sunflowers, dead bushes, and moss carpet.
+- **Rock & bush scatter.** `--rocks` / `--bushes` drop bundled schematics — 8
+  andesite/tuff rock formations and 60 bushes (10 species × 6 shapes) — at random
+  rotations across farm, grass, and untagged land: bushes in ~5% and the much rarer
+  rocks in ~2% of 16×16 chunks, stamped only on natural dry ground (never onto rivers,
+  lakes, roads, or tilled farmland). `--rock-density` / `--bush-density` are deprecated
+  and ignored.
+- **New blocks (ids 439-449).** `beetroots`, `pumpkin`, `sunflower` (double plant),
+  `packed_mud`, `oxeye_daisy`, `cornflower`, `allium`, `orange_tulip`, `pink_tulip`,
+  `lily_of_the_valley` — wired through Java block states, Bedrock, and Luanti maps.
 
-  Both scatter families are budgeted **per 512×512 region** of field area (≈`density`
-  items per region, defaults 4 rocks / 8 bushes) on a jittered grid — sparse and evenly
-  spread, seeded purely by position → identical across tile seams.
-- **`--grass-texture`.** Extends the pattern to OSM grassland (`meadow`/`grass`/
-  `greenfield`/`orchard`) with a built-in grassy profile (large loose plots, mostly
-  plains + wildflowers), not just farmland. Off by default.
-- **`--land-texture`.** Extends the pattern to land OSM never tagged, keyed by ESA
-  satellite land-cover: cropland gets the farmland mix, grassland gets the grassy
-  profile. Covers the large plain areas OSM leaves blank. Off by default.
+### Fixed
 
-  A `FieldProfile` bundles a mix with a parcel-size band and track rate, so each land
-  kind gets a distinct look (tight tilled plots vs large loose meadows).
-- **Real farm plots via `--farm-crops <LIST>`.** Each farmland parcel now grows ONE
-  crop (monoculture plots, like real fields): a `name=pct` mix over
-  `wheat,potato,carrot,beetroot,sunflower,pumpkin,fallow` (default combined patchwork).
-  Wheat/potato/carrot/beetroot plots are tilled crop fields; sunflower plots are planted
-  rows on coarse dirt with packed-mud gaps; pumpkin patches fruit on a grass/coarse
-  mosaic; fallow fields rest with stubble. Wheat/fallow plots get occasional hay-bale
-  bundles (procedural, per-region on OSM farmland + rate-scaled on untagged cropland).
-  Crops grow at **varied levels** — each field is uniform but neighbouring fields sit at
-  different maturities (ripe to young). Bare "coarse" patches use **coarse dirt + grass +
-  packed mud + rooted dirt + locked dirt-path** (no plain dirt/mud, so they never regrow
-  grass) with clustered dead bushes and ferns. Plains/flower/moss now carry mixed
-  vegetation — short grass, ferns, **two-block large ferns**, tall grass, and **ten
-  wildflower species** (poppy, dandelion, blue orchid, azure bluet, oxeye daisy,
-  cornflower, allium, orange/pink tulip, lily of the valley). Untagged satellite
-  grassland gets the same richer cover. Rocks/bushes scatter across the whole farm/grass
-  area (like normal land), not just edges. Adds blocks `beetroots`, `pumpkin`,
-  `sunflower`, `packed_mud`, and the six new flower species.
-- **`--land-mix <LIST>`.** Separate `name=pct` mix for untagged satellite cropland;
-  omitted = reuse `--field-mix`. And under `--land-texture`, cropland cells inside
-  `landuse=residential` polygons get the grassy profile instead of wheat, so villages
-  stop rendering as crop fields.
-
-All three reuse the existing generic Sponge stamping engine; anchors are sampled from
-the stable field-cell list and rotations are position-hashed, so placement is identical
-from any tile (no seam artefacts).
+- **Snow: peaks mode ignores flat terrain.** `--snow-mode peaks` places no snow when the
+  terrain's vertical relief is under 150 m, so flat lowland farmland no longer gets
+  stray snow speckle; genuine mountains still cap.
+- **Floating plants over water.** The floating-vegetation sweep now covers the new
+  species (sunflower halves, the six new flowers, moss carpet, azalea), so nothing
+  hovers over rivers and lakes.
 
 ## [3.0.3] - 2026-07-15
 
