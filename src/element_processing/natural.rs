@@ -304,13 +304,13 @@ pub fn generate_natural(
                                 // Vanilla-plains density: grass, ferns, tall grass,
                                 // the odd wildflower.
                                 match rng.random_range(0..100) {
-                                    0..=61 => editor.set_block(GRASS, x, 1, z, None, None),
-                                    62..=69 => editor.set_block(FERN, x, 1, z, None, None),
-                                    70..=73 => {
+                                    0..=69 => editor.set_block(GRASS, x, 1, z, None, None),
+                                    70..=74 => editor.set_block(FERN, x, 1, z, None, None),
+                                    75..=76 => {
                                         editor.set_block(LARGE_FERN_LOWER, x, 1, z, None, None);
                                         editor.set_block(LARGE_FERN_UPPER, x, 2, z, None, None);
                                     }
-                                    74..=79 => {
+                                    77..=79 => {
                                         editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
                                         editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
                                     }

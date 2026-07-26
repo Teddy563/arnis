@@ -9,6 +9,10 @@ use crate::block_definitions::{
     WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
 use crate::block_definitions::{
+    ALLIUM, AZALEA, CORNFLOWER, LILY_OF_THE_VALLEY, MOSS_CARPET, ORANGE_TULIP, OXEYE_DAISY,
+    PINK_TULIP, SUNFLOWER_LOWER, SUNFLOWER_UPPER,
+};
+use crate::block_definitions::{
     ACACIA_LEAVES, ACACIA_LOG, AZALEA_LEAVES, BIRCH_LEAVES, BIRCH_LOG, CHERRY_LEAVES, CHERRY_LOG,
     DARK_OAK_LEAVES, DARK_OAK_LOG, JUNGLE_LEAVES, JUNGLE_LOG, MANGROVE_LEAVES, MANGROVE_LOG,
     OAK_LEAVES, OAK_LOG, SPRUCE_LEAVES, SPRUCE_LOG,
@@ -967,6 +971,17 @@ pub fn sweep_floating_veg_region(
         RED_FLOWER,
         WHITE_FLOWER,
         YELLOW_FLOWER,
+        // Farmland-texture species (sunflowers were floating over rivers).
+        SUNFLOWER_LOWER,
+        SUNFLOWER_UPPER,
+        OXEYE_DAISY,
+        CORNFLOWER,
+        ALLIUM,
+        ORANGE_TULIP,
+        PINK_TULIP,
+        LILY_OF_THE_VALLEY,
+        MOSS_CARPET,
+        AZALEA,
     ];
     let road_blocks: &[Block] = &[
         BLACK_CONCRETE,

@@ -561,14 +561,14 @@ fn place_grass_cover(editor: &mut WorldEditor, x: i32, z: i32, rng: &mut impl Rn
     match style {
         0 => editor.set_block(GRASS, x, 1, z, None, None),
         1 => {
-            if rng.random_range(0..14) == 0 {
+            if rng.random_range(0..22) == 0 {
                 editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
                 editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
             } else {
                 editor.set_block(GRASS, x, 1, z, None, None);
             }
         }
-        _ => match rng.random_range(0..12) {
+        _ => match rng.random_range(0..24) {
             0..=1 => editor.set_block(FERN, x, 1, z, None, None),
             2 => {
                 editor.set_block(LARGE_FERN_LOWER, x, 1, z, None, None);

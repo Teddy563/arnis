@@ -15,11 +15,13 @@
 
 use crate::args::Args;
 use crate::block_definitions::{
-    Block, AIR, ALLIUM, ANDESITE, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK, CARROTS,
+    Block, AIR, ALLIUM, ANDESITE, AZALEA, BEDROCK, BEETROOTS, BLACK_CONCRETE, BLUE_FLOWER, BRICK,
+    CARROTS,
     CLAY, COARSE_DIRT, COBBLED_DEEPSLATE, COBBLESTONE, CORNFLOWER, CRACKED_STONE_BRICKS,
     CYAN_TERRACOTTA, DEAD_BUSH, DEEPSLATE, DIORITE, DIRT, DIRT_PATH, FARMLAND, FERN, GRANITE, GRASS,
     GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LARGE_FERN_LOWER,
-    LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, LILY_OF_THE_VALLEY, MOSSY_COBBLESTONE, MUD, OAK_LEAVES,
+    LARGE_FERN_UPPER, LIGHT_GRAY_CONCRETE, LILY_OF_THE_VALLEY, MOSSY_COBBLESTONE, MOSS_BLOCK,
+    MOSS_CARPET, MUD, OAK_LEAVES,
     OAK_PLANKS, ORANGE_TULIP, OXEYE_DAISY, PINK_TULIP, POTATOES, PUMPKIN, RED_FLOWER, ROOTED_DIRT,
     SAND,
     SANDSTONE, SMOOTH_STONE, SNOW_LAYER, STONE, STONE_BRICKS, SUGAR_CANE, SUNFLOWER_LOWER,
@@ -1072,11 +1074,23 @@ pub fn generate_ground_region(
                                             );
                                         }
                                     }
+                                    // Textured grassland: parcel-aware cover (flower
+                                    // parcels bloom, coarse parcels get dead bushes...).
+                                    land_cover::LC_GRASSLAND
+                                        if args.land_texture && ground_is_natural =>
+                                    {
+                                        let cell = land_grass_profile.cell_at(x, z);
+                                        if !cell.is_track {
+                                            decorate_nonfarm_cell(
+                                                editor, &cell, x, ground_y, z, &mut rng,
+                                            );
+                                        }
+                                    }
                                     land_cover::LC_GRASSLAND if ground_is_natural => {
                                         // Mixed grassland cover: short grass, ferns, large
                                         // ferns, tall grass, and multi-species wildflowers.
                                         let choice = rng.random_range(0..100);
-                                        if choice < 62 {
+                                        if choice < 70 {
                                             editor.set_block_absolute(
                                                 GRASS,
                                                 x,
@@ -1085,7 +1099,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 70 {
+                                        } else if choice < 75 {
                                             editor.set_block_absolute(
                                                 FERN,
                                                 x,
@@ -1094,7 +1108,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 74 {
+                                        } else if choice < 77 {
                                             editor.set_block_absolute(
                                                 LARGE_FERN_LOWER,
                                                 x,
@@ -1154,12 +1168,16 @@ pub fn generate_ground_region(
                                     // Textured untagged cropland: grow each parcel's
                                     // SINGLE crop (mirrors landuse::decorate_farm_plot),
                                     // so satellite farmland forms monoculture plots too.
-                                    land_cover::LC_CROPLAND
-                                        if args.land_texture
-                                            && !residential_footprint.contains(x, z) =>
-                                    {
+                                    land_cover::LC_CROPLAND if args.land_texture => {
                                         use crate::element_processing::field_texture::FarmCrop;
-                                        let cell = land_farm_profile.cell_at(x, z);
+                                        // Villages (residential) use the grass profile --
+                                        // grassy ground with normal cover, no crops.
+                                        let in_village = residential_footprint.contains(x, z);
+                                        let cell = if in_village {
+                                            land_grass_profile.cell_at(x, z)
+                                        } else {
+                                            land_farm_profile.cell_at(x, z)
+                                        };
                                         let on = |ed: &mut WorldEditor, b: Block| {
                                             ed.check_for_block_absolute(
                                                 x,
@@ -1393,7 +1411,15 @@ pub fn generate_ground_region(
                                                         }
                                                     }
                                                 }
-                                                None => {}
+                                                _ => {
+                                                    // Non-farm parcel styles (plains,
+                                                    // flower, coarse, moss) and village
+                                                    // cells: vanilla-density cover.
+                                                    decorate_nonfarm_cell(
+                                                        editor, &cell, x, ground_y, z,
+                                                        &mut rng,
+                                                    );
+                                                }
                                             }
                                             // Occasional hay-bale bundle on wheat/fallow
                                             // plots (density scales with how much cropland
@@ -1753,6 +1779,153 @@ pub(crate) fn current_noise_seed() -> u64 {
 #[inline]
 pub(crate) fn tile_invariant_enabled() -> bool {
     current_noise_seed() != 0
+}
+
+/// Cover for a textured NON-farm cell (plains/flower/coarse/moss) on untagged land,
+/// mirroring the OSM-side decorate_field but with absolute-Y placement.
+fn decorate_nonfarm_cell(
+    editor: &mut WorldEditor,
+    cell: &crate::element_processing::field_texture::FieldCell,
+    x: i32,
+    ground_y: i32,
+    z: i32,
+    rng: &mut impl rand::Rng,
+) {
+    use crate::element_processing::field_texture::FieldCategory;
+    let flowers = [
+        RED_FLOWER,
+        YELLOW_FLOWER,
+        BLUE_FLOWER,
+        WHITE_FLOWER,
+        OXEYE_DAISY,
+        CORNFLOWER,
+        ALLIUM,
+        ORANGE_TULIP,
+        PINK_TULIP,
+        LILY_OF_THE_VALLEY,
+    ];
+    // Parcel-consistent flower subset (2-3 species drawn from seed bit-windows).
+    let count = 2 + (cell.species_seed % 2);
+    // Per-parcel grass style: 0 uniform short / 1 mostly short / 2 full mix.
+    let style = ((cell.species_seed >> 16) % 3) as u8;
+    macro_rules! put {
+        ($b:expr, $dy:expr) => {
+            editor.set_block_absolute($b, x, ground_y + $dy, z, None, None)
+        };
+    }
+    macro_rules! on {
+        ($blocks:expr) => {
+            editor.check_for_block_absolute(x, ground_y, z, Some($blocks), None)
+        };
+    }
+    macro_rules! pick_flower {
+        () => {{
+            let slot = rng.random_range(0..count);
+            flowers[((cell.species_seed >> (5 * slot + 3)) % flowers.len() as u32) as usize]
+        }};
+    }
+    macro_rules! grass_cover {
+        () => {{
+            let roll = rng.random_range(0..24u32);
+            match (style, roll) {
+                (0, _) => put!(GRASS, 1),
+                (1, 0) => {
+                    put!(TALL_GRASS_BOTTOM, 1);
+                    put!(TALL_GRASS_TOP, 2);
+                }
+                (1, _) => put!(GRASS, 1),
+                (_, 0..=1) => put!(FERN, 1),
+                (_, 2) => {
+                    put!(LARGE_FERN_LOWER, 1);
+                    put!(LARGE_FERN_UPPER, 2);
+                }
+                (_, 3) => {
+                    put!(TALL_GRASS_BOTTOM, 1);
+                    put!(TALL_GRASS_TOP, 2);
+                }
+                _ => put!(GRASS, 1),
+            }
+        }};
+    }
+    match cell.cat {
+        FieldCategory::Plains | FieldCategory::Farm => {
+            if on!(&[GRASS_BLOCK]) {
+                match rng.random_range(0..1000) {
+                    0..=780 => grass_cover!(),
+                    781..=795 => {
+                        let f = pick_flower!();
+                        put!(f, 1);
+                    }
+                    796..=799 => {
+                        put!(SUNFLOWER_LOWER, 1);
+                        put!(SUNFLOWER_UPPER, 2);
+                    }
+                    _ => {}
+                }
+            } else if on!(&[COARSE_DIRT]) && rng.random_range(0..100) < 30 {
+                put!(GRASS, 1);
+            }
+        }
+        FieldCategory::Flower => {
+            if on!(&[GRASS_BLOCK]) {
+                match rng.random_range(0..1000) {
+                    0..=105 => {
+                        let f = pick_flower!();
+                        put!(f, 1);
+                    }
+                    106..=117 => {
+                        put!(SUNFLOWER_LOWER, 1);
+                        put!(SUNFLOWER_UPPER, 2);
+                    }
+                    118..=580 => {
+                        if rng.random_range(0..14) == 0 {
+                            put!(TALL_GRASS_BOTTOM, 1);
+                            put!(TALL_GRASS_TOP, 2);
+                        } else {
+                            put!(GRASS, 1);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        FieldCategory::Coarse => {
+            if on!(&[COARSE_DIRT, ROOTED_DIRT]) {
+                match rng.random_range(0..100) {
+                    0..=11 => put!(DEAD_BUSH, 1),
+                    12..=17 => put!(FERN, 1),
+                    18..=24 => put!(GRASS, 1),
+                    _ => {}
+                }
+            } else if on!(&[GRASS_BLOCK]) {
+                match rng.random_range(0..100) {
+                    0..=5 => put!(DEAD_BUSH, 1),
+                    6..=28 => grass_cover!(),
+                    _ => {}
+                }
+            }
+        }
+        FieldCategory::Moss => {
+            if on!(&[MOSS_BLOCK, GRASS_BLOCK]) {
+                match rng.random_range(0..100) {
+                    0..=3 => put!(AZALEA, 1),
+                    4..=30 => put!(MOSS_CARPET, 1),
+                    31..=40 => grass_cover!(),
+                    41..=44 => {
+                        let f = pick_flower!();
+                        put!(f, 1);
+                    }
+                    _ => {}
+                }
+            } else if on!(&[COARSE_DIRT, ROOTED_DIRT]) {
+                match rng.random_range(0..100) {
+                    0..=5 => put!(DEAD_BUSH, 1),
+                    6..=12 => put!(FERN, 1),
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn value_noise_01(x: i32, z: i32, scale: i32) -> f64 {
