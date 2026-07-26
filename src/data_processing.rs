@@ -435,6 +435,8 @@ pub fn generate_world_with_options(
     // Road-bearing grid: field-texture orientation domains align their parcel grids
     // to the dominant nearby road (falls back to hashed angles off-road).
     crate::road_bearings::set_from_elements(&elements, &xzbbox);
+    // Lowland grid: sunflower plots cluster in the low, open parts of the map.
+    crate::lowland::set_from_ground(&ground, &xzbbox);
 
     // Collect coordinates covered by tunnel=building_passage highways so that
     // building generation can cut ground-level openings through walls and floors.

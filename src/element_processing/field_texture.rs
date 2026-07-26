@@ -408,9 +408,15 @@ impl FieldProfile {
         let wz = value_noise_01(x - 700 - s, z + 1300 + s, WARP_SCALE);
         let sx = x + ((wx - 0.5) * 2.0 * WARP).round() as i32;
         let sz = z + ((wz - 0.5) * 2.0 * WARP).round() as i32;
-        // Orientation domain.
-        let mx = sx.div_euclid(MACRO);
-        let mz = sz.div_euclid(MACRO);
+        // Orientation domain. The lookup point is warped by a coarse noise (~28-block
+        // wander on the 192 grid) so domain borders — where the angle and layout
+        // change — meander organically instead of cutting along straight grid lines.
+        let mwx = value_noise_01(sx - 4000 + s, sz + 2000 - s, 64);
+        let mwz = value_noise_01(sx + 5000 - s, sz - 3000 + s, 64);
+        let dx = sx + ((mwx - 0.5) * 56.0).round() as i32;
+        let dz = sz + ((mwz - 0.5) * 56.0).round() as i32;
+        let mx = dx.div_euclid(MACRO);
+        let mz = dz.div_euclid(MACRO);
         let dh = coord_hash(mx ^ 0x0000_51ED ^ s, mz.wrapping_mul(7));
         let dsalt = (dh as i32) ^ (mx.wrapping_mul(0x1F12_3BB5)) ^ (mz.wrapping_mul(0x0077_F0ED));
         // Base parcel size (scaled by the pattern zoom).
@@ -492,6 +498,25 @@ impl FieldProfile {
         } else {
             None
         };
+        // Terrain steering: sunflower fields cluster in the low, open plains and are
+        // demoted on the higher ground (parcel-hash consistent, so a field stays one
+        // crop; the lowland grid is coarse, so big low areas fill with sunflowers).
+        let crop = crop.map(|c| {
+            let low = crate::lowland::is_lowland(x, z);
+            if low
+                && c != FarmCrop::Sunflower
+                && coord_hash(p.px ^ 0x0051_F10A, p.pz ^ p.dsalt) % 100 < 22
+            {
+                FarmCrop::Sunflower
+            } else if !low
+                && c == FarmCrop::Sunflower
+                && coord_hash(p.px ^ 0x0051_F10B, p.pz ^ p.dsalt) % 100 < 60
+            {
+                FarmCrop::Wheat
+            } else {
+                c
+            }
+        });
         // Growth level uniform per field (planted together), weighted toward ripe with a
         // few immature fields — so neighbouring plots read as different growth stages.
         let crop_age = if crop.is_some() {

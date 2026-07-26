@@ -689,6 +689,13 @@ pub(crate) fn place_scatter_kind(editor: &mut WorldEditor, bx: i32, bz: i32, use
     if !scatter_ground_ok(editor, bx, bz) {
         return;
     }
+    // Rocks never sit on worked (tilled) ground — farmers clear them off the fields.
+    if use_rock {
+        let gy = editor.get_absolute_y(bx, 0, bz);
+        if editor.check_for_block_absolute(bx, gy, bz, Some(&[FARMLAND]), None) {
+            return;
+        }
+    }
     let pool = if use_rock {
         crate::structures::rocks::pool()
     } else {

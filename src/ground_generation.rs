@@ -1188,15 +1188,46 @@ pub fn generate_ground_region(
                                                                 None,
                                                             );
                                                         } else {
-                                                            let (b, max_age) = match c {
+                                                            let (mut b, mut max_age) = match c
+                                                            {
                                                                 FarmCrop::Wheat => (WHEAT, 7u32),
                                                                 FarmCrop::Potato => (POTATOES, 7),
                                                                 FarmCrop::Carrot => (CARROTS, 7),
                                                                 _ => (BEETROOTS, 3),
                                                             };
-                                                            let age = cell.crop_age as u32
-                                                                * max_age
-                                                                / 7;
+                                                            // Stray-seed patches + growth
+                                                            // jitter, mirroring the OSM
+                                                            // farmland decoration.
+                                                            let stray = (value_noise_01(
+                                                                x + 321,
+                                                                z - 777,
+                                                                4,
+                                                            ) * 1000.0)
+                                                                as i32;
+                                                            if stray < 22 {
+                                                                let alt = [
+                                                                    WHEAT, POTATOES, CARROTS,
+                                                                    BEETROOTS,
+                                                                ][((cell.species_seed >> 9) % 4)
+                                                                    as usize];
+                                                                if alt != b {
+                                                                    max_age = if alt == BEETROOTS
+                                                                    {
+                                                                        3
+                                                                    } else {
+                                                                        7
+                                                                    };
+                                                                    b = alt;
+                                                                }
+                                                            }
+                                                            let mut growth = cell.crop_age;
+                                                            if rng.random_range(0..5) == 0 {
+                                                                growth = growth.saturating_sub(
+                                                                    1 + rng.random_range(0..2),
+                                                                );
+                                                            }
+                                                            let age =
+                                                                growth as u32 * max_age / 7;
                                                             let mut m: std::collections::HashMap<
                                                                 String,
                                                                 fastnbt::Value,
