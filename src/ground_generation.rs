@@ -1076,7 +1076,7 @@ pub fn generate_ground_region(
                                         // Mixed grassland cover: short grass, ferns, large
                                         // ferns, tall grass, and multi-species wildflowers.
                                         let choice = rng.random_range(0..100);
-                                        if choice < 46 {
+                                        if choice < 62 {
                                             editor.set_block_absolute(
                                                 GRASS,
                                                 x,
@@ -1085,7 +1085,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 52 {
+                                        } else if choice < 70 {
                                             editor.set_block_absolute(
                                                 FERN,
                                                 x,
@@ -1094,7 +1094,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 55 {
+                                        } else if choice < 74 {
                                             editor.set_block_absolute(
                                                 LARGE_FERN_LOWER,
                                                 x,
@@ -1111,7 +1111,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 60 {
+                                        } else if choice < 80 {
                                             editor.set_block_absolute(
                                                 TALL_GRASS_BOTTOM,
                                                 x,
@@ -1128,7 +1128,7 @@ pub fn generate_ground_region(
                                                 None,
                                                 None,
                                             );
-                                        } else if choice < 66 {
+                                        } else if choice < 86 {
                                             let flower = [
                                                 RED_FLOWER,
                                                 BLUE_FLOWER,

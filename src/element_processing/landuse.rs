@@ -46,7 +46,7 @@ pub fn generate_landuse(
         .with_map_scale(args.scale);
     let is_grassy = matches!(
         landuse_tag.as_str(),
-        "meadow" | "grass" | "greenfield" | "orchard"
+        "meadow" | "grass" | "greenfield" | "orchard" | "village_green"
     );
     let active_profile: Option<&FieldProfile> = if landuse_tag == "farmland" && farm_profile.is_active()
     {
@@ -130,6 +130,15 @@ pub fn generate_landuse(
         trees
     };
 
+    // Feathered farmland edge: the polygon's outer ring uses the grass profile so
+    // fields fade into the surrounding grassland instead of hard-cutting.
+    let farm_edge_set: Option<std::collections::HashSet<(i32, i32)>> =
+        if landuse_tag == "farmland" && farm_profile.is_active() {
+            Some(floor_area.iter().copied().collect())
+        } else {
+            None
+        };
+
     for &(x, z) in floor_area.iter() {
         // Per-tile RNG: in tile mode use a position-only coord_rng so the scatter
         // arms below (which draw the RNG inside terrain gates like
@@ -144,7 +153,17 @@ pub fn generate_landuse(
             &mut stream_rng
         };
         // Resolved land-texture cell (parcel style + surface + track), when a profile applies.
-        let field_cell = active_profile.map(|p| p.cell_at(x, z));
+        let on_farm_edge = farm_edge_set.as_ref().is_some_and(|s| {
+            !(s.contains(&(x + 1, z))
+                && s.contains(&(x - 1, z))
+                && s.contains(&(x, z + 1))
+                && s.contains(&(x, z - 1)))
+        });
+        let field_cell = if on_farm_edge {
+            Some(grass_profile.cell_at(x, z))
+        } else {
+            active_profile.map(|p| p.cell_at(x, z))
+        };
         // Apply per-block randomness for certain landuse types
         let actual_block = if landuse_tag == "industrial" {
             // Industrial: primarily stone, with some stone bricks and smooth stone
@@ -566,20 +585,25 @@ fn decorate_field(editor: &mut WorldEditor, cell: &FieldCell, x: i32, z: i32, rn
         FieldCategory::Farm => decorate_farm_plot(editor, cell, x, z, rng),
         FieldCategory::Plains => {
             if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
+                // Vanilla-plains density: most grass cells carry cover.
                 match rng.random_range(0..1000) {
-                    // Mixed grass/fern cover (multiple species + heights).
-                    0..=620 => place_grass_cover(editor, x, z, rng),
+                    0..=780 => place_grass_cover(editor, x, z, rng),
                     // The odd wildflower or lone sunflower breaking up the grass.
-                    621..=629 => {
+                    781..=795 => {
                         let f = parcel_flower(cell, rng);
                         editor.set_block(f, x, 1, z, None, None);
                     }
-                    630..=632 => {
+                    796..=799 => {
                         editor.set_block(SUNFLOWER_LOWER, x, 1, z, None, None);
                         editor.set_block(SUNFLOWER_UPPER, x, 2, z, None, None);
                     }
                     _ => {}
                 }
+            } else if editor.check_for_block(x, 0, z, Some(&[COARSE_DIRT]))
+                && rng.random_range(0..100) < 30
+            {
+                // Tufts poking through the bare specks.
+                editor.set_block(GRASS, x, 1, z, None, None);
             }
         }
         FieldCategory::Flower => {

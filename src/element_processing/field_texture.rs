@@ -334,6 +334,7 @@ impl FieldProfile {
     }
 
     /// Meadow/grassland texture: large loose plots, few tracks.
+    #[allow(dead_code)] // used by tests; production callers go through grass_with
     pub fn grass() -> Self {
         Self::grass_with(FieldMix::grass_auto())
     }

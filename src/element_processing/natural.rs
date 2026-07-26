@@ -296,11 +296,42 @@ pub fn generate_natural(
                         continue;
                     }
                     match natural_type.as_str() {
-                        "grassland" => {
+                        "grassland" | "meadow" => {
                             if !editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                                 continue;
                             }
-                            if rng.random_bool(0.6) {
+                            if args.grass_texture {
+                                // Vanilla-plains density: grass, ferns, tall grass,
+                                // the odd wildflower.
+                                match rng.random_range(0..100) {
+                                    0..=61 => editor.set_block(GRASS, x, 1, z, None, None),
+                                    62..=69 => editor.set_block(FERN, x, 1, z, None, None),
+                                    70..=73 => {
+                                        editor.set_block(LARGE_FERN_LOWER, x, 1, z, None, None);
+                                        editor.set_block(LARGE_FERN_UPPER, x, 2, z, None, None);
+                                    }
+                                    74..=79 => {
+                                        editor.set_block(TALL_GRASS_BOTTOM, x, 1, z, None, None);
+                                        editor.set_block(TALL_GRASS_TOP, x, 2, z, None, None);
+                                    }
+                                    80..=84 => {
+                                        let flower = [
+                                            RED_FLOWER,
+                                            YELLOW_FLOWER,
+                                            BLUE_FLOWER,
+                                            WHITE_FLOWER,
+                                            OXEYE_DAISY,
+                                            CORNFLOWER,
+                                            ALLIUM,
+                                            ORANGE_TULIP,
+                                            PINK_TULIP,
+                                            LILY_OF_THE_VALLEY,
+                                        ][rng.random_range(0..10)];
+                                        editor.set_block(flower, x, 1, z, None, None);
+                                    }
+                                    _ => {}
+                                }
+                            } else if rng.random_bool(0.6) {
                                 editor.set_block(GRASS, x, 1, z, None, None);
                             }
                         }
