@@ -42,3 +42,7 @@ runs:
 
     - if: inputs.cache == 'true'
       uses: Swatinem/rust-cache@v2
+      with:
+        # Save the compile cache even when a later step fails (a failed fmt/clippy
+        # run otherwise throws away the whole warm-up and every retry starts cold).
+        cache-on-failure: "true"

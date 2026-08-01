@@ -35,7 +35,7 @@ jobs:
       with:
         rust-targets: ${{ matrix.target }}
         # Cold rebuild for release reproducibility.
-        cache: "false"
+        cache: "true"
 
     - name: Install dependencies
       run: cargo fetch
