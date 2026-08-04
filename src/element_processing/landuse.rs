@@ -154,18 +154,19 @@ pub fn generate_landuse(
         };
         // Resolved land-texture cell (parcel style + surface + track), when a profile applies.
         let on_farm_edge = farm_edge_set.as_ref().is_some_and(|s| {
-            let ring1 = !(s.contains(&(x + 1, z))
-                && s.contains(&(x - 1, z))
-                && s.contains(&(x, z + 1))
-                && s.contains(&(x, z - 1)));
+            // A neighbour OUTSIDE this tile's render bounds is unknown, not outside the
+            // field: the flood fill is clipped to the bbox, so treating it as "not in
+            // the polygon" painted a grass feather stripe along every tile seam that
+            // crossed farmland. Unknown => assume the field continues.
+            let inside = |nx: i32, nz: i32| s.contains(&(nx, nz)) || !editor.in_bounds(nx, nz);
+            let ring1 =
+                !(inside(x + 1, z) && inside(x - 1, z) && inside(x, z + 1) && inside(x, z - 1));
             if ring1 {
                 return true;
             }
             // Second ring, dithered ~55%: a softer two-cell fade into the grassland.
-            let ring2 = !(s.contains(&(x + 2, z))
-                && s.contains(&(x - 2, z))
-                && s.contains(&(x, z + 2))
-                && s.contains(&(x, z - 2)));
+            let ring2 =
+                !(inside(x + 2, z) && inside(x - 2, z) && inside(x, z + 2) && inside(x, z - 2));
             ring2 && crate::land_cover::coord_hash(x ^ 0x0000_FEA7, z) % 100 < 55
         });
         let field_cell = if on_farm_edge {

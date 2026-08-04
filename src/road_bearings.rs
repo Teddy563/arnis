@@ -5,42 +5,49 @@
 //! sums, so a road and its reverse count as the same bearing); the field-texture
 //! orientation domains then take their rotation from the dominant nearby road instead
 //! of a hash. Falls back to the hashed angle where there are no roads.
+//!
+//! SEAM-CRITICAL: the grid is anchored to a WORLD lattice (`div_euclid(CELL)` on
+//! absolute coordinates), never to the tile's own bbox. An earlier version indexed
+//! from `xzbbox.min_x()`, so each Meld tile placed the same world point in a
+//! differently-phased grid cell and resolved a different bearing — which rotated the
+//! whole parcel grid across a tile seam. Segments outside the bbox are kept at their
+//! true lattice cell instead of being clamped into the edge cells (clamping polluted
+//! border cells with the bearing of far-away roads).
 
+use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::coordinate_system::cartesian::XZBBox;
 use crate::osm_parser::ProcessedElement;
 
-/// Grid cell edge (blocks).
-const CELL: i32 = 128;
+/// Grid cell edge (blocks) on the world lattice.
+///
+/// SEAM-CRITICAL SIZE: a domain asks for the bearing at its own centre, and that centre
+/// can sit up to MACRO/2 (96) blocks outside the area a tile keeps. Each tile only knows
+/// the OSM inside its own (halo-expanded) bbox, so the bearing may only depend on road
+/// data within a short radius of the query point — 96 + CELL/2 must stay inside Meld's
+/// seam halo (8 chunks = 128 blocks). One 64-block cell (radius 32) satisfies that; the
+/// old 128-block cell summed over a 3x3 neighbourhood (radius 192, i.e. 7.7 km at 1:20 —
+/// wider than an entire cell), so two neighbouring tiles clipped different road sets into
+/// it and resolved DIFFERENT rotations, which rotated the whole parcel grid at the seam.
+const CELL: i32 = 64;
+/// Minimum accumulated road length (blocks) in the queried cell before the roads are
+/// considered to define an orientation. Lower than the old 3x3 threshold because a
+/// single 64-block cell accumulates proportionally less road.
+const MIN_MAGNITUDE: f64 = 18.0;
+/// Bearings snap to this step (radians, 7.5°). Two tiles can see marginally different
+/// road sets near their shared border; quantising makes both land on the same angle
+/// unless the difference is genuinely large.
+const ANGLE_STEP: f64 = std::f64::consts::PI / 24.0;
 
-struct BearingGrid {
-    min_x: i32,
-    min_z: i32,
-    w: i32,
-    h: i32,
-    // Doubled-angle direction sums per cell (bearing-fold: theta == theta+180).
-    sx: Vec<f64>,
-    sz: Vec<f64>,
-}
+/// Doubled-angle direction sums per world lattice cell (bearing-fold: theta == theta+180).
+type BearingGrid = HashMap<(i32, i32), (f64, f64)>;
 
 static GRID: RwLock<Option<BearingGrid>> = RwLock::new(None);
 
 /// Build the bearing grid from this run's OSM elements. Call once per generation,
 /// before element/ground processing.
-pub fn set_from_elements(elements: &[ProcessedElement], xzbbox: &XZBBox) {
-    let min_x = xzbbox.min_x();
-    let min_z = xzbbox.min_z();
-    let w = ((xzbbox.max_x() - min_x) / CELL + 2).max(1);
-    let h = ((xzbbox.max_z() - min_z) / CELL + 2).max(1);
-    let mut grid = BearingGrid {
-        min_x,
-        min_z,
-        w,
-        h,
-        sx: vec![0.0; (w as usize) * (h as usize)],
-        sz: vec![0.0; (w as usize) * (h as usize)],
-    };
+pub fn set_from_elements(elements: &[ProcessedElement]) {
+    let mut grid: BearingGrid = HashMap::new();
     for element in elements {
         let ProcessedElement::Way(way) = element else {
             continue;
@@ -66,17 +73,17 @@ pub fn set_from_elements(elements: &[ProcessedElement], xzbbox: &XZBBox) {
             }
             let theta = dz.atan2(dx);
             let (c2, s2) = ((2.0 * theta).cos() * len, (2.0 * theta).sin() * len);
-            // Stamp the segment's bearing into every grid cell it passes through.
+            // Stamp the segment's bearing into every lattice cell it passes through.
             let steps = (len / CELL as f64).ceil() as i32 + 1;
             for i in 0..=steps {
                 let t = i as f64 / steps as f64;
-                let px = x1 as f64 + dx * t;
-                let pz = z1 as f64 + dz * t;
-                let gx = ((px as i32 - min_x) / CELL).clamp(0, w - 1);
-                let gz = ((pz as i32 - min_z) / CELL).clamp(0, h - 1);
-                let idx = (gz * w + gx) as usize;
-                grid.sx[idx] += c2;
-                grid.sz[idx] += s2;
+                let px = (x1 as f64 + dx * t) as i32;
+                let pz = (z1 as f64 + dz * t) as i32;
+                let e = grid
+                    .entry((px.div_euclid(CELL), pz.div_euclid(CELL)))
+                    .or_insert((0.0, 0.0));
+                e.0 += c2;
+                e.1 += s2;
             }
         }
     }
@@ -88,26 +95,80 @@ pub fn set_from_elements(elements: &[ProcessedElement], xzbbox: &XZBBox) {
 pub fn bearing_at(x: i32, z: i32) -> Option<(f64, f64)> {
     let guard = GRID.read().unwrap();
     let grid = guard.as_ref()?;
-    let gx = (x - grid.min_x) / CELL;
-    let gz = (z - grid.min_z) / CELL;
-    // 3x3 neighbourhood sum so a road one cell over still orients its surroundings.
-    let (mut sx, mut sz) = (0.0f64, 0.0f64);
-    for dz in -1..=1 {
-        for dx in -1..=1 {
-            let cx = gx + dx;
-            let cz = gz + dz;
-            if cx < 0 || cz < 0 || cx >= grid.w || cz >= grid.h {
-                continue;
-            }
-            let idx = (cz * grid.w + cx) as usize;
-            sx += grid.sx[idx];
-            sz += grid.sz[idx];
-        }
-    }
+    // ONE cell only (radius 32 blocks). Widening this re-introduces the seam: see the
+    // CELL comment — the query point can already be 96 blocks outside the tile's kept
+    // area, and every extra block of radius eats into the seam halo both neighbours share.
+    let (sx, sz) = match grid.get(&(x.div_euclid(CELL), z.div_euclid(CELL))) {
+        Some(&(sx, sz)) => (sx, sz),
+        None => return None,
+    };
     // Need a meaningful amount of road (in blocks of accumulated length).
-    if (sx * sx + sz * sz).sqrt() < 40.0 {
+    if (sx * sx + sz * sz).sqrt() < MIN_MAGNITUDE {
         return None;
     }
-    let theta = 0.5 * sz.atan2(sx);
+    // Quantise: identical for both tiles unless the road sets differ substantially.
+    let theta = (0.5 * sz.atan2(sx) / ANGLE_STEP).round() * ANGLE_STEP;
     Some((theta.sin(), theta.cos()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The lattice must be world-anchored: a point's grid cell is a pure function of
+    /// its absolute coordinates, with no dependence on any tile origin.
+    #[test]
+    fn lattice_is_world_anchored() {
+        let cases: [(i32, i32); 6] = [
+            (0, 0),
+            (CELL - 1, 0),
+            (CELL, 1),
+            (-1, -1),
+            (-CELL, -1),
+            (-CELL - 1, -2),
+        ];
+        for (x, gx) in cases {
+            assert_eq!(x.div_euclid(CELL), gx, "x={x}");
+        }
+    }
+
+    /// THE seam property: the bearing at a point depends ONLY on the road data inside
+    /// that point's own lattice cell. Two tiles that clipped different road sets outside
+    /// it — even in the immediately adjacent cell — must still resolve the same bearing,
+    /// because every extra block of reach is data one of the two tiles may not have.
+    #[test]
+    fn bearing_depends_only_on_its_own_cell() {
+        let own = (100.0, 0.0);
+        let mut grid: BearingGrid = HashMap::new();
+        grid.insert((0, 0), own);
+        grid.insert((1, 0), (-500.0, 250.0)); // adjacent cell, only one tile sees it
+        grid.insert((0, -1), (-500.0, -250.0));
+        grid.insert((9, 9), (-100.0, 50.0)); // far away
+        *GRID.write().unwrap() = Some(grid);
+        let a = bearing_at(10, 10);
+
+        let mut grid2: BearingGrid = HashMap::new();
+        grid2.insert((0, 0), own); // the other tile saw ONLY the own-cell road
+        *GRID.write().unwrap() = Some(grid2);
+        let b = bearing_at(10, 10);
+
+        assert_eq!(
+            a.is_some(),
+            b.is_some(),
+            "one tile found a road, the other not"
+        );
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert!(
+            (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12,
+            "neighbouring-cell roads changed the bearing: {a:?} vs {b:?}"
+        );
+
+        // A cell with no road of its own yields no bearing (the parcel grid then falls
+        // back to its hashed angle, which is a pure function of position).
+        let mut grid3: BearingGrid = HashMap::new();
+        grid3.insert((1, 0), (500.0, 0.0));
+        *GRID.write().unwrap() = Some(grid3);
+        assert!(bearing_at(10, 10).is_none());
+        *GRID.write().unwrap() = None;
+    }
 }

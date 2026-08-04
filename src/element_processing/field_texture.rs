@@ -151,8 +151,10 @@ pub struct FieldProfile {
     map_scale: f64,
 }
 
-/// A resolved parcel reference: id, dimensions, cell-local coords, and the
-/// orientation-domain salt that keeps neighbouring domains' parcels independent.
+/// A resolved parcel reference: id, dimensions, cell-local coords, the
+/// orientation-domain salt that keeps neighbouring domains' parcels independent, and
+/// the parcel's own world centre (terrain steering is sampled there so a plot never
+/// splits its crop down the middle).
 #[derive(Clone, Copy)]
 struct ParcelRef {
     px: i32,
@@ -162,6 +164,17 @@ struct ParcelRef {
     lx: i32,
     lz: i32,
     dsalt: i32,
+    cx: i32,
+    cz: i32,
+}
+
+/// World seed mixed into every parcel hash, so the field layout is bound to the world
+/// (`--seed`, which Meld sets identically for every cell — the layout stays a pure
+/// function of world coordinates and remains identical across tile seams).
+#[inline]
+fn seed_salt() -> i32 {
+    let s = crate::ground_generation::current_noise_seed();
+    (s ^ (s >> 32)) as i32
 }
 
 const MACRO: i32 = 192;
@@ -447,6 +460,7 @@ impl FieldProfile {
     /// agricultural land. Everything stays a pure function of `(x, z)`.
     fn parcel_at(&self, x: i32, z: i32) -> ParcelRef {
         let s = self.salt;
+        let seed = seed_salt();
         let wx = value_noise_01(x + 1000 + s, z - 500 - s, WARP_SCALE);
         let wz = value_noise_01(x - 700 - s, z + 1300 + s, WARP_SCALE);
         let sx = x + ((wx - 0.5) * 2.0 * WARP).round() as i32;
@@ -454,13 +468,21 @@ impl FieldProfile {
         // Orientation domain. The lookup point is warped by a coarse noise (~28-block
         // wander on the 192 grid) so domain borders — where the angle and layout
         // change — meander organically instead of cutting along straight grid lines.
-        let mwx = value_noise_01(sx - 4000 + s, sz + 2000 - s, 64);
-        let mwz = value_noise_01(sx + 5000 - s, sz - 3000 + s, 64);
-        let dx = sx + ((mwx - 0.5) * 56.0).round() as i32;
-        let dz = sz + ((mwz - 0.5) * 56.0).round() as i32;
+        //
+        // Deliberately SHARED between profiles: no profile salt and no profile warp
+        // enters the domain lookup, so farmland, grassland and untagged land sit on ONE
+        // rotation/layout field. Their parcels then line up in direction and domain
+        // border across a land-class boundary (they still differ in plot size and style
+        // mix), instead of two unrelated grids hard-cutting where the classes meet.
+        let mwx = value_noise_01(x - 4000, z + 2000, 64);
+        let mwz = value_noise_01(x + 5000, z - 3000, 64);
+        let dx = x + ((mwx - 0.5) * 56.0).round() as i32;
+        let dz = z + ((mwz - 0.5) * 56.0).round() as i32;
         let mx = dx.div_euclid(MACRO);
         let mz = dz.div_euclid(MACRO);
-        let dh = coord_hash(mx ^ 0x0000_51ED ^ s, mz.wrapping_mul(7));
+        // The world seed enters here and flows into `dsalt`, hence into every parcel
+        // hash below — layout, crops, growth and species are bound to the world.
+        let dh = coord_hash(mx ^ 0x0000_51ED ^ seed, mz.wrapping_mul(7) ^ seed);
         let dsalt = (dh as i32) ^ (mx.wrapping_mul(0x1F12_3BB5)) ^ (mz.wrapping_mul(0x0077_F0ED));
         // Base parcel size (scaled by the pattern zoom).
         let scale_factor = self.map_scale / 0.05;
@@ -483,14 +505,20 @@ impl FieldProfile {
         let fz = sz as f64;
         let rx = (fx * cos_t + fz * sin_t).round() as i32;
         let rz = (-fx * sin_t + fz * cos_t).round() as i32;
+        let (px, pz) = (rx.div_euclid(w), rz.div_euclid(l));
+        // Parcel centre, rotated back into world space: the one point every block of a
+        // parcel agrees on, so terrain-driven steering resolves per PLOT, not per block.
+        let (crx, crz) = ((px * w + w / 2) as f64, (pz * l + l / 2) as f64);
         ParcelRef {
-            px: rx.div_euclid(w),
-            pz: rz.div_euclid(l),
+            px,
+            pz,
             w,
             l,
             lx: rx.rem_euclid(w),
             lz: rz.rem_euclid(l),
             dsalt,
+            cx: (crx * cos_t - crz * sin_t).round() as i32,
+            cz: (crx * sin_t + crz * cos_t).round() as i32,
         }
     }
 
@@ -545,8 +573,11 @@ impl FieldProfile {
         // Terrain steering: sunflower fields cluster in the low, open plains and are
         // demoted on the higher ground (parcel-hash consistent, so a field stays one
         // crop; the lowland grid is coarse, so big low areas fill with sunflowers).
+        // Sampled at the parcel CENTRE, not at this block: a plot lying across a
+        // lowland border used to grow sunflowers in one half and wheat in the other,
+        // which read as a plot cut in two.
         let crop = crop.map(|c| {
-            let low = crate::lowland::is_lowland(x, z);
+            let low = crate::lowland::is_lowland(p.cx, p.cz);
             if low
                 && c != FarmCrop::Sunflower
                 && coord_hash(p.px ^ 0x0051_F10A, p.pz ^ p.dsalt) % 100 < 22
@@ -724,6 +755,53 @@ mod tests {
         for x in 0..200 {
             for z in 0..200 {
                 assert!(!p.cell_at(x, z).is_track);
+            }
+        }
+    }
+
+    /// A parcel grows ONE crop everywhere, including where terrain steering applies:
+    /// the lowland probe reads the parcel centre, so a plot can never be sunflower on
+    /// one side of a lowland border and wheat on the other.
+    #[test]
+    fn crop_is_uniform_across_a_whole_parcel() {
+        let p = FieldProfile::farmland(FieldMix::parse(Some("farm=100")), FarmCrops::combined());
+        // Walk a band and check every block of each parcel agrees with its parcel id.
+        // A parcel is identified by its grid index AND its orientation domain: two
+        // domains (different rotation/layout) can reuse the same grid index, and where
+        // they meet the field systems genuinely differ — as adjacent real field systems
+        // laid out off different roads do.
+        let mut seen: std::collections::HashMap<(i32, i32, i32), Option<FarmCrop>> =
+            std::collections::HashMap::new();
+        for x in -300..300 {
+            for z in -300..300 {
+                let r = p.parcel_at(x, z);
+                let c = p.cell_at(x, z).crop;
+                match seen.entry((r.px, r.pz, r.dsalt)) {
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        assert_eq!(*e.get(), c, "parcel ({},{}) grows two crops", r.px, r.pz);
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(c);
+                    }
+                }
+            }
+        }
+    }
+
+    /// All three land profiles must share one orientation field, so their patterns meld
+    /// where farmland meets grassland/untagged instead of hard-cutting: at any point the
+    /// parcel grids agree on rotation and on which orientation domain they are in.
+    #[test]
+    fn profiles_share_the_orientation_field() {
+        let farm = FieldProfile::farmland(FieldMix::parse(Some("farm=100")), FarmCrops::combined());
+        let grass = FieldProfile::grass();
+        for x in (-500..500).step_by(37) {
+            for z in (-500..500).step_by(41) {
+                assert_eq!(
+                    farm.parcel_at(x, z).dsalt,
+                    grass.parcel_at(x, z).dsalt,
+                    "profiles disagree on the orientation domain at ({x},{z})"
+                );
             }
         }
     }

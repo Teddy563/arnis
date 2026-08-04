@@ -543,6 +543,15 @@ impl<'a> WorldEditor<'a> {
         (self.xzbbox.max_x(), self.xzbbox.max_z())
     }
 
+    /// True when (x, z) lies inside this editor's render bounds. Element passes use it
+    /// to tell "outside the polygon" from "outside the data I was given" — a flood fill
+    /// is clipped to the bbox, so at a tile seam an interior block would otherwise look
+    /// like a polygon edge.
+    #[inline]
+    pub fn in_bounds(&self, x: i32, z: i32) -> bool {
+        self.xzbbox.contains(&XZPoint::new(x, z))
+    }
+
     /// Checks if there's a block at the given coordinates
     #[allow(unused)]
     #[inline]

@@ -302,6 +302,22 @@ impl Ground {
         crate::climate::Climate::at(lat, lng)
     }
 
+    /// Minecraft Y at/below which terrain counts as the bottom `fraction` of this
+    /// world's terrain span, or `None` without elevation data.
+    ///
+    /// Under Meld's elevation lock (`--elevation-min/--elevation-max`) the affine is
+    /// GLOBAL, so every cell derives the same threshold — the same property the
+    /// snowline relies on, and what makes a seam-safe lowland band possible.
+    #[inline]
+    pub fn low_band_threshold_y(&self, fraction: f64) -> Option<i32> {
+        let ed = self.elevation_data.as_ref()?;
+        if !ed.blocks_per_meter.is_finite() || ed.blocks_per_meter <= 0.0 {
+            return None;
+        }
+        let span = ((ed.max_height_m - ed.min_height_m) * ed.blocks_per_meter).max(0.0);
+        Some((self.ground_level as f64 + span * fraction.clamp(0.0, 1.0)).round() as i32)
+    }
+
     /// Returns whether land cover data is available
     #[inline(always)]
     pub fn has_land_cover(&self) -> bool {
