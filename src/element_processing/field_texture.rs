@@ -166,6 +166,8 @@ struct ParcelRef {
     dsalt: i32,
     cx: i32,
     cz: i32,
+    /// This block sits on the line where two orientation domains meet.
+    on_domain_edge: bool,
 }
 
 /// World seed mixed into every parcel hash, so the field layout is bound to the world
@@ -181,6 +183,13 @@ const MACRO: i32 = 192;
 const WARP: f64 = 4.0;
 const WARP_SCALE: i32 = 24;
 const SUB_SCALE: i32 = 6;
+/// Half-width (blocks) of the boundary between two orientation domains. The warp that
+/// makes the border meander also stretches and compresses it, so a 1-block line would
+/// break up; 1 here gives a 2-3 block track that survives the distortion.
+const DOMAIN_EDGE: i32 = 1;
+/// Share of orientation-domain borders that carry a headland track. Below 100 so the
+/// boundary network keeps some gaps instead of reading as a lattice.
+const DOMAIN_TRACK_PCT: u64 = 72;
 
 /// Field-system orientation domains: each macro cell picks one of these angles, so
 /// parcel grids sit at multiple angles like real farmland (not one world-aligned grid).
@@ -509,6 +518,18 @@ impl FieldProfile {
         // Parcel centre, rotated back into world space: the one point every block of a
         // parcel agrees on, so terrain-driven steering resolves per PLOT, not per block.
         let (crx, crz) = ((px * w + w / 2) as f64, (pz * l + l / 2) as f64);
+        // Where two orientation domains meet, the field system changes angle and a plot
+        // that spans the line gets cut. Real farmland separates neighbouring field
+        // systems with a track or headland, so mark the line and let `cell_at` lay a
+        // dirt track along it — the cut then reads as a field boundary rather than a
+        // chopped plot. Free to detect: it is the macro grid line we already crossed,
+        // in the SAME warped space, so it meanders exactly like the domain border does.
+        let edge_x = dx.rem_euclid(MACRO);
+        let edge_z = dz.rem_euclid(MACRO);
+        let on_domain_edge = edge_x <= DOMAIN_EDGE
+            || edge_x >= MACRO - 1 - DOMAIN_EDGE
+            || edge_z <= DOMAIN_EDGE
+            || edge_z >= MACRO - 1 - DOMAIN_EDGE;
         ParcelRef {
             px,
             pz,
@@ -519,6 +540,7 @@ impl FieldProfile {
             dsalt,
             cx: (crx * cos_t - crz * sin_t).round() as i32,
             cz: (crx * sin_t + crz * cos_t).round() as i32,
+            on_domain_edge,
         }
     }
 
@@ -564,6 +586,14 @@ impl FieldProfile {
             {
                 is_track = true;
             }
+        }
+        // Headland track between two field systems. Most domain borders get one (real
+        // farmland separates differently-oriented systems with a working track); the
+        // rest just meet, so the network doesn't read as a perfect grid.
+        if p.on_domain_edge
+            && coord_hash(p.dsalt ^ 0x0000_D0E9, p.dsalt.wrapping_mul(31)) % 100 < DOMAIN_TRACK_PCT
+        {
+            is_track = true;
         }
         let crop = if cat == FieldCategory::Farm {
             Some(self.crops.pick(p.px, p.pz ^ p.dsalt))
@@ -749,14 +779,30 @@ mod tests {
         assert!(ratio > 0.4 && ratio < 0.6, "plains share {ratio} not ~0.5");
     }
 
+    /// Inside one field system a single-style profile has nothing to separate, so the
+    /// only tracks are the headlands where two orientation domains meet.
     #[test]
-    fn tracks_only_between_different_styles() {
+    fn tracks_only_between_different_styles_or_field_systems() {
         let p = FieldProfile::farmland(FieldMix::parse(Some("plains=100")), FarmCrops::combined());
-        for x in 0..200 {
-            for z in 0..200 {
-                assert!(!p.cell_at(x, z).is_track);
+        let mut headlands = 0;
+        for x in 0..400 {
+            for z in 0..400 {
+                if p.cell_at(x, z).is_track {
+                    assert!(
+                        p.parcel_at(x, z).on_domain_edge,
+                        "track at ({x},{z}) is neither a style boundary nor a headland"
+                    );
+                    headlands += 1;
+                }
             }
         }
+        // Domains are 192 blocks, so a 400x400 patch must contain some of those borders
+        // (and nowhere near all of it can be track).
+        assert!(headlands > 0, "no headland tracks at all");
+        assert!(
+            headlands < 400 * 400 / 10,
+            "headlands cover too much ground"
+        );
     }
 
     /// A parcel grows ONE crop everywhere, including where terrain steering applies:

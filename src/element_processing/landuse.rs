@@ -44,6 +44,21 @@ pub fn generate_landuse(
     let grass_profile = FieldProfile::grass_with(FieldMix::parse(args.grass_mix.as_deref()))
         .with_scale(args.field_scale)
         .with_map_scale(args.scale);
+    // What lies OUTSIDE a tagged field, for the edge fade. With --land-texture the
+    // surroundings are untagged satellite land drawn with the land mix, so fading a
+    // farmland polygon into GRASS would ring every tagged field with a halo of meadow
+    // that isn't there. Fade into the land profile instead — where it already matches
+    // the surroundings the polygon border simply disappears, which is the point.
+    let outside_profile = if args.land_texture {
+        FieldProfile::farmland(
+            FieldMix::parse(args.land_mix.as_deref().or(args.field_mix.as_deref())),
+            FarmCrops::parse(args.farm_crops.as_deref()),
+        )
+        .with_scale(args.field_scale)
+        .with_map_scale(args.scale)
+    } else {
+        grass_profile
+    };
     let is_grassy = matches!(
         landuse_tag.as_str(),
         "meadow" | "grass" | "greenfield" | "orchard" | "village_green"
@@ -159,18 +174,29 @@ pub fn generate_landuse(
             // the polygon" painted a grass feather stripe along every tile seam that
             // crossed farmland. Unknown => assume the field continues.
             let inside = |nx: i32, nz: i32| s.contains(&(nx, nz)) || !editor.in_bounds(nx, nz);
-            let ring1 =
-                !(inside(x + 1, z) && inside(x - 1, z) && inside(x, z + 1) && inside(x, z - 1));
-            if ring1 {
+            // Rings 1..4 out from the polygon edge, each less likely to turn grassy than
+            // the last: the field doesn't stop on a line, it thins out into the meadow
+            // over ~4 blocks. The noise term makes the fade blotchy rather than a clean
+            // gradient, so the two land kinds interlock the way real field edges do.
+            let ring = |d: i32| {
+                !(inside(x + d, z) && inside(x - d, z) && inside(x, z + d) && inside(x, z - d))
+            };
+            if ring(1) {
                 return true;
             }
-            // Second ring, dithered ~55%: a softer two-cell fade into the grassland.
-            let ring2 =
-                !(inside(x + 2, z) && inside(x - 2, z) && inside(x, z + 2) && inside(x, z - 2));
-            ring2 && crate::land_cover::coord_hash(x ^ 0x0000_FEA7, z) % 100 < 55
+            let n = crate::ground_generation::value_noise_01(x, z, 7);
+            for (d, base) in [(2i32, 70i64), (3, 45), (4, 20)] {
+                if ring(d) {
+                    // +-18 points of noise wander around the ring's base chance.
+                    let p = (base + ((n - 0.5) * 36.0) as i64).clamp(0, 100) as u64;
+                    return crate::land_cover::coord_hash(x ^ 0x0000_FEA7, z.wrapping_mul(d)) % 100
+                        < p;
+                }
+            }
+            false
         });
         let field_cell = if on_farm_edge {
-            Some(grass_profile.cell_at(x, z))
+            Some(outside_profile.cell_at(x, z))
         } else {
             active_profile.map(|p| p.cell_at(x, z))
         };

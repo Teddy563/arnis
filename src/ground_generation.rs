@@ -442,6 +442,11 @@ pub fn generate_ground_region(
                             let (surface_block, under_block) = if has_land_cover {
                                 // ESA WorldCover + slope-based material selection
                                 let cover = ground.cover_class(coord);
+                                // Class used ONLY to choose the field texture: blended
+                                // so cropland and grassland interlock instead of
+                                // switching in one block. Structural decisions below
+                                // keep `cover`.
+                                let tex_cover = blended_texture_class(ground, coord, x, z, cover);
 
                                 // Steep terrain overrides land cover classification.
                                 //
@@ -529,14 +534,16 @@ pub fn generate_ground_region(
                                                 (GRASS_BLOCK, DIRT)
                                             }
                                         }
-                                        land_cover::LC_GRASSLAND => {
+                                        land_cover::LC_GRASSLAND | land_cover::LC_CROPLAND
+                                            if tex_cover == land_cover::LC_GRASSLAND =>
+                                        {
                                             if args.land_texture {
                                                 (land_grass_profile.cell_at(x, z).surface, DIRT)
                                             } else {
                                                 (GRASS_BLOCK, DIRT)
                                             }
                                         }
-                                        land_cover::LC_CROPLAND => {
+                                        land_cover::LC_CROPLAND | land_cover::LC_GRASSLAND => {
                                             if args.land_texture {
                                                 // Villages: ESA reads rural settlements as
                                                 // cropland — give them grassy ground, not wheat.
@@ -1003,6 +1010,9 @@ pub fn generate_ground_region(
                                 );
                             if has_land_cover && !editor.block_exists_absolute(x, ground_y + 1, z) {
                                 let cover = ground.cover_class(coord);
+                                // Same blend the surface palette used, so a block whose
+                                // GROUND blended to grassland doesn't then grow wheat.
+                                let cover = blended_texture_class(ground, coord, x, z, cover);
                                 let mut rng = crate::deterministic_rng::coord_rng(x, z, 0);
 
                                 match cover {
@@ -1920,6 +1930,36 @@ fn decorate_nonfarm_cell(
                 }
             }
         }
+    }
+}
+
+/// How far (blocks) the textured-land class lookup may wander when blending.
+const TEXTURE_BLEND: f64 = 9.0;
+
+/// Land-cover class to TEXTURE with, blended across class borders.
+///
+/// ESA's classes change at a pixel edge, so cropland meeting grassland switched style in
+/// one block and read as a cut line. Sampling the class at a noise-displaced point makes
+/// the two interlock over ~9 blocks — the boundary keeps its overall shape but gains
+/// fingers of each side, the way real field edges run out into meadow.
+///
+/// Only the FIELD TEXTURE choice uses this. Water, built-up, bare, snow, trees and every
+/// structural decision keep the true class, so nothing is displaced into a lake or a road.
+/// A pure function of absolute (x, z), so both sides of a tile seam blend identically.
+#[inline]
+fn blended_texture_class(ground: &Ground, coord: XZPoint, x: i32, z: i32, cover: u8) -> u8 {
+    if cover != land_cover::LC_CROPLAND && cover != land_cover::LC_GRASSLAND {
+        return cover;
+    }
+    let jx = ((value_noise_01(x + 7000, z - 2200, 16) - 0.5) * 2.0 * TEXTURE_BLEND).round() as i32;
+    let jz = ((value_noise_01(x - 3100, z + 6400, 16) - 0.5) * 2.0 * TEXTURE_BLEND).round() as i32;
+    let other = ground.cover_class(XZPoint::new(coord.x + jx, coord.z + jz));
+    // Only ever swap BETWEEN the two textured classes: a displaced sample that lands on
+    // water/forest/built-up must not drag that class into the field.
+    if other == land_cover::LC_CROPLAND || other == land_cover::LC_GRASSLAND {
+        other
+    } else {
+        cover
     }
 }
 
