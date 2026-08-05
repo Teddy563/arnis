@@ -57,6 +57,23 @@ hardcoded constant. Every flag is additive: without them the generator behaves e
   it, so a finished world held both the writer's version and the template's (4790 and
   3955 in the test that found it) and Minecraft ran its DataFixer over part of it. The
   template is now restamped as it is written.
+- **The datapack was written in the wrong schema for 26.x, so the world would not open
+  at all** — "Errors in currently selected data packs prevented the world from loading",
+  with `Failed to read pack file/arnis_tall metadata` in the log. The bundled pack uses
+  the 1.21.x metadata shape (integer `pack_format`, `supported_formats`, `[major, minor]`
+  arrays, dimension_type split across overlays); 26.x replaced that with a single DECIMAL
+  format and rejects the old one. The pack is now emitted in the TARGET version's schema:
+  a modern target gets one dimension_type already in that era's attributes/timelines form
+  and a mcmeta carrying the decimal format, with no overlays. The format number is
+  verified like every other constant here (101.1, read from a pack the 26.1.2 client
+  loads), and a modern version with no verified number refuses extended height rather
+  than guessing — which is why 26.2 is currently refused.
+- **level.dat's version is no longer restamped.** An intermediate fix set it to the target
+  version; that field describes the format the FILE is in, and the bundled level.dat is a
+  1.21.x-era file, so claiming otherwise made Minecraft skip the DataFixer that migrates
+  it and the world then failed even in Safe Mode. Chunk DataVersion stamping stays,
+  because those the writer really does produce in the modern format. A DataVersion may
+  only claim what a file structurally IS.
 - A fitted world always covers the vanilla band, since the writer still emits the vanilla
   column of sections; a narrower dimension would ship chunks holding blocks above its own
   ceiling. When the terrain needs nothing beyond vanilla the result IS vanilla geometry
@@ -64,10 +81,11 @@ hardcoded constant. Every flag is additive: without them the generator behaves e
   pack, for nothing.
 
 ### Changed
-- The datapack is generated from the profile rather than copied. The three bundled JSON
-  templates stay, because they encode schema differences across 1.21.4-1.21.10, the
-  1.21.11 era and 26.1.x; only `min_y` / `height` / `logical_height` are rewritten, and
-  `pack.mcmeta`'s declared format is asserted against the table so the two cannot drift.
+- The datapack is generated from the profile rather than copied, and in the shape the
+  target version's codec accepts. The bundled JSON templates stay, because they encode
+  schema differences across 1.21.4-1.21.10, the 1.21.11 era and 26.1.x that must not be
+  invented; the writer picks the one matching the target and rewrites only `min_y` /
+  `height` / `logical_height`.
 - The pack is written in `generate_world_with_options` — the one point the CLI and the GUI
   share — before the first chunk, replacing two install sites that both ran before the
   terrain range was known.
@@ -76,11 +94,17 @@ hardcoded constant. Every flag is additive: without them the generator behaves e
   is a different writer.
 
 ### Verified
-Structurally, on generated worlds — not yet loaded in Minecraft. A 4096x4096-block
-Yosemite run at 1:4 as four independent processes (the tiled case): all four declared the
-same world (Y -80..831), chose the same datum, stamped the same DataVersion, kept every
-section inside the declared world, and put terrain at Y 559 — 240 blocks above vanilla's
-ceiling. 342 unit tests pass.
+**Loaded in Minecraft 26.1.2.** A 4096x4096-block Yosemite run at 1:4, generated as four
+independent processes (the tiled case) and merged the way Meld merges: all four declared
+the same world (Y -80..831), chose the same datum, stamped the same DataVersion, kept
+every section inside the declared world, and put terrain at Y 559 — 240 blocks above
+vanilla's ceiling. The merged world opens in game with the generated height datapack
+active. 342 unit tests pass.
+
+Worth stating plainly: the two datapack bugs above were invisible to every structural
+check — the files were internally consistent and said exactly what the profile said. Only
+launching the game surfaced them, and the client log named the failing codec directly.
+That is the check that has to happen before an extended-height change is called done.
 
 ## [3.0.4] - 2026-07-26
 
