@@ -337,7 +337,11 @@ pub fn generate_world_with_options(
     }
     crate::world_editor::set_data_version(height.data_version);
     if options.format == WorldFormat::JavaAnvil {
-        match crate::world_utils::install_height_datapack(&output_path, &height.profile) {
+        match crate::world_utils::install_height_datapack(
+            &output_path,
+            &height.profile,
+            height.caps,
+        ) {
             Ok(true) => {
                 println!(
                     "Extended build height: datapack written for Y {}..{}. It cannot be \

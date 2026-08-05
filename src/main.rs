@@ -417,15 +417,13 @@ fn run_cli() {
                 std::process::exit(1);
             }
         };
-        let world_path =
-            match world_utils::create_world_at(&base_dir, data_version, args.mc_version.as_deref())
-            {
-                Ok(path) => PathBuf::from(path),
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red().bold(), e);
-                    std::process::exit(1);
-                }
-            };
+        let world_path = match world_utils::create_world_at(&base_dir, data_version) {
+            Ok(path) => PathBuf::from(path),
+            Err(e) => {
+                eprintln!("{} {}", "Error:".red().bold(), e);
+                std::process::exit(1);
+            }
+        };
         println!(
             "Created new world at: {}",
             world_path.display().to_string().bright_white().bold()

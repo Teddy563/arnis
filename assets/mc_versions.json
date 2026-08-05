@@ -8,15 +8,21 @@
     "To add a version: generate or open a world in it, read Data.Version.Name and",
     "Data.Version.Id out of level.dat, and paste them here with the path you read.",
     "",
-    "data_version   -> written into every chunk as DataVersion",
-    "extended_height-> min_y/height in dimension_type; 1.17+ only",
-    "chunk_layout   -> 'flat' = 1.18+ (root-level sections, block_states/biomes palettes,",
-    "                  yPos); 'legacy' = pre-1.18 (Level compound, Level.Sections,",
-    "                  int-array biomes) -- a genuinely separate writer path",
-    "pack_format    -> see pack_format_envelope below; per-version values are NOT listed",
-    "                  because we do not have verified ones"
+    "data_version    -> written into every chunk as DataVersion",
+    "extended_height -> min_y/height in dimension_type; 1.17+ only",
+    "chunk_layout    -> 'flat' = 1.18+ ; 'legacy' = pre-1.18 (a separate writer path)",
+    "datapack_schema -> which shape pack.mcmeta and dimension_type must take:",
+    "                   'legacy'  = 1.21.4-1.21.10 era: integer pack_format plus",
+    "                               supported_formats/min_format/max_format, and the",
+    "                               multi-overlay dimension_type tree;",
+    "                   'modern'  = 26.x era: DECIMAL pack_format/min_format/max_format",
+    "                               (e.g. 101.1) and the attributes/timelines schema.",
+    "                   Getting this wrong is not cosmetic: 26.1.2 rejects the legacy",
+    "                   metadata outright with 'Failed to read pack metadata' and the",
+    "                   world refuses to load.",
+    "datapack_format -> the decimal pack_format for a 'modern' row. Absent = we have not",
+    "                   verified one, and extended height is refused rather than guessed."
   ],
-
   "_pack_format_envelope": {
     "_comment": [
       "The bundled extended-height pack declares a format RANGE with overlays rather than",
@@ -29,7 +35,6 @@
     "min_inclusive": 61,
     "max_inclusive": 101
   },
-
   "_default_data_version": {
     "_comment": [
       "What the writer emits when the caller names no version. This is the value the fork",
@@ -39,42 +44,49 @@
     ],
     "data_version": 4440
   },
-
   "versions": [
     {
       "id": "1.16.5",
       "extended_height": false,
       "chunk_layout": "legacy",
       "note": "Predates extended build height (1.17). Generation with a non-vanilla profile is refused.",
-      "verified_from": null
+      "verified_from": null,
+      "datapack_schema": "legacy"
     },
     {
       "id": "1.21.4",
       "data_version": 4189,
       "extended_height": true,
       "chunk_layout": "flat",
-      "verified_from": "level.dat of 'Romania 2026 120 IULIE' (Data.Version.Name/Id), 2026-08-05"
+      "verified_from": "level.dat of 'Romania 2026 120 IULIE' (Data.Version.Name/Id), 2026-08-05",
+      "datapack_schema": "legacy"
     },
     {
       "id": "1.21.5",
       "data_version": 4325,
       "extended_height": true,
       "chunk_layout": "flat",
-      "verified_from": "level.dat of ModrinthApp profile 'Mineplus Visuals', 2026-08-05"
+      "verified_from": "level.dat of ModrinthApp profile 'Mineplus Visuals', 2026-08-05",
+      "datapack_schema": "legacy"
     },
     {
       "id": "26.1.2",
       "data_version": 4790,
       "extended_height": true,
       "chunk_layout": "flat",
-      "verified_from": "level.dat of the RomaniaSMP server world, 2026-08-05"
+      "verified_from": "level.dat of the RomaniaSMP server world, 2026-08-05",
+      "datapack_schema": "modern",
+      "datapack_format": 101.1,
+      "datapack_format_verified_from": "pack.mcmeta of collective-26.1.2-8.32.jar, a data pack the 26.1.2 client loads successfully (see logs/latest.log), 2026-08-06"
     },
     {
       "id": "26.2",
       "data_version": 4903,
       "extended_height": true,
       "chunk_layout": "flat",
-      "verified_from": "level.dat of ModrinthApp profile 'Fabulously Optimized', 2026-08-05"
+      "verified_from": "level.dat of ModrinthApp profile 'Fabulously Optimized', 2026-08-05",
+      "datapack_schema": "modern",
+      "note": "26.x datapack schema, but no VERIFIED decimal pack_format yet \u2014 extended height is refused rather than guessing one."
     }
   ]
 }

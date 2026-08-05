@@ -250,6 +250,10 @@ pub struct Fitted {
     /// The `DataVersion` chunks must be stamped with for this target. Resolved from the
     /// verified version table, never from a call site.
     pub data_version: i32,
+    /// The version row this profile was resolved against. The datapack writer reads its
+    /// schema from here, so the pack shape and the geometry can never come from
+    /// different versions.
+    pub caps: &'static crate::mc_version::VersionCaps,
     /// 1.0 = the requested v_scale was honoured. 2.5 = the terrain was squashed 2.5:1.
     /// Anything above 1.0 MUST be surfaced to the user — silent rescaling is the single
     /// worst failure mode in this subsystem, because the world looks fine and isn't.
@@ -310,7 +314,10 @@ impl Fitted {
 ///
 /// `caps` gates the whole thing: a version without extended height may only produce
 /// vanilla geometry, and is refused (not clamped) when the terrain needs more.
-pub fn fit(req: &FitRequest, caps: &crate::mc_version::VersionCaps) -> Result<Fitted, HeightError> {
+pub fn fit(
+    req: &FitRequest,
+    caps: &'static crate::mc_version::VersionCaps,
+) -> Result<Fitted, HeightError> {
     if !req.v_scale.is_finite() || req.v_scale <= 0.0 {
         return Err(HeightError::VScaleNotFinite(req.v_scale));
     }
@@ -393,6 +400,7 @@ pub fn fit(req: &FitRequest, caps: &crate::mc_version::VersionCaps) -> Result<Fi
         data_version: caps
             .data_version
             .unwrap_or_else(crate::mc_version::default_data_version),
+        caps,
         compression,
     })
 }
@@ -448,6 +456,7 @@ pub fn for_run(args: &crate::args::Args, ground: &crate::ground::Ground) -> Resu
         return Ok(Fitted {
             profile: HeightProfile::vanilla(caps.id.clone(), datum, v_scale),
             data_version: crate::mc_version::data_version_for(args.mc_version.as_deref())?,
+            caps,
             compression: 1.0,
         });
     }

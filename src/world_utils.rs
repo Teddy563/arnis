@@ -101,11 +101,7 @@ pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, Str
 /// (with updated name, timestamp, and spawn position), and icon.png.
 ///
 /// Returns the full path to the newly created world directory.
-pub fn create_new_world(
-    base_path: &Path,
-    data_version: i32,
-    version_name: Option<&str>,
-) -> Result<String, String> {
+pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, String> {
     // Generate a unique world name with proper counter
     // Check for both "Arnis World X" and "Arnis World X: Location" patterns
     let mut counter: i32 = 1;
@@ -134,7 +130,7 @@ pub fn create_new_world(
     };
 
     let new_world_path: PathBuf = base_path.join(&unique_name);
-    scaffold_world(&new_world_path, &unique_name, data_version, version_name)
+    scaffold_world(&new_world_path, &unique_name, data_version)
 }
 
 /// Scaffold a Java world DIRECTLY at `world_path` — no "Arnis World N" subfolder, no uniqueness
@@ -143,17 +139,13 @@ pub fn create_new_world(
 /// intended world folder, so nesting another auto-numbered world inside it is unwanted — the caller
 /// owns naming/versioning via the directory it passes in. Overwrites any existing content at that
 /// path (the caller is expected to pick a fresh/intentional directory per generation).
-pub fn create_world_at(
-    world_path: &Path,
-    data_version: i32,
-    version_name: Option<&str>,
-) -> Result<String, String> {
+pub fn create_world_at(world_path: &Path, data_version: i32) -> Result<String, String> {
     let level_name = world_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Arnis World")
         .to_string();
-    scaffold_world(world_path, &level_name, data_version, version_name)
+    scaffold_world(world_path, &level_name, data_version)
 }
 
 /// Shared world-scaffold body (region template, level.dat, icon.png) used by both
@@ -162,7 +154,6 @@ fn scaffold_world(
     new_world_path: &Path,
     unique_name: &str,
     data_version: i32,
-    version_name: Option<&str>,
 ) -> Result<String, String> {
     // Create the new world directory structure
     fs::create_dir_all(new_world_path.join("region"))
@@ -204,22 +195,14 @@ fn scaffold_world(
                 Value::String(unique_name.to_string()),
             );
 
-            // Stamp the run's DataVersion into level.dat too.
+            // level.dat's version is deliberately NOT restamped.
             //
-            // The template carries its own Data.Version block, and leaving it alone gives
-            // a world whose level.dat announces one version while its chunks are written
-            // at another — the chunks then look like they came from the future relative
-            // to the world that holds them. Minecraft decides its upgrade path from these
-            // fields, so they have to agree with what the writer actually emitted.
-            data.insert("DataVersion".to_string(), Value::Int(data_version));
-            if let Some(Value::Compound(ref mut ver)) = data.get_mut("Version") {
-                ver.insert("Id".to_string(), Value::Int(data_version));
-                if let Some(name) = version_name {
-                    ver.insert("Name".to_string(), Value::String(name.to_string()));
-                }
-                // A generated world is never a snapshot.
-                ver.insert("Snapshot".to_string(), Value::Byte(0));
-            }
+            // It describes the format this FILE is written in, not the version we are
+            // targeting, and the bundled template is a 1.21.x-era level.dat. Claiming a
+            // newer version made Minecraft skip the DataFixer that migrates it — 26.1.2
+            // then looked for worldgen settings in the newer location, did not find them,
+            // and the world failed to load ("invalid or corrupted save data"). Leaving the
+            // template's own version lets the game upgrade the file properly.
 
             // Update LastPlayed to the current Unix time in milliseconds
             let current_time = std::time::SystemTime::now()
@@ -394,6 +377,7 @@ pub const TALL_DATAPACK_NAME: &str = "arnis_tall";
 pub fn install_height_datapack(
     world_path: &Path,
     profile: &crate::height_profile::HeightProfile,
+    caps: &crate::mc_version::VersionCaps,
 ) -> Result<bool, String> {
     profile.validate().map_err(|e| {
         format!("refusing to install a datapack for an invalid height profile: {e}")
@@ -401,14 +385,24 @@ pub fn install_height_datapack(
     if profile.is_vanilla() {
         return Ok(false);
     }
-    install_datapack_files(world_path, profile)?;
+    if caps.datapack_schema == crate::mc_version::DatapackSchema::Modern
+        && caps.datapack_format.is_none()
+    {
+        return Err(format!(
+            "Minecraft {} needs the 26.x datapack schema, but no VERIFIED pack_format for              it is recorded in assets/mc_versions.json. Read pack_format out of a data              pack that version loads and add it, rather than guessing: a wrong value makes              the world refuse to open.",
+            caps.id
+        ));
+    }
+    install_datapack_files(world_path, profile, caps)?;
     Ok(true)
 }
 
 fn install_datapack_files(
     world_path: &Path,
     profile: &crate::height_profile::HeightProfile,
+    caps: &crate::mc_version::VersionCaps,
 ) -> Result<(), String> {
+    let schema = caps.datapack_schema;
     const PACK_MCMETA: &[u8] = include_bytes!("../assets/minecraft/datapack_tall/pack.mcmeta");
     const OVERWORLD_JSON: &[u8] = include_bytes!(
         "../assets/minecraft/datapack_tall/data/minecraft/dimension_type/overworld.json"
@@ -422,13 +416,22 @@ fn install_datapack_files(
 
     let dp_root = world_path.join("datapacks").join(TALL_DATAPACK_NAME);
 
-    // (overlay directory, embedded bytes); empty directory = base data/ tree.
-    let dim_files: [(&str, &[u8]); 3] = [
-        ("", OVERWORLD_JSON),
-        ("overlay_attributes", OVERLAY_ATTRIBUTES_JSON),
-        ("overlay_2601", OVERLAY_2601_JSON),
-    ];
-    for (overlay, bytes) in dim_files {
+    // WHICH FILES TO WRITE depends on the target's datapack schema.
+    //
+    // The legacy tree is one base dimension_type plus two overlays, selected by the
+    // format ranges in pack.mcmeta — the 1.21.4-1.21.10 shape. 26.x changed the metadata
+    // schema itself (decimal pack_format), so that whole structure is rejected there with
+    // "Failed to read pack metadata" and the world will not open at all. For a modern
+    // target we write ONE dimension_type, already in that era's schema, and no overlays.
+    let dim_files: &[(&str, &[u8])] = match schema {
+        crate::mc_version::DatapackSchema::Modern => &[("", OVERLAY_2601_JSON)],
+        crate::mc_version::DatapackSchema::Legacy => &[
+            ("", OVERWORLD_JSON),
+            ("overlay_attributes", OVERLAY_ATTRIBUTES_JSON),
+            ("overlay_2601", OVERLAY_2601_JSON),
+        ],
+    };
+    for &(overlay, bytes) in dim_files {
         let mut dim_dir = dp_root.clone();
         if !overlay.is_empty() {
             dim_dir.push(overlay);
@@ -446,7 +449,7 @@ fn install_datapack_files(
 
     fs::write(
         dp_root.join("pack.mcmeta"),
-        pack_mcmeta_for(PACK_MCMETA, profile)?,
+        pack_mcmeta_for(PACK_MCMETA, profile, caps)?,
     )
     .map_err(|e| format!("Failed to write pack.mcmeta: {e}"))?;
 
@@ -465,7 +468,32 @@ fn install_datapack_files(
 fn pack_mcmeta_for(
     template: &[u8],
     profile: &crate::height_profile::HeightProfile,
+    caps: &crate::mc_version::VersionCaps,
 ) -> Result<Vec<u8>, String> {
+    let description = format!(
+        "Arnis build height Y {}..{} ({} blocks)",
+        profile.min_y,
+        profile.max_y(),
+        profile.height
+    );
+    // 26.x: a single DECIMAL format, no supported_formats block, no overlays. Written
+    // from scratch rather than patched, because the legacy template's extra keys are
+    // exactly what that version's codec rejects.
+    if caps.datapack_schema == crate::mc_version::DatapackSchema::Modern {
+        let fmt = caps
+            .datapack_format
+            .ok_or_else(|| format!("no verified pack_format for {}", caps.id))?;
+        let doc = serde_json::json!({
+            "pack": {
+                "description": description,
+                "pack_format": fmt,
+                "min_format": fmt,
+                "max_format": fmt,
+            }
+        });
+        return serde_json::to_vec_pretty(&doc)
+            .map_err(|e| format!("failed to serialise pack.mcmeta: {e}"));
+    }
     let mut doc: serde_json::Value = serde_json::from_slice(template)
         .map_err(|e| format!("bundled pack.mcmeta is not valid JSON: {e}"))?;
     let (fmt, lo, hi) = crate::mc_version::pack_format_envelope();
@@ -477,16 +505,7 @@ fn pack_mcmeta_for(
                  table's envelope says {fmt} ({lo}..={hi}) — they must agree"
             ));
         }
-        pack.insert(
-            "description".into(),
-            format!(
-                "Arnis build height Y {}..{} ({} blocks)",
-                profile.min_y,
-                profile.max_y(),
-                profile.height
-            )
-            .into(),
-        );
+        pack.insert("description".into(), description.into());
     }
     serde_json::to_vec_pretty(&doc).map_err(|e| format!("failed to serialise pack.mcmeta: {e}"))
 }

@@ -16,6 +16,21 @@ use serde::Deserialize;
 
 static TABLE_JSON: &str = include_str!("../assets/mc_versions.json");
 
+/// Which shape `pack.mcmeta` and `dimension_type` must take for a version.
+///
+/// Not cosmetic: 26.1.2 rejects the 1.21.x metadata outright — "Failed to read pack
+/// metadata" — and the world then refuses to load entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DatapackSchema {
+    /// 1.21.4-1.21.10: integer `pack_format` with `supported_formats` / `min_format` /
+    /// `max_format`, and the multi-overlay dimension_type tree.
+    Legacy,
+    /// 26.x: DECIMAL `pack_format` / `min_format` / `max_format` (e.g. 101.1) and the
+    /// attributes/timelines dimension_type schema.
+    Modern,
+}
+
 /// How chunks are laid out in the region file. Pre-1.18 is a genuinely different writer
 /// path (a `Level` compound with `Level.Sections` and int-array biomes), not a variation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -34,6 +49,13 @@ pub struct VersionCaps {
     pub data_version: Option<i32>,
     pub extended_height: bool,
     pub chunk_layout: ChunkLayout,
+    /// Shape of the extended-height datapack for this version.
+    #[serde(default = "default_schema")]
+    pub datapack_schema: DatapackSchema,
+    /// Decimal `pack_format` for a `Modern` row. `None` = not verified, so extended
+    /// height is refused rather than guessing a number.
+    #[serde(default)]
+    pub datapack_format: Option<f64>,
     #[serde(default)]
     pub note: Option<String>,
     /// Where this row's numbers were read from. Not consumed by generation — it exists so
@@ -42,6 +64,10 @@ pub struct VersionCaps {
     #[allow(dead_code)]
     #[serde(default)]
     pub verified_from: Option<String>,
+}
+
+fn default_schema() -> DatapackSchema {
+    DatapackSchema::Legacy
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,6 +165,10 @@ pub fn default_caps() -> &'static VersionCaps {
         chunk_layout: ChunkLayout::Flat,
         note: Some("no --mc-version given; writer default".to_string()),
         verified_from: None,
+        // The historical default predates the 26.x metadata change, so the legacy pack
+        // shape is what has always been shipped for it.
+        datapack_schema: DatapackSchema::Legacy,
+        datapack_format: None,
     })
 }
 
