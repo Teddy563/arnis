@@ -5,15 +5,58 @@
 
 use crate::block_definitions::*;
 
-/// Minimum Y coordinate in Minecraft (1.18+)
+/// Minimum Y coordinate in vanilla Minecraft (1.18+).
+///
+/// This stays a constant because it is the VANILLA floor, which is what the element
+/// passes (caves, deepslate, highway tunnels, railways) mean when they reference it —
+/// they generate within the vanilla band regardless of how tall the world is. The floor
+/// the write path actually clamps to is [`world_min_y`], which a height profile can lower.
 pub const MIN_Y: i32 = -64;
 /// Lowest section index covering MIN_Y (-64 / 16).
 pub const MIN_SECTION_Y: i8 = (MIN_Y / 16) as i8;
-/// Maximum Y coordinate in Minecraft (data pack maximum: 2031)
-/// Vanilla limit is 319, but data packs can extend this up to 2031.
-/// The world editor supports the full range; the elevation system controls
-/// the actual heights used based on the disable_height_limit setting.
-const MAX_Y: i32 = 2031;
+/// Historical write-path ceiling: the highest Y a datapack could ever extend to. Kept as
+/// the default so a run without a height profile behaves exactly as it always has.
+const LEGACY_MAX_Y: i32 = 2031;
+
+/// The write path's clamp, as `(min_y, max_y)`.
+///
+/// Defaults to the historical pair (vanilla floor, datapack ceiling) so nothing changes
+/// for a run that never sets a profile. [`set_world_bounds`] narrows or LOWERS it to a
+/// world's real geometry — lowering is the point: before this existed, `min_y` was a
+/// compile-time `-64`, so a world could declare a floor of -2032 in its datapack and then
+/// have every block below -64 silently clamped away.
+static WORLD_BOUNDS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(pack_bounds(MIN_Y, LEGACY_MAX_Y));
+
+const fn pack_bounds(min_y: i32, max_y: i32) -> i64 {
+    ((min_y as i64) << 32) | (max_y as i64 & 0xFFFF_FFFF)
+}
+
+/// Set the Y range the writer clamps to. Call once, before the first block is placed.
+pub fn set_world_bounds(min_y: i32, max_y: i32) {
+    WORLD_BOUNDS.store(
+        pack_bounds(min_y, max_y),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+#[inline(always)]
+fn world_bounds() -> (i32, i32) {
+    let packed = WORLD_BOUNDS.load(std::sync::atomic::Ordering::Relaxed);
+    ((packed >> 32) as i32, packed as i32)
+}
+
+/// Lowest Y the writer will place a block at.
+#[inline(always)]
+pub fn world_min_y() -> i32 {
+    world_bounds().0
+}
+
+/// Highest Y the writer will place a block at.
+#[inline(always)]
+pub fn world_max_y() -> i32 {
+    world_bounds().1
+}
 use fastnbt::{LongArray, Value};
 use fnv::FnvHashMap;
 use serde::{Deserialize, Serialize};
@@ -452,7 +495,7 @@ impl ChunkToModify {
     #[inline]
     pub fn get_block(&self, x: u8, y: i32, z: u8) -> Option<Block> {
         // Clamp Y to valid Minecraft range to prevent TryFromIntError
-        let y = y.clamp(MIN_Y, MAX_Y);
+        let y = y.clamp(world_min_y(), world_max_y());
         let section_idx: i8 = (y >> 4) as i8;
         let section = self.sections.get(&section_idx)?;
         section.get_block(x, (y & 15) as u8, z)
@@ -461,7 +504,7 @@ impl ChunkToModify {
     #[inline]
     pub fn set_block(&mut self, x: u8, y: i32, z: u8, block: Block) {
         // Clamp Y to valid Minecraft range to prevent TryFromIntError
-        let y = y.clamp(MIN_Y, MAX_Y);
+        let y = y.clamp(world_min_y(), world_max_y());
         let section_idx: i8 = (y >> 4) as i8;
         let section = self.sections.entry(section_idx).or_default();
         section.set_block(x, (y & 15) as u8, z, block);
@@ -476,7 +519,7 @@ impl ChunkToModify {
         block_with_props: BlockWithProperties,
     ) {
         // Clamp Y to valid Minecraft range to prevent TryFromIntError
-        let y = y.clamp(MIN_Y, MAX_Y);
+        let y = y.clamp(world_min_y(), world_max_y());
         let section_idx: i8 = (y >> 4) as i8;
         let section = self.sections.entry(section_idx).or_default();
         section.set_block_with_properties(x, (y & 15) as u8, z, block_with_props);
@@ -645,7 +688,7 @@ impl WorldToModify {
             .entry((chunk_x & 31, chunk_z & 31))
             .or_default();
 
-        let y = y.clamp(MIN_Y, MAX_Y);
+        let y = y.clamp(world_min_y(), world_max_y());
         let section_idx: i8 = (y >> 4) as i8;
         let section = chunk.sections.entry(section_idx).or_default();
 
@@ -690,8 +733,8 @@ impl WorldToModify {
         let local_x = (x & 15) as u8;
         let local_z = (z & 15) as u8;
 
-        let y_min = y_min.clamp(MIN_Y, MAX_Y);
-        let y_max = y_max.clamp(MIN_Y, MAX_Y);
+        let y_min = y_min.clamp(world_min_y(), world_max_y());
+        let y_max = y_max.clamp(world_min_y(), world_max_y());
 
         for y in y_min..=y_max {
             let section_idx: i8 = (y >> 4) as i8;

@@ -19,9 +19,26 @@ use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// Minecraft 1.21.8 data version (world_version 4440), so generated worlds load natively in 1.21.8
-/// without a DataFixer upgrade pass.
-pub const DATA_VERSION: i32 = 4440;
+/// The `DataVersion` stamped into every chunk, so a generated world loads natively in the
+/// target release without a DataFixer upgrade pass.
+///
+/// Runtime-settable because it is version-dependent: [`set_data_version`] is called once
+/// per run from the resolved [`crate::mc_version`] capabilities. The default is the value
+/// the writer has always emitted, kept so a run that names no version is unchanged. A
+/// WRONG value here produces a world that loads and then quietly misbehaves, which is why
+/// the table it comes from only carries numbers read out of real worlds.
+static DATA_VERSION: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(4440);
+
+/// Set the `DataVersion` for this run. Call before the first chunk is written.
+pub fn set_data_version(v: i32) {
+    DATA_VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The `DataVersion` chunks are being written with.
+#[inline]
+pub fn data_version() -> i32 {
+    DATA_VERSION.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Cached base chunk sections (grass at Y=-62)
 /// Computed once on first use and reused for all empty chunks
@@ -949,7 +966,7 @@ fn create_chunk_nbt(
 
     // Build root-level chunk NBT (modern format — no Level wrapper)
     let mut root = HashMap::from([
-        ("DataVersion".to_string(), Value::Int(DATA_VERSION)),
+        ("DataVersion".to_string(), Value::Int(data_version())),
         ("xPos".to_string(), Value::Int(chunk.x_pos)),
         ("yPos".to_string(), Value::Int(min_section_y as i32)),
         ("zPos".to_string(), Value::Int(chunk.z_pos)),

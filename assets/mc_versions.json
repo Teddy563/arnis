@@ -1,0 +1,80 @@
+{
+  "_comment": [
+    "Minecraft version capability table. THE RULE FOR THIS FILE: no value is written from",
+    "memory. A row ships only when its numbers were read out of a real generated world or",
+    "a real pack, and `verified_from` records where. A wrong data_version produces a world",
+    "that loads and then quietly misbehaves, which is the worst failure mode we have.",
+    "",
+    "To add a version: generate or open a world in it, read Data.Version.Name and",
+    "Data.Version.Id out of level.dat, and paste them here with the path you read.",
+    "",
+    "data_version   -> written into every chunk as DataVersion",
+    "extended_height-> min_y/height in dimension_type; 1.17+ only",
+    "chunk_layout   -> 'flat' = 1.18+ (root-level sections, block_states/biomes palettes,",
+    "                  yPos); 'legacy' = pre-1.18 (Level compound, Level.Sections,",
+    "                  int-array biomes) -- a genuinely separate writer path",
+    "pack_format    -> see pack_format_envelope below; per-version values are NOT listed",
+    "                  because we do not have verified ones"
+  ],
+
+  "_pack_format_envelope": {
+    "_comment": [
+      "The bundled extended-height pack declares a format RANGE with overlays rather than",
+      "a single pack_format, and that envelope is known-good: it is what the fork has been",
+      "shipping. Emitted packs reuse it verbatim, so we never have to guess a per-version",
+      "pack_format. If a future version falls outside this range, the pack must be",
+      "re-verified against that version before the range is widened."
+    ],
+    "pack_format": 61,
+    "min_inclusive": 61,
+    "max_inclusive": 101
+  },
+
+  "_default_data_version": {
+    "_comment": [
+      "What the writer emits when the caller names no version. This is the value the fork",
+      "has always written (src/world_editor/java.rs), kept for byte-compatibility. Its",
+      "version LABEL is unverified -- it sits between 1.21.5 (4325) and 26.1.2 (4790) --",
+      "so it is deliberately not presented as a named version anywhere in the UI."
+    ],
+    "data_version": 4440
+  },
+
+  "versions": [
+    {
+      "id": "1.16.5",
+      "extended_height": false,
+      "chunk_layout": "legacy",
+      "note": "Predates extended build height (1.17). Generation with a non-vanilla profile is refused.",
+      "verified_from": null
+    },
+    {
+      "id": "1.21.4",
+      "data_version": 4189,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "level.dat of 'Romania 2026 120 IULIE' (Data.Version.Name/Id), 2026-08-05"
+    },
+    {
+      "id": "1.21.5",
+      "data_version": 4325,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "level.dat of ModrinthApp profile 'Mineplus Visuals', 2026-08-05"
+    },
+    {
+      "id": "26.1.2",
+      "data_version": 4790,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "level.dat of the RomaniaSMP server world, 2026-08-05"
+    },
+    {
+      "id": "26.2",
+      "data_version": 4903,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "level.dat of ModrinthApp profile 'Fabulously Optimized', 2026-08-05"
+    }
+  ]
+}

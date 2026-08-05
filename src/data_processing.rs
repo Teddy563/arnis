@@ -320,6 +320,38 @@ pub fn generate_world_with_options(
     // identical seed → identical bed/dune/shore noise patterns.
     crate::ground_generation::set_noise_seed(args.tile_invariant_rendering.unwrap_or(0));
 
+    // ── Vertical geometry ────────────────────────────────────────────────────────────
+    // One profile per world, computed here because this is the single point both the CLI
+    // and the GUI pass through, and it runs BEFORE the editor writes its first chunk —
+    // the ordering that matters, since chunks are serialised against this geometry.
+    let height = match crate::height_profile::for_run(args, &ground) {
+        Ok(h) => h,
+        Err(e) => return Err(format!("Height profile: {e}")),
+    };
+    println!("{}", height.report());
+    // The writer clamps to the world's real range. Only widened when extended height was
+    // asked for: without it the historical (vanilla floor, datapack ceiling) pair stays,
+    // so an ordinary run is byte-identical to before profiles existed.
+    if args.disable_height_limit {
+        crate::world_editor::set_world_bounds(height.profile.min_y, height.profile.max_y());
+    }
+    crate::world_editor::set_data_version(height.data_version);
+    if options.format == WorldFormat::JavaAnvil {
+        match crate::world_utils::install_height_datapack(&output_path, &height.profile) {
+            Ok(true) => {
+                println!(
+                    "Extended build height: datapack written for Y {}..{}. It cannot be \
+                     removed from this world afterwards, and Minecraft will prompt for \
+                     'Experimental Features' on first load.",
+                    height.profile.min_y,
+                    height.profile.max_y()
+                );
+            }
+            Ok(false) => {}
+            Err(e) => return Err(format!("Failed to write the height datapack: {e}")),
+        }
+    }
+
     // Create editor with appropriate format
     let mut editor: WorldEditor = if options.format == WorldFormat::LuantiWorld {
         WorldEditor::new_luanti(

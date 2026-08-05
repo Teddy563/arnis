@@ -23,6 +23,7 @@ mod floodfill;
 mod floodfill_cache;
 mod ground;
 mod ground_generation;
+mod height_profile;
 mod land_cover;
 mod land_cover_bridge_repair;
 mod land_cover_osm_water_override;
@@ -33,6 +34,7 @@ mod map_item_palette;
 mod map_preview;
 mod map_renderer;
 mod map_transformation;
+mod mc_version;
 mod models_3d;
 mod osm_parser;
 mod overture;
@@ -416,20 +418,8 @@ fn run_cli() {
             "Created new world at: {}",
             world_path.display().to_string().bright_white().bold()
         );
-        if args.disable_height_limit {
-            if let Err(e) = world_utils::install_tall_datapack(&world_path) {
-                eprintln!(
-                    "{} Failed to install tall-world datapack: {}",
-                    "Error:".red().bold(),
-                    e
-                );
-                std::process::exit(1);
-            }
-            eprintln!(
-                "Note: tall-world datapack installed (requires Minecraft 1.21.4+). \
-                 First load will prompt 'Experimental Features'; world can't be uploaded to Realms."
-            );
-        }
+        // The height datapack is installed below, once the terrain's real range is known
+        // — still before the first chunk is written, which is the ordering that matters.
         (world_path, None)
     };
 

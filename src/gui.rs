@@ -902,10 +902,9 @@ fn gui_start_generation(
             set_player_spawn_in_level_dat(&selected_world, spawn_x, spawn_z)
                 .map_err(|e| format!("Failed to set spawn point: {e}"))?;
 
-            if disable_height_limit {
-                crate::world_utils::install_tall_datapack(std::path::Path::new(&selected_world))
-                    .map_err(|e| format!("Failed to install tall-world datapack: {e}"))?;
-            }
+            // The height datapack is written by generate_world_with_options, which is
+            // where the terrain range is known and where it can be guaranteed to land
+            // before the first chunk. Installing a fixed one here would contradict it.
 
             Ok(())
         })();
@@ -1145,6 +1144,11 @@ fn gui_start_generation(
                 elevation_max: None,
                 rotation: rotation_angle.clamp(-90.0, 90.0),
                 disable_height_limit,
+                // The GUI has no version selector yet: fall back to the writer's
+                // historical default rather than presenting an unverified choice.
+                mc_version: None,
+                height_headroom: 32,
+                height_underroom: 16,
                 aws_only_elevation,
                 regional_elevation_only: false,
                 benchmark: false,

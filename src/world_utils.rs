@@ -253,13 +253,42 @@ fn scaffold_world(new_world_path: &Path, unique_name: &str) -> Result<String, St
 /// Name of the bundled Java datapack that extends the Overworld build height.
 pub const TALL_DATAPACK_NAME: &str = "arnis_tall";
 
-/// Install the bundled tall-world datapack into a Java world and register it
-/// in `level.dat`'s `Data.DataPacks.Enabled` so it auto-activates on first
-/// load. The base `data/` tree uses the legacy flat dimension_type schema
-/// (formats 61-88, i.e. 1.21.4-1.21.10); overlays carry the attributes schema
-/// for 1.21.11-era (formats 90-100) and 26.1.x (format 101.x), since the
-/// schema is mutually incompatible across those eras.
-pub fn install_tall_datapack(world_path: &Path) -> Result<(), String> {
+/// Install the extended-height datapack into a Java world and register it in
+/// `level.dat`'s `Data.DataPacks.Enabled` so it auto-activates on first load.
+///
+/// The dimension geometry comes from the [`HeightProfile`] — the world declares exactly
+/// the range its terrain needs, not a fixed 4064-tall preset. The three bundled JSON
+/// templates are kept because they encode schema differences that must not be invented:
+/// the base `data/` tree uses the flat dimension_type schema (formats 61-88, i.e.
+/// 1.21.4-1.21.10) while the overlays carry the attributes schema for the 1.21.11 era
+/// (formats 90-100) and 26.1.x (format 101.x), which are mutually incompatible. Only
+/// `min_y` / `height` / `logical_height` are rewritten from the profile.
+///
+/// A vanilla profile installs nothing and returns `Ok(false)`: vanilla geometry needs no
+/// datapack, and shipping one would saddle the world with an experimental-features prompt
+/// and a pack it can never remove for no gain.
+///
+/// MUST be called before the first chunk is written. Chunks are serialised against this
+/// geometry; applying it afterwards means the existing chunks were written at a different
+/// height.
+pub fn install_height_datapack(
+    world_path: &Path,
+    profile: &crate::height_profile::HeightProfile,
+) -> Result<bool, String> {
+    profile.validate().map_err(|e| {
+        format!("refusing to install a datapack for an invalid height profile: {e}")
+    })?;
+    if profile.is_vanilla() {
+        return Ok(false);
+    }
+    install_datapack_files(world_path, profile)?;
+    Ok(true)
+}
+
+fn install_datapack_files(
+    world_path: &Path,
+    profile: &crate::height_profile::HeightProfile,
+) -> Result<(), String> {
     const PACK_MCMETA: &[u8] = include_bytes!("../assets/minecraft/datapack_tall/pack.mcmeta");
     const OVERWORLD_JSON: &[u8] = include_bytes!(
         "../assets/minecraft/datapack_tall/data/minecraft/dimension_type/overworld.json"
@@ -290,16 +319,78 @@ pub fn install_tall_datapack(world_path: &Path) -> Result<(), String> {
             .join("dimension_type");
         fs::create_dir_all(&dim_dir)
             .map_err(|e| format!("Failed to create datapack directories: {e}"))?;
-        fs::write(dim_dir.join("overworld.json"), bytes)
+        let json = dimension_json_for(bytes, profile)?;
+        fs::write(dim_dir.join("overworld.json"), json)
             .map_err(|e| format!("Failed to write overworld.json: {e}"))?;
     }
 
-    fs::write(dp_root.join("pack.mcmeta"), PACK_MCMETA)
-        .map_err(|e| format!("Failed to write pack.mcmeta: {e}"))?;
+    fs::write(
+        dp_root.join("pack.mcmeta"),
+        pack_mcmeta_for(PACK_MCMETA, profile)?,
+    )
+    .map_err(|e| format!("Failed to write pack.mcmeta: {e}"))?;
 
     register_tall_datapack_in_level_dat(world_path)?;
 
     Ok(())
+}
+
+/// Rewrite the bundled `pack.mcmeta` for this profile.
+///
+/// The format range and the overlay entries come from the template, because they encode
+/// which schema era each overlay serves — values we have verified by shipping them, and
+/// must not invent. Only the human-readable description is rewritten, so a user opening
+/// the world's datapack list can see what range it declares. The range is asserted
+/// against the checked-in envelope so template and table can never silently diverge.
+fn pack_mcmeta_for(
+    template: &[u8],
+    profile: &crate::height_profile::HeightProfile,
+) -> Result<Vec<u8>, String> {
+    let mut doc: serde_json::Value = serde_json::from_slice(template)
+        .map_err(|e| format!("bundled pack.mcmeta is not valid JSON: {e}"))?;
+    let (fmt, lo, hi) = crate::mc_version::pack_format_envelope();
+    if let Some(pack) = doc.get_mut("pack").and_then(|p| p.as_object_mut()) {
+        let declared = pack.get("pack_format").and_then(|v| v.as_i64());
+        if declared != Some(fmt as i64) {
+            return Err(format!(
+                "bundled pack.mcmeta declares pack_format {declared:?} but the version \
+                 table's envelope says {fmt} ({lo}..={hi}) — they must agree"
+            ));
+        }
+        pack.insert(
+            "description".into(),
+            format!(
+                "Arnis build height Y {}..{} ({} blocks)",
+                profile.min_y,
+                profile.max_y(),
+                profile.height
+            )
+            .into(),
+        );
+    }
+    serde_json::to_vec_pretty(&doc).map_err(|e| format!("failed to serialise pack.mcmeta: {e}"))
+}
+
+/// Rewrite a bundled `dimension_type` template with this profile's geometry.
+///
+/// Only `min_y`, `height` and `logical_height` are touched — every other key in the
+/// template encodes schema details for its Minecraft era (the attributes block, the
+/// timelines tag, the monster-spawn rules) that must not be invented here.
+fn dimension_json_for(
+    template: &[u8],
+    profile: &crate::height_profile::HeightProfile,
+) -> Result<Vec<u8>, String> {
+    let mut doc: serde_json::Value = serde_json::from_slice(template)
+        .map_err(|e| format!("bundled dimension_type template is not valid JSON: {e}"))?;
+    let obj = doc
+        .as_object_mut()
+        .ok_or_else(|| "bundled dimension_type template is not a JSON object".to_string())?;
+    obj.insert("min_y".into(), profile.min_y.into());
+    obj.insert("height".into(), profile.height.into());
+    // logical_height caps where the dimension lets you build/teleport; the terrain range
+    // is the whole point here, so it tracks height.
+    obj.insert("logical_height".into(), profile.height.into());
+    serde_json::to_vec_pretty(&doc).map_err(|e| format!("failed to serialise dimension_type: {e}"))
 }
 
 /// Appends the pack entry if missing. Expected to run on a fresh level.dat

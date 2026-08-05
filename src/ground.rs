@@ -318,6 +318,23 @@ impl Ground {
         Some((self.ground_level as f64 + span * fraction.clamp(0.0, 1.0)).round() as i32)
     }
 
+    /// The real-world elevation range this world was built from, in metres, together with
+    /// the blocks-per-metre the elevation pass settled on. `None` without elevation data.
+    ///
+    /// This is the input the height profile is fitted from, and under Meld's elevation
+    /// lock it is global, so every cell fits the same geometry.
+    #[inline]
+    pub fn elevation_range_m(&self) -> Option<(f64, f64, f64)> {
+        let ed = self.elevation_data.as_ref()?;
+        Some((ed.min_height_m, ed.max_height_m, ed.blocks_per_meter))
+    }
+
+    /// Y that the lowest terrain sits at (after any water-depth floor adjustment).
+    #[inline]
+    pub fn ground_level(&self) -> i32 {
+        self.ground_level
+    }
+
     /// Returns whether land cover data is available
     #[inline(always)]
     pub fn has_land_cover(&self) -> bool {

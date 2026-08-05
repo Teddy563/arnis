@@ -267,10 +267,33 @@ pub struct Args {
           value_parser = clap::value_parser!(u64))]
     pub tile_invariant_rendering: Option<u64>,
 
-    /// Extend build height via a bundled pack (Java 1.21.4+: Y=-2032..2031;
+    /// Extend build height via a generated pack (Java 1.21.4+: Y=-2032..2031;
     /// Bedrock 1.21.40+: Y=-512..512). Both are experimental.
+    ///
+    /// The world declares exactly the vertical range its terrain needs — the smallest
+    /// legal height, not a fixed 4064 preset — because every extra 16 blocks is another
+    /// chunk section per column in lighting, heightmaps and region files.
     #[arg(long, default_value_t = false)]
     pub disable_height_limit: bool,
+
+    /// Target Minecraft version, e.g. `26.1.2`. Decides the DataVersion written into
+    /// every chunk, whether extended height may be declared at all (1.17+), and the chunk
+    /// layout. Only versions with VERIFIED constants in assets/mc_versions.json are
+    /// accepted — an unknown version is refused rather than guessed at, because a wrong
+    /// DataVersion yields a world that loads and then quietly misbehaves. Omitted = the
+    /// writer's historical default.
+    #[arg(long = "mc-version", value_name = "VERSION")]
+    pub mc_version: Option<String>,
+
+    /// Blocks kept free above the highest terrain for trees and buildings when fitting an
+    /// extended-height world.
+    #[arg(long = "height-headroom", default_value_t = 32, value_name = "BLOCKS")]
+    pub height_headroom: i32,
+
+    /// Blocks kept free below the lowest terrain for caves and water carving when fitting
+    /// an extended-height world.
+    #[arg(long = "height-underroom", default_value_t = 16, value_name = "BLOCKS")]
+    pub height_underroom: i32,
 
     /// Skip the regional high-resolution elevation providers  and only use
     /// AWS Terrain Tiles for faster generation.

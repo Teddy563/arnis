@@ -11,7 +11,6 @@ use std::path::Path;
 
 const MAP_SIZE: i32 = 128;
 // Fallback when the world DataVersion cannot be read.
-const DATA_VERSION: i32 = crate::world_editor::java::DATA_VERSION;
 
 // The map must carry the same DataVersion as the world so a newer client upgrades it
 // with the rest of the save rather than treating it as a stale file.
@@ -23,7 +22,7 @@ fn world_data_version(world_path: &Path) -> i32 {
             }
         }
     }
-    DATA_VERSION
+    crate::world_editor::java::data_version()
 }
 
 fn read_gzip_nbt(path: &Path) -> Result<Value, String> {
@@ -491,7 +490,7 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
         write_gzip_nbt(
             &data_dir.join("idcounts.dat"),
-            &build_idcounts(5, DATA_VERSION),
+            &build_idcounts(5, crate::world_editor::java::data_version()),
         )
         .unwrap();
 
