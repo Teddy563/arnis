@@ -10,6 +10,78 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.5] - 2026-08-06
+
+Configurable, version-aware build height. A world's vertical range is now derived from
+the terrain it actually holds and declared by a generated datapack, instead of a fixed
+4064-block preset — and the target Minecraft version is a real input rather than a
+hardcoded constant. Every flag is additive: without them the generator behaves exactly as
+3.0.4 did.
+
+### Added
+- **`HeightProfile`** (`src/height_profile.rs`) — the single object defining a world's
+  `min_y` / `height` / datum / vertical scale / target version. The datapack writer, the
+  chunk writer and the reported geometry all read it; nothing computes its own. Every
+  engine invariant (16-alignment, the -2032..2031 range, `min_y + height <= 2032`, the
+  signed-byte section index) is enforced in one `validate()`, and every violation is a
+  refusal rather than a clamp.
+- **Fitting rules**: the smallest legal height rather than the maximum, explicit
+  `--height-headroom` / `--height-underroom`, and vertical compression only as a last
+  resort — always reported, never silent.
+- **`--mc-version`** and a checked-in capability table (`assets/mc_versions.json`) giving
+  the `DataVersion`, extended-height support and chunk layout per version. Its rule is
+  that no value is written from memory: every row records where its numbers were read
+  from, and a test enforces that. An unknown version is refused with the list of known
+  ones instead of being approximated.
+- **`--min-y` / `--max-y`** to set the world's floor and ceiling explicitly. Checked, not
+  clamped: a ceiling under the terrain's peak or a floor over its base is refused and says
+  what it would have cost.
+- **`--water-carve-clearance max|auto|BLOCKS`** — seam-critical for tiled generation, see
+  Fixed.
+
+### Fixed
+- **The floor was a lie.** The bundled pack declared `min_y: -2032` while every write went
+  through `y.clamp(MIN_Y, MAX_Y)` with `MIN_Y` a compile-time `-64`, so extended height
+  only ever extended UPWARD and terrain below vanilla's floor could not be generated at
+  any setting. The write path now clamps to the profile's real range, and both
+  under-terrain fill paths reach the world's floor, so a declared basement is solid rock
+  rather than void. Measured: with `--height-underroom 96`, ground reaches Y -160.
+- **The terrain datum depended on how much water a tile held.** `Ground::new_enabled`
+  raises the datum to clear the deepest water carve and MEASURED that depth from the
+  tile's own land cover, so an inland tile sat at Y -62 and a coastal one at Y -57 — a
+  Y-cliff along every coastline crossing a cell border in a tiled world. A fixed
+  clearance makes every tile reserve the same room; `max` is exact rather than
+  speculative because the carve depth is bounded by `MAX_WATER_DEPTH`.
+- **Two DataVersions in one world.** `assets/minecraft/region.template` is a full
+  1024-chunk region baked at a fixed version; chunks the generator never overwrote kept
+  it, so a finished world held both the writer's version and the template's (4790 and
+  3955 in the test that found it) and Minecraft ran its DataFixer over part of it. The
+  template is now restamped as it is written.
+- A fitted world always covers the vanilla band, since the writer still emits the vanilla
+  column of sections; a narrower dimension would ship chunks holding blocks above its own
+  ceiling. When the terrain needs nothing beyond vanilla the result IS vanilla geometry
+  and no datapack is written at all — no experimental-features prompt, and no unremovable
+  pack, for nothing.
+
+### Changed
+- The datapack is generated from the profile rather than copied. The three bundled JSON
+  templates stay, because they encode schema differences across 1.21.4-1.21.10, the
+  1.21.11 era and 26.1.x; only `min_y` / `height` / `logical_height` are rewritten, and
+  `pack.mcmeta`'s declared format is asserted against the table so the two cannot drift.
+- The pack is written in `generate_world_with_options` — the one point the CLI and the GUI
+  share — before the first chunk, replacing two install sites that both ran before the
+  terrain range was known.
+- Refusals, not clamps: a pre-1.17 target asking for extended height is told the version
+  floor and its two real options; a pre-1.18 target is refused because that chunk layout
+  is a different writer.
+
+### Verified
+Structurally, on generated worlds — not yet loaded in Minecraft. A 4096x4096-block
+Yosemite run at 1:4 as four independent processes (the tiled case): all four declared the
+same world (Y -80..831), chose the same datum, stamped the same DataVersion, kept every
+section inside the declared world, and put terrain at Y 559 — 240 blocks above vanilla's
+ceiling. 342 unit tests pass.
+
 ## [3.0.4] - 2026-07-26
 
 The Farmlands release: open land becomes real agricultural country. Farmland, grassland,
