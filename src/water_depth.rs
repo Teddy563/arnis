@@ -52,7 +52,10 @@ const SHOAL_DT_UNITS: u16 = 9;
 const DT_MAX: u8 = u8::MAX;
 
 /// Maximum water carve depth, in blocks (the deepest tier).
-const MAX_WATER_DEPTH: i32 = 6;
+/// Deepest water carve the engine can ever produce. Exposed because the world's datum
+/// must reserve room for it, and a tiled run needs that reservation to be the SAME in
+/// every tile — measuring it per tile makes neighbouring tiles disagree about Y.
+pub const MAX_WATER_DEPTH: i32 = 6;
 
 /// Cap on water sub-rect cells (bounds memory, keeps u32 indices valid); ~1000 km².
 const MAX_WATER_FIELD_CELLS: usize = 1_000_000_000;

@@ -452,7 +452,7 @@ pub fn for_run(args: &crate::args::Args, ground: &crate::ground::Ground) -> Resu
         });
     }
 
-    fit(
+    let fitted = fit(
         &FitRequest {
             floor_m,
             peak_m,
@@ -463,7 +463,65 @@ pub fn for_run(args: &crate::args::Args, ground: &crate::ground::Ground) -> Resu
         },
         caps,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    apply_explicit_bounds(fitted, args.min_y, args.max_y)
+}
+
+/// Apply an explicit `--min-y` / `--max-y` on top of the fitted geometry.
+///
+/// Explicit values REPLACE the fitted ones, but they are checked, never clamped: a floor
+/// or ceiling that would cut into the terrain is refused with what it would have cost.
+/// Silently honouring it would shear the peaks off a mountain range and say nothing.
+pub fn apply_explicit_bounds(
+    fitted: Fitted,
+    min_y: Option<i32>,
+    max_y: Option<i32>,
+) -> Result<Fitted, String> {
+    if min_y.is_none() && max_y.is_none() {
+        return Ok(fitted);
+    }
+    let fit_lo = fitted.profile.min_y;
+    let fit_hi = fitted.profile.max_y();
+    let lo = min_y.unwrap_or(fit_lo);
+    let hi = max_y.unwrap_or(fit_hi);
+
+    if lo % 16 != 0 {
+        return Err(format!(
+            "--min-y {lo} is not a multiple of 16. Chunk sections are 16 blocks tall, so \
+             a world floor has to land on one; try {}.",
+            floor16(lo)
+        ));
+    }
+    if hi < lo {
+        return Err(format!("--max-y {hi} is below --min-y {lo}."));
+    }
+    // The terrain is where it is; a ceiling under it or a floor over it loses blocks.
+    if hi < fit_hi {
+        return Err(format!(
+            "--max-y {hi} is below the {fit_hi} this terrain needs (its peak plus the \
+             headroom). Lower --height-headroom, reduce the vertical scale, or raise \
+             --max-y; refusing rather than shearing the peaks off."
+        ));
+    }
+    if lo > fit_lo {
+        return Err(format!(
+            "--min-y {lo} is above the {fit_lo} this terrain needs (its floor minus the \
+             underroom). Lower --height-underroom or lower --min-y; refusing rather than \
+             cutting the ground away."
+        ));
+    }
+
+    let height = ceil16(hi - lo + 1);
+    let profile = HeightProfile {
+        min_y: lo,
+        height,
+        ..fitted.profile
+    };
+    profile
+        .validate()
+        .map_err(|e| format!("--min-y {lo} / --max-y {hi} do not describe a legal world: {e}"))?;
+    Ok(Fitted { profile, ..fitted })
 }
 
 /// Round down to a multiple of 16 (towards negative infinity, so it works below 0).
@@ -774,6 +832,63 @@ mod tests {
         let f = fit(&r, caps("26.1.2")).unwrap();
         assert_eq!(f.profile.elevation_to_y(150.0), r.floor_y);
         assert_eq!(f.profile.elevation_to_y(900.0), r.floor_y + 750);
+    }
+
+    fn fitted_for_tests() -> Fitted {
+        let mut r = req(0.0, 100.0, 1.0);
+        r.floor_y = -48;
+        fit(&r, caps("26.1.2")).unwrap()
+    }
+
+    #[test]
+    fn explicit_bounds_widen_the_world() {
+        let f = fitted_for_tests();
+        let (lo, hi) = (f.profile.min_y, f.profile.max_y());
+        let out = apply_explicit_bounds(f, Some(-512), Some(1023)).unwrap();
+        assert_eq!(out.profile.min_y, -512);
+        assert_eq!(out.profile.max_y(), 1023);
+        assert!(
+            -512 < lo && 1023 > hi,
+            "the test should actually be widening"
+        );
+        out.profile.validate().unwrap();
+    }
+
+    #[test]
+    fn explicit_bounds_that_would_cut_the_terrain_are_refused() {
+        let f = fitted_for_tests();
+        let needed_hi = f.profile.max_y();
+        let err = apply_explicit_bounds(f.clone(), None, Some(needed_hi - 16)).unwrap_err();
+        assert!(err.contains("below the"), "{err}");
+        assert!(err.contains("shearing the peaks off"), "{err}");
+
+        let needed_lo = f.profile.min_y;
+        let err = apply_explicit_bounds(f, Some(needed_lo + 16), None).unwrap_err();
+        assert!(err.contains("cutting the ground away"), "{err}");
+    }
+
+    #[test]
+    fn explicit_bounds_must_be_aligned_and_ordered() {
+        let f = fitted_for_tests();
+        let err = apply_explicit_bounds(f.clone(), Some(-100), None).unwrap_err();
+        assert!(err.contains("multiple of 16"), "{err}");
+        let err = apply_explicit_bounds(f, Some(-64), Some(-128)).unwrap_err();
+        assert!(err.contains("below --min-y"), "{err}");
+    }
+
+    #[test]
+    fn explicit_bounds_past_the_engine_limit_are_refused() {
+        let f = fitted_for_tests();
+        let err = apply_explicit_bounds(f, Some(-2048), None).unwrap_err();
+        assert!(err.contains("do not describe a legal world"), "{err}");
+    }
+
+    #[test]
+    fn no_explicit_bounds_changes_nothing() {
+        let f = fitted_for_tests();
+        let before = f.profile.clone();
+        let out = apply_explicit_bounds(f, None, None).unwrap();
+        assert_eq!(out.profile, before);
     }
 
     #[test]

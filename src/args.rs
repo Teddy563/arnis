@@ -295,6 +295,32 @@ pub struct Args {
     #[arg(long = "height-underroom", default_value_t = 16, value_name = "BLOCKS")]
     pub height_underroom: i32,
 
+    /// Blocks of room reserved under the terrain datum for the deepest water carve.
+    ///
+    /// SEAM-CRITICAL for tiled generation. Left unset, the clearance is MEASURED from
+    /// this tile's own land cover, so a tile containing deep water sets its datum higher
+    /// than an inland neighbour and the two place identical terrain at different Y — a
+    /// Y-cliff along the whole cell border. An orchestrator generating adjacent tiles
+    /// (Meld) must pass the SAME value to every tile.
+    ///
+    /// `max` uses the engine's worst case, which is exact: the carve depth is bounded by
+    /// a compile-time constant, so `max` always clears the deepest possible water without
+    /// reserving anything speculative. A number sets it explicitly. Unset = measure
+    /// per-tile (the historical single-world behaviour).
+    #[arg(long = "water-carve-clearance", value_name = "max|BLOCKS")]
+    pub water_carve_clearance: Option<String>,
+
+    /// Explicit world floor Y, overriding the fitted one. Must be a multiple of 16 within
+    /// -2032..=2031, and is REFUSED (never clamped) if it would cut into the terrain.
+    #[arg(long = "min-y", allow_hyphen_values = true, value_name = "Y")]
+    pub min_y: Option<i32>,
+
+    /// Explicit world ceiling Y, overriding the fitted one. `min-y + height` may not
+    /// exceed 2032, and a ceiling below the terrain's peak is refused rather than
+    /// silently shearing the peaks off.
+    #[arg(long = "max-y", allow_hyphen_values = true, value_name = "Y")]
+    pub max_y: Option<i32>,
+
     /// Skip the regional high-resolution elevation providers  and only use
     /// AWS Terrain Tiles for faster generation.
     #[arg(long, default_value_t = false)]

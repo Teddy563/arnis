@@ -1149,6 +1149,11 @@ fn gui_start_generation(
                 mc_version: None,
                 height_headroom: 32,
                 height_underroom: 16,
+                // Single-world GUI run: measuring the water clearance per world is
+                // correct here, since there is no neighbouring tile to agree with.
+                water_carve_clearance: None,
+                min_y: None,
+                max_y: None,
                 aws_only_elevation,
                 regional_elevation_only: false,
                 benchmark: false,

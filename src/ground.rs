@@ -147,6 +147,40 @@ fn compute_snow_threshold(
     }
 }
 
+/// How much room the datum reserves under the terrain for the deepest water carve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaterCarveClearance {
+    /// Measure it from this tile's own land cover. Correct for a single world, WRONG for
+    /// a tiled one: neighbouring tiles with different water content pick different datums.
+    Measured,
+    /// Reserve exactly this many blocks in every tile.
+    Fixed(i32),
+}
+
+impl WaterCarveClearance {
+    /// Resolve `--water-carve-clearance`: unset = measure, `max` = the engine's worst
+    /// case (exact, because the carve depth is bounded), or an explicit block count.
+    pub fn from_arg(spec: Option<&str>) -> Result<Self, String> {
+        match spec.map(str::trim) {
+            None | Some("") => Ok(Self::Measured),
+            Some(s) if s.eq_ignore_ascii_case("max") => {
+                Ok(Self::Fixed(crate::water_depth::MAX_WATER_DEPTH))
+            }
+            Some(s) if s.eq_ignore_ascii_case("auto") || s.eq_ignore_ascii_case("measure") => {
+                Ok(Self::Measured)
+            }
+            Some(s) => s
+                .parse::<i32>()
+                .map(|n| Self::Fixed(n.max(0)))
+                .map_err(|_| {
+                    format!(
+                    "--water-carve-clearance expects 'max', 'auto', or a block count; got '{s}'"
+                )
+                }),
+        }
+    }
+}
+
 impl Ground {
     pub fn new_flat(ground_level: i32) -> Self {
         Self {
@@ -178,6 +212,7 @@ impl Ground {
         benchmark: bool,
         vertical_exaggeration: f64,
         snow: SnowConfig,
+        carve_clearance: WaterCarveClearance,
     ) -> Self {
         let mut bench = crate::bench::Bench::new(benchmark);
         // Fetch land cover FIRST so we can feed it into the elevation
@@ -199,14 +234,27 @@ impl Ground {
         };
         bench.mark("elev_landcover_fetch");
 
-        // Raise the floor for the deepest water carve (elevation path only).
-        let water_floor = match &land_cover {
-            Some(lc) => {
-                let max_depth =
-                    crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h, scale);
-                ground_level.max(crate::world_editor::MIN_Y + max_depth + 2)
+        // Raise the datum so the deepest water carve still has rock under it.
+        //
+        // SEAM-CRITICAL: measuring the depth from THIS tile's land cover makes the datum
+        // a function of how much water the tile happens to contain, so a coastal tile
+        // sits ~5 blocks above its inland neighbour and the shared border becomes a
+        // Y-cliff. A tiled run therefore passes a fixed clearance and every tile reserves
+        // the same room. `Max` is exact rather than speculative: the carve depth is
+        // bounded by MAX_WATER_DEPTH.
+        let water_floor = match carve_clearance {
+            WaterCarveClearance::Fixed(blocks) => {
+                ground_level.max(crate::world_editor::MIN_Y + blocks + 2)
             }
-            None => ground_level,
+            WaterCarveClearance::Measured => match &land_cover {
+                Some(lc) => {
+                    let max_depth = crate::water_depth::estimate_max_carve_depth(
+                        &lc.grid, world_w, world_h, scale,
+                    );
+                    ground_level.max(crate::world_editor::MIN_Y + max_depth + 2)
+                }
+                None => ground_level,
+            },
         };
 
         match fetch_elevation_data(
@@ -811,6 +859,13 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             args.benchmark,
             args.vertical_exaggeration,
             SnowConfig::from_args(&args.snow_mode, args.snow_percent, args.snow_y),
+            match WaterCarveClearance::from_arg(args.water_carve_clearance.as_deref()) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                }
+            },
         );
         if args.debug {
             ground.save_debug_image("elevation_debug");
