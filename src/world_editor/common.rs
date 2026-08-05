@@ -12,8 +12,6 @@ use crate::block_definitions::*;
 /// they generate within the vanilla band regardless of how tall the world is. The floor
 /// the write path actually clamps to is [`world_min_y`], which a height profile can lower.
 pub const MIN_Y: i32 = -64;
-/// Lowest section index covering MIN_Y (-64 / 16).
-pub const MIN_SECTION_Y: i8 = (MIN_Y / 16) as i8;
 /// Historical write-path ceiling: the highest Y a datapack could ever extend to. Kept as
 /// the default so a run without a height profile behaves exactly as it always has.
 const LEGACY_MAX_Y: i32 = 2031;
@@ -56,6 +54,13 @@ pub fn world_min_y() -> i32 {
 #[inline(always)]
 pub fn world_max_y() -> i32 {
     world_bounds().1
+}
+
+/// Section index of the world's floor. The under-terrain fill starts here, so a world
+/// with a floor below vanilla's gets solid rock down to it instead of a void basement.
+#[inline(always)]
+pub fn world_min_section_y() -> i8 {
+    world_min_y().div_euclid(16) as i8
 }
 use fastnbt::{LongArray, Value};
 use fnv::FnvHashMap;
@@ -763,7 +768,8 @@ impl WorldToModify {
         section_y_max: i8,
         block: Block,
     ) -> bool {
-        if section_y_max < MIN_SECTION_Y {
+        let floor_section = world_min_section_y();
+        if section_y_max < floor_section {
             return true;
         }
         let region_x = chunk_x >> 5;
@@ -775,7 +781,7 @@ impl WorldToModify {
             .or_default();
 
         let mut all_clean = true;
-        for section_y in MIN_SECTION_Y..=section_y_max {
+        for section_y in floor_section..=section_y_max {
             let section = chunk.sections.entry(section_y).or_default();
             let is_empty = section.properties.is_empty()
                 && matches!(&section.storage, BlockStorage::Uniform(b) if *b == AIR);
@@ -1242,7 +1248,7 @@ mod tests {
         let region = world.get_region(0, 0).unwrap();
         let chunk = region.get_chunk(0, 0).unwrap();
         // Sections -4, -3, -2 must now exist as Uniform(STONE)
-        for y in MIN_SECTION_Y..=-2 {
+        for y in world_min_section_y()..=-2 {
             let section = chunk
                 .sections
                 .get(&y)
@@ -1301,7 +1307,8 @@ mod tests {
     #[test]
     fn bulk_fill_below_min_section_is_noop() {
         let mut world = WorldToModify::default();
-        let all_clean = world.bulk_fill_chunk_sections_below(0, 0, MIN_SECTION_Y - 1, STONE);
+        let all_clean =
+            world.bulk_fill_chunk_sections_below(0, 0, world_min_section_y() - 1, STONE);
         assert!(all_clean, "below-min request should be vacuously clean");
         // No region should have been created
         assert!(world.get_region(0, 0).is_none());
@@ -1318,7 +1325,7 @@ mod tests {
         let second = world.bulk_fill_chunk_sections_below(0, 0, -2, STONE);
         assert!(!second, "second call sees Uniform(STONE) as occupied");
         let chunk = world.get_region(0, 0).unwrap().get_chunk(0, 0).unwrap();
-        for y in MIN_SECTION_Y..=-2 {
+        for y in world_min_section_y()..=-2 {
             let section = chunk.sections.get(&y).unwrap();
             assert!(
                 matches!(&section.storage, BlockStorage::Uniform(b) if *b == STONE),

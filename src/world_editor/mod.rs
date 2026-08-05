@@ -16,7 +16,7 @@ mod luanti;
 pub mod bedrock;
 
 pub(crate) use common::WorldToModify;
-pub use common::{set_world_bounds, MIN_SECTION_Y, MIN_Y};
+pub use common::{set_world_bounds, world_min_section_y, world_min_y, MIN_Y};
 pub use java::set_data_version;
 
 pub(crate) use bedrock::{BedrockSaveError, BedrockWriter};

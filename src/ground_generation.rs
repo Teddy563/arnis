@@ -253,7 +253,10 @@ pub fn generate_ground_region(
             // Uniform(STONE) so the per-column loop only walks the boundary
             // section. Gated on full bbox coverage so out-of-bbox columns
             // don't get stone underneath.
-            let mut column_fill_y_min = crate::world_editor::MIN_Y + 1;
+            // The rock under the surface reaches the WORLD's floor, not vanilla's: a
+            // world that declares a basement must actually be solid down to it, or the
+            // extra range is just void the player falls through.
+            let mut column_fill_y_min = crate::world_editor::world_min_y() + 1;
             if args.fillground {
                 let chunk_fully_in_bbox = chunk_min_x == chunk_x << 4
                     && chunk_max_x == (chunk_x << 4) + 15
@@ -277,7 +280,7 @@ pub fn generate_ground_region(
                     };
                     // section_top = section_y*16 + 15 <= min_ground_y - 3
                     let top_buried = (min_ground_y - 18).div_euclid(16) as i8;
-                    if top_buried >= crate::world_editor::MIN_SECTION_Y {
+                    if top_buried >= crate::world_editor::world_min_section_y() {
                         let all_clean = editor
                             .bulk_fill_chunk_sections_below(chunk_x, chunk_z, top_buried, STONE);
                         if all_clean {
