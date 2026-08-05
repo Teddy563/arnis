@@ -101,7 +101,7 @@ pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, Str
 /// (with updated name, timestamp, and spawn position), and icon.png.
 ///
 /// Returns the full path to the newly created world directory.
-pub fn create_new_world(base_path: &Path) -> Result<String, String> {
+pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, String> {
     // Generate a unique world name with proper counter
     // Check for both "Arnis World X" and "Arnis World X: Location" patterns
     let mut counter: i32 = 1;
@@ -130,7 +130,7 @@ pub fn create_new_world(base_path: &Path) -> Result<String, String> {
     };
 
     let new_world_path: PathBuf = base_path.join(&unique_name);
-    scaffold_world(&new_world_path, &unique_name)
+    scaffold_world(&new_world_path, &unique_name, data_version)
 }
 
 /// Scaffold a Java world DIRECTLY at `world_path` — no "Arnis World N" subfolder, no uniqueness
@@ -139,27 +139,38 @@ pub fn create_new_world(base_path: &Path) -> Result<String, String> {
 /// intended world folder, so nesting another auto-numbered world inside it is unwanted — the caller
 /// owns naming/versioning via the directory it passes in. Overwrites any existing content at that
 /// path (the caller is expected to pick a fresh/intentional directory per generation).
-pub fn create_world_at(world_path: &Path) -> Result<String, String> {
+pub fn create_world_at(world_path: &Path, data_version: i32) -> Result<String, String> {
     let level_name = world_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Arnis World")
         .to_string();
-    scaffold_world(world_path, &level_name)
+    scaffold_world(world_path, &level_name, data_version)
 }
 
 /// Shared world-scaffold body (region template, level.dat, icon.png) used by both
 /// `create_new_world` (nested, auto-numbered) and `create_world_at` (direct path).
-fn scaffold_world(new_world_path: &Path, unique_name: &str) -> Result<String, String> {
+fn scaffold_world(
+    new_world_path: &Path,
+    unique_name: &str,
+    data_version: i32,
+) -> Result<String, String> {
     // Create the new world directory structure
     fs::create_dir_all(new_world_path.join("region"))
         .map_err(|e| format!("Failed to create world directory: {e}"))?;
 
-    // Copy the region template file
+    // Copy the region template file, restamped to this run's DataVersion.
+    //
+    // The template is a full 1024-chunk region baked at one fixed DataVersion. Any of its
+    // chunks the generator does not overwrite survive into the finished world, so copying
+    // it verbatim leaves a world holding TWO different DataVersions — the writer's and the
+    // template's. Minecraft then runs its DataFixer over half the world, which is exactly
+    // the "loads and then quietly misbehaves" outcome the version table exists to prevent.
     const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
     let region_path = new_world_path.join("region").join("r.0.0.mca");
-    fs::write(&region_path, REGION_TEMPLATE)
-        .map_err(|e| format!("Failed to create region file: {e}"))?;
+    let stamped = restamp_region_data_version(REGION_TEMPLATE, data_version)
+        .unwrap_or_else(|| REGION_TEMPLATE.to_vec());
+    fs::write(&region_path, stamped).map_err(|e| format!("Failed to create region file: {e}"))?;
 
     // Add the level.dat file
     const LEVEL_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/level.dat");
@@ -248,6 +259,89 @@ fn scaffold_world(new_world_path: &Path, unique_name: &str) -> Result<String, St
         .map_err(|e| format!("Failed to create icon.png file: {e}"))?;
 
     Ok(new_world_path.display().to_string())
+}
+
+/// Rewrite every chunk's `DataVersion` in a raw region file.
+///
+/// Patches the 4 bytes after the `DataVersion` NBT tag rather than round-tripping the
+/// whole chunk through a parser: the tag is `TAG_Int` (0x03) + a 2-byte name length +
+/// the name, so the value sits at a known offset once the name is found. Chunks are
+/// zlib-framed individually, so each is decompressed, patched and recompressed in place.
+///
+/// Returns `None` if the region does not look like one we can safely patch, so the caller
+/// falls back to the template as shipped rather than writing something malformed.
+fn restamp_region_data_version(region: &[u8], data_version: i32) -> Option<Vec<u8>> {
+    use flate2::read::ZlibDecoder;
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+
+    const HEADER: usize = 8192;
+    const TAG: &[u8] = b" DataVersion";
+    if region.len() < HEADER {
+        return None;
+    }
+    // Rebuild the file: the header is rewritten as chunks move, since a patched chunk can
+    // change length (compression is not size-stable).
+    let mut header = region[..HEADER].to_vec();
+    let mut body: Vec<u8> = Vec::with_capacity(region.len());
+    let mut next_sector = (HEADER / 4096) as u32;
+
+    for i in 0..1024 {
+        let e = i * 4;
+        let offset = u32::from_be_bytes([0, region[e], region[e + 1], region[e + 2]]) as usize;
+        let sectors = region[e + 3];
+        if offset == 0 || sectors == 0 {
+            continue;
+        }
+        let start = offset * 4096;
+        if start + 5 > region.len() {
+            return None;
+        }
+        let len = u32::from_be_bytes([
+            region[start],
+            region[start + 1],
+            region[start + 2],
+            region[start + 3],
+        ]) as usize;
+        let compression = region[start + 4];
+        if compression != 2 || len == 0 || start + 4 + len > region.len() {
+            return None; // only zlib chunks are handled; anything else stays untouched
+        }
+        let payload = &region[start + 5..start + 4 + len];
+
+        let mut raw = Vec::new();
+        std::io::Read::read_to_end(&mut ZlibDecoder::new(payload), &mut raw).ok()?;
+        let pos = raw.windows(TAG.len()).position(|w| w == TAG)?;
+        let v = pos + TAG.len();
+        if v + 4 > raw.len() {
+            return None;
+        }
+        raw[v..v + 4].copy_from_slice(&data_version.to_be_bytes());
+
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+        std::io::Write::write_all(&mut enc, &raw).ok()?;
+        let packed = enc.finish().ok()?;
+
+        // Append at the next free sector and update this entry.
+        let chunk_len = packed.len() + 1;
+        let total = 4 + chunk_len;
+        let used_sectors = total.div_ceil(4096);
+        body.extend_from_slice(&(chunk_len as u32).to_be_bytes());
+        body.push(2);
+        body.extend_from_slice(&packed);
+        body.resize(body.len() + (used_sectors * 4096 - total), 0);
+
+        let off = next_sector.to_be_bytes();
+        header[e] = off[1];
+        header[e + 1] = off[2];
+        header[e + 2] = off[3];
+        header[e + 3] = u8::try_from(used_sectors).ok()?;
+        next_sector += used_sectors as u32;
+    }
+
+    let mut out = header;
+    out.extend_from_slice(&body);
+    Some(out)
 }
 
 /// Name of the bundled Java datapack that extends the Overworld build height.

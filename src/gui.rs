@@ -289,7 +289,8 @@ fn gui_create_world(save_path: String) -> Result<String, i32> {
 }
 
 fn create_new_world(base_path: &Path) -> Result<String, String> {
-    crate::world_utils::create_new_world(base_path)
+    // GUI has no version selector: the writer's default DataVersion.
+    crate::world_utils::create_new_world(base_path, crate::mc_version::default_data_version())
 }
 
 /// Adds localized area name to the world name in level.dat

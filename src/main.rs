@@ -407,7 +407,17 @@ fn run_cli() {
         // versioning, e.g. Meld passing a version-named dir) — write region/ directly into it
         // instead of nesting an auto-numbered "Arnis World N" subfolder (that's the GUI's job).
         let base_dir = args.path.clone().unwrap();
-        let world_path = match world_utils::create_world_at(&base_dir) {
+        // Resolve the target version BEFORE the world exists: the region template's
+        // chunks are stamped with it, and an unknown version must be refused here rather
+        // than after a world directory has been created.
+        let data_version = match mc_version::data_version_for(args.mc_version.as_deref()) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{} {}", "Error:".red().bold(), e);
+                std::process::exit(1);
+            }
+        };
+        let world_path = match world_utils::create_world_at(&base_dir, data_version) {
             Ok(path) => PathBuf::from(path),
             Err(e) => {
                 eprintln!("{} {}", "Error:".red().bold(), e);
