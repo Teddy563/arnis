@@ -101,7 +101,11 @@ pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, Str
 /// (with updated name, timestamp, and spawn position), and icon.png.
 ///
 /// Returns the full path to the newly created world directory.
-pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, String> {
+pub fn create_new_world(
+    base_path: &Path,
+    data_version: i32,
+    version_name: Option<&str>,
+) -> Result<String, String> {
     // Generate a unique world name with proper counter
     // Check for both "Arnis World X" and "Arnis World X: Location" patterns
     let mut counter: i32 = 1;
@@ -130,7 +134,7 @@ pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, S
     };
 
     let new_world_path: PathBuf = base_path.join(&unique_name);
-    scaffold_world(&new_world_path, &unique_name, data_version)
+    scaffold_world(&new_world_path, &unique_name, data_version, version_name)
 }
 
 /// Scaffold a Java world DIRECTLY at `world_path` — no "Arnis World N" subfolder, no uniqueness
@@ -139,13 +143,17 @@ pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, S
 /// intended world folder, so nesting another auto-numbered world inside it is unwanted — the caller
 /// owns naming/versioning via the directory it passes in. Overwrites any existing content at that
 /// path (the caller is expected to pick a fresh/intentional directory per generation).
-pub fn create_world_at(world_path: &Path, data_version: i32) -> Result<String, String> {
+pub fn create_world_at(
+    world_path: &Path,
+    data_version: i32,
+    version_name: Option<&str>,
+) -> Result<String, String> {
     let level_name = world_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Arnis World")
         .to_string();
-    scaffold_world(world_path, &level_name, data_version)
+    scaffold_world(world_path, &level_name, data_version, version_name)
 }
 
 /// Shared world-scaffold body (region template, level.dat, icon.png) used by both
@@ -154,6 +162,7 @@ fn scaffold_world(
     new_world_path: &Path,
     unique_name: &str,
     data_version: i32,
+    version_name: Option<&str>,
 ) -> Result<String, String> {
     // Create the new world directory structure
     fs::create_dir_all(new_world_path.join("region"))
@@ -194,6 +203,23 @@ fn scaffold_world(
                 "LevelName".to_string(),
                 Value::String(unique_name.to_string()),
             );
+
+            // Stamp the run's DataVersion into level.dat too.
+            //
+            // The template carries its own Data.Version block, and leaving it alone gives
+            // a world whose level.dat announces one version while its chunks are written
+            // at another — the chunks then look like they came from the future relative
+            // to the world that holds them. Minecraft decides its upgrade path from these
+            // fields, so they have to agree with what the writer actually emitted.
+            data.insert("DataVersion".to_string(), Value::Int(data_version));
+            if let Some(Value::Compound(ref mut ver)) = data.get_mut("Version") {
+                ver.insert("Id".to_string(), Value::Int(data_version));
+                if let Some(name) = version_name {
+                    ver.insert("Name".to_string(), Value::String(name.to_string()));
+                }
+                // A generated world is never a snapshot.
+                ver.insert("Snapshot".to_string(), Value::Byte(0));
+            }
 
             // Update LastPlayed to the current Unix time in milliseconds
             let current_time = std::time::SystemTime::now()

@@ -367,6 +367,7 @@ mod tests {
             crate::world_utils::create_new_world(
                 tmp.path(),
                 crate::mc_version::default_data_version(),
+                None,
             )
             .unwrap(),
         );
@@ -421,6 +422,7 @@ mod tests {
             crate::world_utils::create_new_world(
                 tmp.path(),
                 crate::mc_version::default_data_version(),
+                None,
             )
             .unwrap(),
         );
@@ -444,6 +446,7 @@ mod tests {
             crate::world_utils::create_new_world(
                 tmp.path(),
                 crate::mc_version::default_data_version(),
+                None,
             )
             .unwrap(),
         );
@@ -503,6 +506,7 @@ mod tests {
             crate::world_utils::create_new_world(
                 tmp.path(),
                 crate::mc_version::default_data_version(),
+                None,
             )
             .unwrap(),
         );
