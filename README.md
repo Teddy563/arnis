@@ -4,7 +4,7 @@
 
 Real-world Minecraft worlds, tuned for large-scale parallel generation.
 
-A fork of [Arnis](https://github.com/louis-e/arnis) by louis-e, tuned for large-scale parallel generation with the [Meld](https://github.com/Teddy563/meld) orchestrator.
+A fork of [Arnis](https://github.com/louis-e/arnis) by louis-e, tuned for large-scale parallel generation with [Meld](https://github.com/Teddy563/meld), an orchestrator that runs Arnis at scale over a whole region.
 
 [![CI Build Status](https://github.com/louis-e/arnis/actions/workflows/ci-build.yml/badge.svg)](https://github.com/louis-e/arnis/actions) [<img alt="GitHub Release" src="https://img.shields.io/github/v/release/louis-e/arnis" />](https://github.com/louis-e/arnis/releases) [<img alt="GitHub Downloads (all assets, all releases" src="https://img.shields.io/github/downloads/louis-e/arnis/total" />](https://github.com/louis-e/arnis/releases) [![Download here](https://img.shields.io/badge/Download-here-green)](https://github.com/louis-e/arnis/releases) [![Discord](https://img.shields.io/discord/1326192999738249267?label=Discord&color=%237289da)](https://discord.gg/mA2g69Fhxq)
 
@@ -90,7 +90,7 @@ arnis --output-dir ./world --bbox <bbox> --terrain --seed 42
 arnis --output-dir ./world --bbox <bbox> --terrain --caves
 ```
 
-**Cave asset packs.** A `cave-pack/` directory next to the executable (or `--cave-asset-pack <DIR>`) supplies Sponge `.schem` formations — ice spikes, dripstone columns, amethyst clusters, clay pool basins — stamped onto cave floors and ceilings, themed by biome zone, with block states preserved and rotated. Formations sink into the ground, clip safely against walls, and never touch fluids. Without the directory, caves generate fully with procedural decoration only.
+**Cave asset packs.** A `cave-pack/` directory next to the executable (or `--cave-asset-pack <DIR>`) supplies Sponge `.schem` formations, ice spikes, dripstone columns, amethyst clusters, clay pool basins, stamped onto cave floors and ceilings, themed by biome zone, with block states preserved and rotated. Formations sink into the ground, clip safely against walls, and never touch fluids. Without the directory, caves generate fully with procedural decoration only.
 
 **Cave biome mix (`--cave-biomes <list>`).** Per-theme amounts as `name=percent` pairs: 100 = the default share, 0 = theme off, 200 ≈ double its area. The percent shifts that theme's noise threshold on a log2 curve, so the field stays a pure function of seed + position (seam-safety unaffected) and omitting the flag reproduces the default distribution byte-for-byte. Depth/terrain gates always apply (volcanic bottom-only, deep dark below the deepslate line, ice under mountains, coral in water pools).
 
