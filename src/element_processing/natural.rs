@@ -145,6 +145,16 @@ pub fn generate_natural(
                 return;
             };
 
+            // Resolve the fill FIRST (it is cached, so this costs nothing extra). A polygon
+            // past the fill budget comes back empty, and painting its edge anyway is what
+            // produced the reported "sand outline around untouched ground": a border with
+            // nothing inside reads as a bug, where no border at all just leaves the area to
+            // land cover, which is what actually fills it.
+            let filled_area = flood_fill_cache.get_or_compute(way, args.timeout.as_ref());
+            if filled_area.is_empty() && way.nodes.len() > 2 {
+                return;
+            }
+
             // Process natural nodes to fill the area
             for node in &way.nodes {
                 let x: i32 = node.x;
@@ -187,10 +197,8 @@ pub fn generate_natural(
                 previous_node = Some((x, z));
             }
 
-            // If there are natural nodes, flood-fill the area using cache
+            // If there are natural nodes, paint the area resolved above
             if corner_count > 0 {
-                let filled_area = flood_fill_cache.get_or_compute(way, args.timeout.as_ref());
-
                 let trees_ok_to_generate: Vec<TreeType> = {
                     let mut trees: Vec<TreeType> = vec![];
                     if let Some(leaf_type) = element.tags().get("leaf_type") {

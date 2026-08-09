@@ -600,6 +600,24 @@ fn is_light_transparent(name: &str) -> bool {
         "amethyst_cluster",
         "hanging_roots",
         "glow_lichen",
+        // Crops. Missing here, they were treated as OPAQUE, so a column's skylight scan
+        // stopped AT the crop and wrote 0 into the crop's own cell. With isLightOn set,
+        // the client believes it: the crop renders black and is destroyed on the first
+        // random tick, because a crop needs light 8. Measured before the fix: 3,211,825
+        // of 3,211,825 crop cells at SkyLight 0.
+        "wheat",
+        "carrots",
+        "potatoes",
+        "beetroots",
+        "torchflower_crop",
+        "pitcher_crop",
+        "melon_stem",
+        "pumpkin_stem",
+        "attached_melon_stem",
+        "attached_pumpkin_stem",
+        "cocoa",
+        "big_dripleaf",
+        "big_dripleaf_stem",
         "sweet_berry_bush",
         "cactus",
         "bamboo",
@@ -1289,6 +1307,43 @@ mod tests {
             assert!(!m.contains_key("SkyLight"));
             assert!(!m.contains_key("BlockLight"));
         }
+    }
+
+    #[test]
+    fn a_crop_under_open_sky_is_baked_fully_lit() {
+        // Regression: crops were absent from the light-transparency list, so the skylight
+        // column scan treated wheat as opaque and stopped AT it, writing 0 into the crop's
+        // own cell. With isLightOn set, the client believes that: the crop renders black
+        // and Minecraft destroys it (a crop needs light 8). Reported as "the crops would be
+        // black and then break"; measured as 3,211,825 of 3,211,825 crop cells at SkyLight 0.
+        use crate::block_definitions::{FARMLAND, WHEAT};
+        let mut c = ChunkToModify::default();
+        for x in 0..16 {
+            for z in 0..16 {
+                c.set_block(x, -62, z, FARMLAND);
+                c.set_block(x, -61, z, WHEAT);
+            }
+        }
+        let chunk = Chunk {
+            sections: c.sections().collect(),
+            x_pos: 0,
+            z_pos: 0,
+            is_light_on: 0,
+            other: FnvHashMap::default(),
+        };
+        let nbt = create_chunk_nbt(&chunk, true, &plains_biome());
+
+        // Y -61 lives in section index 0 of a -64-based world, cell (0, 3, 0).
+        let secs = sections(&nbt);
+        let Value::Compound(m) = &secs[0] else {
+            panic!("no section 0")
+        };
+        let Value::ByteArray(sky) = &m["SkyLight"] else {
+            panic!("section 0 has no SkyLight")
+        };
+        let idx = 3 * 256; // y=3 (Y -61) at x=0, z=0
+        let nib = (sky[idx / 2] as u8) & 0x0F;
+        assert_eq!(nib, 15, "the crop cell must be baked at full skylight");
     }
 
     #[test]

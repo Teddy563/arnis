@@ -1175,6 +1175,9 @@ fn gui_start_generation(
                 loot_table: None,
                 dump_loot_table: None,
                 props: "all".to_string(),
+                // Same default as the CLI: props are fixed-size schematics, so they are
+                // skipped on a world scaled below this (see PropSet::for_scale).
+                props_min_scale: 0.35,
                 gamemode: crate::args::GameMode::Creative,
                 world_time: 6000,
                 map_item: false,

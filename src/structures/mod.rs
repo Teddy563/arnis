@@ -87,6 +87,26 @@ impl PropSet {
         }
         PropSet(bits)
     }
+
+    /// The set to actually place for this run: [`PropSet::parse`], minus everything when
+    /// the world is scaled down past `min_scale`.
+    ///
+    /// Props are bundled schematics at a fixed block size, so scaling the world does not
+    /// scale them: at 1:10 a parked boat or crane keeps its real block footprint while the
+    /// city around it shrank tenfold, and it reads as a monument. Skipping them below the
+    /// threshold is the honest default; `--props-min-scale 0` places them at any scale.
+    pub fn for_scale(spec: &str, scale: f64, min_scale: f64) -> PropSet {
+        let set = PropSet::parse(spec);
+        if min_scale > 0.0 && scale < min_scale && set.0 != 0 {
+            println!(
+                "Props skipped: schematic props do not scale down, and this world is 1:{:.0} \
+                 (below --props-min-scale {min_scale}). Pass --props-min-scale 0 to place them anyway.",
+                1.0 / scale.max(1e-6)
+            );
+            return PropSet::NONE;
+        }
+        set
+    }
 }
 
 impl Default for PropSet {

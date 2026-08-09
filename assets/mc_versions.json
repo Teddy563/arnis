@@ -8,6 +8,15 @@
     "To add a version: generate or open a world in it, read Data.Version.Name and",
     "Data.Version.Id out of level.dat, and paste them here with the path you read.",
     "",
+    "BETTER SOURCE (used for the rows added 2026-08-09): every Minecraft client jar carries",
+    "`version.json` at its root, holding Mojang's own numbers for that release:",
+    "    { \"id\": \"26.2\", \"world_version\": 4903,",
+    "      \"pack_version\": { \"data_major\": 107, \"data_minor\": 1, ... } }",
+    "`world_version` IS the DataVersion stamped into chunks and `pack_version.data*` IS the",
+    "data pack format that version loads. Reading them out of the jar is exact and needs no",
+    "world. It was cross-checked against the rows verified earlier from real level.dat files",
+    "(1.21.5 -> 4325, 26.1.2 -> 4790 and format 101.1); they matched, so the method holds.",
+    "",
     "data_version    -> written into every chunk as DataVersion",
     "extended_height -> min_y/height in dimension_type; 1.17+ only",
     "chunk_layout    -> 'flat' = 1.18+ ; 'legacy' = pre-1.18 (a separate writer path)",
@@ -67,7 +76,49 @@
       "extended_height": true,
       "chunk_layout": "flat",
       "verified_from": "level.dat of ModrinthApp profile 'Mineplus Visuals', 2026-08-05",
-      "datapack_schema": "legacy"
+      "datapack_schema": "legacy",
+      "datapack_format": 71.0,
+      "datapack_format_verified_from": "version.json of the 1.21.5 client jar (pack_version.data = 71), 2026-08-09"
+    },
+    {
+      "id": "1.21.10",
+      "data_version": 4556,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "version.json of .minecraft/versions/1.21.10/1.21.10.jar (world_version), 2026-08-09",
+      "datapack_schema": "legacy",
+      "datapack_format": 88.0,
+      "datapack_format_verified_from": "same version.json, pack_version.data_major/minor = 88/0"
+    },
+    {
+      "id": "1.21.11",
+      "data_version": 4671,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "version.json of the 1.21.11 client jar under ModrinthApp profile 'Vulkan Optimized', 2026-08-09",
+      "datapack_schema": "legacy",
+      "datapack_format": 94.1,
+      "datapack_format_verified_from": "same version.json, pack_version.data_major/minor = 94/1 \u2014 inside the pack's overlay_attributes range (90-100)"
+    },
+    {
+      "id": "26.1",
+      "data_version": 4786,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "version.json of ModrinthApp/meta/versions/26.1-0.19.3/26.1-0.19.3.jar, 2026-08-09",
+      "datapack_schema": "modern",
+      "datapack_format": 101.1,
+      "datapack_format_verified_from": "same version.json, pack_version.data_major/minor = 101/1"
+    },
+    {
+      "id": "26.1.1",
+      "data_version": 4788,
+      "extended_height": true,
+      "chunk_layout": "flat",
+      "verified_from": "version.json of ModrinthApp/meta/versions/26.1.1-0.19.3/26.1.1-0.19.3.jar, 2026-08-09",
+      "datapack_schema": "modern",
+      "datapack_format": 101.1,
+      "datapack_format_verified_from": "same version.json, pack_version.data_major/minor = 101/1"
     },
     {
       "id": "26.1.2",
@@ -77,7 +128,7 @@
       "verified_from": "level.dat of the RomaniaSMP server world, 2026-08-05",
       "datapack_schema": "modern",
       "datapack_format": 101.1,
-      "datapack_format_verified_from": "pack.mcmeta of collective-26.1.2-8.32.jar, a data pack the 26.1.2 client loads successfully (see logs/latest.log), 2026-08-06"
+      "datapack_format_verified_from": "pack.mcmeta of collective-26.1.2-8.32.jar, a data pack the 26.1.2 client loads successfully (see logs/latest.log), 2026-08-06; re-confirmed by version.json of the 26.1.2 client jar (pack_version.data 101/1), 2026-08-09"
     },
     {
       "id": "26.2",
@@ -86,7 +137,8 @@
       "chunk_layout": "flat",
       "verified_from": "level.dat of ModrinthApp profile 'Fabulously Optimized', 2026-08-05",
       "datapack_schema": "modern",
-      "note": "26.x datapack schema, but no VERIFIED decimal pack_format yet \u2014 extended height is refused rather than guessing one."
+      "datapack_format": 107.1,
+      "datapack_format_verified_from": "version.json of ModrinthApp/meta/versions/26.2-0.19.3/26.2-0.19.3.jar, pack_version.data_major/minor = 107/1, 2026-08-09"
     }
   ]
 }

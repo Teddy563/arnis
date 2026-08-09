@@ -425,6 +425,13 @@ pub struct Args {
     #[arg(long = "props", default_value = "all")]
     pub props: String,
 
+    /// Smallest world scale at which schematic props are placed. Props are fixed-size
+    /// builds (a boat is a boat), so on a scaled-down world they keep their block size
+    /// while everything around them shrinks — at 1:10 a parked crane is the size of a
+    /// district. Below this scale they are skipped. Set 0 to place them at any scale.
+    #[arg(long = "props-min-scale", default_value_t = 0.35)]
+    pub props_min_scale: f64,
+
     /// Player game mode written into the generated world's level.dat (Java).
     #[arg(long, value_enum, default_value_t = GameMode::Creative)]
     pub gamemode: GameMode,

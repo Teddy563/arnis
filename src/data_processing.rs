@@ -447,7 +447,11 @@ pub fn generate_world_with_options(
 
     // Set ground reference in the editor to enable elevation-aware block placement
     editor.set_ground(Arc::clone(&ground));
-    editor.set_props(crate::structures::PropSet::parse(&args.props));
+    // Resolved once (it prints when the scale gate drops props) and reused by the tile
+    // workers below, so a tiled run doesn't repeat the notice per tile.
+    let prop_set =
+        crate::structures::PropSet::for_scale(&args.props, args.scale, args.props_min_scale);
+    editor.set_props(prop_set);
 
     println!("{} Generating area...", "[5/7]".bold());
     emit_gui_progress_update(20.0, "Generating area...");
@@ -640,7 +644,7 @@ pub fn generate_world_with_options(
                     let mut tile_editor = WorldEditor::new(PathBuf::new(), &tile_xzbbox, llbbox);
                     tile_editor.set_ground(Arc::clone(&ground));
                     tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
-                    tile_editor.set_props(crate::structures::PropSet::parse(&args.props));
+                    tile_editor.set_props(prop_set);
 
                     let mut tile_subway_points: Vec<(i32, i32)> = Vec::new();
                     let mut tile_tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();

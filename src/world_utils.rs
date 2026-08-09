@@ -465,6 +465,9 @@ fn install_datapack_files(
 /// must not invent. Only the human-readable description is rewritten, so a user opening
 /// the world's datapack list can see what range it declares. The range is asserted
 /// against the checked-in envelope so template and table can never silently diverge.
+///
+/// One conditional edit: at pack format 82+ the overlay `formats` key is deprecated, so for
+/// a target verified to be at or above that it is dropped (see below).
 fn pack_mcmeta_for(
     template: &[u8],
     profile: &crate::height_profile::HeightProfile,
@@ -506,6 +509,26 @@ fn pack_mcmeta_for(
             ));
         }
         pack.insert("description".into(), description.into());
+    }
+    // Pack format 82 deprecated the overlay `formats` key in favour of
+    // `min_format`/`max_format` — a 1.21.9+ server logs
+    //   Overlay "overlay_attributes" key formats is deprecated starting from pack format 82
+    // on every start. The template carries BOTH spellings, so for a target we know sits at
+    // 82 or above we drop the old one and the warning goes with it. Targets below 82 (and
+    // any target whose format we have not verified) keep `formats`, because that is the
+    // only overlay selector those versions understand.
+    if caps.datapack_format.is_some_and(|f| f >= 82.0) {
+        if let Some(entries) = doc
+            .get_mut("overlays")
+            .and_then(|o| o.get_mut("entries"))
+            .and_then(|e| e.as_array_mut())
+        {
+            for entry in entries.iter_mut() {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.remove("formats");
+                }
+            }
+        }
     }
     serde_json::to_vec_pretty(&doc).map_err(|e| format!("failed to serialise pack.mcmeta: {e}"))
 }

@@ -10,6 +10,52 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.6] - 2026-08-10
+
+Field reports, chased to root causes. Three real bugs — crops destroyed by baked lighting,
+large map areas rendering as an outline around untouched ground, and a datapack warning on
+1.21.9+ servers — plus four newly verified Minecraft versions. Everything here is a fix or
+an additive flag; defaults are otherwise unchanged.
+
+### Fixed
+- **Baked lighting destroyed every crop it lit.** Crops were missing from the
+  light-transparency list, so the skylight column scan treated wheat as an opaque block,
+  stopped at it, and wrote `SkyLight 0` into the crop's own cell. With `isLightOn` set, the
+  client believes that: the crop renders black, then Minecraft destroys it, because a crop
+  needs light 8. Measured on a real farmland world before the fix: **3,211,825 of
+  3,211,825 crop cells at SkyLight 0**; after, they bake at 15. Reported as "the crops
+  would be black and then break". The same omission covered melon/pumpkin stems, cocoa,
+  torchflower and pitcher crops, and big dripleaf, all now transparent.
+- **Large OSM areas drew an outline with nothing inside.** `flood_fill_area` refused any
+  polygon whose *bounding box* passed 25M blocks, but the callers paint the polygon's edge
+  before they ask for the fill — so a big `natural=sand` dune field at 1:1 came out as a
+  sand border around dirt and gravel. Oversized polygons now go through a scanline fill
+  that needs no bitmap (memory is the output alone), the budget counts the cells actually
+  covered rather than the bounding box, and `natural` skips a polygon's edge entirely when
+  its fill did not fit — no border is better than a border around nothing. A big-bbox,
+  small-area shape (a river bank, an L, a sparse coastline) now fills where it used to be
+  dropped for its bounding box alone.
+- **`pack.mcmeta` warning on 1.21.9 and newer.** Pack format 82 deprecated the overlay
+  `formats` key in favour of `min_format`/`max_format`, and servers logged
+  `Overlay "overlay_attributes" key formats is deprecated starting from pack format 82` on
+  every start. For a target whose format is verified to be 82 or above, the deprecated key
+  is now dropped; older targets keep it, since it is the only overlay selector they
+  understand.
+
+### Added
+- **`--props-min-scale <SCALE>`** (default `0.35`). Schematic props are fixed-size builds,
+  so a scaled-down world does not scale them: at 1:10 a parked crane is the size of a
+  district. Below this scale they are skipped, with one line saying so. `0` places them at
+  any scale, and an explicit `--props` list is still honoured above the threshold.
+- **Verified rows for 1.21.10 (4556), 1.21.11 (4671), 26.1 (4786) and 26.1.1 (4788)**, and
+  the missing **26.2 datapack format (107.1)** — so extended build height works on 26.2
+  instead of being refused. Every number was read out of Mojang's own `version.json` inside
+  the client jar (`world_version` and `pack_version.data_*`), which is exact and needs no
+  generated world; the method was cross-checked against the rows previously verified from
+  real `level.dat` files (1.21.5 → 4325, 26.1.2 → 4790 and format 101.1) and matched.
+  `assets/mc_versions.json` documents the source per row, and a test now asserts every
+  26.x row carries a verified pack format.
+
 ## [3.0.5] - 2026-08-06
 
 Configurable, version-aware build height. A world's vertical range is now derived from

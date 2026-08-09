@@ -196,10 +196,15 @@ mod tests {
 
     #[test]
     fn table_parses_and_has_the_verified_rows() {
-        // Read out of real level.dat files on 2026-08-05; see `verified_from` in the JSON.
+        // Read out of real level.dat files (2026-08-05) and Mojang's own version.json inside
+        // the client jars (2026-08-09); see `verified_from` in the JSON.
         for (id, dv) in [
             ("1.21.4", 4189),
             ("1.21.5", 4325),
+            ("1.21.10", 4556),
+            ("1.21.11", 4671),
+            ("26.1", 4786),
+            ("26.1.1", 4788),
             ("26.1.2", 4790),
             ("26.2", 4903),
         ] {
@@ -222,6 +227,22 @@ mod tests {
                     v.verified_from.is_some(),
                     "{} carries a DataVersion with no verified_from — that is exactly the \
                      value we must never write from memory",
+                    v.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_modern_row_carries_a_verified_pack_format() {
+        // A Modern row without one refuses extended height at generation time, which is the
+        // failure sewer hit on 26.2. Every 26.x row we ship now has a verified number.
+        for v in &table().versions {
+            if v.datapack_schema == DatapackSchema::Modern {
+                assert!(
+                    v.datapack_format.is_some(),
+                    "{} uses the 26.x schema but has no verified pack_format, so extended \
+                     height would be refused for it",
                     v.id
                 );
             }
