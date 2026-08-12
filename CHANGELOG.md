@@ -10,7 +10,7 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [3.0.7] - unreleased
+## [3.0.7] - 2026-08-13
 
 Upstream port wave 1: everything the fork is taking from `louis-e/arnis`
 `af521c9..17cdd62` (upstream v3.0.0 → 2026-08-10). Landed in batches; every batch except
