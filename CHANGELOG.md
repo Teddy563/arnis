@@ -13,11 +13,42 @@ Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier e
 ## [3.0.7] - unreleased
 
 Upstream port wave 1: everything the fork is taking from `louis-e/arnis`
-`af521c9..17cdd62` (upstream v3.0.0 → 2026-08-10). Landing in batches; every batch up to
-and including the performance work is gated on producing a **byte-identical render** —
-same world, same `block_hash`, just faster or safer. Triage of all 31 upstream commits,
-with the reason for each take/adapt/skip, lives in
+`af521c9..17cdd62` (upstream v3.0.0 → 2026-08-10). Landed in batches; every batch except
+the last is gated on producing a **byte-identical render** — same world, same
+`block_hash`, just faster or safer. Only two changes here are meant to be visible, and
+each was attributed to its own commit by building it alone. Triage of all 31 upstream
+commits, with the reason for each take/adapt/skip, lives in
 `.light-meld-docs/UPSTREAM-TRIAGE.tsv`.
+
+### Fixed
+- **Spawn Y was wrong in every merged world.** The post-generation spawn pass rebuilt its
+  own coordinate box from the bbox text with no master origin, so for any cell whose bbox
+  is not its origin — which is every cell after the first in a Meld run — the ground lookup
+  addressed the wrong part of the grid. It now takes the same box the rest of the pipeline
+  uses. Measured on an origin-offset cell: `SpawnY` −53 → −55, blocks untouched.
+- **A wind generator that isn't a wind turbine no longer gets a 150 m tower.** Any
+  `power=generator` + `generator:source=wind` placed the full freestanding turbine
+  schematic, so the two 3.2 m vertical-axis rotors mounted at level 2 of the Eiffel Tower
+  became two towers. Skipped when the tags say mounted or micro: positive `min_height` or
+  `level`, `location=roof|rooftop`, `generator:type=vertical_axis`, or `rotor:diameter`
+  under 10 m. Real wind farms are untouched — Fântânele-Cogealac renders to the same hash
+  before and after.
+- **Pedestrian bridges stopped rendering as motorway viaducts.** A module deck is a road
+  deck: wide, pillared, load-bearing. A bridge group made only of footways, cycleways,
+  paths, bridleways or steps still got one whenever its style resolved to Beam. The group
+  now needs at least one vehicular member. Downscaled worlds (`--scale ≤ 0.3`) keep their
+  flat one-block deck exactly as before.
+- **A corrupt schematic now fails by name instead of stamping in the wrong place.** Sponge
+  requires exactly `Width*Height*Length` palette indices; a stream that ran long or short
+  folded the surplus into out-of-range coordinates. Checked in all three decoders this fork
+  carries, including the cave-pack loader — the one that reads a user-droppable directory.
+  Volumes past `i32::MAX` are rejected up front. Every bundled asset was swept before the
+  check was made fatal: 479 tree schematics, 113 cave schematics in 18 families, and the
+  prop models, with zero trips.
+- **The tiled path grew a list nothing read under memory pressure.** With region eviction
+  active the subway carve already runs in-tile, and the post-merge carve is skipped — but
+  the point list was still accumulated for the whole world, on the exact path chosen
+  because memory is tight.
 
 ### Performance
 - **Relation ring assembly is no longer cubic.** `merge_way_segments` tracked merged
@@ -31,6 +62,13 @@ with the reason for each take/adapt/skip, lives in
   once, unioned for the region range, then tested per tile. Same tiles selected.
 - **Hot tag tests stopped allocating.** Three comparisons (park relations, the castle wall
   pick, the shelter amenity) built a throwaway `String` per call just to compare it.
+- **Column probes resolve their chunk once.** The tree canopy's roof check asked for one
+  block per Y level, redoing the region/chunk/section lookups at every step; it now walks
+  the resolved chunk's sections from the top. The Y range is intersected with the *runtime*
+  world bounds rather than clamped end-by-end against the vanilla constants — clamping each
+  end folds a fully out-of-world range onto a boundary block and reports a hit nobody asked
+  for, and the constants would blind the walk to whole sections under a tall or lowered
+  height profile.
 
 ### Changed
 - `serde` 1.0.228 → 1.0.229, and a `quinn-proto` security bump from the upstream dependabot
