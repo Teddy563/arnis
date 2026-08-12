@@ -245,7 +245,7 @@ fn load_cave_schem(gz_bytes: &[u8]) -> Result<CaveSchem, String> {
         .unwrap_or(root_c);
 
     let w = short_field(scm, "Width")?;
-    let _nominal_h = short_field(scm, "Height")?; // recomputed from non-air voxels after normalize
+    let nominal_h = short_field(scm, "Height")?; // recomputed from non-air voxels after normalize
     let l = short_field(scm, "Length")?;
     let (palette_v, data_v) = match scm.get("Blocks").and_then(as_compound) {
         Some(blocks) => (blocks.get("Palette"), blocks.get("Data")),
@@ -306,6 +306,21 @@ fn load_cave_schem(gz_bytes: &[u8]) -> Result<CaveSchem, String> {
         _ => return Err("missing BlockData".into()),
     };
     let indices = decode_varints(&data_bytes);
+
+    // Sponge requires exactly Width*Height*Length entries. This loader reads a user-droppable
+    // cave-pack directory, so it is the one that actually faces untrusted files: a stream that
+    // runs long or short folds into out-of-range coordinates instead of failing.
+    let volume = i64::from(w) * i64::from(nominal_h) * i64::from(l);
+    if volume > i64::from(i32::MAX) {
+        return Err("volume exceeds the supported range".into());
+    }
+    if indices.len() as i64 != volume {
+        return Err(format!(
+            "BlockData has {} entries, expected {volume}",
+            indices.len()
+        ));
+    }
+
     let wl = w * l;
     let mut voxels = Vec::new();
     let mut solid_count = 0usize;

@@ -443,6 +443,19 @@ pub fn load_structure(gz_bytes: &[u8]) -> Result<StructureSchematic, String> {
     };
     let indices = decode_varints(&data_bytes);
 
+    // Sponge requires exactly Width*Height*Length entries. A stream that runs long or short is
+    // corrupt; without this the surplus folds into out-of-range coordinates instead of failing.
+    let volume = i64::from(width) * i64::from(height) * i64::from(length);
+    if volume > i64::from(i32::MAX) {
+        return Err("schem: volume exceeds the supported range".into());
+    }
+    if indices.len() as i64 != volume {
+        return Err(format!(
+            "schem: BlockData has {} entries, expected {volume}",
+            indices.len()
+        ));
+    }
+
     let wl = width * length;
     let mut voxels = Vec::new();
     for (i, &idx) in indices.iter().enumerate() {
@@ -718,6 +731,46 @@ pub(crate) fn place_scatter_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Gzipped Sponge v2 with `entries` single-byte palette indices, all sandstone.
+    fn schem_bytes(width: i16, height: i16, length: i16, entries: usize) -> Vec<u8> {
+        use std::io::Write;
+        let mut palette = HashMap::new();
+        palette.insert("minecraft:sandstone".to_string(), Value::Int(0));
+        let mut root = HashMap::new();
+        root.insert("Width".to_string(), Value::Short(width));
+        root.insert("Height".to_string(), Value::Short(height));
+        root.insert("Length".to_string(), Value::Short(length));
+        root.insert("Palette".to_string(), Value::Compound(palette));
+        root.insert(
+            "BlockData".to_string(),
+            Value::ByteArray(fastnbt::ByteArray::new(vec![0i8; entries])),
+        );
+        let nbt = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+        let mut out = Vec::new();
+        let mut enc = flate2::write::GzEncoder::new(&mut out, flate2::Compression::fast());
+        enc.write_all(&nbt).unwrap();
+        enc.finish().unwrap();
+        out
+    }
+
+    // BlockData must match the declared volume. A stream that runs long or short would
+    // otherwise fold into out-of-range Y instead of failing.
+    #[test]
+    fn block_data_length_must_match_the_volume() {
+        let p = load_structure(&schem_bytes(2, 3, 2, 12)).expect("exact volume loads");
+        for &(_, y, _, _) in &p.voxels {
+            assert!((0..3).contains(&y), "y {y} outside the declared height");
+        }
+        assert!(
+            load_structure(&schem_bytes(2, 3, 2, 13)).is_err(),
+            "too long"
+        );
+        assert!(
+            load_structure(&schem_bytes(2, 3, 2, 11)).is_err(),
+            "too short"
+        );
+    }
 
     #[test]
     fn varint_decode() {
