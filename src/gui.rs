@@ -519,7 +519,6 @@ pub fn update_player_spawn_y_after_generation(
     xzbbox: &XZBBox,
     ground: &Ground,
 ) -> Result<(), String> {
-
     // Read the current level.dat file to get existing spawn coordinates
     let level_path = PathBuf::from(world_path).join("level.dat");
     if !level_path.exists() {
