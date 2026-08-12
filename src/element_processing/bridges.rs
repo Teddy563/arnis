@@ -15,6 +15,13 @@ const DUAL_CARRIAGEWAY_MAX_DISTANCE_BLOCKS: f32 = 12.0;
 const DUAL_CARRIAGEWAY_HEADING_TOLERANCE_DEG: f32 = 20.0;
 const CENTERLINE_SAMPLE_LIMIT: usize = 5;
 
+fn is_non_vehicular_bridge_highway(highway: &str) -> bool {
+    matches!(
+        highway,
+        "footway" | "pedestrian" | "path" | "cycleway" | "bridleway" | "steps"
+    )
+}
+
 #[derive(Clone, Copy)]
 pub struct BridgeMemberInfo {
     pub deck_y: i32,
@@ -346,10 +353,21 @@ impl BridgeStructureMap {
                     1.0,
                 )
             };
+            // A module deck is a road deck: wide, pillared, load-bearing. A group made
+            // only of footways, cycleways or steps gets the slimmer procedural deck.
+            let group_has_vehicular_member = group_indices.iter().any(|&i| {
+                let highway = bridge_ways[i]
+                    .tags
+                    .get("highway")
+                    .map(String::as_str)
+                    .unwrap_or("");
+                !is_non_vehicular_bridge_highway(highway)
+            });
             // Modular decks only at full detail; downscaled (<=0.3) bridges keep
             // the fork's flat 1-block deck instead of a fat pillared module.
             let structure_has_module = !low_detail
                 && group_style == BridgeStyle::Beam
+                && group_has_vehicular_member
                 && group_indices.iter().any(|&i| {
                     crate::element_processing::bridge_modules::pick_module_index(
                         member_range(i),
