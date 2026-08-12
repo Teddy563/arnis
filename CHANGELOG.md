@@ -10,6 +10,39 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.7] - unreleased
+
+Upstream port wave 1: everything the fork is taking from `louis-e/arnis`
+`af521c9..17cdd62` (upstream v3.0.0 → 2026-08-10). Landing in batches; every batch up to
+and including the performance work is gated on producing a **byte-identical render** —
+same world, same `block_hash`, just faster or safer. Triage of all 31 upstream commits,
+with the reason for each take/adapt/skip, lives in
+`.light-meld-docs/UPSTREAM-TRIAGE.tsv`.
+
+### Performance
+- **Relation ring assembly is no longer cubic.** `merge_way_segments` tracked merged
+  segments in a `Vec<usize>` and called `contains()` from inside the nested pair loop, so
+  an *n*-segment relation paid an O(n) scan per pair on top of the O(n²) search — and the
+  function recurses. A per-index bool marker makes the bookkeeping O(1) with the same merge
+  order and provably identical output. Every multipolygon we assemble benefits: coastlines,
+  the Danube, building outer/inner rings, the OSM water override.
+- **Tile assignment memoizes relation member AABBs.** Assigning one relation to tiles
+  re-walked every member way's nodes once per candidate tile. Member boxes are now computed
+  once, unioned for the region range, then tested per tile. Same tiles selected.
+- **Hot tag tests stopped allocating.** Three comparisons (park relations, the castle wall
+  pick, the shelter amenity) built a throwaway `String` per call just to compare it.
+
+### Changed
+- `serde` 1.0.228 → 1.0.229, and a `quinn-proto` security bump from the upstream dependabot
+  group.
+- Nix: the `dda-voxelize-0.2.0-alpha.1` git dependency is hash-pinned (our flake could not
+  build reproducibly without it) and `flake.lock` follows upstream's nixpkgs bump.
+
+### Added
+- `NOTICE` — the Apache-2.0 attribution file. We redistribute built binaries of this fork,
+  so section 4 requires it. Upstream text verbatim plus a short section naming this
+  repository as a derivative work.
+
 ## [3.0.6] - 2026-08-10
 
 Field reports, chased to root causes. Three real bugs — crops destroyed by baked lighting,
