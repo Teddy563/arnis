@@ -9,6 +9,36 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::osm_parser::{ProcessedElement, ProcessedNode, ProcessedWay};
 use crate::world_editor::WorldEditor;
+use std::collections::HashMap;
+
+/// True for wind generators the freestanding turbine schematic misrepresents:
+/// mounted on a structure or micro scale, like the rooftop units on the Eiffel Tower.
+fn is_mounted_or_micro_turbine(tags: &HashMap<String, String>) -> bool {
+    let positive_number = |key: &str| {
+        tags.get(key)
+            .and_then(|v| v.trim_end_matches('m').trim().parse::<f64>().ok())
+            .is_some_and(|v| v > 0.0)
+    };
+    if positive_number("min_height") || positive_number("level") {
+        return true;
+    }
+    if tags
+        .get("location")
+        .is_some_and(|l| l == "roof" || l == "rooftop")
+    {
+        return true;
+    }
+    // Vertical axis turbines are small urban units, not the classic three blade tower
+    if tags
+        .get("generator:type")
+        .is_some_and(|t| t == "vertical_axis")
+    {
+        return true;
+    }
+    tags.get("rotor:diameter")
+        .and_then(|v| v.trim_end_matches('m').trim().parse::<f64>().ok())
+        .is_some_and(|d| d < 10.0)
+}
 
 /// Generate power infrastructure from way elements (power lines)
 pub fn generate_power(editor: &mut WorldEditor, element: &ProcessedElement) {
@@ -53,7 +83,8 @@ pub fn generate_power(editor: &mut WorldEditor, element: &ProcessedElement) {
             "tower" => generate_power_tower(editor, element),
             "pole" => generate_power_pole(editor, element),
             "generator"
-                if element.tags().get("generator:source").map(|s| s.as_str()) == Some("wind") =>
+                if element.tags().get("generator:source").map(|s| s.as_str()) == Some("wind")
+                    && !is_mounted_or_micro_turbine(element.tags()) =>
             {
                 if let ProcessedElement::Way(way) = element {
                     if !way.nodes.is_empty() {
@@ -107,7 +138,8 @@ pub fn generate_power_nodes(editor: &mut WorldEditor, node: &ProcessedNode) {
             "tower" => generate_power_tower_from_node(editor, node),
             "pole" => generate_power_pole_from_node(editor, node),
             "generator"
-                if node.tags.get("generator:source").map(|s| s.as_str()) == Some("wind") =>
+                if node.tags.get("generator:source").map(|s| s.as_str()) == Some("wind")
+                    && !is_mounted_or_micro_turbine(&node.tags) =>
             {
                 crate::structures::windturbine::place(editor, node.x, node.z);
             }
@@ -399,5 +431,46 @@ fn generate_power_line(editor: &mut WorldEditor, way: &ProcessedWay) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod turbine_tests {
+    use super::*;
+
+    fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    // The two 3.2m rotors mounted at level 2 of the Eiffel Tower
+    #[test]
+    fn eiffel_tower_micro_turbines_are_skipped() {
+        let t = tags(&[
+            ("power", "generator"),
+            ("generator:source", "wind"),
+            ("generator:type", "vertical_axis"),
+            ("min_height", "127"),
+            ("level", "2"),
+            ("rotor:diameter", "3.2"),
+        ]);
+        assert!(is_mounted_or_micro_turbine(&t));
+    }
+
+    #[test]
+    fn freestanding_turbine_is_kept() {
+        let t = tags(&[
+            ("power", "generator"),
+            ("generator:source", "wind"),
+            ("height", "150"),
+            ("rotor:diameter", "112"),
+        ]);
+        assert!(!is_mounted_or_micro_turbine(&t));
+        assert!(!is_mounted_or_micro_turbine(&tags(&[(
+            "generator:source",
+            "wind"
+        )])));
     }
 }
