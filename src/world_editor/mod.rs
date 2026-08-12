@@ -1356,10 +1356,9 @@ impl<'a> WorldEditor<'a> {
 
     /// Highest occupied Y in [min_y, max_y] at world column (x, z), or None when the whole
     /// span is empty. Used by the tree canopy to find the roof height under each leaf column.
+    #[inline]
     pub fn highest_block_between(&self, x: i32, z: i32, min_y: i32, max_y: i32) -> Option<i32> {
-        (min_y..=max_y)
-            .rev()
-            .find(|&y| self.block_exists_absolute(x, y, z))
+        self.world.highest_block_between(x, z, min_y, max_y)
     }
 
     #[inline]
