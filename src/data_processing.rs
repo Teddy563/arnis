@@ -855,8 +855,12 @@ pub fn generate_world_with_options(
                     }
                 }
 
-                subway_points.extend(tile_subway_pts);
+                // Both lists exist only to feed the post-merge carve, which is itself skipped
+                // under eviction (the carve already ran in-tile above, before the flush). Keeping
+                // them would grow a Vec that nothing ever reads on the exact path chosen because
+                // memory is tight.
                 if !eviction_active {
+                    subway_points.extend(tile_subway_pts);
                     tunnel_cells.extend(tile_tunnel_cells);
                 }
 
@@ -1120,26 +1124,14 @@ pub fn generate_world_with_options(
     #[cfg(feature = "gui")]
     if world_format == WorldFormat::JavaAnvil {
         use crate::gui::update_player_spawn_y_after_generation;
-        // Reconstruct bbox string to match the format that GUI originally provided.
-        // This ensures LLBBox::from_str() can parse it correctly.
-        let bbox_string = format!(
-            "{},{},{},{}",
-            args.bbox.min().lat(),
-            args.bbox.min().lng(),
-            args.bbox.max().lat(),
-            args.bbox.max().lng()
-        );
-
         // Always update spawn Y since we now always set a spawn point (user-selected or default).
         // Use output_path, the actual generated world folder: for CLI/Meld direct --output-dir
         // runs it equals args.path, but for the GUI (nested "Arnis World N") and Desktop-fallback
         // paths args.path is the PARENT, so level.dat sits under output_path (upstream 6152f0d).
-        if let Err(e) = update_player_spawn_y_after_generation(
-            &output_path,
-            bbox_string,
-            args.scale,
-            ground.as_ref(),
-        ) {
+        // Same `xzbbox` binding write_map_item gets below: post-rotation, master-origin aware.
+        if let Err(e) =
+            update_player_spawn_y_after_generation(&output_path, &xzbbox, ground.as_ref())
+        {
             let warning_msg = format!("Failed to update spawn point Y coordinate: {}", e);
             eprintln!("Warning: {}", warning_msg);
             #[cfg(feature = "gui")]

@@ -510,13 +510,15 @@ fn set_player_spawn_in_level_dat(
 
 // Function to update player spawn Y coordinate based on terrain height after generation
 // This updates the spawn Y coordinate to be at terrain height + 3 blocks
+/// Takes the world's real `xzbbox` rather than re-deriving one from the bbox text: the
+/// re-derivation had no master origin, so under Meld - where every cell shares one origin and
+/// the world is the merge of many cells - the relative coordinates it produced addressed the
+/// wrong part of the ground grid, and the spawn Y came out wrong in every merged world.
 pub fn update_player_spawn_y_after_generation(
     world_path: &Path,
-    bbox_text: String,
-    scale: f64,
+    xzbbox: &XZBBox,
     ground: &Ground,
 ) -> Result<(), String> {
-    use crate::coordinate_system::transformation::CoordTransformer;
 
     // Read the current level.dat file to get existing spawn coordinates
     let level_path = PathBuf::from(world_path).join("level.dat");
@@ -575,12 +577,6 @@ pub fn update_player_spawn_y_after_generation(
 
     // Calculate terrain-based Y coordinate
     let spawn_y = if ground.elevation_enabled {
-        // Parse coordinates for terrain lookup
-        let llbbox = LLBBox::from_str(&bbox_text)
-            .map_err(|e| format!("Failed to parse bounding box for spawn point:\n{e}"))?;
-        let (_, xzbbox) = CoordTransformer::llbbox_to_xzbbox(&llbbox, scale, None, None)
-            .map_err(|e| format!("Failed to build transformation:\n{e}"))?;
-
         // Calculate relative coordinates for ground system
         let relative_x = existing_spawn_x - xzbbox.min_x();
         let relative_z = existing_spawn_z - xzbbox.min_z();
