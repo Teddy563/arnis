@@ -11,7 +11,7 @@ use crate::world_editor::WorldEditor;
 use std::collections::{HashMap, HashSet};
 
 /// Vertical offset in blocks from the terrain surface to the tunnel ceiling.
-const SUBWAY_DEPTH: i32 = 3;
+const RAIL_TUNNEL_DEPTH: i32 = 3;
 
 // Overhead catenary (electrified rail) tuning.
 const CATENARY_MAST_INTERVAL: usize = 16;
@@ -25,6 +25,23 @@ const RAIL_BRIDGE_RAMP_MAX: usize = 30;
 const RAIL_BRIDGE_RAMP_FRACTION: f32 = 0.25;
 
 pub type RailBridgeInternalEndpoints = HashSet<(i32, i32)>;
+
+/// `railway=*` values that describe an actual running track. Only these ever get
+/// a tunnel bore: `platform`, `station`, `halt`, `subway_entrance` etc. are
+/// station furniture, and boring their outline drives a stone shaft along the
+/// perimeter of every station in the extract.
+const RAIL_TRACK_TYPES: &[&str] = &[
+    "rail",
+    "light_rail",
+    "subway",
+    "tram",
+    "narrow_gauge",
+    "monorail",
+    "funicular",
+    "miniature",
+    "preserved",
+    "disused",
+];
 
 /// Half-width of the outer stone shell (total footprint = 2 * WALL_RADIUS + 1 = 5).
 const WALL_RADIUS: i32 = 2;
@@ -41,7 +58,7 @@ const LIGHT_INTERVAL: usize = 8;
 /// Deterministic spatial hash for tunnel wall/ceiling block variety.
 /// Returns CRACKED_STONE_BRICKS (~15%), MOSSY_STONE_BRICKS (~3%),
 /// or STONE_BRICKS (~82%).
-fn subway_shell_block(x: i32, y: i32, z: i32) -> Block {
+fn rail_tunnel_shell_block(x: i32, y: i32, z: i32) -> Block {
     let h = (x as u32)
         .wrapping_mul(73856093)
         .wrapping_add((y as u32).wrapping_mul(19349663))
@@ -60,7 +77,7 @@ fn subway_shell_block(x: i32, y: i32, z: i32) -> Block {
 pub fn generate_railways(
     editor: &mut WorldEditor,
     element: &ProcessedWay,
-    subway_points: &mut Vec<(i32, i32)>,
+    rail_tunnel_points: &mut Vec<(i32, i32)>,
     rail_bridge_internal_endpoints: &RailBridgeInternalEndpoints,
     bridge_outlines: &BridgeOutlineIndex,
     scale: f64,
@@ -72,14 +89,20 @@ pub fn generate_railways(
         return;
     };
 
-    let is_subway = railway_type == "subway"
+    let requests_tunnel = railway_type == "subway"
         || element
             .tags
             .get("subway")
             .map(|v| v == "yes")
-            .unwrap_or(false);
-    if is_subway {
-        generate_subway_shell(editor, element, subway_points);
+            .unwrap_or(false)
+        || element.tags.get("tunnel").map(String::as_str) == Some("yes");
+    if requests_tunnel {
+        // Only linear track ways get a bore. Platform/station/area polygons
+        // return having rendered NOTHING - they must not fall through to the
+        // at-grade renderer either.
+        if renders_as_rail_tunnel(element) {
+            generate_rail_tunnel_shell(editor, element, rail_tunnel_points);
+        }
         return;
     }
 
@@ -93,12 +116,6 @@ pub fn generate_railways(
     .contains(&railway_type.as_str())
     {
         return;
-    }
-
-    if let Some(tunnel) = element.tags.get("tunnel") {
-        if tunnel == "yes" {
-            return;
-        }
     }
 
     if is_rail_bridge(element) {
@@ -119,6 +136,26 @@ pub fn generate_railways(
             }
         }
     }
+}
+
+/// Mirrors the `requests_tunnel` gate in `generate_railways`, and MUST stay
+/// bit-for-bit in sync with it: `add_tunnel_footprint` uses this predicate to
+/// decide which ways were bored. Out of sync in one direction it protects a way
+/// that was never bored (harmless); in the other it leaves a real bore
+/// unprotected and the water depth-carve floods it.
+fn renders_as_rail_tunnel(way: &ProcessedWay) -> bool {
+    let Some(railway_type) = way.tags.get("railway").map(String::as_str) else {
+        return false;
+    };
+    if way.nodes.len() < 2
+        || !RAIL_TRACK_TYPES.contains(&railway_type)
+        || way.tags.get("area").map(String::as_str) == Some("yes")
+    {
+        return false;
+    }
+    railway_type == "subway"
+        || way.tags.get("subway").map(String::as_str) == Some("yes")
+        || way.tags.get("tunnel").map(String::as_str) == Some("yes")
 }
 
 fn is_rail_bridge(way: &ProcessedWay) -> bool {
@@ -645,15 +682,15 @@ pub fn generate_roller_coaster(editor: &mut WorldEditor, element: &ProcessedWay)
     }
 }
 
-/// Phase 1 of subway generation: place the structural tunnel shell and rail
-/// track.  Called during element processing (step 4) so that all non-AIR
-/// blocks survive the underground stone fill in step 6.
+/// Phase 1 of underground railway generation: place the structural tunnel shell
+/// and rail track.  Called during element processing (step 4) so that all
+/// non-AIR blocks survive the underground stone fill in step 6.
 ///
-/// Centerline points are collected into `subway_points` for phase 2.
-fn generate_subway_shell(
+/// Centerline points are collected into `rail_tunnel_points` for phase 2.
+fn generate_rail_tunnel_shell(
     editor: &mut WorldEditor,
     element: &ProcessedWay,
-    subway_points: &mut Vec<(i32, i32)>,
+    rail_tunnel_points: &mut Vec<(i32, i32)>,
 ) {
     for i in 1..element.nodes.len() {
         let prev_node = element.nodes[i - 1].xz();
@@ -667,12 +704,12 @@ fn generate_subway_shell(
 
             // Record centerline point for phase 2 air-carving, skipping
             // duplicate shared endpoints between adjacent segments.
-            if subway_points.last().copied() != Some((bx, bz)) {
-                subway_points.push((bx, bz));
+            if rail_tunnel_points.last().copied() != Some((bx, bz)) {
+                rail_tunnel_points.push((bx, bz));
             }
 
             let ground_y = editor.get_ground_level(bx, bz);
-            let ceil_y = ground_y - SUBWAY_DEPTH;
+            let ceil_y = ground_y - RAIL_TUNNEL_DEPTH;
             let floor_y = ceil_y - INTERIOR_HEIGHT - 1;
 
             // Safety: skip if the tunnel would go below world minimum.
@@ -711,7 +748,7 @@ fn generate_subway_shell(
                             POLISHED_DEEPSLATE
                         } else if is_wall_or_ceiling {
                             // Visible wall/ceiling: mix in cracked and mossy
-                            subway_shell_block(bx + dx, y, bz + dz)
+                            rail_tunnel_shell_block(bx + dx, y, bz + dz)
                         } else {
                             // Interior placeholder (carved in phase 2)
                             STONE_BRICKS
@@ -756,13 +793,13 @@ fn generate_subway_shell(
     }
 }
 
-/// Phase 2 of subway generation: carve the 3x3 air interior and place
-/// ceiling lights.  Called AFTER ground generation so that the carved
+/// Phase 2 of underground railway generation: carve the 3x3 air interior and
+/// place ceiling lights.  Called AFTER ground generation so that the carved
 /// air blocks are not overwritten by the underground stone fill.
-pub fn carve_subway_interior(editor: &mut WorldEditor, subway_points: &[(i32, i32)]) {
-    for (idx, &(bx, bz)) in subway_points.iter().enumerate() {
+pub fn carve_rail_tunnel_interior(editor: &mut WorldEditor, rail_tunnel_points: &[(i32, i32)]) {
+    for (idx, &(bx, bz)) in rail_tunnel_points.iter().enumerate() {
         let ground_y = editor.get_ground_level(bx, bz);
-        let ceil_y = ground_y - SUBWAY_DEPTH;
+        let ceil_y = ground_y - RAIL_TUNNEL_DEPTH;
         let floor_y = ceil_y - INTERIOR_HEIGHT - 1;
 
         if floor_y <= crate::world_editor::MIN_Y {
@@ -982,4 +1019,242 @@ pub fn collect_at_grade_rail_mask(
         }
     }
     bitmap
+}
+
+/// Adds every rendered rail-tunnel shell coordinate to the shared tunnel
+/// footprint. Call ONCE, over the full element list, against the WORLD bbox.
+///
+/// The footprint keeps the ESA water depth-carve and the tree scatter off the
+/// bore: the ceiling sits only `RAIL_TUNNEL_DEPTH` blocks under the surface, so
+/// an unguarded lakebed carve breaches it and floods the tunnel.
+pub fn add_tunnel_footprint(
+    elements: &[ProcessedElement],
+    xzbbox: &XZBBox,
+    footprint: &mut CoordinateBitmap,
+) {
+    if !elements
+        .iter()
+        .any(|e| matches!(e, ProcessedElement::Way(w) if renders_as_rail_tunnel(w)))
+    {
+        return;
+    }
+    // collect_tunnel_footprint hands back a zero-SIZE bitmap when the extract has
+    // no highway tunnels; allocate the real one before writing rail bits.
+    if footprint.is_empty() {
+        *footprint = CoordinateBitmap::new(xzbbox);
+    }
+    for element in elements {
+        let ProcessedElement::Way(way) = element else {
+            continue;
+        };
+        if !renders_as_rail_tunnel(way) {
+            continue;
+        }
+        for (bx, bz) in build_smoothed_centerline(way) {
+            for dx in -WALL_RADIUS..=WALL_RADIUS {
+                for dz in -WALL_RADIUS..=WALL_RADIUS {
+                    footprint.set(bx + dx, bz + dz);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coordinate_system::geographic::LLBBox;
+    use crate::osm_parser::ProcessedNode;
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    /// Builds an in-memory editor (never saved) over a 200x120 area at ground Y=0.
+    fn test_editor(xzbbox: &XZBBox) -> WorldEditor<'_> {
+        let llbbox = LLBBox::new(54.6, 9.9, 54.61, 9.91).unwrap();
+        WorldEditor::new(PathBuf::from("/dev/null/unused"), xzbbox, llbbox)
+    }
+
+    fn rail_mask_bbox() -> &'static XZBBox {
+        static BBOX: OnceLock<XZBBox> = OnceLock::new();
+        BBOX.get_or_init(|| XZBBox::rect_from_xz_lengths(200.0, 120.0).unwrap())
+    }
+
+    /// A 41-block straight E-W way from (20, 50) to (60, 50).
+    fn straight_rail(tags: &[(&str, &str)]) -> ProcessedWay {
+        let mut tag_map = HashMap::new();
+        for (k, v) in tags {
+            tag_map.insert((*k).to_string(), (*v).to_string());
+        }
+        ProcessedWay {
+            id: 1,
+            nodes: vec![
+                ProcessedNode {
+                    id: 1,
+                    tags: HashMap::new(),
+                    x: 20,
+                    z: 50,
+                },
+                ProcessedNode {
+                    id: 2,
+                    tags: HashMap::new(),
+                    x: 60,
+                    z: 50,
+                },
+            ],
+            tags: tag_map,
+            unclipped_bounds: None,
+            unclipped_polygon_area: None,
+        }
+    }
+
+    fn run_collecting_tunnel_points(
+        editor: &mut WorldEditor,
+        way: &ProcessedWay,
+    ) -> Vec<(i32, i32)> {
+        let clear = CoordinateBitmap::new(rail_mask_bbox());
+        let internal: RailBridgeInternalEndpoints = HashSet::new();
+        let outlines = BridgeOutlineIndex::build(&[]);
+        let mut rail_tunnel_points: Vec<(i32, i32)> = Vec::new();
+        generate_railways(
+            editor,
+            way,
+            &mut rail_tunnel_points,
+            &internal,
+            &outlines,
+            1.0,
+            &clear,
+            &clear,
+            &clear,
+        );
+        rail_tunnel_points
+    }
+
+    #[test]
+    fn heavy_rail_tunnel_builds_and_carves_an_underground_track() {
+        let xzbbox = rail_mask_bbox();
+        let mut editor = test_editor(xzbbox);
+        let way = straight_rail(&[("railway", "rail"), ("tunnel", "yes")]);
+
+        let points = run_collecting_tunnel_points(&mut editor, &way);
+        assert_eq!(points.len(), 41, "one centerline point per block, deduped");
+
+        carve_rail_tunnel_interior(&mut editor, &points);
+
+        // Ground is flat Y=0 in the test editor, so the bore sits at a fixed depth.
+        let floor_y = -RAIL_TUNNEL_DEPTH - INTERIOR_HEIGHT - 1;
+        assert!(
+            floor_y > crate::world_editor::MIN_Y,
+            "test bore must stay inside the world"
+        );
+
+        assert!(
+            editor.check_for_block_absolute(20, floor_y + 1, 50, Some(&[RAIL_EAST_WEST]), None),
+            "rail laid on the tunnel floor"
+        );
+
+        let solid: &[Block] = &[
+            STONE,
+            STONE_BRICKS,
+            CRACKED_STONE_BRICKS,
+            MOSSY_STONE_BRICKS,
+        ];
+        assert!(
+            !editor.check_for_block_absolute(24, floor_y + 2, 50, Some(solid), None),
+            "interior is carved to air"
+        );
+        assert!(
+            editor.check_for_block_absolute(24, floor_y + 2, 52, Some(solid), None),
+            "outer wall survives the carve"
+        );
+
+        assert!(
+            !editor.check_for_block(24, 1, 50, Some(&[RAIL_EAST_WEST])),
+            "a tunnel must not also paint rails at grade"
+        );
+    }
+
+    #[test]
+    fn rail_tunnel_routing_accepts_only_track_ways() {
+        assert!(renders_as_rail_tunnel(&straight_rail(&[
+            ("railway", "rail"),
+            ("tunnel", "yes")
+        ])));
+        assert!(renders_as_rail_tunnel(&straight_rail(&[(
+            "railway", "subway"
+        )])));
+
+        assert!(
+            !renders_as_rail_tunnel(&straight_rail(&[
+                ("railway", "rail"),
+                ("tunnel", "yes"),
+                ("area", "yes")
+            ])),
+            "a filled polygon is not a running track"
+        );
+        assert!(
+            !renders_as_rail_tunnel(&straight_rail(&[
+                ("railway", "platform"),
+                ("tunnel", "yes")
+            ])),
+            "platforms are station furniture, not track"
+        );
+        assert!(
+            !renders_as_rail_tunnel(&straight_rail(&[("railway", "station"), ("subway", "yes")])),
+            "station outlines are not track"
+        );
+    }
+
+    #[test]
+    fn non_track_tunnel_ways_do_not_generate_rails() {
+        let rejected: [&[(&str, &str)]; 3] = [
+            &[("railway", "rail"), ("tunnel", "yes"), ("area", "yes")],
+            &[("railway", "platform"), ("tunnel", "yes")],
+            &[("railway", "station"), ("subway", "yes")],
+        ];
+        for tags in rejected {
+            let xzbbox = rail_mask_bbox();
+            let mut editor = test_editor(xzbbox);
+            let way = straight_rail(tags);
+            let points = run_collecting_tunnel_points(&mut editor, &way);
+            assert!(points.is_empty(), "no bore for {tags:?}");
+            assert!(
+                !editor.check_for_block(20, 1, 50, Some(&[RAIL_EAST_WEST])),
+                "no at-grade fall-through for {tags:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rail_tunnel_footprint_covers_the_full_shell_only_for_tracks() {
+        let xzbbox = rail_mask_bbox();
+
+        // Station furniture must not even allocate the bitmap.
+        let non_track = vec![
+            ProcessedElement::Way(straight_rail(&[("railway", "platform"), ("tunnel", "yes")])),
+            ProcessedElement::Way(straight_rail(&[("railway", "station"), ("subway", "yes")])),
+        ];
+        let mut untouched = CoordinateBitmap::new_empty();
+        add_tunnel_footprint(&non_track, xzbbox, &mut untouched);
+        assert!(untouched.is_empty(), "non-track ways contribute nothing");
+
+        // A real bore adds its full 5x5 shell without dropping highway-tunnel bits.
+        let mut footprint = CoordinateBitmap::new(xzbbox);
+        footprint.set(10, 10);
+        let track = vec![ProcessedElement::Way(straight_rail(&[
+            ("railway", "rail"),
+            ("tunnel", "yes"),
+        ]))];
+        add_tunnel_footprint(&track, xzbbox, &mut footprint);
+
+        assert!(footprint.contains(10, 10), "pre-existing bits preserved");
+        assert!(footprint.contains(40, 50), "centerline covered");
+        assert!(
+            footprint.contains(40, 52),
+            "outer wall at WALL_RADIUS covered"
+        );
+        assert!(
+            !footprint.contains(40, 53),
+            "footprint stops at the shell edge"
+        );
+    }
 }

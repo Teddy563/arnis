@@ -34,7 +34,7 @@ pub struct GenerationOptions {
 /// Extracted from the main loop so the same dispatch runs in both the sequential
 /// and the parallel tile-based processing paths. Every shared input is an
 /// immutable reference (safe to share across rayon tile threads); the only
-/// mutable state is the per-tile `editor` and `subway_points`.
+/// mutable state is the per-tile `editor` and `rail_tunnel_points`.
 ///
 /// Element suppression (3D-model / building-outline) and flood-fill cache
 /// eviction are handled by the caller; the cache is shared immutably in the
@@ -58,7 +58,7 @@ fn process_element(
     rail_mask: &CoordinateBitmap,
     tunnel_internal_endpoints: &highways::TunnelInternalEndpoints,
     tunnel_cells: &mut Vec<highways::HighwayTunnelCell>,
-    subway_points: &mut Vec<(i32, i32)>,
+    rail_tunnel_points: &mut Vec<(i32, i32)>,
     part_groups: &PartGroups,
 ) {
     match element {
@@ -140,7 +140,7 @@ fn process_element(
                 railways::generate_railways(
                     editor,
                     way,
-                    subway_points,
+                    rail_tunnel_points,
                     rail_bridge_internal_endpoints,
                     bridge_outlines,
                     args.scale,
@@ -441,8 +441,8 @@ pub fn generate_world_with_options(
     // Build highway connectivity map once before processing
     let highway_connectivity = highways::build_highway_connectivity_map(&elements);
 
-    // Collect subway centerline points for post-ground-fill air carving (phase 2).
-    let mut subway_points: Vec<(i32, i32)> = Vec::new();
+    // Collect underground railway centerline points for post-ground-fill air carving (phase 2).
+    let mut rail_tunnel_points: Vec<(i32, i32)> = Vec::new();
     let mut tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();
 
     // Set ground reference in the editor to enable elevation-aware block placement
@@ -490,7 +490,12 @@ pub fn generate_world_with_options(
     let rail_mask = railways::collect_at_grade_rail_mask(&elements, &xzbbox);
     // Highway tunnels: bore footprint (keeps water/veg out) + shared endpoints
     // (suppresses portals mid-tunnel). Collected once over all world elements.
-    let tunnel_footprint = highways::collect_tunnel_footprint(&elements, &xzbbox, args.scale);
+    let mut tunnel_footprint = highways::collect_tunnel_footprint(&elements, &xzbbox, args.scale);
+    // Rail tunnels share the same bitmap: the 5x5 shell also has to keep the water
+    // depth-carve and the tree scatter off it. ONCE, over ALL elements, against the
+    // WORLD bbox - never per tile, or adjacent tiles disagree about where the bore
+    // is and the disagreement shows up as a bathymetry step on the tile boundary.
+    railways::add_tunnel_footprint(&elements, &xzbbox, &mut tunnel_footprint);
     let tunnel_internal_endpoints = highways::collect_tunnel_internal_endpoints(&elements);
 
     let bridge_outlines =
@@ -646,7 +651,7 @@ pub fn generate_world_with_options(
                     tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
                     tile_editor.set_props(prop_set);
 
-                    let mut tile_subway_points: Vec<(i32, i32)> = Vec::new();
+                    let mut tile_rail_tunnel_points: Vec<(i32, i32)> = Vec::new();
                     let mut tile_tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();
 
                     for &elem_idx in &tile_assignments[tile_idx] {
@@ -678,7 +683,7 @@ pub fn generate_world_with_options(
                             &rail_mask,
                             &tunnel_internal_endpoints,
                             &mut tile_tunnel_cells,
-                            &mut tile_subway_points,
+                            &mut tile_rail_tunnel_points,
                             &part_groups,
                         );
                     }
@@ -767,19 +772,23 @@ pub fn generate_world_with_options(
                         g_max_z,
                     );
 
-                    // Under eviction the post-merge subway carve can't run (regions get freed),
-                    // so carve in-tile now, after ground/fill so the interior isn't refilled.
+                    // Under eviction the post-merge rail-tunnel carve can't run (regions get
+                    // freed), so carve in-tile now, after ground/fill so the interior isn't
+                    // refilled.
                     if eviction_active {
-                        railways::carve_subway_interior(&mut tile_editor, &tile_subway_points);
+                        railways::carve_rail_tunnel_interior(
+                            &mut tile_editor,
+                            &tile_rail_tunnel_points,
+                        );
                         highways::carve_highway_tunnel_interior(
                             &mut tile_editor,
                             &tile_tunnel_cells,
                         );
                     }
                     // Seal floating water/lava LAST (after the water-depth carve, veg sweep, and the
-                    // in-tile subway carve all of which can undercut a water body over a cave). Under
+                    // in-tile rail-tunnel carve all of which can undercut a water body over a cave). Under
                     // eviction this tile is about to flush, so it must happen in-tile here. Non-eviction
-                    // tiles get the post-merge seal instead (after the post-merge subway carve).
+                    // tiles get the post-merge seal instead (after the post-merge rail-tunnel carve).
                     if args.caves && eviction_active {
                         crate::caves::seal_floating_fluid_region(
                             &mut tile_editor,
@@ -794,7 +803,7 @@ pub fn generate_world_with_options(
                     (
                         tile_idx,
                         tile_editor.into_world(),
-                        tile_subway_points,
+                        tile_rail_tunnel_points,
                         tile_tunnel_cells,
                         tile_road_overrides,
                     )
@@ -805,8 +814,13 @@ pub fn generate_world_with_options(
             let merge_start = std::time::Instant::now();
             // Phase 2: merge this batch's results into the main editor (sequential).
             // batch_results is dropped after this loop, freeing memory before next batch.
-            for (tile_idx, tile_world, tile_subway_pts, tile_tunnel_cells, tile_road_overrides) in
-                batch_results
+            for (
+                tile_idx,
+                tile_world,
+                tile_rail_tunnel_pts,
+                tile_tunnel_cells,
+                tile_road_overrides,
+            ) in batch_results
             {
                 editor.merge_world(
                     tile_world,
@@ -830,7 +844,7 @@ pub fn generate_world_with_options(
                 if eviction_active {
                     // This tile contributes to its own region and its 8 neighbours;
                     // flush each non-deferred region whose contributors are all merged.
-                    // (Subways are carved in-tile above, so they don't defer regions.)
+                    // (Rail tunnels are carved in-tile above, so they don't defer regions.)
                     let rt = region_of_tile[tile_idx];
                     for dz in -1..=1 {
                         for dx in -1..=1 {
@@ -860,7 +874,7 @@ pub fn generate_world_with_options(
                 // them would grow a Vec that nothing ever reads on the exact path chosen because
                 // memory is tight.
                 if !eviction_active {
-                    subway_points.extend(tile_subway_pts);
+                    rail_tunnel_points.extend(tile_rail_tunnel_pts);
                     tunnel_cells.extend(tile_tunnel_cells);
                 }
 
@@ -952,7 +966,7 @@ pub fn generate_world_with_options(
                 &rail_mask,
                 &tunnel_internal_endpoints,
                 &mut tunnel_cells,
-                &mut subway_points,
+                &mut rail_tunnel_points,
                 &part_groups,
             );
 
@@ -1044,17 +1058,17 @@ pub fn generate_world_with_options(
     drop(road_mask);
     drop(tunnel_footprint);
 
-    // Carve subway tunnel interiors now that underground is filled with stone.
+    // Carve railway tunnel interiors now that underground is filled with stone.
     // Under eviction this already ran in-tile (regions get freed before here).
-    if !eviction_active && !subway_points.is_empty() {
-        railways::carve_subway_interior(&mut editor, &subway_points);
+    if !eviction_active && !rail_tunnel_points.is_empty() {
+        railways::carve_rail_tunnel_interior(&mut editor, &rail_tunnel_points);
     }
     if !eviction_active && !tunnel_cells.is_empty() {
         highways::carve_highway_tunnel_interior(&mut editor, &tunnel_cells);
     }
 
     // Seal floating water/lava as the FINAL underground pass (covers standalone + non-eviction tiled):
-    // the water-depth carve, veg sweep, and subway carve can all leave a water body hanging over a cave.
+    // the water-depth carve, veg sweep, and rail-tunnel carve can all leave a water body hanging over a cave.
     // Eviction tiles were already sealed in-tile before flush.
     if args.caves && !eviction_active {
         crate::caves::seal_floating_fluid_region(
@@ -1073,7 +1087,7 @@ pub fn generate_world_with_options(
     bench.mark("post_passes");
 
     if eviction_active {
-        // Flush deferred (subway-touched) regions now the global carve has run on them.
+        // Flush deferred (rail-tunnel-touched) regions now the global carve has run on them.
         let mut leftover: Vec<(i32, i32)> =
             real_regions.difference(&evicted_regions).copied().collect();
         leftover.sort_unstable();
