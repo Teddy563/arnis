@@ -1,6 +1,14 @@
 name: Build and Release Arnis
 
 on:
+  # A tag push builds and attaches. This is the trigger that matters, because a
+  # release-triggered run checks out the workflow FROM THE TAG - so a fix on main is invisible
+  # to a release cut from an older tag, which is exactly how 3.0.7 re-ran the same broken file
+  # after the fix had already landed. Pushing the tag runs the tag's workflow deliberately, and
+  # action-gh-release creates the release or updates the one that already exists.
+  push:
+    tags: ["v*"]
+  # Kept so publishing a release by hand still builds.
   release:
     types: [created]
 
