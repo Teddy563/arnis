@@ -104,6 +104,15 @@ impl OsmData {
         self.elements.is_empty()
     }
 
+    /// Object-free dataset, used by terrain-only runs that never query Overpass
+    /// and never read the Meld tile dir.
+    pub fn empty() -> Self {
+        OsmData {
+            elements: Vec::new(),
+            remark: None,
+        }
+    }
+
     /// Load OSM directly from Meld's stable slippy-tile grid cache instead of a
     /// single merged `--file`. Computes the z`zoom` tiles overlapping `bbox`,
     /// reads each `osm_g1_z{zoom}_{x}_{y}.json`, and concats + dedups elements by

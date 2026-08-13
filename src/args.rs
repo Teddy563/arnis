@@ -100,9 +100,22 @@ pub struct Args {
     #[arg(long, default_value_t = -62)]
     pub ground_level: i32,
 
-    /// Enable terrain (optional)
-    #[arg(long)]
-    pub terrain: bool,
+    /// What to generate, mirroring the generation-mode dropdown:
+    /// geo-terrain: OSM objects on real elevation terrain
+    /// geo-only: OSM objects on flat ground
+    /// terrain-only: real elevation terrain, no OSM or Overture objects (--overture has no effect)
+    ///
+    /// UNSET is NOT geo-terrain in this fork: it falls back to the legacy `--terrain` switch,
+    /// so a command with neither flag renders flat ground exactly as it always has.
+    #[arg(long, value_enum)]
+    pub mode: Option<GenerationMode>,
+
+    /// Legacy terrain switch. Every archived Meld command and every stored Meld project selects
+    /// flat vs. real elevation by emitting or omitting this flag, so it stays fully supported:
+    /// `--terrain` == `--mode geo-terrain`, omitting it == `--mode geo-only`. Hidden from --help;
+    /// `--mode` is the documented spelling.
+    #[arg(long = "terrain", hide = true)]
+    pub legacy_terrain: bool,
 
     /// Enable interior generation (optional)
     #[arg(long, default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
@@ -518,6 +531,61 @@ pub struct Args {
     pub grass_mix: Option<String>,
 }
 
+/// What a run generates. Same three values as the GUI's `generation-mode-select`
+/// (src/gui/js/main.js:1567) and Meld's mode dropdown.
+///
+/// Deliberately NOT `Default`: upstream defaults this to GeoTerrain (terrain ON), the fork
+/// defaults to flat ground. Leaving the trait off makes an accidental `unwrap_or_default()`
+/// a compile error rather than a silently different world.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum GenerationMode {
+    /// OSM objects on real elevation terrain
+    GeoTerrain,
+    /// OSM objects on flat ground
+    GeoOnly,
+    /// Real elevation terrain without any OSM or Overture objects
+    TerrainOnly,
+}
+
+impl GenerationMode {
+    /// Whether real elevation is fetched and applied instead of flat ground.
+    #[inline]
+    pub fn terrain(self) -> bool {
+        !matches!(self, GenerationMode::GeoOnly)
+    }
+
+    /// Whether OSM and Overture objects are skipped entirely.
+    #[inline]
+    pub fn skip_objects(self) -> bool {
+        matches!(self, GenerationMode::TerrainOnly)
+    }
+}
+
+impl Args {
+    /// Effective mode: an explicit --mode wins; otherwise the legacy --terrain switch decides.
+    /// That fallback is what preserves the fork's flat-ground default for archived commands.
+    #[inline]
+    pub fn generation_mode(&self) -> GenerationMode {
+        self.mode.unwrap_or(if self.legacy_terrain {
+            GenerationMode::GeoTerrain
+        } else {
+            GenerationMode::GeoOnly
+        })
+    }
+
+    /// Whether this run uses real elevation terrain rather than flat ground.
+    #[inline]
+    pub fn terrain(&self) -> bool {
+        self.generation_mode().terrain()
+    }
+
+    /// Whether this run skips OSM/Overture objects (terrain-only).
+    #[inline]
+    pub fn skip_objects(&self) -> bool {
+        self.generation_mode().skip_objects()
+    }
+}
+
 /// Player game mode for the generated world.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum GameMode {
@@ -540,6 +608,16 @@ impl GameMode {
 /// For Java Edition: `--path` is required. If the directory doesn't exist, it will be created.
 /// For Bedrock Edition (`--bedrock`): `--path` is optional (defaults to Desktop output).
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // --terrain asks for real elevation; --mode geo-only asks for flat ground. Refuse the
+    // contradiction rather than silently picking one. MUST stay above every `return Ok(())`
+    // early exit below, or the download / prewarm / map-render modes would skip the check.
+    if args.legacy_terrain && args.mode == Some(GenerationMode::GeoOnly) {
+        return Err(
+            "--terrain contradicts --mode geo-only (flat ground). Drop --terrain, or use --mode geo-terrain."
+                .to_string(),
+        );
+    }
+
     if args.aws_only_elevation && args.regional_elevation_only {
         return Err(
             "--aws-only-elevation and --regional-elevation-only are mutually exclusive."
@@ -677,11 +755,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_generation_mode() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let base = ["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+        let parse = |extra: &[&str]| {
+            let mut cmd: Vec<&str> = base.to_vec();
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+
+        // No flags at all: the fork's flat-ground default survives (upstream would be GeoTerrain).
+        let args = parse(&[]);
+        assert!(!args.terrain());
+        assert!(!args.skip_objects());
+
+        let args = parse(&["--mode", "geo-terrain"]);
+        assert!(args.terrain() && !args.skip_objects());
+        assert!(validate_args(&args).is_ok());
+
+        let args = parse(&["--mode", "geo-only"]);
+        assert!(!args.terrain() && !args.skip_objects());
+        assert!(validate_args(&args).is_ok());
+
+        let args = parse(&["--mode", "terrain-only"]);
+        assert!(args.terrain() && args.skip_objects());
+        assert!(validate_args(&args).is_ok());
+
+        // --terrain alone == geo-terrain; redundant with an agreeing --mode is fine
+        assert!(parse(&["--terrain"]).terrain());
+        let args = parse(&["--terrain", "--mode", "terrain-only"]);
+        assert!(args.terrain() && args.skip_objects());
+        assert!(validate_args(&args).is_ok());
+
+        // Contradiction refused, and refused even inside an early-exit mode
+        assert!(validate_args(&parse(&["--mode", "geo-only", "--terrain"])).is_err());
+        assert!(validate_args(&parse(&[
+            "--mode",
+            "geo-only",
+            "--terrain",
+            "--download-terrain-only"
+        ]))
+        .is_err());
+
+        // Unknown modes are rejected by clap
+        let mut cmd: Vec<&str> = base.to_vec();
+        cmd.extend_from_slice(&["--mode", "objects"]);
+        assert!(Args::try_parse_from(cmd.iter()).is_err());
+    }
+
+    #[test]
     fn test_flags() {
         let tmpdir = tempfile::tempdir().unwrap();
         let tmp_path = tmpdir.path().to_str().unwrap();
 
-        // Test that terrain/debug are SetTrue
+        // The legacy --terrain flag still parses and still means "real elevation"
         let cmd = [
             "arnis",
             "--output-dir",
@@ -693,12 +821,20 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(args.debug);
-        assert!(args.terrain);
+        assert!(args.legacy_terrain);
+        assert!(args.terrain());
+        assert!(!args.skip_objects());
+        assert_eq!(args.generation_mode(), GenerationMode::GeoTerrain);
+        assert!(validate_args(&args).is_ok());
 
         let cmd = ["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
         let args = Args::parse_from(cmd.iter());
         assert!(!args.debug);
-        assert!(!args.terrain);
+        // FORK DEFAULT, NOT upstream's: no flag at all == flat ground.
+        assert!(args.mode.is_none());
+        assert!(!args.legacy_terrain);
+        assert!(!args.terrain());
+        assert!(!args.skip_objects());
         assert!(!args.bedrock);
         assert!(!args.disable_height_limit);
         assert!(!args.bake_lighting);

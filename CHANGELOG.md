@@ -77,6 +77,19 @@ commits, with the reason for each take/adapt/skip, lives in
   build reproducibly without it) and `flake.lock` follows upstream's nixpkgs bump.
 
 ### Added
+- **`--mode geo-terrain|geo-only|terrain-only`** — the documented way to say what a run
+  generates, and a real terrain-only path for the CLI. `terrain-only` skips *both* object
+  sources: no Overpass query, no `--osm-tile-dir` read, and no Overture fetch, so `--overture`
+  has no effect in that mode (`--file` / `--osm-tile-dir` / `--save-json-file` are ignored,
+  with a note on stderr). Since Overture is ~93% of a cell's wall time, terrain-only is
+  dramatically cheaper than a full run.
+
+  **This fork keeps terrain OFF by default — upstream turns it on.** `--mode` has no default
+  here: with neither flag a run renders flat ground, exactly as every archived command and
+  stored project expects. `--terrain` is unchanged and fully supported (`--terrain` ==
+  `--mode geo-terrain`, omitting it == `--mode geo-only`); it is only hidden from `--help`
+  now that `--mode` is the documented spelling. `--terrain` together with `--mode geo-only`
+  is a contradiction and is rejected up front. No existing render moves by a block.
 - `NOTICE` — the Apache-2.0 attribution file. We redistribute built binaries of this fork,
   so section 4 requires it. Upstream text verbatim plus a short section naming this
   repository as a derivative work.

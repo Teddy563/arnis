@@ -25,6 +25,24 @@ Everything below is optional. The flags exist so that adjacent tiles, generated 
 
 ### Elevation and terrain
 
+**What a run generates (`--mode`).** `--mode geo-terrain|geo-only|terrain-only` is the documented way to choose what comes out of a run:
+
+| Value | OSM/Overture objects | Ground |
+| --- | --- | --- |
+| `geo-terrain` | yes | real elevation |
+| `geo-only` | yes | flat, at `--ground-level` |
+| `terrain-only` | no | real elevation |
+
+`terrain-only` skips **both** object sources: no Overpass query, no `--osm-tile-dir` read, and no Overture fetch. `--overture` has no effect in that mode, and `--file` / `--osm-tile-dir` / `--save-json-file` are ignored (the run says so on stderr).
+
+**This fork defaults terrain OFF.** With neither flag, a run renders flat ground — unlike upstream, which defaults to `geo-terrain`. That default is deliberate and load-bearing: archived commands and stored projects select flat vs. real elevation purely by emitting or omitting `--terrain`.
+
+`--terrain` remains fully supported and is exactly `--mode geo-terrain`; omitting it is exactly `--mode geo-only`. It is hidden from `--help` only because `--mode` is now the documented spelling — that is why the flag no longer appears there even though the examples below still use it. Passing `--terrain` together with `--mode geo-only` is a contradiction and is rejected.
+
+```
+arnis --output-dir ./world --bbox <bbox> --mode terrain-only
+```
+
 **Shared elevation band (no height seams).** Each tile picking its own min/max height makes neighbouring tiles meet at a vertical staircase. Pin one shared real-world band in metres so every tile maps height to the same Y. Set both together, alongside a master origin.
 
 ```

@@ -437,22 +437,43 @@ fn run_cli() {
     // its own internal Bench for the block-placement phases.
     let mut bench = bench::Bench::new(args.benchmark);
 
-    // Fetch data
-    let raw_data = match (&args.osm_tile_dir, &args.file) {
-        // Meld grid path: read the cell's slippy tiles straight from the cache dir,
-        // no pre-merged clump file required.
-        (Some(dir), _) => osm_parser::OsmData::from_tile_dir(dir, args.bbox, args.osm_tile_z),
-        (None, Some(file)) => retrieve_data::fetch_data_from_file(file),
-        (None, None) => retrieve_data::fetch_data_from_overpass(
-            args.bbox,
-            args.debug,
-            args.downloader.as_str(),
-            args.save_json_file.as_deref(),
-            &args.overpass_url,
-            &args.road_detail,
-        ),
+    // Terrain-only (--mode terrain-only) skips every object source: no Overpass query, no
+    // --osm-tile-dir read, no Overture fetch. --overture has no effect in this mode.
+    let skip_objects = args.skip_objects();
+    if skip_objects {
+        println!(
+            "{} Terrain-only mode: skipping OpenStreetMap and Overture objects",
+            "[1/7]".bold()
+        );
+        if args.osm_tile_dir.is_some() || args.file.is_some() || args.save_json_file.is_some() {
+            eprintln!(
+                "{} --mode terrain-only skips OpenStreetMap objects; \
+                 --file / --osm-tile-dir / --save-json-file are ignored.",
+                "Note:".yellow().bold()
+            );
+        }
     }
-    .expect("Failed to fetch data");
+
+    // Fetch data
+    let raw_data = if skip_objects {
+        osm_parser::OsmData::empty()
+    } else {
+        match (&args.osm_tile_dir, &args.file) {
+            // Meld grid path: read the cell's slippy tiles straight from the cache dir,
+            // no pre-merged clump file required.
+            (Some(dir), _) => osm_parser::OsmData::from_tile_dir(dir, args.bbox, args.osm_tile_z),
+            (None, Some(file)) => retrieve_data::fetch_data_from_file(file),
+            (None, None) => retrieve_data::fetch_data_from_overpass(
+                args.bbox,
+                args.debug,
+                args.downloader.as_str(),
+                args.save_json_file.as_deref(),
+                &args.overpass_url,
+                &args.road_detail,
+            ),
+        }
+        .expect("Failed to fetch data")
+    };
     bench.mark("osm_fetch");
 
     let mut ground = ground::generate_ground_data(&args);
@@ -477,7 +498,16 @@ fn run_cli() {
     // --no-buildings the buildings are discarded anyway, so fetching them is pure waste: skip it
     // entirely. --overture=false is the narrower request — keep every OSM building, drop only
     // the satellite-detected fill, which is the one that can invent a building that is not there.
-    if args.buildings && args.overture {
+    //
+    // Interaction contract with --mode terrain-only:
+    //   * terrain-only WINS over --overture. `--mode terrain-only --overture=true` fetches
+    //     nothing; --overture is inert in that mode.
+    //   * --overture=false stays the narrower request (keep every OSM building, drop only the
+    //     satellite fill) and is unaffected by any of this.
+    //   * --no-buildings stays independent and unaffected.
+    // With skip_objects set, parsed_elements is empty anyway, so this gate is a large cost
+    // saving (Overture is ~93% of a cell's wall time) rather than an output change.
+    if args.buildings && args.overture && !skip_objects {
         println!("{} Fetching Overture Maps data...", "  [+]".bold());
         let overture_elements = overture::fetch_overture_buildings(
             &args.bbox,
