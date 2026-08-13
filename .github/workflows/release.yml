@@ -44,6 +44,23 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    # A tag is a promise about what the binary will report. v3.0.8 was tagged without bumping
+    # Cargo.toml, so the release advertised 3.0.8 and every binary in it printed 3.0.7 - which
+    # means an updater comparing the release tag against `arnis --version` offers the same
+    # upgrade forever: download, still 3.0.7, "3.0.8 available". Cheap to assert, invisible
+    # otherwise, and it only runs for tag builds.
+    - name: Tag must match the crate version
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      run: |
+        tag="${GITHUB_REF_NAME#v}"
+        crate=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+        if [ "$tag" != "$crate" ]; then
+          echo "::error::tag $GITHUB_REF_NAME says $tag but Cargo.toml says $crate"
+          exit 1
+        fi
+        echo "tag $GITHUB_REF_NAME matches Cargo.toml $crate"
+
     - uses: ./.github/actions/setup-arnis-linux
       with:
         rust-targets: ${{ matrix.target }}
