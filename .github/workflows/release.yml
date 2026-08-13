@@ -61,6 +61,14 @@ jobs:
     # AppImage step as a side effect, so when the bundler broke there was no Linux binary at all
     # - and the AppImage is a convenience, while the binary is the thing Meld and the CLI run.
     - name: Build
+      env:
+        # Passing --target puts cargo in cross-compilation mode even when the target IS the
+        # host, and the pkg-config crate then refuses to look at host libraries unless this is
+        # set. That makes the GTK/WebKit lookups fail on Linux only, in this workflow only:
+        # ci-build.yml compiles the same code with --all-features and no --target, and passes.
+        # Harmless where it is not needed, and the triples are identical here, so nothing is
+        # actually being cross-built.
+        PKG_CONFIG_ALLOW_CROSS: 1
       run: cargo build --release --target ${{ matrix.target }}
 
     # Best-effort. AppImage tooling drags in FUSE, linuxdeploy and WebKitGTK, any of which can
@@ -72,6 +80,7 @@ jobs:
       continue-on-error: true
       env:
         APPIMAGE_EXTRACT_AND_RUN: 1  # Avoids FUSE requirement on CI runners
+        PKG_CONFIG_ALLOW_CROSS: 1    # same --target/pkg-config interaction as the Build step
       run: cargo tauri build --target ${{ matrix.target }} --bundles appimage
 
     - name: Rename binary for release
@@ -135,6 +144,7 @@ jobs:
 
   create-universal-macos:
     needs: build
+    if: ${{ !cancelled() }}
     runs-on: macos-latest
     steps:
     - name: Download macOS Intel build
@@ -168,18 +178,23 @@ jobs:
 
   release:
     needs: [build, create-universal-macos]
+    # Publish whatever built. A platform that fails should cost the release that one asset, not
+    # every asset - `needs` alone would skip this job entirely and leave the release empty.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
 
     - name: Download Windows build artifact
+      continue-on-error: true
       uses: actions/download-artifact@v8
       with:
         name: windows-latest-x86_64-pc-windows-msvc-build
         path: ./builds/windows
 
     - name: Download Linux build artifact
+      continue-on-error: true
       uses: actions/download-artifact@v8
       with:
         name: ubuntu-22.04-x86_64-unknown-linux-gnu-build
@@ -195,6 +210,7 @@ jobs:
         path: ./builds/linux
 
     - name: Download macOS universal build artifact
+      continue-on-error: true
       uses: actions/download-artifact@v8
       with:
         name: macos-universal-build
