@@ -795,6 +795,12 @@ pub fn parse_osm_data(
         &data.nodes,
         &mut part_groups,
     ));
+    // A relation whose every outer member is a closed building:part way draws nothing of its
+    // own — those ways already render standalone — so drop the duplicated merged ring.
+    outline_suppression.extend(compute_part_way_outline_suppression(
+        &data.relations,
+        &data.ways,
+    ));
     // Propagate each building's tag-derived facade style to its untagged S3DB parts.
     pack_part_style_hints(&mut part_groups, &data.ways, &data.relations);
 
@@ -1028,6 +1034,34 @@ pub fn parse_osm_data(
 // Parts replace the outline only when they cover at least this much of it.
 const MIN_PART_COVERAGE: f64 = 0.5;
 
+// A part covers the outline's ground footprint only if it starts at ground level.
+// Elevated parts (min_height / building:min_level > 0) model raised roof/dome volumes
+// that float above the ground (e.g. S3DB churches), so they can't stand in for the outline.
+fn part_covers_ground(tags: &HashMap<String, String>) -> bool {
+    // Leading number only: sign at position 0, one decimal point. So "54-60" → 54, not a parse fail.
+    let leading_f64 = |s: &str| {
+        let t = s.trim();
+        let mut end = 0;
+        let mut seen_dot = false;
+        for (i, c) in t.char_indices() {
+            let ok =
+                c.is_ascii_digit() || (c == '.' && !seen_dot) || ((c == '-' || c == '+') && i == 0);
+            if !ok {
+                break;
+            }
+            seen_dot |= c == '.';
+            end = i + c.len_utf8();
+        }
+        t[..end].parse::<f64>().ok()
+    };
+    let min_h = tags.get("min_height").and_then(|s| leading_f64(s));
+    let min_lvl = tags.get("building:min_level").and_then(|s| leading_f64(s));
+    min_h.unwrap_or(0.0) <= 0.0 && min_lvl.unwrap_or(0.0) <= 0.0
+}
+
+// Grid cell size (degrees) for the spatial index that buckets nearby outline bboxes.
+const SUPPRESSION_GRID_CELL_DEG: f64 = 0.0005;
+
 fn compute_outline_suppression(
     relations: &[OsmElement],
     ways: &[OsmElement],
@@ -1053,11 +1087,18 @@ fn compute_outline_suppression(
         return HashSet::new();
     }
 
-    let way_nodes: HashMap<u64, &Vec<u64>> = ways
-        .iter()
-        .filter(|w| needed_ways.contains(&w.id))
-        .filter_map(|w| w.nodes.as_ref().map(|ns| (w.id, ns)))
-        .collect();
+    // Single pass over member ways: geometry (way_nodes) plus whether the way sits on the
+    // ground (way_ground), so elevated parts don't get credited toward outline coverage.
+    let mut way_nodes: HashMap<u64, &Vec<u64>> = HashMap::new();
+    let mut way_ground: HashMap<u64, bool> = HashMap::new();
+    for w in ways.iter().filter(|w| needed_ways.contains(&w.id)) {
+        if let Some(ns) = w.nodes.as_ref() {
+            way_nodes.insert(w.id, ns);
+        }
+        if let Some(t) = w.tags.as_ref() {
+            way_ground.insert(w.id, part_covers_ground(t));
+        }
+    }
     let mut needed_nodes: HashSet<u64> = HashSet::new();
     for ns in way_nodes.values() {
         needed_nodes.extend(ns.iter().copied());
@@ -1107,7 +1148,11 @@ fn compute_outline_suppression(
             match m.r#type.as_str() {
                 "relation" => has_relation_part = true,
                 "way" => {
-                    part_area += way_area(m.r#ref).unwrap_or(0.0);
+                    // Elevated parts (raised roof/dome volumes) float above the ground and
+                    // cannot stand in for the outline, so they earn no coverage credit.
+                    if way_ground.get(&m.r#ref).copied().unwrap_or(true) {
+                        part_area += way_area(m.r#ref).unwrap_or(0.0);
+                    }
                     part_group.insert(m.r#ref, RELATION_SEED_BIT | rel.id);
                 }
                 _ => {}
@@ -1141,6 +1186,40 @@ fn compute_outline_suppression(
         }
     }
     suppressed
+}
+
+// Shoelace area of a closed lat/lon ring; lon scaled by cos(lat) so only the ratio matters.
+fn ring_area(r: &[(f64, f64)]) -> f64 {
+    if r.len() < 3 {
+        return 0.0;
+    }
+    let lon_scale = r[0].0.to_radians().cos();
+    let mut a = 0.0;
+    for i in 0..r.len() {
+        let (lat_a, lon_a) = r[i];
+        let (lat_b, lon_b) = r[(i + 1) % r.len()];
+        a += (lon_a * lat_b - lon_b * lat_a) * lon_scale;
+    }
+    (a / 2.0).abs()
+}
+
+// Ray-cast point-in-polygon test on a lat/lon ring.
+fn point_in_ring(lat: f64, lon: f64, r: &[(f64, f64)]) -> bool {
+    let n = r.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (yi, xi) = r[i];
+        let (yj, xj) = r[j];
+        if (yi > lat) != (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// Suppresses relation-less S3DB outlines: a building polygon that spatially contains building:part polygons.
@@ -1194,38 +1273,7 @@ fn compute_spatial_part_suppression(
             .unwrap_or_default()
     };
 
-    // shoelace area, lon scaled by cos(lat)
-    let area = |r: &[(f64, f64)]| -> f64 {
-        if r.len() < 3 {
-            return 0.0;
-        }
-        let lon_scale = r[0].0.to_radians().cos();
-        let mut a = 0.0;
-        for i in 0..r.len() {
-            let (lat_a, lon_a) = r[i];
-            let (lat_b, lon_b) = r[(i + 1) % r.len()];
-            a += (lon_a * lat_b - lon_b * lat_a) * lon_scale;
-        }
-        (a / 2.0).abs()
-    };
-
-    let point_in_ring = |lat: f64, lon: f64, r: &[(f64, f64)]| -> bool {
-        let n = r.len();
-        if n < 3 {
-            return false;
-        }
-        let mut inside = false;
-        let mut j = n - 1;
-        for i in 0..n {
-            let (yi, xi) = r[i];
-            let (yj, xj) = r[j];
-            if (yi > lat) != (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi {
-                inside = !inside;
-            }
-            j = i;
-        }
-        inside
-    };
+    // area (shoelace) and point_in_ring are shared module-level helpers (see above).
 
     struct OutlineGeom {
         id: u64,
@@ -1234,14 +1282,18 @@ fn compute_spatial_part_suppression(
     }
 
     // grid of outline bboxes so each part only tests nearby outlines
-    const CELL: f64 = 0.0005;
-    let cell = |lat: f64, lon: f64| ((lat / CELL).floor() as i64, (lon / CELL).floor() as i64);
+    let cell = |lat: f64, lon: f64| {
+        (
+            (lat / SUPPRESSION_GRID_CELL_DEG).floor() as i64,
+            (lon / SUPPRESSION_GRID_CELL_DEG).floor() as i64,
+        )
+    };
 
     let mut geoms: Vec<OutlineGeom> = Vec::new();
     let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
     for id in outline_ids {
         let r = ring(id);
-        let a = area(&r);
+        let a = ring_area(&r);
         if a <= 0.0 {
             continue;
         }
@@ -1272,7 +1324,7 @@ fn compute_spatial_part_suppression(
     let mut covered: HashMap<usize, f64> = HashMap::new();
     for pid in part_ids {
         let r = ring(pid);
-        let pa = area(&r);
+        let pa = ring_area(&r);
         if pa <= 0.0 {
             continue;
         }
@@ -1306,6 +1358,71 @@ fn compute_spatial_part_suppression(
         let g = &geoms[gi];
         if cov / g.area >= MIN_PART_COVERAGE {
             suppressed.insert(("way", g.id));
+        }
+    }
+    suppressed
+}
+
+/// Suppresses a relation outline whose every `outer` member way is itself a closed
+/// `building:part`. Such a relation contributes no geometry of its own: the parser already
+/// renders each of those part ways standalone, so also drawing the merged relation ring
+/// stacks a roofed box on top of the building's real S3DB tiers.
+///
+/// Deliberate divergence from upstream, which runs the same `all()` over the relation's
+/// already-processed members inside buildings.rs. The fork drops members whose way falls
+/// outside the cell bbox, and `all()` over a shrunken set is MORE likely to hold — so a cell
+/// with partial geometry would suppress while its neighbour renders, a visible seam. Keying on
+/// raw world-absolute ids and REQUIRING every member way to resolve in `ways` removes that: a
+/// truncated member list makes the guard not fire at all, in every cell alike.
+fn compute_part_way_outline_suppression(
+    relations: &[OsmElement],
+    ways: &[OsmElement],
+) -> OutlineSuppression {
+    let way_info: HashMap<u64, (&HashMap<String, String>, &Vec<u64>)> = ways
+        .iter()
+        .filter_map(|w| Some((w.id, (w.tags.as_ref()?, w.nodes.as_ref()?))))
+        .collect();
+
+    // Keep this in sync with the relation type filter in parse_osm_data.
+    let is_renderable = |tags: &HashMap<String, String>| {
+        matches!(
+            tags.get("type").map(|t| t.as_str()),
+            Some("multipolygon") | Some("building")
+        )
+    };
+    let is_outer_role =
+        |r: &str| r.eq_ignore_ascii_case("outer") || r.eq_ignore_ascii_case("outline");
+    let is_part = |t: &HashMap<String, String>| {
+        t.get("building:part")
+            .is_some_and(|v| !v.eq_ignore_ascii_case("no"))
+    };
+
+    let mut suppressed: OutlineSuppression = HashSet::new();
+    for rel in relations {
+        let Some(tags) = &rel.tags else { continue };
+        if !is_renderable(tags) {
+            continue;
+        }
+
+        let outer_refs: Vec<u64> = rel
+            .members
+            .iter()
+            .filter(|m| m.r#type == "way" && is_outer_role(m.role.trim()))
+            .map(|m| m.r#ref)
+            .collect();
+        if outer_refs.is_empty() {
+            continue;
+        }
+
+        // An unresolved member way must make the guard NOT fire: that is the anti-truncation
+        // requirement, and the reason this lives here rather than over ProcessedMembers.
+        let all_closed_parts = outer_refs.iter().all(|r| {
+            way_info.get(r).is_some_and(|(tags, nodes)| {
+                is_part(tags) && nodes.len() >= 4 && nodes.first() == nodes.last()
+            })
+        });
+        if all_closed_parts {
+            suppressed.insert(("relation", rel.id));
         }
     }
     suppressed
@@ -1559,5 +1676,117 @@ mod outline_suppression_tests {
         let mut groups = PartGroups::new();
         compute_outline_suppression(&[rel], &[outline, part], &nodes, &mut groups);
         assert_eq!(groups.get(&200), Some(&(RELATION_SEED_BIT | 1)));
+    }
+
+    // building_relation hardcodes id 1 and type=building; these need both to vary.
+    fn relation_with(id: u64, kind: &str, members: Vec<OsmMember>) -> OsmElement {
+        OsmElement {
+            r#type: "relation".into(),
+            id,
+            lat: None,
+            lon: None,
+            nodes: None,
+            tags: Some(HashMap::from([("type".to_string(), kind.to_string())])),
+            members,
+        }
+    }
+
+    // Every outer is a closed building:part way, so the relation ring is a pure duplicate.
+    #[test]
+    fn part_way_outers_suppress_the_relation() {
+        let (a, _) = square_way(100, 1000, 1.0);
+        let (b, _) = square_way(101, 1100, 0.5);
+        let ways = [
+            tagged(a, "building:part", "yes"),
+            tagged(b, "building:part", "yes"),
+        ];
+        let rel = relation_with(
+            7,
+            "multipolygon",
+            vec![member("way", 100, "outer"), member("way", 101, "outer")],
+        );
+
+        let s = compute_part_way_outline_suppression(&[rel], &ways);
+
+        assert!(s.contains(&("relation", 7)));
+    }
+
+    // One plain building outer means the relation still contributes real geometry.
+    #[test]
+    fn mixed_outers_keep_the_relation() {
+        let (a, _) = square_way(100, 1000, 1.0);
+        let (b, _) = square_way(101, 1100, 0.5);
+        let ways = [
+            tagged(a, "building:part", "yes"),
+            tagged(b, "building", "yes"),
+        ];
+        let rel = relation_with(
+            7,
+            "multipolygon",
+            vec![member("way", 100, "outer"), member("way", 101, "outer")],
+        );
+
+        let s = compute_part_way_outline_suppression(&[rel], &ways);
+
+        assert!(!s.contains(&("relation", 7)));
+    }
+
+    // Anti-truncation guard: a member way clipped away by the cell bbox must not let the
+    // shrunken outer set satisfy the all(), which would suppress here but not in the neighbour.
+    #[test]
+    fn missing_member_way_keeps_the_relation() {
+        let (a, _) = square_way(100, 1000, 1.0);
+        let ways = [tagged(a, "building:part", "yes")];
+        let rel = relation_with(
+            7,
+            "multipolygon",
+            vec![member("way", 100, "outer"), member("way", 101, "outer")],
+        );
+
+        let s = compute_part_way_outline_suppression(&[rel], &ways);
+
+        assert!(!s.contains(&("relation", 7)));
+    }
+
+    // type=site is never rendered by parse_osm_data, so it has no outline to suppress.
+    #[test]
+    fn non_renderable_relation_is_ignored() {
+        let (a, _) = square_way(100, 1000, 1.0);
+        let (b, _) = square_way(101, 1100, 0.5);
+        let ways = [
+            tagged(a, "building:part", "yes"),
+            tagged(b, "building:part", "yes"),
+        ];
+        let rel = relation_with(
+            7,
+            "site",
+            vec![member("way", 100, "outer"), member("way", 101, "outer")],
+        );
+
+        let s = compute_part_way_outline_suppression(&[rel], &ways);
+
+        assert!(!s.contains(&("relation", 7)));
+    }
+
+    // An open outer only renders as part of the merged ring, so the relation must stay.
+    #[test]
+    fn open_part_way_outer_keeps_the_relation() {
+        let (a, _) = square_way(100, 1000, 1.0);
+        let (mut b, _) = square_way(101, 1100, 0.5);
+        // drop the closing node so first != last
+        b.nodes.as_mut().unwrap().pop();
+        let ways = [
+            tagged(a, "building:part", "yes"),
+            tagged(b, "building:part", "yes"),
+        ];
+        let rel = relation_with(
+            7,
+            "multipolygon",
+            vec![member("way", 100, "outer"), member("way", 101, "outer")],
+        );
+
+        let s = compute_part_way_outline_suppression(&[rel], &ways);
+
+        assert!(!s.contains(&("relation", 7)));
     }
 }
