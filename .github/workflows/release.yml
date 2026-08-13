@@ -7,6 +7,11 @@ on:
 jobs:
   build:
     strategy:
+      # One platform failing must not cancel the other three. v3.0.7 shipped with ZERO assets
+      # because the Linux AppImage step failed and fail-fast (the default) cancelled the
+      # Windows and both macOS jobs mid-build - three healthy binaries thrown away over one
+      # broken bundler.
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -44,15 +49,22 @@ jobs:
       if: runner.os == 'Linux'
       run: cargo install tauri-cli --version "^2.0" --locked
 
-    - name: Build with AppImage bundle (Linux)
+    # The plain binary is built on EVERY platform, including Linux. It used to come out of the
+    # AppImage step as a side effect, so when the bundler broke there was no Linux binary at all
+    # - and the AppImage is a convenience, while the binary is the thing Meld and the CLI run.
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    # Best-effort. AppImage tooling drags in FUSE, linuxdeploy and WebKitGTK, any of which can
+    # break on a runner image update; when it does, the release should lose the AppImage and
+    # keep everything else.
+    - name: Build AppImage bundle (Linux, optional)
+      id: appimage
       if: runner.os == 'Linux'
+      continue-on-error: true
       env:
         APPIMAGE_EXTRACT_AND_RUN: 1  # Avoids FUSE requirement on CI runners
       run: cargo tauri build --target ${{ matrix.target }} --bundles appimage
-
-    - name: Build
-      if: runner.os != 'Linux'
-      run: cargo build --release --target ${{ matrix.target }}
 
     - name: Rename binary for release
       run: mv target/${{ matrix.target }}/release/${{ matrix.binary_name }} target/release/${{ matrix.asset_name }}
@@ -66,7 +78,7 @@ jobs:
       run: tar -czf target/release/${{ matrix.asset_name }}.tar.gz -C target/release ${{ matrix.asset_name }}
 
     - name: Package AppImage as tar.gz (Linux, preserves executable permission)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && steps.appimage.outcome == 'success'
       run: |
         mv target/${{ matrix.target }}/release/bundle/appimage/*.AppImage target/release/arnis-linux.AppImage
         chmod +x target/release/arnis-linux.AppImage
@@ -107,7 +119,7 @@ jobs:
         path: target/release/${{ matrix.asset_name }}${{ matrix.os != 'windows-latest' && '.tar.gz' || '' }}
 
     - name: Upload AppImage artifact
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && steps.appimage.outcome == 'success'
       uses: actions/upload-artifact@v7
       with:
         name: linux-appimage-build
@@ -165,7 +177,10 @@ jobs:
         name: ubuntu-22.04-x86_64-unknown-linux-gnu-build
         path: ./builds/linux
 
+    # Optional, to match the build side: the AppImage is allowed to be absent, and the release
+    # still goes out with the three real binaries.
     - name: Download Linux AppImage artifact
+      continue-on-error: true
       uses: actions/download-artifact@v8
       with:
         name: linux-appimage-build
@@ -180,6 +195,10 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
+        # fail_on_unmatched_files stays off so a missing AppImage does not sink the release.
+        # The three binaries below are the ones downstream depends on; Meld's launcher asks for
+        # arnis-windows.exe, arnis-linux.tar.gz and arnis-mac-universal.tar.gz by name.
+        fail_on_unmatched_files: false
         files: |
           builds/windows/arnis-windows.exe
           builds/linux/arnis-linux.tar.gz
