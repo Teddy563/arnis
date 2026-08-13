@@ -189,6 +189,17 @@ pub struct Args {
     #[arg(long = "no-buildings", visible_alias = "no-structures", default_value_t = true, action = ArgAction::SetFalse)]
     pub buildings: bool,
 
+    /// Add building footprints from Overture Maps that are missing in OpenStreetMap.
+    /// Helps sparsely mapped areas; may occasionally add a satellite-detected false positive.
+    ///
+    /// Defaults to true, which is exactly what the fork did before this flag existed: Overture
+    /// was fetched unconditionally whenever buildings were on, with no way to separate the two.
+    /// The only way to avoid a false-positive building was --no-buildings, which also throws
+    /// away every real one. Keeping the default at true means no archived command, saved Meld
+    /// project or cached render changes output by one block.
+    #[arg(long = "overture", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
+    pub overture: bool,
+
     /// Pre-warm the Overture building cache for --bbox (fetch + cache the byte ranges) and exit,
     /// before any world creation. Lets Meld download a region's Overture data once, up front, so the
     /// later parallel cells read it from disk instead of each stalling on a cold fetch.

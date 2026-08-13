@@ -471,11 +471,13 @@ fn run_cli() {
         ); /* Option<u64> already */
     bench.mark("parse_osm");
 
-    // Fetch supplementary building data from Overture Maps — ONLY when buildings are enabled.
-    // This is a per-run network fetch (STAC index + partition reads) and, measured, the single
-    // dominant per-cell cost (~93% of a cell's wall time). With --no-buildings the buildings are
-    // discarded anyway, so fetching them is pure waste: skip it entirely.
-    if args.buildings {
+    // Fetch supplementary building data from Overture Maps — ONLY when buildings are enabled
+    // AND --overture is on. This is a per-run network fetch (STAC index + partition reads) and,
+    // measured, the single dominant per-cell cost (~93% of a cell's wall time). With
+    // --no-buildings the buildings are discarded anyway, so fetching them is pure waste: skip it
+    // entirely. --overture=false is the narrower request — keep every OSM building, drop only
+    // the satellite-detected fill, which is the one that can invent a building that is not there.
+    if args.buildings && args.overture {
         println!("{} Fetching Overture Maps data...", "  [+]".bold());
         let overture_elements = overture::fetch_overture_buildings(
             &args.bbox,

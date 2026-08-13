@@ -1123,6 +1123,9 @@ fn gui_start_generation(
                 interior: interior_enabled,
                 roof: roof_enabled,
                 buildings: buildings_enabled,
+                // The desktop GUI has no Additional Buildings checkbox of its own yet, so it
+                // keeps the default: Overture on, exactly as before this flag existed.
+                overture: true,
                 prewarm_overture: false,
                 prewarm_elevation: false,
                 fillground: fillground_enabled,
@@ -1251,8 +1254,13 @@ fn gui_start_generation(
                             args.tile_invariant_rendering,
                         );
 
-                    // Fetch supplementary building data from Overture Maps
-                    {
+                    // Fetch supplementary building data from Overture Maps.
+                    //
+                    // This block had NO condition at all, so the desktop GUI paid the Overture
+                    // fetch — the dominant per-cell cost — even with buildings switched off, and
+                    // then discarded the result. Meld drives the CLI path in main.rs, which was
+                    // gated, so only GUI users were affected. Both now honour the same two flags.
+                    if args.buildings && args.overture {
                         let overture_elements = overture::fetch_overture_buildings(
                             &args.bbox,
                             args.scale,
