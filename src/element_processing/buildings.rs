@@ -1310,34 +1310,33 @@ impl BuildingBounds {
 // Helper Functions for Building Configuration
 // ============================================================================
 
-/// Checks if a building should be skipped (underground structures)
+/// Checks if a building sits underground and must be skipped.
+/// Takes `&HashMap` so the way path and the relation path share one predicate.
 #[inline]
-fn should_skip_underground_building(element: &ProcessedWay) -> bool {
+fn is_underground_building(tags: &HashMap<String, String>) -> bool {
+    // An explicit surface location wins over layer=-1, which is only stacking order
+    match tags.get("location").map(String::as_str) {
+        Some("underground") | Some("subway") => return true,
+        Some("surface") | Some("overground") | Some("roof") => return false,
+        _ => {}
+    }
+
     // Check layer tag, negative means underground
-    if let Some(layer) = element.tags.get("layer") {
+    if let Some(layer) = tags.get("layer") {
         if layer.parse::<i32>().unwrap_or(0) < 0 {
             return true;
         }
     }
 
     // Check level tag, negative means underground
-    if let Some(level) = element.tags.get("level") {
+    if let Some(level) = tags.get("level") {
         if level.parse::<i32>().unwrap_or(0) < 0 {
             return true;
         }
     }
 
-    // Check location tag
-    if let Some(location) = element.tags.get("location") {
-        if location == "underground" || location == "subway" {
-            return true;
-        }
-    }
-
     // Check building:levels:underground, if this is the only levels tag, it's underground
-    if element.tags.contains_key("building:levels:underground")
-        && !element.tags.contains_key("building:levels")
-    {
+    if tags.contains_key("building:levels:underground") && !tags.contains_key("building:levels") {
         return true;
     }
 
@@ -1544,6 +1543,32 @@ fn get_wall_block_for_category(category: BuildingCategory, rng: &mut impl Rng) -
     }
 }
 
+/// Fork hardening bounds for OSM numeric height tags.
+///
+/// `"inf"`, `"-inf"`, `"NaN"` and `"1e30"` all parse successfully with a plain
+/// `parse::<f64>()`. A saturating `as i32` cast then yields `i32::MAX`, and every
+/// `for y in start_y..(start_y + building_height)` wall loop below either runs
+/// ~2^31 iterations (hung cell) or overflows the add — and this crate builds
+/// release with `overflow-checks = true`, so that add PANICS the worker.
+/// 200 levels is ~800 m, above every real building; 1000 m is Jeddah Tower.
+const MAX_BUILDING_LEVELS: f64 = 200.0;
+const MAX_BUILDING_HEIGHT_M: f64 = 1000.0;
+/// Clamp for `building:min_level` / `layer` style integer tags. Keeps
+/// `l * 4 + 2` far from i32 overflow (release has overflow-checks on).
+const MIN_LEVEL_BOUNDS: std::ops::RangeInclusive<i32> = -64..=512;
+
+/// Parses an OSM numeric tag (optionally suffixed `m`) as a sane `f64`,
+/// rejecting NaN, +/-inf, negatives and anything past `max`.
+#[inline]
+fn parse_sane_f64(raw: &str, max: f64) -> Option<f64> {
+    raw.trim()
+        .trim_end_matches('m')
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v >= 0.0 && *v <= max)
+}
+
 /// Determines building height from OSM tags
 fn calculate_building_height(
     element: &ProcessedWay,
@@ -1556,13 +1581,17 @@ fn calculate_building_height(
     let mut building_height = default_height;
     let mut is_tall_building = false;
 
-    // From building:levels tag
+    // From building:levels tag (may be fractional, e.g. "2.5")
     if let Some(levels_str) = element.tags.get("building:levels") {
-        if let Ok(levels) = levels_str.parse::<i32>() {
-            let lev = levels - min_level;
-            if lev >= 1 {
-                building_height = multiply_scale(lev * 4 + 2, scale_factor).max(3);
-                if levels > 7 {
+        // FORK: parse_sane_f64, not parse::<f64>() — see MAX_BUILDING_LEVELS.
+        if let Some(levels) = parse_sane_f64(levels_str, MAX_BUILDING_LEVELS) {
+            let lev = levels - min_level as f64;
+            if lev >= 1.0 {
+                // Elevated elements get the +2 in their min_level offset instead,
+                // keeping the total top at levels * 4 + 2
+                let bonus = if min_level > 0 { 0.0 } else { 2.0 };
+                building_height = (((lev * 4.0 + bonus) * scale_factor) as i32).max(3);
+                if levels > 7.0 {
                     is_tall_building = true;
                 }
             }
@@ -1572,31 +1601,35 @@ fn calculate_building_height(
     // From height tag (overrides levels).
     // When min_height is also present, the wall height is height − min_height
     // (OSM `height` is absolute from ground, not relative to min_height).
+    let mut has_explicit_height = false;
     if let Some(height_str) = element.tags.get("height") {
-        if let Ok(height) = height_str.trim_end_matches("m").trim().parse::<f64>() {
+        if let Some(height) = parse_sane_f64(height_str, MAX_BUILDING_HEIGHT_M) {
+            has_explicit_height = true;
+            let mut is_elevated_part = false;
             let effective = if let Some(mh_str) = element.tags.get("min_height") {
-                let mh = mh_str
-                    .trim_end_matches('m')
-                    .trim()
-                    .parse::<f64>()
-                    .unwrap_or(0.0);
+                // FORK: min_height="-inf" would make (height - mh) infinite here.
+                let mh = parse_sane_f64(mh_str, MAX_BUILDING_HEIGHT_M).unwrap_or(0.0);
+                is_elevated_part = mh > 0.0;
                 (height - mh).max(1.0)
             } else {
                 height
             };
             building_height = (effective * scale_factor) as i32;
-            building_height = building_height.max(3);
+            // Elevated parts can be thin slabs, skip the 3-block interior minimum
+            building_height = building_height.max(if is_elevated_part { 1 } else { 3 });
             if height > 28.0 {
                 is_tall_building = true;
             }
         }
     }
 
-    // From relation levels (highest priority)
-    if let Some(levels) = relation_levels {
-        building_height = multiply_scale(levels * 4 + 2, scale_factor).max(3);
-        if levels > 7 {
-            is_tall_building = true;
+    // Relation levels only estimate the height, an explicit height tag wins
+    if !has_explicit_height {
+        if let Some(levels) = relation_levels {
+            building_height = multiply_scale(levels * 4 + 2, scale_factor).max(3);
+            if levels > 7 {
+                is_tall_building = true;
+            }
         }
     }
 
@@ -1759,16 +1792,20 @@ fn generate_roof_only_structure(
     // Priority: min_height → building:min_level → layer hint → default.
     let min_level_offset = if let Some(mh) = element.tags.get("min_height") {
         // min_height is in meters; convert via scale factor.
-        mh.trim_end_matches('m')
-            .trim()
-            .parse::<f64>()
-            .ok()
+        parse_sane_f64(mh, MAX_BUILDING_HEIGHT_M)
             .map(|h| (h * scale_factor) as i32)
             .unwrap_or(0)
     } else if let Some(ml) = element.tags.get("building:min_level") {
         ml.parse::<i32>()
             .ok()
-            .map(|l| multiply_scale(l * 4, scale_factor))
+            .filter(|l| MIN_LEVEL_BOUNDS.contains(l))
+            .map(|l| {
+                if l > 0 {
+                    multiply_scale(l * 4 + 2, scale_factor)
+                } else {
+                    0
+                }
+            })
             .unwrap_or(0)
     } else if let Some(layer) = element.tags.get("layer") {
         // For building:part=roof elements without explicit height tags, interpret
@@ -1788,17 +1825,14 @@ fn generate_roof_only_structure(
 
     // Determine roof thickness / height.
     let roof_thickness: i32 = if let Some(h) = element.tags.get("height") {
-        let total = h
-            .trim_end_matches('m')
-            .trim()
-            .parse::<f64>()
-            .ok()
+        let total = parse_sane_f64(h, MAX_BUILDING_HEIGHT_M)
             .map(|v| (v * scale_factor) as i32)
             .unwrap_or(5);
         // If we already applied a min_height offset, the thickness is just
         // the difference.  Otherwise keep the parsed value.
         if element.tags.contains_key("min_height") {
-            (total - min_level_offset).max(3)
+            // Elevated roof parts can be thin plates, keep them thin
+            (total - min_level_offset).max(if min_level_offset > 0 { 1 } else { 3 })
         } else {
             total.max(3)
         }
@@ -1806,6 +1840,7 @@ fn generate_roof_only_structure(
         levels
             .parse::<i32>()
             .ok()
+            .filter(|l| (0..=200).contains(l))
             .map(|l| multiply_scale(l * 4 + 2, scale_factor).max(3))
             .unwrap_or(5)
     } else {
@@ -4607,7 +4642,7 @@ pub fn generate_buildings(
     group_seed: u64,
 ) {
     // Early return for underground buildings
-    if should_skip_underground_building(element) {
+    if is_underground_building(&element.tags) {
         return;
     }
 
@@ -4643,6 +4678,7 @@ pub fn generate_buildings(
         .tags
         .get("building:min_level")
         .and_then(|s| s.parse::<i32>().ok())
+        .filter(|l| MIN_LEVEL_BOUNDS.contains(l))
         .unwrap_or(0);
 
     let scale_factor = args.scale;
@@ -4653,14 +4689,15 @@ pub fn generate_buildings(
     };
 
     let min_level_offset = if let Some(mh) = element.tags.get("min_height") {
-        mh.trim_end_matches('m')
-            .trim()
-            .parse::<f64>()
-            .ok()
+        parse_sane_f64(mh, MAX_BUILDING_HEIGHT_M)
             .map(|h| (h * scale_factor) as i32)
             .unwrap_or(0)
+    } else if min_level > 0 {
+        // Matches the levels height formula (4 per level + 2) so a skybridge
+        // floor lines up with the level tops of the buildings it connects
+        multiply_scale(min_level * 4 + 2, scale_factor)
     } else {
-        multiply_scale(min_level * 4, scale_factor)
+        0
     };
 
     // Get cached floor area. Hole carving below needs `retain`, which requires
@@ -4785,7 +4822,12 @@ pub fn generate_buildings(
                 generate_roof_only_structure(editor, element, &cached_floor_area, args, group_seed);
                 return;
             }
-            "bridge" => {
+            // Skybridges with elevation data render as normal elevated buildings,
+            // the flat deck below is only the fallback for untagged ones
+            "bridge"
+                if !element.tags.contains_key("min_height")
+                    && !element.tags.contains_key("building:min_level") =>
+            {
                 generate_bridge(editor, element, flood_fill_cache, args.timeout.as_ref());
                 return;
             }
@@ -5242,6 +5284,10 @@ fn generate_building_roof(
     ) && config.condition == BuildingCondition::Normal
         && style.roof_type == RoofType::Gabled;
 
+    // roof:colour/material on a part means the mapper modeled this surface, keep it clean
+    let modeled_part_roof = element.tags.contains_key("building:part")
+        && (element.tags.contains_key("roof:colour") || element.tags.contains_key("roof:material"));
+
     // Generate the roof using the pre-determined roof type from style
     generate_roof(
         editor,
@@ -5265,7 +5311,7 @@ fn generate_building_roof(
 
     // Add decorative roofline variation on flat-roofed residential/generic buildings
     // (those that don't already have a parapet or non-flat roof)
-    if !config.has_parapet && style.roof_type == RoofType::Flat {
+    if !config.has_parapet && style.roof_type == RoofType::Flat && !modeled_part_roof {
         generate_flat_roof_edge_variation(editor, element, config);
     }
 
@@ -5287,7 +5333,7 @@ fn generate_building_roof(
     }
 
     // Add roof terrace on flat-roofed tall building:part elements
-    if should_generate_roof_terrace(element, config, style.roof_type) {
+    if !modeled_part_roof && should_generate_roof_terrace(element, config, style.roof_type) {
         let roof_y = config.start_y_offset + config.building_height;
         generate_roof_terrace(
             editor,
@@ -5299,14 +5345,15 @@ fn generate_building_roof(
         );
     }
 
-    if should_generate_rooftop_equipment(config, style.roof_type, category)
-        || short_flat_rooftop_bits_for(
-            element.id,
-            style.roof_type,
-            config.building_height,
-            category,
-            config.condition,
-        )
+    if !modeled_part_roof
+        && (should_generate_rooftop_equipment(config, style.roof_type, category)
+            || short_flat_rooftop_bits_for(
+                element.id,
+                style.roof_type,
+                config.building_height,
+                category,
+                config.condition,
+            ))
     {
         let roof_y = config.start_y_offset + config.building_height;
         generate_rooftop_equipment(
@@ -7481,28 +7528,7 @@ pub fn generate_building_from_relation(
     building_passages: &CoordinateBitmap,
 ) {
     // Skip underground buildings/building parts
-    // Check layer tag
-    if let Some(layer) = relation.tags.get("layer") {
-        if layer.parse::<i32>().unwrap_or(0) < 0 {
-            return;
-        }
-    }
-    // Check level tag
-    if let Some(level) = relation.tags.get("level") {
-        if level.parse::<i32>().unwrap_or(0) < 0 {
-            return;
-        }
-    }
-    // Check location tag
-    if let Some(location) = relation.tags.get("location") {
-        if location == "underground" || location == "subway" {
-            return;
-        }
-    }
-    // Check building:levels:underground without building:levels
-    if relation.tags.contains_key("building:levels:underground")
-        && !relation.tags.contains_key("building:levels")
-    {
+    if is_underground_building(&relation.tags) {
         return;
     }
 
@@ -7521,7 +7547,8 @@ pub fn generate_building_from_relation(
     let relation_levels = relation
         .tags
         .get("building:levels")
-        .and_then(|l: &String| l.parse::<i32>().ok())
+        .and_then(|l: &String| parse_sane_f64(l, MAX_BUILDING_LEVELS))
+        .map(|l| l.round() as i32)
         .unwrap_or(2); // Default to 2 levels
 
     // Check if this is a type=building relation with part members.
@@ -7740,13 +7767,21 @@ fn generate_bridge(
     let floor_block: Block = STONE;
     let railing_block: Block = STONE_BRICKS;
 
-    // Calculate bridge level offset based on the "level" tag
-    let bridge_y_offset = if let Some(level_str) = element.tags.get("level") {
-        if let Ok(level) = level_str.parse::<i32>() {
-            (level * 3) + 1
-        } else {
-            1 // Default elevation
-        }
+    // Calculate bridge level offset based on the "level" tag, layer as fallback
+    let bridge_y_offset = if let Some(level) = element
+        .tags
+        .get("level")
+        .and_then(|s| s.parse::<i32>().ok())
+        .filter(|l| MIN_LEVEL_BOUNDS.contains(l))
+    {
+        (level * 3) + 1
+    } else if let Some(layer) = element
+        .tags
+        .get("layer")
+        .and_then(|s| s.parse::<i32>().ok())
+        .filter(|l| *l > 0 && MIN_LEVEL_BOUNDS.contains(l))
+    {
+        layer * 4 + 2
     } else {
         1 // Default elevation
     };
@@ -7797,5 +7832,120 @@ fn generate_bridge(
     // Place floor blocks
     for &(x, z) in bridge_area.iter() {
         editor.set_block_absolute(floor_block, x, floor_y, z, None, None);
+    }
+}
+
+#[cfg(test)]
+mod height_tests {
+    use super::*;
+
+    fn way_with_tags(tags: &[(&str, &str)]) -> ProcessedWay {
+        ProcessedWay {
+            id: 1,
+            tags: tags
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            nodes: Vec::new(),
+            // fork-only fields, see osm_parser.rs:238
+            unclipped_bounds: None,
+            unclipped_polygon_area: None,
+        }
+    }
+
+    // height=89 min_height=60 levels=19: the 29m height span wins over the levels estimate
+    #[test]
+    fn explicit_height_beats_relation_levels() {
+        let way = way_with_tags(&[
+            ("height", "89"),
+            ("min_height", "60"),
+            ("building:levels", "19"),
+        ]);
+        let (h, _) = calculate_building_height(&way, 0, 1.0, Some(19));
+        assert_eq!(h, 29);
+    }
+    #[test]
+    fn relation_levels_apply_without_height_tag() {
+        let (h, _) = calculate_building_height(&way_with_tags(&[]), 0, 1.0, Some(5));
+        assert_eq!(h, 22); // 5 levels * 4 + 2
+    }
+    // A 5cm roof plate stays a thin slab instead of a 3-block band
+    #[test]
+    fn elevated_thin_part_is_not_fattened() {
+        let way = way_with_tags(&[("height", "19.05"), ("min_height", "19")]);
+        assert_eq!(calculate_building_height(&way, 0, 1.0, None).0, 1);
+    }
+    // height=96 min_height=94 spans exactly 2 blocks
+    #[test]
+    fn elevated_part_keeps_exact_span() {
+        let way = way_with_tags(&[("height", "96"), ("min_height", "94")]);
+        assert_eq!(calculate_building_height(&way, 0, 1.0, None).0, 2);
+    }
+    // Ground-level buildings keep the 3-block interior minimum
+    #[test]
+    fn ground_level_building_keeps_minimum() {
+        assert_eq!(
+            calculate_building_height(&way_with_tags(&[("height", "2")]), 0, 1.0, None).0,
+            3
+        );
+    }
+    // min_height=0 is not an elevated part, the minimum still applies
+    #[test]
+    fn zero_min_height_is_ground_level() {
+        let way = way_with_tags(&[("height", "2"), ("min_height", "0")]);
+        assert_eq!(calculate_building_height(&way, 0, 1.0, None).0, 3);
+    }
+    #[test]
+    fn fractional_levels_parse() {
+        let way = way_with_tags(&[("building:levels", "2.5")]);
+        assert_eq!(calculate_building_height(&way, 0, 1.0, None).0, 12); // 2.5 * 4 + 2
+    }
+    // The +2 moved into the min_level offset, wall span is exactly 4 per level
+    #[test]
+    fn min_level_walls_span_remaining_levels() {
+        let way = way_with_tags(&[("building:levels", "4"), ("building:min_level", "2")]);
+        assert_eq!(calculate_building_height(&way, 2, 1.0, None).0, 8);
+    }
+    // 3b63e3d: corrected comment. layer=-1 is treated as underground unless an
+    // explicit surface/overground/roof location is set
+    #[test]
+    fn surface_location_overrides_negative_layer() {
+        let way = way_with_tags(&[("building", "office"), ("layer", "-1")]);
+        assert!(is_underground_building(&way.tags));
+        let way = way_with_tags(&[
+            ("building", "office"),
+            ("layer", "-1"),
+            ("location", "surface"),
+        ]);
+        assert!(!is_underground_building(&way.tags));
+    }
+
+    // ---- fork-only: the hardening regression suite ----
+    // Garbage tags must never reach i32::MAX. Release builds have
+    // overflow-checks=true, so an unclamped height is a hang or a panic.
+    #[test]
+    fn absurd_levels_cannot_hang_a_cell() {
+        for bad in ["inf", "-inf", "NaN", "1e30", "99999999999", "1e400", "-3"] {
+            let way = way_with_tags(&[("building", "yes"), ("building:levels", bad)]);
+            let (h, _) = calculate_building_height(&way, 0, 1.0, None);
+            assert_eq!(h, 10, "building:levels={bad:?} produced height {h}");
+        }
+    }
+    #[test]
+    fn absurd_height_tag_cannot_hang_a_cell() {
+        for bad in ["inf", "NaN", "1e30", "1e400"] {
+            let way = way_with_tags(&[("building", "yes"), ("height", bad)]);
+            let (h, _) = calculate_building_height(&way, 0, 1.0, None);
+            assert_eq!(h, 10, "height={bad:?} produced height {h}");
+        }
+    }
+    // The one that catches a missed min_height filter: (20 - -inf) = inf.
+    #[test]
+    fn absurd_min_height_cannot_hang_a_cell() {
+        for bad in ["-inf", "NaN", "-1e30"] {
+            let way = way_with_tags(&[("height", "20"), ("min_height", bad)]);
+            let (h, _) = calculate_building_height(&way, 0, 1.0, None);
+            assert_eq!(h, 20, "min_height={bad:?} produced height {h}");
+        }
     }
 }

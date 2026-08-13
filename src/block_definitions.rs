@@ -1909,6 +1909,19 @@ static DEFINED_COLORS: &[ColorBlockMapping] = &[
         (210, 110, 60),
         &[ORANGE_TERRACOTTA, BRICK, BROWN_TERRACOTTA, RED_TERRACOTTA],
     ),
+    // Saturated tag colours, the muted entries above would wash these out
+    ((36, 137, 199), &[LIGHT_BLUE_CONCRETE]),
+    ((45, 47, 143), &[BLUE_CONCRETE, BLUE_TERRACOTTA]),
+    ((21, 119, 136), &[CYAN_CONCRETE]),
+    ((73, 91, 36), &[GREEN_CONCRETE]),
+    ((120, 200, 30), &[LIME_CONCRETE]),
+    ((241, 175, 21), &[YELLOW_CONCRETE]),
+    ((186, 133, 35), &[YELLOW_TERRACOTTA]),
+    ((200, 30, 30), &[RED_CONCRETE]),
+    ((100, 32, 156), &[PURPLE_CONCRETE]),
+    ((169, 48, 159), &[MAGENTA_CONCRETE]),
+    ((224, 97, 1), &[ORANGE_CONCRETE]),
+    ((90, 90, 90), &[GRAY_CONCRETE, POLISHED_DEEPSLATE]),
 ];
 
 // Function to randomly select building wall block with alternatives.
@@ -2115,3 +2128,57 @@ const CASTLE_WALL_OPTIONS: [Block; 10] = [
     SMOOTH_STONE,
     BRICK,
 ];
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    fn rng() -> ChaCha8Rng {
+        ChaCha8Rng::seed_from_u64(1)
+    }
+
+    #[test]
+    fn saturated_colours_map_to_matching_blocks() {
+        let cases = [
+            ((0, 128, 0), GREEN_CONCRETE),
+            ((255, 255, 0), YELLOW_CONCRETE),
+            ((255, 0, 0), RED_CONCRETE),
+            ((128, 0, 128), PURPLE_CONCRETE),
+            ((255, 128, 0), ORANGE_CONCRETE),
+            ((24, 116, 205), LIGHT_BLUE_CONCRETE),
+        ];
+        for (rgb, expected) in cases {
+            assert_eq!(
+                get_building_wall_block_for_color(rgb, &mut rng()),
+                expected,
+                "colour {rgb:?} should map to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn muted_colours_keep_muted_blocks() {
+        let saturated = [
+            GREEN_CONCRETE,
+            LIME_CONCRETE,
+            YELLOW_CONCRETE,
+            RED_CONCRETE,
+            PURPLE_CONCRETE,
+            MAGENTA_CONCRETE,
+            ORANGE_CONCRETE,
+            LIGHT_BLUE_CONCRETE,
+            BLUE_CONCRETE,
+            CYAN_CONCRETE,
+        ];
+        // beige, pale rose, brick red
+        for rgb in [(187, 173, 142), (209, 177, 161), (176, 74, 58)] {
+            let b = get_building_wall_block_for_color(rgb, &mut rng());
+            assert!(
+                !saturated.contains(&b),
+                "colour {rgb:?} got saturated {b:?}"
+            );
+        }
+    }
+}
