@@ -47,8 +47,17 @@ jobs:
     - uses: ./.github/actions/setup-arnis-linux
       with:
         rust-targets: ${{ matrix.target }}
-        # Cold rebuild for release reproducibility.
-        cache: "true"
+        # Cold rebuild, which is what the comment always said - the value was flipped to "true"
+        # in b0f1d66 and the comment left behind. That broke the Linux release outright:
+        #
+        #   build-script-build: /lib/x86_64-linux-gnu/libc.so.6:
+        #       version `GLIBC_2.39' not found
+        #
+        # Build scripts are compiled for the HOST and then executed. ci-build.yml runs on
+        # ubuntu-latest (24.04, glibc 2.39) and this job runs on ubuntu-22.04 (glibc 2.35), and
+        # the cache key does not separate them - so the release job restored host binaries from
+        # a newer glibc and could not run them. A release wants a cold build anyway.
+        cache: "false"
 
     - name: Install dependencies
       run: cargo fetch
@@ -61,14 +70,6 @@ jobs:
     # AppImage step as a side effect, so when the bundler broke there was no Linux binary at all
     # - and the AppImage is a convenience, while the binary is the thing Meld and the CLI run.
     - name: Build
-      env:
-        # Passing --target puts cargo in cross-compilation mode even when the target IS the
-        # host, and the pkg-config crate then refuses to look at host libraries unless this is
-        # set. That makes the GTK/WebKit lookups fail on Linux only, in this workflow only:
-        # ci-build.yml compiles the same code with --all-features and no --target, and passes.
-        # Harmless where it is not needed, and the triples are identical here, so nothing is
-        # actually being cross-built.
-        PKG_CONFIG_ALLOW_CROSS: 1
       run: cargo build --release --target ${{ matrix.target }}
 
     # Best-effort. AppImage tooling drags in FUSE, linuxdeploy and WebKitGTK, any of which can
@@ -80,7 +81,6 @@ jobs:
       continue-on-error: true
       env:
         APPIMAGE_EXTRACT_AND_RUN: 1  # Avoids FUSE requirement on CI runners
-        PKG_CONFIG_ALLOW_CROSS: 1    # same --target/pkg-config interaction as the Build step
       run: cargo tauri build --target ${{ matrix.target }} --bundles appimage
 
     - name: Rename binary for release
