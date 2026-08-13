@@ -69,8 +69,35 @@ jobs:
     # The plain binary is built on EVERY platform, including Linux. It used to come out of the
     # AppImage step as a side effect, so when the bundler broke there was no Linux binary at all
     # - and the AppImage is a convenience, while the binary is the thing Meld and the CLI run.
+    #
+    # Linux builds it HEADLESS. `default = ["gui"]` pulls in Tauri, and main() calls
+    # gui::run_gui(), so the webkit2gtk/GTK DT_NEEDED entries survive --as-needed and the loader
+    # resolves them before main() on every invocation - CLI arguments or not. On a machine
+    # without the WebKitGTK runtime (headless render box, minimal desktop, Debian/Arch without
+    # webkit2gtk-4.1) the binary dies with
+    #
+    #   ./arnis: error while loading shared libraries: libwebkit2gtk-4.1.so.0
+    #
+    # before it can print anything. Meld already knew this rule - meld_launch.py:220 and
+    # server.py:1794 both pass --no-default-features when they build from source off Windows -
+    # but the published asset was the GUI build. macOS is unaffected (Tauri links the
+    # always-present system WebKit.framework) and Windows keeps its GUI.
+    #
+    # It is copied out immediately because the AppImage step below rebuilds WITH the GUI over
+    # the same path; the generic rename step is skipped on Linux for the same reason.
     - name: Build
-      run: cargo build --release --target ${{ matrix.target }}
+      shell: bash
+      run: |
+        if [ "${{ runner.os }}" = "Linux" ]; then
+          cargo build --release --no-default-features --target ${{ matrix.target }}
+          mkdir -p target/release
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" \
+             "target/release/${{ matrix.asset_name }}"
+          ldd "target/release/${{ matrix.asset_name }}" | grep -q webkit \
+            && { echo "::error::headless build still links webkit"; exit 1; } || true
+        else
+          cargo build --release --target ${{ matrix.target }}
+        fi
 
     # Best-effort. AppImage tooling drags in FUSE, linuxdeploy and WebKitGTK, any of which can
     # break on a runner image update; when it does, the release should lose the AppImage and
@@ -83,7 +110,10 @@ jobs:
         APPIMAGE_EXTRACT_AND_RUN: 1  # Avoids FUSE requirement on CI runners
       run: cargo tauri build --target ${{ matrix.target }} --bundles appimage
 
+    # Skipped on Linux: the headless binary was already copied out above, and by now the AppImage
+    # step has replaced target/<triple>/release/arnis with the GUI build.
     - name: Rename binary for release
+      if: runner.os != 'Linux'
       run: mv target/${{ matrix.target }}/release/${{ matrix.binary_name }} target/release/${{ matrix.asset_name }}
 
     - name: Set executable permission
