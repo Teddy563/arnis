@@ -4,7 +4,7 @@ use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::tree::{Tree, TreeType};
-use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache};
+use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFillCache};
 use crate::osm_parser::{ProcessedElement, ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::{prelude::IndexedRandom, Rng};
@@ -145,13 +145,11 @@ pub fn generate_natural(
                 return;
             };
 
-            // Resolve the fill FIRST (it is cached, so this costs nothing extra). A polygon
-            // past the fill budget comes back empty, and painting its edge anyway is what
-            // produced the reported "sand outline around untouched ground": a border with
-            // nothing inside reads as a bug, where no border at all just leaves the area to
-            // land cover, which is what actually fills it.
+            // Resolve the fill before painting the edge. It is cached, so this costs nothing
+            // extra. A closed ring that comes back empty is one the fill refused for size, and
+            // drawing its edge anyway leaves a border around ground nothing ever filled.
             let filled_area = flood_fill_cache.get_or_compute(way, args.timeout.as_ref());
-            if filled_area.is_empty() && way.nodes.len() > 2 {
+            if filled_area.is_empty() && is_oversized_ring(way) {
                 return;
             }
 

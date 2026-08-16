@@ -21,6 +21,11 @@ pub const MAX_FLOOD_FILL_AREA: i64 = 25_000_000;
 /// covers are counted.
 pub const MAX_FILL_CELLS: usize = 32_000_000;
 
+/// Work cap for the scanline path: rows x edges is the cost of the crossing scan, and nothing
+/// else bounds it - the row cap alone let a 4M-row ring with a hundred-thousand-edge coastline
+/// demand ~400 billion edge tests, which is a hang, not a fill. Ported from upstream 3e35621.
+pub const MAX_SCANLINE_EDGE_TESTS: i64 = 200_000_000;
+
 /// A compact bitmap for visited-coordinate tracking during flood fill.
 ///
 /// Uses 1 bit per coordinate instead of ~48 bytes per entry in a `HashSet`.
@@ -147,47 +152,64 @@ fn scanline_fill_area(
     min_z: i32,
     max_z: i32,
 ) -> Vec<(i32, i32)> {
-    // Cost here is rows × edges, NOT area, so a huge-but-sparse polygon (a long river bank)
-    // is cheap and must not be judged by its bounding box — that was the old rule's flaw.
-    // Only an absurd row count is refused; the real limit is the per-span budget below.
-    if (max_z as i64 - min_z as i64) > 4_000_000 {
+    // Cost here is rows x edges, NOT area, so a huge-but-sparse polygon (a long river bank)
+    // is cheap and must not be judged by its bounding box - that was the old rule's flaw.
+    // Both factors are capped together: rows alone let a pathological ring hang the scan.
+    let rows = max_z as i64 - min_z as i64 + 1;
+    let edges = polygon_coords.len() as i64 - 1;
+    if rows.saturating_mul(edges) > MAX_SCANLINE_EDGE_TESTS {
         return vec![];
     }
 
-    let mut filled: Vec<(i32, i32)> = Vec::new();
+    // Rows are sampled on the INTEGER lattice and spans keep strictly between their crossings,
+    // so the cells returned here are exactly the ones the bitmap path would accept with
+    // geo::Contains - sampling through row centres (z + 0.5) made the two paths disagree by up
+    // to a row on the same shape, which shows as a seam wherever a polygon crosses the size
+    // threshold between them. A cell lying exactly on the boundary is left to the caller's
+    // outline pass, the same way geo::Contains treats the boundary. Ported from upstream
+    // 889e09d.
+    let mut spans: Vec<(i32, i32, i32)> = Vec::new();
     let mut crossings: Vec<f64> = Vec::new();
+    let mut cells: i64 = 0;
+
     for z in min_z..=max_z {
-        // Sample each row through its centre so an edge that lands exactly on the integer
-        // line can't be counted twice (the classic scanline double-crossing artefact).
-        let zc = z as f64 + 0.5;
+        let zf = z as f64;
         crossings.clear();
         for w in polygon_coords.windows(2) {
             let (x0, z0) = (w[0].0 as f64, w[0].1 as f64);
             let (x1, z1) = (w[1].0 as f64, w[1].1 as f64);
-            if (z0 <= zc) == (z1 <= zc) {
-                continue; // edge does not straddle this row
+            // Half-open in z, so a vertex sitting exactly on the row counts once, not twice.
+            if (z0 <= zf) == (z1 <= zf) {
+                continue;
             }
-            let t = (zc - z0) / (z1 - z0);
+            let t = (zf - z0) / (z1 - z0);
             crossings.push(x0 + t * (x1 - x0));
         }
         if crossings.len() < 2 {
             continue;
         }
-        crossings.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        crossings.sort_unstable_by(f64::total_cmp);
+
         for pair in crossings.chunks_exact(2) {
-            // Clamped to the ring's own bounds: float rounding at a near-vertical edge can
-            // otherwise put a span endpoint a block outside the polygon.
-            let xs = (pair[0].ceil() as i32).max(min_x);
-            let xe = (pair[1].floor() as i32).min(max_x);
+            // Strictly between the crossings; endpoints belong to the outline pass.
+            let xs = (pair[0].floor() as i32).saturating_add(1).max(min_x);
+            let xe = (pair[1].ceil() as i32).saturating_sub(1).min(max_x);
             if xe < xs {
                 continue;
             }
-            if filled.len() + (xe - xs + 1) as usize > MAX_FILL_CELLS {
+            // i64 before arithmetic: the span count must not wrap on absurd synthetic input.
+            cells += xe as i64 - xs as i64 + 1;
+            if cells > MAX_FILL_CELLS as i64 {
                 return vec![]; // over budget: behave exactly as the old cap did
             }
-            for x in xs..=xe {
-                filled.push((x, z));
-            }
+            spans.push((z, xs, xe));
+        }
+    }
+
+    let mut filled: Vec<(i32, i32)> = Vec::with_capacity(cells as usize);
+    for (z, xs, xe) in spans {
+        for x in xs..=xe {
+            filled.push((x, z));
         }
     }
     filled
@@ -384,11 +406,27 @@ mod tests {
         // to render as an outline around untouched ground.
         let poly = rect(0, 0, 5_999, 4_999);
         let filled = flood_fill_area(&poly, None);
-        // Rows are sampled through their centres, so the ring's own top row belongs to the
-        // edge pass the callers run; everything inside it is here.
-        assert_eq!(filled.len(), 6_000 * 4_999);
+        // Strict interior in X; half-open in Z. Vertical boundary columns belong to the
+        // callers' outline pass (matching geo::Contains on the bitmap path - the agreement the
+        // integer-lattice port, upstream 889e09d, exists to guarantee and the equivalence test
+        // above pins). Rows are half-open, so the BOTTOM boundary row stays in and the top row
+        // is out - upstream's own comment names a cell on a horizontal edge as the one case the
+        // two paths still trade a row on, accepted as slack on shapes thousands of blocks tall.
+        // 6,000 x 5,000 ring -> 5,998 interior columns x 4,999 half-open rows.
+        assert_eq!(filled.len(), 5_998 * 4_999);
         assert!(filled.contains(&(3_000, 2_500)), "centre must be inside");
-        assert!(filled.contains(&(0, 0)), "corner column must be inside");
+        assert!(
+            !filled.contains(&(0, 0)),
+            "boundary column is the outline pass's job"
+        );
+        assert!(
+            filled.contains(&(1, 0)),
+            "bottom row is in: rows are half-open"
+        );
+        assert!(
+            !filled.contains(&(1, 4_999)),
+            "top row is out: rows are half-open"
+        );
     }
 
     #[test]

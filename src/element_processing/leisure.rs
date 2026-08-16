@@ -5,7 +5,7 @@ use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::tree::Tree;
-use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache};
+use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFillCache};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::Rng;
@@ -46,6 +46,18 @@ pub fn generate_leisure(
         if let Some(surface) = element.tags.get("surface") {
             if let Some(blocks) = get_blocks_for_surface(surface) {
                 block_type = blocks[0];
+            }
+        }
+
+        // Resolve the fill BEFORE painting the edge, same contract as natural.rs: a closed
+        // ring the fill refused must not leave a border around ground nothing filled. The
+        // fill is cached, so asking again at the fill site below costs nothing. Open ways and
+        // thin slivers keep their edges - is_oversized_ring is what separates "legitimately
+        // empty" from "refused for size". Ported from upstream 33a5320.
+        {
+            let filled_area = flood_fill_cache.get_or_compute(element, args.timeout.as_ref());
+            if filled_area.is_empty() && is_oversized_ring(element) {
+                return;
             }
         }
 
