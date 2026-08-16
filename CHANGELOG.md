@@ -10,6 +10,14 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.0.10] - unreleased
+
+### Removed
+- **The stadium 3D archetype** (`src/models_3d/custom/stadium.rs`): the generated stadium
+  GLB kept landing on ordinary football/soccer fields, so it is deleted outright — tagged
+  stadiums now render procedurally like any other area. The plane archetype and the
+  3DMR/Wikidata model pipelines are unchanged.
+
 ## [3.0.7] - 2026-08-13
 
 Upstream port wave 1: everything the fork is taking from `louis-e/arnis`
