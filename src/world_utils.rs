@@ -511,13 +511,17 @@ fn pack_mcmeta_for(
         pack.insert("description".into(), description.into());
     }
     // Pack format 82 deprecated the overlay `formats` key in favour of
-    // `min_format`/`max_format` — a 1.21.9+ server logs
-    //   Overlay "overlay_attributes" key formats is deprecated starting from pack format 82
-    // on every start. The template carries BOTH spellings, so for a target we know sits at
-    // 82 or above we drop the old one and the warning goes with it. Targets below 82 (and
-    // any target whose format we have not verified) keep `formats`, because that is the
-    // only overlay selector those versions understand.
-    if caps.datapack_format.is_some_and(|f| f >= 82.0) {
+    // `min_format`/`max_format`. It is not merely noisy: since 1.21.9 the deprecated key
+    // makes the game reject the ENTIRE overlays section, so every version falls back to the
+    // legacy base data tree. On 1.21.11 that tree has no `timelines` field, which defaults
+    // to an empty set and leaves the overworld with no day timeline — time freezes and
+    // `/time set` is a no-op (upstream 4ae3baab).
+    //
+    // The template therefore ships WITHOUT `formats`, which is the right default: an
+    // unspecified target (Meld never passes --mc-version by default) is assumed modern.
+    // `formats` is put back only for a target we have positively verified sits below 82,
+    // because that is the only overlay selector those versions understand.
+    if caps.datapack_format.is_some_and(|f| f < 82.0) {
         if let Some(entries) = doc
             .get_mut("overlays")
             .and_then(|o| o.get_mut("entries"))
@@ -525,7 +529,25 @@ fn pack_mcmeta_for(
         {
             for entry in entries.iter_mut() {
                 if let Some(obj) = entry.as_object_mut() {
-                    obj.remove("formats");
+                    if obj.contains_key("formats") {
+                        continue;
+                    }
+                    let lo = obj
+                        .get("min_format")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_i64());
+                    let hi = obj
+                        .get("max_format")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_i64());
+                    if let (Some(lo), Some(hi)) = (lo, hi) {
+                        obj.insert(
+                            "formats".into(),
+                            serde_json::json!({ "min_inclusive": lo, "max_inclusive": hi }),
+                        );
+                    }
                 }
             }
         }
@@ -758,4 +780,87 @@ pub fn apply_java_world_settings(
     fs::write(&level_path, compressed).map_err(|e| format!("Failed to write level.dat: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod pack_mcmeta_tests {
+    use super::*;
+    use crate::mc_version::{DatapackSchema, VersionCaps};
+
+    /// The bundled template. `install_datapack_files` keeps its own local const; this
+    /// mirrors it so the test reads the same bytes that ship.
+    const PACK_MCMETA: &[u8] = include_bytes!("../assets/minecraft/datapack_tall/pack.mcmeta");
+
+    fn profile() -> crate::height_profile::HeightProfile {
+        crate::height_profile::HeightProfile::vanilla("test", 0, 1.0)
+    }
+
+    fn caps_with(format: Option<f64>) -> VersionCaps {
+        VersionCaps {
+            id: "test".to_string(),
+            data_version: Some(4440),
+            extended_height: true,
+            chunk_layout: crate::mc_version::ChunkLayout::Flat,
+            datapack_schema: DatapackSchema::Legacy,
+            datapack_format: format,
+            note: None,
+            verified_from: None,
+        }
+    }
+
+    fn overlay_entries(bytes: &[u8]) -> Vec<serde_json::Value> {
+        let doc: serde_json::Value = serde_json::from_slice(bytes).expect("valid json");
+        doc["overlays"]["entries"]
+            .as_array()
+            .expect("overlay entries")
+            .clone()
+    }
+
+    /// The template must not carry the deprecated `formats` key. Since 1.21.9 its presence
+    /// makes the game reject the whole overlays section, which drops the world back to the
+    /// legacy data tree and freezes the day/night cycle (upstream 4ae3baab).
+    #[test]
+    fn template_has_no_deprecated_formats_key() {
+        for entry in overlay_entries(PACK_MCMETA) {
+            assert!(
+                entry.get("formats").is_none(),
+                "bundled template still carries `formats`: {entry}"
+            );
+        }
+    }
+
+    /// Meld never passes --mc-version, so this is the path every Meld extended-height
+    /// world takes. It must come out modern-shaped.
+    #[test]
+    fn unknown_target_gets_no_formats_key() {
+        let out = pack_mcmeta_for(PACK_MCMETA, &profile(), crate::mc_version::default_caps())
+            .expect("mcmeta");
+        for entry in overlay_entries(&out) {
+            assert!(entry.get("formats").is_none(), "unexpected `formats`: {entry}");
+        }
+    }
+
+    /// A target we have positively verified as pre-82 is the only case that still needs the
+    /// old selector, because `min_format`/`max_format` mean nothing to it.
+    #[test]
+    fn verified_pre_82_target_gets_formats_back() {
+        let out = pack_mcmeta_for(PACK_MCMETA, &profile(), &caps_with(Some(61.0))).expect("mcmeta");
+        let entries = overlay_entries(&out);
+        assert!(!entries.is_empty());
+        for entry in entries {
+            let formats = entry
+                .get("formats")
+                .unwrap_or_else(|| panic!("pre-82 target lost `formats`: {entry}"));
+            assert_eq!(formats["min_inclusive"], entry["min_format"][0]);
+            assert_eq!(formats["max_inclusive"], entry["max_format"][0]);
+        }
+    }
+
+    #[test]
+    fn verified_modern_target_gets_no_formats_key() {
+        let out = pack_mcmeta_for(PACK_MCMETA, &profile(), &caps_with(Some(101.0))).expect("mcmeta");
+        for entry in overlay_entries(&out) {
+            assert!(entry.get("formats").is_none(), "unexpected `formats`: {entry}");
+        }
+    }
 }

@@ -647,6 +647,13 @@ pub fn generate_world_with_options(
                     .expect("Failed to create tile XZBBox");
 
                     let mut tile_editor = WorldEditor::new(PathBuf::new(), &tile_xzbbox, llbbox);
+                    // Tile editors were never given the projection/scale the main editor gets
+                    // at :384, so `editor.scale` read 1.0 inside every tiled element pass while
+                    // the sequential path saw the real value. Nothing reads it today (only the
+                    // Bedrock writer and save_metadata do, and tiles reach neither), so this is
+                    // output-neutral now and stops the two paths silently disagreeing the moment
+                    // any element pass starts scaling off the editor.
+                    tile_editor.set_projection_info(&args.projection.to_string(), args.scale);
                     tile_editor.set_ground(Arc::clone(&ground));
                     tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
                     tile_editor.set_props(prop_set);
