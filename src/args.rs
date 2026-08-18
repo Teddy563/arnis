@@ -86,8 +86,8 @@ pub struct Args {
     #[arg(long, default_value = "requests")]
     pub downloader: String,
 
-    /// World scale to use, in blocks per meter
-    #[arg(long, default_value_t = 1.0)]
+    /// World scale to use, in blocks per meter (1.0 = real size)
+    #[arg(long, default_value_t = 1.0, allow_hyphen_values = true, value_parser = parse_scale)]
     pub scale: f64,
 
     /// Projection mode for coordinate mapping
@@ -604,10 +604,50 @@ impl GameMode {
     }
 }
 
+/// Smallest usable scale. Meld's own scale box floors at 0.01 (1:100), and its planet
+/// renders live down there, so this is set to Meld's floor rather than upstream's 0.05.
+///
+/// MELD-DIVERGENCE: upstream also defines OBJECT_SKIP_SCALE = 0.3 and makes
+/// `skip_objects()` true below it, which drops every OSM and Overture object at low
+/// scale. That is deliberately NOT taken here. Meld's default project scale is 0.1 and
+/// its entire purpose is rendering countries at 1:10 WITH buildings, roads and rails;
+/// adopting it would silently empty every default Meld render. The fork already has the
+/// right shape of that idea scoped per feature, in `--props-min-scale`.
+pub const MIN_SCALE: f64 = 0.01;
+/// Largest usable scale. Beyond this a single square kilometre already costs GBs and hours.
+pub const MAX_SCALE: f64 = 4.0;
+
+/// Rejects NaN, the infinities and out-of-range scales. Used by both the CLI parser and
+/// `validate_args`, so an invalid scale can never reach the (expensive) fetch stage.
+pub fn validate_scale(scale: f64) -> Result<(), String> {
+    if !scale.is_finite() {
+        return Err("World scale must be a finite number.".to_string());
+    }
+    if !(MIN_SCALE..=MAX_SCALE).contains(&scale) {
+        return Err(format!(
+            "World scale must be between {MIN_SCALE} and {MAX_SCALE} (got {scale})."
+        ));
+    }
+    Ok(())
+}
+
+fn parse_scale(arg: &str) -> Result<f64, String> {
+    let scale: f64 = arg
+        .parse()
+        .map_err(|_| format!("`{arg}` is not a number"))?;
+    validate_scale(scale)?;
+    Ok(scale)
+}
+
 /// Validates CLI arguments after parsing.
 /// For Java Edition: `--path` is required. If the directory doesn't exist, it will be created.
 /// For Bedrock Edition (`--bedrock`): `--path` is optional (defaults to Desktop output).
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // First, and above every early-exit return below: the download / prewarm / map-render
+    // modes all still transform coordinates, so a NaN or zero scale has to be refused for
+    // them too.
+    validate_scale(args.scale)?;
+
     // --terrain asks for real elevation; --mode geo-only asks for flat ground. Refuse the
     // contradiction rather than silently picking one. MUST stay above every `return Ok(())`
     // early exit below, or the download / prewarm / map-render modes would skip the check.
@@ -1068,4 +1108,59 @@ mod tests {
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
     }
+    /// The range is the fork's, not upstream's: Meld's scale box floors at 0.01 and its
+    /// planet renders use it, so 0.01 must be accepted.
+    #[test]
+    fn scale_range_matches_the_forks_support_envelope() {
+        for ok in [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 4.0] {
+            assert!(validate_scale(ok).is_ok(), "{ok} should be accepted");
+        }
+        for bad in [0.0, -1.0, 0.009, 4.001, 99.0] {
+            assert!(validate_scale(bad).is_err(), "{bad} should be rejected");
+        }
+    }
+
+    /// These are the values that used to sail through and produce a hung or empty cell
+    /// rather than an error message.
+    #[test]
+    fn scale_rejects_non_finite_values() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(validate_scale(bad).is_err(), "{bad} should be rejected");
+        }
+    }
+
+    /// The parser must reject before clap hands us the value, so a bad scale never
+    /// reaches the fetch stage.
+    #[test]
+    fn scale_is_rejected_at_parse_time() {
+        assert!(parse_scale("0.1").is_ok());
+        assert!(parse_scale("abc").is_err());
+        assert!(parse_scale("0").is_err());
+        assert!(parse_scale("-0.5").is_err());
+        assert!(parse_scale("nan").is_err());
+    }
+
+    /// MELD-DIVERGENCE guard. Upstream skips every OSM/Overture object below scale 0.3.
+    /// Meld's default is 0.1, so if that ever gets ported this test fails first.
+    #[test]
+    fn low_scale_does_not_skip_objects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp_path = tmp.path().to_str().unwrap();
+        for scale in ["0.01", "0.1", "0.25", "0.29"] {
+            let args = Args::parse_from([
+                "arnis",
+                "--output-dir",
+                tmp_path,
+                "--bbox",
+                "1,2,3,4",
+                "--scale",
+                scale,
+            ]);
+            assert!(
+                !args.skip_objects(),
+                "scale {scale} must still render objects"
+            );
+        }
+    }
+
 }
