@@ -332,7 +332,8 @@ function showModal(modal) {
 function openUpdateInBrowser() {
   const url =
     (latestReleaseInfo && latestReleaseInfo.release && latestReleaseInfo.release.html_url) ||
-    "https://github.com/louis-e/arnis/releases";
+    // MELD-DIVERGENCE: fork releases live on Teddy563/arnis (see src/version_check.rs).
+    "https://github.com/Teddy563/arnis/releases";
   openExternal(url);
 }
 

@@ -5,7 +5,14 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
 
-const LATEST_RELEASE_API_URL: &str = "https://api.github.com/repos/louis-e/arnis/releases/latest";
+// MELD-DIVERGENCE: the update check must poll THIS fork, not upstream. Pointing it at
+// louis-e/arnis made every fork build nag the user to "update" to an upstream release that
+// does not contain any of the fork's features, and whose asset names Meld cannot consume.
+// The `(+https://github.com/louis-e/arnis)` User-Agent suffixes elsewhere in the tree are
+// left alone on purpose: they identify the software to third-party tile/data services,
+// which is upstream's project identity, not a release channel.
+const LATEST_RELEASE_API_URL: &str =
+    "https://api.github.com/repos/Teddy563/arnis/releases/latest";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseAsset {
