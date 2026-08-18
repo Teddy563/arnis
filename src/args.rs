@@ -479,6 +479,13 @@ pub struct Args {
     /// `coarse,plains,flower,farm,moss` (relative shares, any subset/order), e.g.
     /// `plains=60,coarse=20,flower=10,farm=10,moss=15`. Splits OSM farmland into
     /// coherent ~7 m patches. Omitted (or all-zero) = stock all-farmland, byte-identical.
+    ///
+    /// The two looks, and what they cost. Omitted is the CLASSIC surface: one uniform
+    /// sheet of crops, the cheapest run. Any mix turns farmland into separate parcels,
+    /// each growing a single crop and divided by dirt tracks; on farmland-heavy areas
+    /// that costs roughly 15% more generation time and about 1.5x the peak memory.
+    /// Note `farm=100` is a mix like any other: it keeps the farmland surface but still
+    /// lays out parcels and tracks, so it is NOT the same as omitting the flag.
     #[arg(long = "field-mix", value_name = "LIST")]
     pub field_mix: Option<String>,
 
