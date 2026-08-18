@@ -1040,7 +1040,8 @@ fn gaussian_blur_grid_reported(
 
 fn create_gaussian_kernel(size: usize, sigma: f64) -> Vec<f64> {
     let mut kernel = vec![0.0; size];
-    let center = size as f64 / 2.0;
+    // Centre tap, so the kernel is symmetric and the blur does not shift by half a cell.
+    let center = (size - 1) as f64 / 2.0;
     for (i, value) in kernel.iter_mut().enumerate() {
         let x = i as f64 - center;
         *value = (-x * x / (2.0 * sigma * sigma)).exp();
