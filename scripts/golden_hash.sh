@@ -2,18 +2,29 @@
 # Golden world-hash harness for generation changes.
 #
 # Runs deterministic fixture generations (committed .osm.gz files, flat ground,
-# no 3D models, no Overture, no canopy download) and compares the
-# ARNIS_BLOCK_HASH world hash against tests/golden_hashes.txt.
+# no 3D models, no Overture) and compares the ARNIS_BLOCK_HASH world hash against
+# tests/golden_hashes.txt.
 #
 # Usage:
 #   scripts/golden_hash.sh              # verify all fixtures against the manifest
-#   scripts/golden_hash.sh --update    # rebaseline the manifest (intentional visual change)
+#   scripts/golden_hash.sh --update     # rebaseline the manifest (intentional visual change)
 #   scripts/golden_hash.sh munich_altstadt levittown   # subset
 #
-# ARNIS_BIN overrides the binary (default target/release/arnis[.exe]).
-# Note: the first run may download land-cover tiles into the cache; subsequent
-# runs are offline. The world hash covers placed blocks only, so it is stable
-# across machines for identical inputs.
+# ARNIS_BIN overrides the binary (default target/release/arnis[.exe]). During an upstream
+# port the fork builds into an isolated target dir, so set it:
+#   ARNIS_BIN=c:/tmp/arnis-port-target/release/arnis.exe scripts/golden_hash.sh
+#
+# MELD-DIVERGENCE from upstream's copy of this script:
+#   * `--canopy-height=false` is gone: this fork deleted the canopy module.
+#   * `--offline` is added in its place. Upstream let the first run populate the land-cover
+#     cache from the network, which makes that run's hash a function of whatever the tile
+#     server returned that day. This fork bakes its data, so the harness reads the cache or
+#     fails loudly.
+#   * Each fixture is converted to Overpass JSON first, and --bbox is read from its own
+#     <bounds> element - see the two comments in the loop below.
+#
+# The world hash covers placed blocks only, so it is stable across machines for identical
+# inputs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

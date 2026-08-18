@@ -10,7 +10,104 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [3.0.10] - unreleased
+## [3.1.0] - 2026-08-18
+
+Upstream port wave 3: what the fork takes from `louis-e/arnis` `7f8236f..3918513a`
+(upstream v3.0.10 → v3.1.0, 90 commits across 17 pull requests). Triage of every
+upstream change, with the reason for each take/adapt/skip, lives in
+`.light-meld-docs/UPSTREAM-TRIAGE.tsv`; the plan and its gates are in
+`.light-meld-docs/UPSTREAM-PORT-PLAN-3.1.0-WAVE3.mdx`.
+
+Batches are gated. The first two produce a **byte-identical render** — same world, same
+`block_hash`. After that each output-changing batch names the difference it intends and
+attributes it by building the change alone, and every batch renders once at **scale 0.1**
+to prove objects still appear at Meld's default scale.
+
+### Added
+- **A golden world-hash regression harness** (`scripts/golden_hash.sh`) with five committed
+  OSM fixtures covering deliberately different tagging regimes — a dense European old town,
+  a US suburban tract, Manhattan towers, a medina, and sparse subarctic. Generation was
+  previously ungated: the only determinism instrument was an env-var hash check with no
+  committed baseline, so a regression could only be found by looking at a finished world.
+  `--update` rebaselines. The fixtures are converted to Overpass JSON at runtime by
+  `scripts/osm_xml_to_overpass_json.py`, because this fork's `--file` reads Arnis JSON only.
+- **`--scale` validation.** NaN, the infinities, zero, negatives and absurd values are now
+  rejected by the parser with a real message instead of reaching the fetch stage and
+  producing a hung or empty cell. The accepted range is **0.01 to 4.0** — the floor is
+  Meld's, not upstream's 0.05, because Meld's planet renders live down there.
+
+### Fixed
+- **The update check pointed at upstream.** Every fork build polled `louis-e/arnis` and
+  nagged the user to "update" to a release containing none of the fork's features, whose
+  asset names Meld's generator updater cannot consume. Now points at `Teddy563/arnis`.
+- **Overture returned nothing at all.** Release discovery went through
+  `stac.overturemaps.org/catalog.json`, which stopped resolving, and the hardcoded fallback
+  release had since been retired — so every STAC request 404'd and no Overture building was
+  ever placed. Releases are now discovered from the bucket listing, newest first, with the
+  revision compared numerically and at most three tried.
+- **Truncated Overpass responses were accepted as complete.** Overpass streams its output,
+  so a query that runs out of time or memory after printing has started still closes the
+  JSON and appends a remark. The elements present are real and the ones it never reached
+  are simply absent, so a half-finished area parsed exactly like a finished one and built a
+  world with most of its content missing. Such a response now fails over to the next server.
+- **The extended-height datapack froze time.** Both overlay entries carried the deprecated
+  `formats` key, which since 1.21.9 makes the game reject the whole overlays section; the
+  world falls back to the legacy data tree, which on 1.21.11 has no `timelines` field, so
+  the overworld has no day timeline and `/time set` is a no-op. The key is now emitted only
+  for a target positively verified as pre-82 — and Meld, which passes no `--mc-version`, is
+  no longer such a target.
+- **Terrain blur was shifted half a cell.** `create_gaussian_kernel` centred an odd-sized
+  kernel at `size / 2.0` while the caller indexed it with integer `size / 2`, so every
+  terrain render was smoothed off-centre on both axes.
+- **Dams, weirs and culverts were drawn as open water.** `waterway=dam|weir|dock|…`
+  describes a structure, not a channel, and outlining one ran a canal along its crest. A
+  culvert (`tunnel=*`) cut a channel straight through the bank above it — only
+  `layer=-1|-2|-3` was recognised, as literal strings. A mistyped `width=*` could ask for a
+  channel wide enough to hang generation, and is now clamped to 128.
+- **`--bbox` panicked on malformed input.** Empty strings, too few or too many fields,
+  non-numeric fields, NaN and the infinities all unwrap-panicked; they now return an error.
+  Meld builds that string on every invocation.
+- **Barriers tagged `material=wood`** render as oak fence, alongside the existing
+  `material=metal` rule.
+- **Tile editors never received the world scale.** `editor.scale` read 1.0 inside every
+  tiled element pass while the sequential path saw the real value. Output-neutral today,
+  since nothing reads it, and now the two paths cannot silently disagree.
+- **Software-rendering environment variables are no longer forced.**
+  `LIBGL_ALWAYS_SOFTWARE` and `GALLIUM_DRIVER` are only set when the user has not, which
+  fixes `EGL_BAD_PARAMETER` on Wayland/AMD setups.
+- Unresolvable OSM way node references are counted and reported once per run. A way that
+  loses a node is silently shortened; for an area that breaks the ring, and an unclosed
+  ring fills to nothing, so the polygon vanished with no diagnostic.
+- CI: apt retry/timeout wrapper on the Linux setup action and job timeouts, so a sick
+  Ubuntu mirror fails fast rather than hanging a job. The release tag guard now checks
+  `tauri.conf.json` as well as `Cargo.toml` — checking only one is how the crate reached
+  3.0.10 while the bundle still said 3.0.7.
+
+### Deliberately not taken
+Recorded here so a later port does not "complete" them by accident. Full reasoning in the
+plan document.
+- **`OBJECT_SKIP_SCALE = 0.3`**, which makes upstream skip every OSM and Overture object
+  below scale 0.3. Meld's default project scale is 0.1 and its entire purpose is rendering
+  countries at 1:10 *with* buildings, roads and rails, so adopting it would silently empty
+  every default render. A test asserts `skip_objects()` stays false at low scale so a future
+  port fails there first. The fork already has the right shape of that idea scoped per
+  feature, in `--props-min-scale`.
+- **The building realism overhaul (PR #1269) as a whole.** A measured three-way merge puts
+  70 conflict regions and 4,384 conflicted lines across eight files, `buildings.rs` alone at
+  27.7% of the merged file. Both sides rewrote the same functions; this is a
+  re-implementation, not a cherry-pick. Individual slices remain candidates.
+- **Image signage (PR #1272).** It allocates map ids per world and writes `data/map_N.dat`,
+  but Meld merges cells by copying `region/`, `poi/`, `entities/`, `datapacks/` and
+  `level.dat` — never `data/`. Every cell would restart ids at 0 and the merge would drop
+  them all, leaving blank item frames throughout. It also has no scale gate, and at 1:10 a
+  128×128 map decal covers 1.28 km of ground.
+- **The `--terrain` deprecation notice**, which prints once per process. Meld runs one
+  process per cell, so a country render would print it thousands of times.
+- **The country-scale deep floor and section-snap work**, and the rest of the tunnel,
+  shoreline and building work, are deferred rather than refused — they need the seam grid
+  and the golden harness this release introduces.
+
+## [3.0.10] - 2026-08-16
 
 ### Removed
 - **The stadium 3D archetype** (`src/models_3d/custom/stadium.rs`): the generated stadium

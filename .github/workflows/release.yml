@@ -60,7 +60,15 @@ jobs:
           echo "::error::tag $GITHUB_REF_NAME says $tag but Cargo.toml says $crate"
           exit 1
         fi
-        echo "tag $GITHUB_REF_NAME matches Cargo.toml $crate"
+        # tauri.conf.json carries its own copy, and checking only Cargo.toml is how the
+        # two drifted apart before: the crate reached 3.0.10 while the bundle still said
+        # 3.0.7. The GUI's about box and the bundle metadata read this one.
+        bundle=$(grep -m1 '"version"' tauri.conf.json | cut -d'"' -f4)
+        if [ "$tag" != "$bundle" ]; then
+          echo "::error::tag $GITHUB_REF_NAME says $tag but tauri.conf.json says $bundle"
+          exit 1
+        fi
+        echo "tag $GITHUB_REF_NAME matches Cargo.toml and tauri.conf.json ($crate)"
 
     - uses: ./.github/actions/setup-arnis-linux
       with:
