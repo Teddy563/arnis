@@ -44,6 +44,22 @@ type BearingGrid = HashMap<(i32, i32), (f64, f64)>;
 
 static GRID: RwLock<Option<BearingGrid>> = RwLock::new(None);
 
+/// Bumped every time the grid is replaced. Memoised bearings carry the version they were
+/// computed under, so a cached value can never outlive the grid it came from (which would
+/// otherwise happen in tests, where several grids are built in one process).
+static GRID_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Replace the grid and invalidate every memoised bearing.
+///
+/// The only way the grid should ever be written. The version bump happens after the store
+/// and with Release ordering, so a thread that observes the new version cannot still be
+/// holding a bearing derived from the old grid. Tests build several grids in one process,
+/// which is precisely where a memo that outlived its grid would go unnoticed.
+fn store_grid(grid: Option<BearingGrid>) {
+    *GRID.write().unwrap() = grid;
+    GRID_VERSION.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
 /// Build the bearing grid from this run's OSM elements. Call once per generation,
 /// before element/ground processing.
 pub fn set_from_elements(elements: &[ProcessedElement]) {
@@ -87,12 +103,48 @@ pub fn set_from_elements(elements: &[ProcessedElement]) {
             }
         }
     }
-    *GRID.write().unwrap() = Some(grid);
+    store_grid(Some(grid));
 }
 
 /// Dominant road bearing near world point (x, z), as (sin, cos) of the grid angle —
 /// ready to rotate parcel coordinates. None when no road is near enough to matter.
+/// Cached answer for one lattice cell, valid for one grid version.
+#[derive(Clone, Copy)]
+struct BearingMemo {
+    version: u64,
+    cell: (i32, i32),
+    value: Option<(f64, f64)>,
+}
+
+thread_local! {
+    /// One-entry memo per thread. The field-texture caller asks for the bearing at a
+    /// domain centre, so across a 192x192 domain every one of ~36,000 blocks asks the
+    /// same question; scanline order means the previous answer is nearly always the
+    /// right one. Without this each block took an RwLock read (contended across every
+    /// rendering thread), a hash lookup, and an atan2 plus a sin and a cos.
+    static BEARING_MEMO: std::cell::Cell<Option<BearingMemo>> = const { std::cell::Cell::new(None) };
+}
+
 pub fn bearing_at(x: i32, z: i32) -> Option<(f64, f64)> {
+    let cell = (x.div_euclid(CELL), z.div_euclid(CELL));
+    let version = GRID_VERSION.load(std::sync::atomic::Ordering::Relaxed);
+    if let Some(memo) = BEARING_MEMO.with(|m| m.get()) {
+        if memo.version == version && memo.cell == cell {
+            return memo.value;
+        }
+    }
+    let value = bearing_at_uncached(x, z);
+    BEARING_MEMO.with(|m| {
+        m.set(Some(BearingMemo {
+            version,
+            cell,
+            value,
+        }))
+    });
+    value
+}
+
+fn bearing_at_uncached(x: i32, z: i32) -> Option<(f64, f64)> {
     let guard = GRID.read().unwrap();
     let grid = guard.as_ref()?;
     // ONE cell only (radius 32 blocks). Widening this re-introduces the seam: see the
@@ -144,12 +196,12 @@ mod tests {
         grid.insert((1, 0), (-500.0, 250.0)); // adjacent cell, only one tile sees it
         grid.insert((0, -1), (-500.0, -250.0));
         grid.insert((9, 9), (-100.0, 50.0)); // far away
-        *GRID.write().unwrap() = Some(grid);
+        store_grid(Some(grid));
         let a = bearing_at(10, 10);
 
         let mut grid2: BearingGrid = HashMap::new();
         grid2.insert((0, 0), own); // the other tile saw ONLY the own-cell road
-        *GRID.write().unwrap() = Some(grid2);
+        store_grid(Some(grid2));
         let b = bearing_at(10, 10);
 
         assert_eq!(
@@ -167,8 +219,8 @@ mod tests {
         // back to its hashed angle, which is a pure function of position).
         let mut grid3: BearingGrid = HashMap::new();
         grid3.insert((1, 0), (500.0, 0.0));
-        *GRID.write().unwrap() = Some(grid3);
+        store_grid(Some(grid3));
         assert!(bearing_at(10, 10).is_none());
-        *GRID.write().unwrap() = None;
+        store_grid(None);
     }
 }

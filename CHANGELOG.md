@@ -10,6 +10,45 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.1] - 2026-08-18
+
+Farmland texturing got much cheaper. Nothing about the world changes: every render
+in this release is byte-identical to 3.1.0, verified by world hash.
+
+Measured on the farmland-dense bbox upstream used to report the regression
+(`52.520,5.600,52.550,5.660`, Flevoland, 61 farmland polygons, one process,
+stream-to-disk off), best of three runs each:
+
+| | 3.1.0 | 3.1.1 |
+|---|---|---|
+| peak memory, field texture on | 4929 MB | **1333 MB** |
+| generation time, field texture on | 24.5 s | **11.8 s** |
+
+### Fixed
+
+- **Crop blocks allocated their NBT per block.** A crop is always `{age: "<0..=7>"}`,
+  so a whole field shares one of eight possible compounds, but `place_crop` built a
+  fresh `HashMap`, two `String`s and an `Arc` for every block placed, and the world
+  editor then held that per-block allocation until save. The eight compounds are now
+  built once and shared. This alone accounted for about 3.8 GB of the peak.
+
+- **Section palettes re-derived the same answer 4096 times.** Building a section's
+  palette formatted each cell's property compound to a string to key the lookup, so a
+  field of crops paid thousands of string allocations per section to rediscover the
+  same eight entries. An identity check now sits in front of the content lookup. The
+  content lookup is still authoritative, so two equal compounds from different
+  allocations collapse into one palette entry exactly as before; there is a test for
+  that specifically, because getting it wrong would silently change every world's
+  palette.
+
+- **Field parcel layout took a lock and three trigonometric calls per block.**
+  `bearing_at` was called once per block but only ever asked about the centre of a
+  192 x 192 domain, so roughly 36,000 consecutive blocks asked the identical question
+  and each one took an `RwLock` read contended across every rendering thread, a hash
+  lookup, and an `atan2` plus a `sin` and a `cos`. The answer is now memoised per
+  thread and per lattice cell, versioned against the grid so a cached bearing cannot
+  outlive the grid it came from.
+
 ## [3.1.0] - 2026-08-18
 
 Upstream port wave 3: what the fork takes from `louis-e/arnis` `7f8236f..3918513a`
