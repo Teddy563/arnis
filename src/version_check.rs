@@ -11,8 +11,7 @@ use std::time::Duration;
 // The `(+https://github.com/louis-e/arnis)` User-Agent suffixes elsewhere in the tree are
 // left alone on purpose: they identify the software to third-party tile/data services,
 // which is upstream's project identity, not a release channel.
-const LATEST_RELEASE_API_URL: &str =
-    "https://api.github.com/repos/Teddy563/arnis/releases/latest";
+const LATEST_RELEASE_API_URL: &str = "https://api.github.com/repos/Teddy563/arnis/releases/latest";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseAsset {

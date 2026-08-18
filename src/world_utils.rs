@@ -836,7 +836,10 @@ mod pack_mcmeta_tests {
         let out = pack_mcmeta_for(PACK_MCMETA, &profile(), crate::mc_version::default_caps())
             .expect("mcmeta");
         for entry in overlay_entries(&out) {
-            assert!(entry.get("formats").is_none(), "unexpected `formats`: {entry}");
+            assert!(
+                entry.get("formats").is_none(),
+                "unexpected `formats`: {entry}"
+            );
         }
     }
 
@@ -858,9 +861,13 @@ mod pack_mcmeta_tests {
 
     #[test]
     fn verified_modern_target_gets_no_formats_key() {
-        let out = pack_mcmeta_for(PACK_MCMETA, &profile(), &caps_with(Some(101.0))).expect("mcmeta");
+        let out =
+            pack_mcmeta_for(PACK_MCMETA, &profile(), &caps_with(Some(101.0))).expect("mcmeta");
         for entry in overlay_entries(&out) {
-            assert!(entry.get("formats").is_none(), "unexpected `formats`: {entry}");
+            assert!(
+                entry.get("formats").is_none(),
+                "unexpected `formats`: {entry}"
+            );
         }
     }
 }

@@ -254,7 +254,6 @@ pub fn compute_waterway_field(
     WaterwayField { cells }
 }
 
-
 #[cfg(test)]
 mod waterway_gate_tests {
     use super::*;
@@ -326,7 +325,10 @@ mod waterway_gate_tests {
     /// Width is walked squared per centreline point, so a mistyped tag hangs generation.
     #[test]
     fn width_tag_is_clamped_and_unit_suffixes_parse() {
-        assert_eq!(waterway_width(&way(&[("waterway", "stream"), ("width", "4")])), 4);
+        assert_eq!(
+            waterway_width(&way(&[("waterway", "stream"), ("width", "4")])),
+            4
+        );
         assert_eq!(
             waterway_width(&way(&[("waterway", "stream"), ("width", "3 m")])),
             3
