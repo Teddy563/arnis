@@ -221,61 +221,61 @@ fn next_temp_counter() -> u64 {
     COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Minimal reader used only by tests to prove what the writer emitted. Mirrors the
+/// checks Leaf performs: superblock, version, per-chunk hash.
+#[cfg(test)]
+pub(crate) fn decode(bytes: &[u8]) -> Vec<Option<Vec<u8>>> {
+    assert!(
+        bytes.len() >= DATA_START as usize,
+        "file shorter than header"
+    );
+    assert_eq!(
+        i64::from_be_bytes(bytes[0..8].try_into().unwrap()),
+        SUPERBLOCK
+    );
+    assert_eq!(bytes[8], VERSION);
+    let seed = u32::from_be_bytes(bytes[10..14].try_into().unwrap());
+    assert_eq!(seed, HASH_SEED);
+
+    let mut slots: Vec<Option<Vec<u8>>> = (0..CHUNKS_PER_REGION).map(|_| None).collect();
+    for bucket_index in 0..BUCKET_COUNT {
+        let at = HEADER_SIZE as usize + bucket_index * 8;
+        let offset = u64::from_be_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
+        if offset == 0 {
+            continue;
+        }
+        assert!(offset >= DATA_START as usize, "offset inside header");
+        let raw_len = i32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let comp_len =
+            i32::from_be_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        let payload = &bytes[offset + 8..offset + 8 + comp_len];
+        let raw = zstd::bulk::decompress(payload, raw_len).expect("bucket decompresses");
+        assert_eq!(raw.len(), raw_len);
+
+        let mut cursor = 0usize;
+        for slot in 0..BUCKET_SIZE {
+            let n = i32::from_be_bytes(raw[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            if n == 0 {
+                continue;
+            }
+            let section = &raw[cursor..cursor + n];
+            cursor += n;
+            let nbt_len = i32::from_be_bytes(section[0..4].try_into().unwrap()) as usize;
+            let hash = u32::from_be_bytes(section[12..16].try_into().unwrap());
+            let nbt = &section[16..16 + nbt_len];
+            assert_eq!(n, nbt_len + 16, "section length covers header + payload");
+            assert_eq!(xxh32(nbt, seed), hash, "chunk hash matches");
+            slots[bucket_index * BUCKET_SIZE + slot] = Some(nbt.to_vec());
+        }
+        assert_eq!(cursor, raw.len(), "bucket fully consumed");
+    }
+    slots
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Minimal reader used only to prove what the writer emitted. Mirrors the checks
-    /// Leaf performs: superblock, version, per-chunk hash.
-    fn decode(bytes: &[u8]) -> Vec<Option<Vec<u8>>> {
-        assert!(
-            bytes.len() >= DATA_START as usize,
-            "file shorter than header"
-        );
-        assert_eq!(
-            i64::from_be_bytes(bytes[0..8].try_into().unwrap()),
-            SUPERBLOCK
-        );
-        assert_eq!(bytes[8], VERSION);
-        let seed = u32::from_be_bytes(bytes[10..14].try_into().unwrap());
-        assert_eq!(seed, HASH_SEED);
-
-        let mut slots: Vec<Option<Vec<u8>>> = (0..CHUNKS_PER_REGION).map(|_| None).collect();
-        for bucket_index in 0..BUCKET_COUNT {
-            let at = HEADER_SIZE as usize + bucket_index * 8;
-            let offset = u64::from_be_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
-            if offset == 0 {
-                continue;
-            }
-            assert!(offset >= DATA_START as usize, "offset inside header");
-            let raw_len =
-                i32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
-            let comp_len =
-                i32::from_be_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
-            let payload = &bytes[offset + 8..offset + 8 + comp_len];
-            let raw = zstd::bulk::decompress(payload, raw_len).expect("bucket decompresses");
-            assert_eq!(raw.len(), raw_len);
-
-            let mut cursor = 0usize;
-            for slot in 0..BUCKET_SIZE {
-                let n = i32::from_be_bytes(raw[cursor..cursor + 4].try_into().unwrap()) as usize;
-                cursor += 4;
-                if n == 0 {
-                    continue;
-                }
-                let section = &raw[cursor..cursor + n];
-                cursor += n;
-                let nbt_len = i32::from_be_bytes(section[0..4].try_into().unwrap()) as usize;
-                let hash = u32::from_be_bytes(section[12..16].try_into().unwrap());
-                let nbt = &section[16..16 + nbt_len];
-                assert_eq!(n, nbt_len + 16, "section length covers header + payload");
-                assert_eq!(xxh32(nbt, seed), hash, "chunk hash matches");
-                slots[bucket_index * BUCKET_SIZE + slot] = Some(nbt.to_vec());
-            }
-            assert_eq!(cursor, raw.len(), "bucket fully consumed");
-        }
-        slots
-    }
 
     fn writer(level: i32) -> BlinearRegionWriter {
         BlinearRegionWriter {

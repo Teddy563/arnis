@@ -1446,4 +1446,72 @@ mod tests {
             assert!(b.iter().all(|&v| v == -1));
         }
     }
+
+    /// The container is a swap, not a transformation: the same chunk NBT handed to both
+    /// sinks has to come back out of both files byte for byte. Generation itself varies
+    /// palette order between processes, so this equivalence can only be established
+    /// in-process, from one set of payloads.
+    #[test]
+    fn both_containers_store_identical_chunk_nbt() {
+        use super::super::RegionContainer;
+        use super::RegionSink;
+        use fastanvil::Region;
+        use std::fs::File;
+
+        let dir = tempfile::tempdir().unwrap();
+        let anvil_dir = dir.path().join("anvil");
+        let blinear_dir = dir.path().join("blinear");
+
+        // Payload shapes that exercise the framing: region corners, bucket boundaries,
+        // a large chunk, and a tiny one.
+        let payloads: Vec<(usize, usize, Vec<u8>)> = vec![
+            (0, 0, b"corner-origin".to_vec()),
+            (31, 0, vec![0x5A; 40_000]),
+            (0, 1, b"first-of-bucket-1".to_vec()),
+            (31, 1, b"last-of-bucket-1".to_vec()),
+            (0, 2, b"first-of-bucket-2".to_vec()),
+            (16, 17, (0u16..9000).flat_map(|v| v.to_be_bytes()).collect()),
+            (31, 31, b"corner-far".to_vec()),
+        ];
+
+        for (container, out_dir) in [
+            (RegionContainer::Anvil, &anvil_dir),
+            (RegionContainer::BlinearV3, &blinear_dir),
+        ] {
+            let mut sink = RegionSink::create(out_dir, 2, -5, container, 6).unwrap();
+            for (x, z, nbt) in &payloads {
+                sink.write_chunk(*x, *z, nbt).unwrap();
+            }
+            sink.finish().unwrap();
+        }
+
+        let mut anvil = Region::from_stream(
+            File::options()
+                .read(true)
+                .write(true)
+                .open(anvil_dir.join("region/r.2.-5.mca"))
+                .unwrap(),
+        )
+        .unwrap();
+        let blinear = super::super::blinear::decode(
+            &std::fs::read(blinear_dir.join("region/r.2.-5.b_linear")).unwrap(),
+        );
+
+        for (x, z, nbt) in &payloads {
+            let from_anvil = anvil.read_chunk(*x, *z).unwrap().unwrap();
+            let from_blinear = blinear[x + z * 32].as_deref().unwrap();
+            assert_eq!(
+                from_anvil.as_slice(),
+                nbt.as_slice(),
+                "anvil chunk ({x},{z})"
+            );
+            assert_eq!(from_blinear, nbt.as_slice(), "b_linear chunk ({x},{z})");
+        }
+
+        // Neither container invents chunks the caller never wrote.
+        assert_eq!(
+            blinear.iter().filter(|s| s.is_some()).count(),
+            payloads.len()
+        );
+    }
 }
