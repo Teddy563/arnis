@@ -32,6 +32,7 @@
 //! Leaf verifies the superblock, the version byte and every chunk's xxh32 strictly; it
 //! ignores the timestamp and the two informational header fields. There is no footer.
 
+use rayon::prelude::*;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use xxhash_rust::xxh32::xxh32;
@@ -99,15 +100,14 @@ impl BlinearRegionWriter {
     /// destination and renamed into place, so a reader either sees the previous file or
     /// the complete new one. The temp name deliberately does not match `r.*.b_linear`:
     /// Meld's export progress counts regions by globbing for that pattern.
-    pub(crate) fn finish(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub(crate) fn finish(mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let out_path = std::mem::take(&mut self.out_path);
         let bytes = self.encode()?;
 
-        let dir = self
-            .out_path
+        let dir = out_path
             .parent()
             .ok_or("b_linear output path has no parent directory")?;
-        let file_name = self
-            .out_path
+        let file_name = out_path
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or("b_linear output path has no file name")?;
@@ -125,12 +125,12 @@ impl BlinearRegionWriter {
             tmp.flush()?;
         }
 
-        if let Err(rename_err) = std::fs::rename(&tmp_path, &self.out_path) {
+        if let Err(rename_err) = std::fs::rename(&tmp_path, &out_path) {
             // Windows refuses a rename onto an existing file; clear and retry once,
             // then make sure a failed publish never strands the temp.
-            if self.out_path.exists()
-                && std::fs::remove_file(&self.out_path).is_ok()
-                && std::fs::rename(&tmp_path, &self.out_path).is_ok()
+            if out_path.exists()
+                && std::fs::remove_file(&out_path).is_ok()
+                && std::fs::rename(&tmp_path, &out_path).is_ok()
             {
                 return Ok(());
             }
@@ -142,49 +142,46 @@ impl BlinearRegionWriter {
     }
 
     /// Build the complete file image.
-    fn encode(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    ///
+    /// Buckets are independent, so they compress in parallel: this runs on the single
+    /// background flush thread during streaming eviction, where a slow region write
+    /// stalls the whole eviction queue and pushes the generator's peak memory up.
+    /// Each bucket's raw chunk NBT is dropped as soon as its frame exists.
+    fn encode(&mut self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let timestamp_millis = now_millis();
+        let level = self.level.clamp(1, 22);
+
+        // Hand each bucket its own 64 slots so the raw NBT can be released per bucket
+        // rather than being held for the whole region.
+        let mut rest = std::mem::take(&mut self.slots);
+        let mut buckets: Vec<Vec<Option<Vec<u8>>>> = Vec::with_capacity(BUCKET_COUNT);
+        for _ in 0..BUCKET_COUNT {
+            let tail = rest.split_off(BUCKET_SIZE);
+            buckets.push(rest);
+            rest = tail;
+        }
+
+        let frames: Vec<BucketFrame> = buckets
+            .into_par_iter()
+            .map(|slots| encode_bucket(slots, timestamp_millis, level))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut out = Vec::with_capacity(1 << 20);
         out.extend_from_slice(&SUPERBLOCK.to_be_bytes());
         out.push(VERSION);
-        out.push(self.level.clamp(1, 22) as u8);
+        out.push(level as u8);
         out.extend_from_slice(&HASH_SEED.to_be_bytes());
         out.extend_from_slice(&[0u8; BUCKET_COUNT * 8]);
         debug_assert_eq!(out.len() as u64, DATA_START);
 
         let mut offsets = [0u64; BUCKET_COUNT];
-
-        for (bucket_index, offset) in offsets.iter_mut().enumerate() {
-            let first = bucket_index * BUCKET_SIZE;
-            let slots = &self.slots[first..first + BUCKET_SIZE];
-            // An all-empty bucket is represented by its offset staying 0. Leaf skips
-            // those without reading anything, so emitting a record would be wasted.
-            if slots.iter().all(Option::is_none) {
-                continue;
-            }
-
-            let mut raw: Vec<u8> = Vec::with_capacity(1 << 19);
-            for slot in slots {
-                match slot {
-                    Some(nbt) => {
-                        let nbt_len = i32::try_from(nbt.len())
-                            .map_err(|_| "chunk NBT exceeds the 2 GiB b_linear section limit")?;
-                        // Section length covers the 16-byte section header plus the NBT.
-                        raw.extend_from_slice(&(nbt_len + 16).to_be_bytes());
-                        raw.extend_from_slice(&nbt_len.to_be_bytes());
-                        raw.extend_from_slice(&timestamp_millis.to_be_bytes());
-                        raw.extend_from_slice(&xxh32(nbt, HASH_SEED).to_be_bytes());
-                        raw.extend_from_slice(nbt);
-                    }
-                    None => raw.extend_from_slice(&0i32.to_be_bytes()),
-                }
-            }
-
-            let compressed = zstd::bulk::compress(&raw, self.level.clamp(1, 22))?;
-            *offset = out.len() as u64;
+        for (bucket_index, frame) in frames.into_iter().enumerate() {
+            let Some((raw_len, compressed)) = frame else {
+                continue; // empty bucket: its offset stays 0
+            };
+            offsets[bucket_index] = out.len() as u64;
             out.extend_from_slice(
-                &i32::try_from(raw.len())
+                &i32::try_from(raw_len)
                     .map_err(|_| "b_linear bucket exceeds the 2 GiB raw size limit")?
                     .to_be_bytes(),
             );
@@ -204,6 +201,43 @@ impl BlinearRegionWriter {
 
         Ok(out)
     }
+}
+
+/// One framed bucket: its raw length and the zstd frame holding it. `None` marks a
+/// bucket whose 64 slots are all empty, which is written as an absent offset.
+type BucketFrame = Option<(usize, Vec<u8>)>;
+
+/// Frame one bucket, compressing its 64 slots into a single zstd frame.
+fn encode_bucket(
+    slots: Vec<Option<Vec<u8>>>,
+    timestamp_millis: i64,
+    level: i32,
+) -> Result<BucketFrame, Box<dyn std::error::Error + Send + Sync>> {
+    // An all-empty bucket is represented by its offset staying 0. Leaf skips those
+    // without reading anything, so emitting a record would be wasted.
+    if slots.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+
+    let mut raw: Vec<u8> = Vec::with_capacity(1 << 19);
+    for slot in slots {
+        match slot {
+            Some(nbt) => {
+                let nbt_len = i32::try_from(nbt.len())
+                    .map_err(|_| "chunk NBT exceeds the 2 GiB b_linear section limit")?;
+                // Section length covers the 16-byte section header plus the NBT.
+                raw.extend_from_slice(&(nbt_len + 16).to_be_bytes());
+                raw.extend_from_slice(&nbt_len.to_be_bytes());
+                raw.extend_from_slice(&timestamp_millis.to_be_bytes());
+                raw.extend_from_slice(&xxh32(&nbt, HASH_SEED).to_be_bytes());
+                raw.extend_from_slice(&nbt);
+            }
+            None => raw.extend_from_slice(&0i32.to_be_bytes()),
+        }
+    }
+
+    let compressed = zstd::bulk::compress(&raw, level)?;
+    Ok(Some((raw.len(), compressed)))
 }
 
 /// Chunk save time. Leaf reads this field and currently ignores it; converters treat
