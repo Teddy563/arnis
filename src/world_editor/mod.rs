@@ -9,6 +9,7 @@
 //! - `java` - Java Edition Anvil format saving
 //! - `bedrock` - Bedrock Edition .mcworld format saving
 
+pub(crate) mod blinear;
 mod common;
 pub(crate) mod java;
 mod luanti;
@@ -96,6 +97,32 @@ pub enum WorldFormat {
     LuantiWorld,
 }
 
+/// Which container the Java save path writes its chunks into.
+///
+/// Both carry identical chunk NBT; they differ only in framing and compression, so a
+/// world can be converted between them without touching a single block. B_Linear is
+/// readable by Leaf 1.21.11 (June 2026 builds) and newer and by all 26.x — not by
+/// Paper, older Leaf, or the vanilla client.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RegionContainer {
+    /// Anvil `r.X.Z.mca`: zlib per chunk in 4 KiB sectors.
+    #[default]
+    Anvil,
+    /// Leaf/Luminol `r.X.Z.b_linear` v3: zstd per 64-chunk bucket.
+    BlinearV3,
+}
+
+impl RegionContainer {
+    /// Short tag recorded in `metadata.json` so downstream tools can detect the
+    /// container without sniffing region files.
+    fn tag(self) -> &'static str {
+        match self {
+            RegionContainer::Anvil => "mca",
+            RegionContainer::BlinearV3 => "b_linear_v3",
+        }
+    }
+}
+
 /// Metadata saved with the world
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,6 +141,8 @@ pub(crate) struct WorldMetadata {
     pub projection: String,
     /// World scale in blocks per meter
     pub scale: f64,
+    /// Region container the world was written with ("mca" or "b_linear_v3").
+    pub region_container: String,
 }
 
 /// The main world editor struct for placing blocks and saving worlds.
@@ -166,6 +195,10 @@ pub struct WorldEditor<'a> {
     luanti_game: LuantiGame,
     /// Bake per-chunk lighting (Java) for off-disk LOD renderers; off by default.
     bake_lighting: bool,
+    /// Container for Java region files; Anvil unless `--region-format blinear`.
+    region_container: RegionContainer,
+    /// zstd level for the B_Linear container. Leaf's own default is 6.
+    blinear_level: i32,
 }
 
 impl<'a> WorldEditor<'a> {
@@ -196,6 +229,8 @@ impl<'a> WorldEditor<'a> {
             luanti_ground_level: -62,
             luanti_game: LuantiGame::Mineclonia,
             bake_lighting: false,
+            region_container: RegionContainer::Anvil,
+            blinear_level: 6,
         }
     }
 
@@ -232,6 +267,8 @@ impl<'a> WorldEditor<'a> {
             luanti_ground_level: -62,
             luanti_game: LuantiGame::Mineclonia,
             bake_lighting: false,
+            region_container: RegionContainer::Anvil,
+            blinear_level: 6,
         }
     }
 
@@ -268,6 +305,8 @@ impl<'a> WorldEditor<'a> {
             luanti_ground_level: ground_level,
             luanti_game: game,
             bake_lighting: false,
+            region_container: RegionContainer::Anvil,
+            blinear_level: 6,
         }
     }
 
@@ -328,6 +367,13 @@ impl<'a> WorldEditor<'a> {
         self.bake_lighting = enabled;
     }
 
+    /// Selects the container for Java region files and the zstd level B_Linear
+    /// compresses its buckets with (ignored by the Anvil container).
+    pub fn set_region_container(&mut self, container: RegionContainer, blinear_level: i32) {
+        self.region_container = container;
+        self.blinear_level = blinear_level.clamp(1, 22);
+    }
+
     /// Returns the current world format
     #[allow(dead_code)]
     pub fn format(&self) -> WorldFormat {
@@ -366,6 +412,8 @@ impl<'a> WorldEditor<'a> {
             self.xzbbox.max_z(),
             self.ground.clone(),
             self.bake_lighting,
+            self.region_container,
+            self.blinear_level,
         )
     }
 
@@ -1539,6 +1587,7 @@ impl<'a> WorldEditor<'a> {
 
             projection: self.projection.clone(),
             scale: self.scale,
+            region_container: self.region_container.tag().to_string(),
         };
 
         let contents = serde_json::to_string(&metadata)

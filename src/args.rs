@@ -82,6 +82,16 @@ pub struct Args {
     #[arg(long)]
     pub luanti: bool,
 
+    /// Container for Java region files. `blinear` writes Leaf's B_Linear v3
+    /// (`r.X.Z.b_linear`), readable ONLY by Leaf 1.21.11 (June 2026 builds) and newer
+    /// and by all 26.x — not by Paper, older Leaf, or the vanilla client.
+    #[arg(long = "region-format", value_enum, default_value_t = RegionFormatArg::Mca)]
+    pub region_format: RegionFormatArg,
+
+    /// zstd level for `--region-format blinear` buckets. Leaf's own default is 6.
+    #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
+    pub blinear_level: i32,
+
     /// Downloader method (requests/curl/wget) (optional)
     #[arg(long, default_value = "requests")]
     pub downloader: String,
@@ -544,6 +554,19 @@ pub struct Args {
 /// Deliberately NOT `Default`: upstream defaults this to GeoTerrain (terrain ON), the fork
 /// defaults to flat ground. Leaving the trait off makes an accidental `unwrap_or_default()`
 /// a compile error rather than a silently different world.
+/// Region container for Java worlds, selected by `--region-format`.
+///
+/// A container swap only: the chunk NBT is identical either way, so the same world can
+/// be converted between the two without touching a block.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, clap::ValueEnum)]
+pub enum RegionFormatArg {
+    /// Anvil `r.X.Z.mca` — the universal format every server and the client read.
+    #[default]
+    Mca,
+    /// Leaf B_Linear v3 `r.X.Z.b_linear` — server-only, Leaf 1.21.11+ / 26.x.
+    Blinear,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum GenerationMode {
     /// OSM objects on real elevation terrain
@@ -718,6 +741,15 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     if args.bedrock && args.luanti {
         return Err("Cannot use --bedrock and --luanti together.".to_string());
+    }
+
+    // The B_Linear container frames Java chunk NBT; Bedrock and Luanti worlds are not
+    // built out of chunk NBT at all, so the combination has no meaning.
+    if args.region_format == RegionFormatArg::Blinear && (args.bedrock || args.luanti) {
+        return Err(
+            "--region-format blinear only applies to Java worlds; drop --bedrock/--luanti."
+                .to_string(),
+        );
     }
 
     if args.bedrock {

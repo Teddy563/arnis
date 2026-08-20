@@ -1121,6 +1121,10 @@ fn gui_start_generation(
                 tree_pack: None,
                 bedrock: world_format == WorldFormat::BedrockMcWorld,
                 luanti: world_format == WorldFormat::LuantiWorld,
+                // B_Linear worlds are server-only and the GUI writes into
+                // .minecraft/saves, where the client has to be able to open them.
+                region_format: crate::args::RegionFormatArg::Mca,
+                blinear_level: 6,
                 downloader: "requests".to_string(),
                 scale: world_scale,
                 projection: crate::projection::ProjectionKind::Local,

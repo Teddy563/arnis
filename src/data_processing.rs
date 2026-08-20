@@ -381,6 +381,17 @@ pub fn generate_world_with_options(
         )
     };
     editor.set_bake_lighting(args.bake_lighting);
+    // Container choice lives on the main editor only: tile editors never touch disk,
+    // they merge their regions back here before anything is written.
+    editor.set_region_container(
+        match args.region_format {
+            crate::args::RegionFormatArg::Mca => crate::world_editor::RegionContainer::Anvil,
+            crate::args::RegionFormatArg::Blinear => {
+                crate::world_editor::RegionContainer::BlinearV3
+            }
+        },
+        args.blinear_level,
+    );
     editor.set_projection_info(&args.projection.to_string(), args.scale);
     let ground = Arc::new(ground);
     let mut bench = crate::bench::Bench::new(args.benchmark);
@@ -1163,7 +1174,12 @@ pub fn generate_world_with_options(
     // Optional: drop a locked filled-map of the whole world into the player's inventory.
     // Java-only (reads/writes level.dat + data/*.dat); renders straight from saved regions,
     // so it writes zero blocks and cannot introduce cross-tile seams.
-    if args.map_item && world_format == WorldFormat::JavaAnvil {
+    // The renderer behind the map item reads the saved regions back through fastanvil,
+    // which only speaks Anvil, so a B_Linear world has nothing for it to read.
+    if args.map_item
+        && world_format == WorldFormat::JavaAnvil
+        && args.region_format == crate::args::RegionFormatArg::Mca
+    {
         if let Err(e) = crate::map_item::write_map_item(&output_path, &xzbbox) {
             let warning_msg = format!("Failed to write world map item: {}", e);
             eprintln!("Warning: {}", warning_msg);

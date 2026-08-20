@@ -105,6 +105,20 @@ impl<'a> WorldEditor<'a> {
             // Continue with world saving even if metadata fails
         }
 
+        // World scaffolding seeds `region/r.0.0.mca` from the bundled Anvil template so a
+        // freshly created world is loadable even before generation writes anything. Under
+        // B_Linear nothing ever overwrites that file — the container gives it a different
+        // extension — so it would linger as the one Anvil region in a b_linear world and
+        // read as a mixed-format world to every tool downstream.
+        if self.region_container == super::RegionContainer::BlinearV3 {
+            let stray = self.world_dir.join("region").join("r.0.0.mca");
+            if stray.exists() {
+                if let Err(e) = std::fs::remove_file(&stray) {
+                    eprintln!("Failed to remove the Anvil scaffold region {stray:?}: {e}");
+                }
+            }
+        }
+
         if self.world.regions.is_empty() {
             return Ok(());
         }
@@ -216,6 +230,8 @@ impl<'a> WorldEditor<'a> {
             region_x,
             region_z,
             region_to_modify,
+            self.region_container,
+            self.blinear_level,
         )
     }
 }
@@ -250,6 +266,61 @@ fn biome_lat_for_chunk(
     let world_z = f64::from(abs_chunk_z * 16 + 8); // chunk-centre block Z
     let t = (world_z - min_z) / (max_z - min_z);
     north_lat + t * (south_lat - north_lat)
+}
+
+/// Where one region's chunks go. Both variants take the same uncompressed chunk NBT
+/// and differ only in how they frame and compress it on disk, which is what lets the
+/// container be a per-run switch rather than a separate world format.
+enum RegionSink {
+    Anvil(Region<File>),
+    Blinear(super::blinear::BlinearRegionWriter),
+}
+
+impl RegionSink {
+    fn create(
+        world_dir: &std::path::Path,
+        region_x: i32,
+        region_z: i32,
+        container: super::RegionContainer,
+        blinear_level: i32,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        match container {
+            super::RegionContainer::Anvil => Ok(RegionSink::Anvil(create_region_file(
+                world_dir, region_x, region_z,
+            )?)),
+            super::RegionContainer::BlinearV3 => Ok(RegionSink::Blinear(
+                super::blinear::BlinearRegionWriter::create(
+                    world_dir,
+                    region_x,
+                    region_z,
+                    blinear_level,
+                )?,
+            )),
+        }
+    }
+
+    fn write_chunk(
+        &mut self,
+        chunk_x: usize,
+        chunk_z: usize,
+        nbt: &[u8],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match self {
+            RegionSink::Anvil(region) => {
+                region.write_chunk(chunk_x, chunk_z, nbt)?;
+                Ok(())
+            }
+            RegionSink::Blinear(writer) => writer.write_chunk(chunk_x, chunk_z, nbt),
+        }
+    }
+
+    /// Anvil publishes as it goes, so only B_Linear has work left here.
+    fn finish(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match self {
+            RegionSink::Anvil(_) => Ok(()),
+            RegionSink::Blinear(writer) => writer.finish(),
+        }
+    }
 }
 
 /// Open (truncating) a fresh `r.X.Z.mca` under `world_dir/region`.
@@ -293,8 +364,10 @@ fn write_region_to_disk(
     region_x: i32,
     region_z: i32,
     region_to_modify: &super::common::RegionToModify,
+    container: super::RegionContainer,
+    blinear_level: i32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut region = create_region_file(world_dir, region_x, region_z)?;
+    let mut region = RegionSink::create(world_dir, region_x, region_z, container, blinear_level)?;
     let mut ser_buffer = Vec::with_capacity(8192);
 
     // World-center latitude drives temperature-based biome variants (taiga
@@ -384,7 +457,7 @@ fn write_region_to_disk(
         }
     }
 
-    Ok(())
+    region.finish()
 }
 
 /// Owned, `Send` context for writing regions off the main thread (background flush).
@@ -398,6 +471,8 @@ pub(crate) struct RegionWriteCtx {
     xz_max_z: i32,
     ground: Option<std::sync::Arc<crate::ground::Ground>>,
     bake_lighting: bool,
+    container: super::RegionContainer,
+    blinear_level: i32,
 }
 
 impl RegionWriteCtx {
@@ -411,6 +486,8 @@ impl RegionWriteCtx {
         xz_max_z: i32,
         ground: Option<std::sync::Arc<crate::ground::Ground>>,
         bake_lighting: bool,
+        container: super::RegionContainer,
+        blinear_level: i32,
     ) -> Self {
         Self {
             world_dir,
@@ -421,6 +498,8 @@ impl RegionWriteCtx {
             xz_max_z,
             ground,
             bake_lighting,
+            container,
+            blinear_level,
         }
     }
 
@@ -442,6 +521,8 @@ impl RegionWriteCtx {
             region_x,
             region_z,
             region_to_modify,
+            self.container,
+            self.blinear_level,
         )
     }
 }

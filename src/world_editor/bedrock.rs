@@ -748,6 +748,8 @@ impl BedrockWriter {
                 max_geo_lon: llbbox.max().lng(),
                 projection: self.projection.clone(),
                 scale: self.scale,
+                // Bedrock stores its world in LevelDB, not Java region files.
+                region_container: "none".to_string(),
             },
             format: "bedrock-mcworld",
             chunk_count,
