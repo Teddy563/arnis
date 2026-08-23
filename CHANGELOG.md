@@ -10,7 +10,7 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [Unreleased]
+## [3.1.3] - 2026-08-23
 
 Two silent failures and one size/CPU win, all found while triaging Discord
 reports against Meld's logs.
