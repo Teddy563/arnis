@@ -848,7 +848,6 @@ fn gui_show_in_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-#[allow(unused_variables)]
 fn gui_start_generation(
     bbox_text: String,
     selected_world: String,
@@ -1201,7 +1200,13 @@ fn gui_start_generation(
                     }
                 },
                 tile_invariant_rendering: tile_invariant_seed,
-                bake_lighting: false,
+                // The front end has always sent this (gui/js/main.js sets bakeLightingEnabled
+                // from the Bake lighting checkbox) and the parameter has always been accepted
+                // three dozen lines up -- it was just never read, so the checkbox did nothing
+                // and a desktop-Arnis world could never be pre-lit no matter what the user
+                // ticked. Upstream wires it; this fork stopped. #[allow(unused_variables)] on
+                // this function is what kept the compiler quiet about it.
+                bake_lighting: bake_lighting_enabled,
                 download_only: false,
                 download_terrain_only: false,
                 offline: false,

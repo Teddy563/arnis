@@ -10,6 +10,46 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.3] - 2026-08-23
+
+Two silent failures and one size/CPU win, all found while triaging Discord
+reports against Meld's logs.
+
+### Changed
+
+- **Baked lighting no longer writes an all-zero BlockLight array, or computes
+  one.** Most chunks emit nothing — terrain, fields, water, roads, unlit shells —
+  and for those the block-light pass walked all 98,304 cells of the column to
+  find that out and then propagated a field that was uniformly zero. It is now
+  skipped when nothing emits, and the resulting all-zero array is left out, which
+  the client reads identically. Measured across three real worlds at 4096 chunks
+  each: 481–491 fewer compressed bytes per chunk, about 7% of region-file bytes.
+  SkyLight is unaffected and is still written for every section —
+  `repeatFirstLayer` means an absent one inherits the terrain's shadow rather
+  than reading as zero or as full sky, and with `isLightOn` set the client never
+  relights, so omitting it would turn the sky permanently black.
+
+### Fixed
+
+- **Overture survives a stale release pointer.** Overture keeps only the newest
+  few data releases online, so when the release the fork resolves goes stale it
+  goes stale for every cell at once — a cliff, not a slope. Across 19,018 cell
+  logs, 6,420 runs fetched Overture and 16 failed outright, all sixteen in one
+  render, all `404` on a retired release. A cached STAC index that is merely old
+  is now preferred to no index at all: the refresh window is a week and the
+  partitions it points at outlive that comfortably, but a failed refresh used to
+  propagate and kill the whole step while a perfectly usable index sat on disk
+  unread. The release that last worked is also remembered next to the cache and
+  tried before the compile-time fallback, so that constant — a date, and dates
+  rot — stops being load-bearing. Release attempts 3 → 4.
+- **The Bake lighting checkbox in the desktop GUI has never done anything.**
+  `gui_start_generation` accepts `bake_lighting_enabled`, the front end has
+  always sent it, and the `Args` built from it set `bake_lighting: false`
+  unconditionally — so a desktop-Arnis world could not be pre-lit however the
+  user set the toggle. Upstream wires this; the fork stopped, and
+  `#[allow(unused_variables)]` on the function suppressed exactly the warning
+  that would have caught it. Wired, and the allow removed.
+
 ## [3.1.2] - 2026-08-21
 
 Optional B_Linear output. `--region-format blinear` writes Leaf's own region
