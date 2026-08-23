@@ -169,11 +169,26 @@ one**, not anything to do with caves and certainly not a GPU. Regions are
 independent files; K threads consuming one channel should turn ~88 s into ~15-25 s
 and roughly halve big-world wall time.
 
-## What is deliberately NOT done here
+## Final Phase 1 numbers
 
-`sweep_floating_veg` (`water_depth.rs`) is still single-threaded. It is the same
-shape as the fluid seal and should get the same treatment, but it was not the
-measured bottleneck, so it stays for a follow-up rather than widening this change.
+Original 3.1.2 binary vs the finished branch. Same bbox `44.40,26.05,44.46,26.15`,
+same seed, cached tiles, terrain + caves + baked lighting:
+
+| scenario | before | after | speedup |
+|---|---|---|---|
+| **1:1, eviction ON** (what big worlds use) | 152.3 s | **63.9 s** | **2.38x** |
+| 1:1, eviction off | 112.8 s | **70.0 s** | **1.61x** |
+| 1:20 (a Romania cell) | 3.9 s | 3.9 s | 1.00x |
+
+Supporting numbers for the eviction case: `tile_merge_ms` 96464 -> 14849 (6.5x),
+CPU 848 -> 755 core-seconds (11% less), peak RAM 3918 -> 4150 MB (+6%).
+
+**1:20 is unchanged and its `block_hash` is identical** (`53bbe0418ee51b3e`), which
+is both the correctness proof and the expected outcome: at that scale the cave band
+is shallow, caves are 11% of CPU, and the world is small enough that eviction never
+engages, so none of these three changes has anything to bite on.
+
+## What is deliberately NOT done here
 
 Phase 2 (GPU cave density) is specified in
 `light-meld/docs/void-naming-gpu-plan.md`. **Phase 1 changes the Phase 2 maths**:
