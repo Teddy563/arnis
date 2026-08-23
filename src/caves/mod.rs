@@ -39,6 +39,7 @@
 mod carver;
 pub mod decoration;
 pub mod density;
+pub(crate) mod gpu;
 mod noise;
 mod ores;
 mod rng;
@@ -142,79 +143,136 @@ pub fn carve_region(
     let cy_lo = (MIN_Y + 1).div_euclid(CH);
     let cy_hi = (max_surf - TOP_GATE).div_euclid(CH);
 
+    // GPU path (--gpu): both dispatches - corner lattice + per-block mask - happen on
+    // the adapter, and only a bitmask comes back. Approximate by contract (f32 vs the
+    // CPU's f64 near the threshold); any failure falls back to the CPU loop below,
+    // which stays the reference implementation and the golden-hash path.
+    let gpu_sel = std::env::var("ARNIS_GPU").unwrap_or_else(|_| args.gpu.clone());
+    let gpu_carved: Option<Vec<(i32, i32, i32)>> =
+        gpu::carver_for(&gpu_sel, &gen, seed).and_then(|carver| {
+            let y_lo = MIN_Y + 1;
+            let y_hi = max_surf - TOP_GATE;
+            let (_, cheese_k) = gen.gpu_export();
+            match carver.carve_mask(
+                min_x,
+                max_x,
+                min_z,
+                max_z,
+                y_lo,
+                y_hi,
+                cy_lo,
+                cy_hi,
+                cheese_k as f32,
+                TOP_GATE,
+                surf,
+            ) {
+                Ok(words) => {
+                    let w = (max_x - min_x + 1) as u64;
+                    let hh = (max_z - min_z + 1) as u64;
+                    let cols = w * hh;
+                    let mut out = Vec::new();
+                    for (wi, &word) in words.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let b = bits.trailing_zeros() as u64;
+                            bits &= bits - 1;
+                            let idx = wi as u64 * 32 + b;
+                            let by = y_lo + (idx / cols) as i32;
+                            let col = idx % cols;
+                            let bx = min_x + (col / hh) as i32;
+                            let bz = min_z + (col % hh) as i32;
+                            out.push((bx, by, bz));
+                        }
+                    }
+                    Some(out)
+                }
+                Err(e) => {
+                    eprintln!("    Cave GPU dispatch failed ({e}); using the CPU path.");
+                    None
+                }
+            }
+        });
+    if let Some(ref v) = gpu_carved {
+        let _ = v; // decoded below
+    }
+
     let cell_cols: Vec<(i32, i32)> = (cx0..=cx1)
         .flat_map(|cx| (cz0..=cz1).map(move |cz| (cx, cz)))
         .collect();
 
-    let carved: Vec<(i32, i32, i32)> = cell_cols
-        .par_iter()
-        .flat_map_iter(|&(cx, cz)| {
-            let mut out: Vec<(i32, i32, i32)> = Vec::new();
-            let (wx0, wx1) = (cx * CW, cx * CW + CW);
-            let (wz0, wz1) = (cz * CW, cz * CW + CW);
-            // A cell's TOP corner plane is the next cell's BOTTOM plane: same four
-            // coordinates, so the same four values. Carrying it up the column halves the
-            // density evaluations - the dominant cost of cave generation - and cannot
-            // change a result, because it reuses values instead of recomputing them.
-            let mut b00 = gen.combined_density(wx0, cy_lo * CH, wz0);
-            let mut b10 = gen.combined_density(wx1, cy_lo * CH, wz0);
-            let mut b01 = gen.combined_density(wx0, cy_lo * CH, wz1);
-            let mut b11 = gen.combined_density(wx1, cy_lo * CH, wz1);
-            for cy in cy_lo..=cy_hi {
-                let (wy0, wy1) = (cy * CH, cy * CH + CH);
-                // 8 corners of the combined density (cheese/spaghetti/entrances/pillars + slides+squeeze).
-                // The wy0 plane was computed as the previous cell's wy1 plane.
-                let (n000, n100, n001, n101) = (b00, b10, b01, b11);
-                let n010 = gen.combined_density(wx0, wy1, wz0);
-                let n110 = gen.combined_density(wx1, wy1, wz0);
-                let n011 = gen.combined_density(wx0, wy1, wz1);
-                let n111 = gen.combined_density(wx1, wy1, wz1);
-                b00 = n010;
-                b10 = n110;
-                b01 = n011;
-                b11 = n111;
-                let by_lo = wy0.max(MIN_Y + 1);
-                let by_hi = (wy1 - 1).min(max_surf - TOP_GATE);
-                for by in by_lo..=by_hi {
-                    let fy = (by - wy0) as f64 / CH as f64;
-                    let xz00 = lerp(fy, n000, n010);
-                    let xz10 = lerp(fy, n100, n110);
-                    let xz01 = lerp(fy, n001, n011);
-                    let xz11 = lerp(fy, n101, n111);
-                    for bx in wx0.max(min_x)..wx1.min(max_x + 1) {
-                        let fx = (bx - wx0) as f64 / CW as f64;
-                        let z0v = lerp(fx, xz00, xz10);
-                        let z1v = lerp(fx, xz01, xz11);
-                        let ix = (bx - min_x) as usize;
-                        for bz in wz0.max(min_z)..wz1.min(max_z + 1) {
-                            let top = surf[ix * h + (bz - min_z) as usize] - TOP_GATE;
-                            if by > top {
-                                continue;
-                            }
-                            let fz = (bz - wz0) as f64 / CW as f64;
-                            let combined = lerp(fz, z0v, z1v);
-                            // Do NOT add per-block jitter to this threshold: the `squeeze`
-                            // clusters density so tightly near 0 that even a mean-zero ±0.005
-                            // perturbation flips a huge number of cells randomly, producing grainy
-                            // salt-and-pepper walls everywhere. Terracing on big caverns is a
-                            // separate problem needing a coherent isosurface warp, not noise here.
-                            // Carve iff min(combined, noodle) <= 0; noodle is only evaluated when
-                            // combined stays solid. Noodle keeps its 0 gate — the thin worms are the
-                            // CONNECTORS between cave systems, and trimming them fragments the
-                            // network (connectivity collapses to ~29%). Cave size is cut via the
-                            // cheese/carver-room shrinks instead, which preserve connectivity.
-                            let carve = combined <= CARVE_THRESHOLD
-                                || gen.noodle_density(bx, by, bz) <= 0.0;
-                            if carve {
-                                out.push((bx, by, bz));
+    let carved: Vec<(i32, i32, i32)> = if let Some(v) = gpu_carved {
+        v
+    } else {
+        cell_cols
+            .par_iter()
+            .flat_map_iter(|&(cx, cz)| {
+                let mut out: Vec<(i32, i32, i32)> = Vec::new();
+                let (wx0, wx1) = (cx * CW, cx * CW + CW);
+                let (wz0, wz1) = (cz * CW, cz * CW + CW);
+                // A cell's TOP corner plane is the next cell's BOTTOM plane: same four
+                // coordinates, so the same four values. Carrying it up the column halves the
+                // density evaluations - the dominant cost of cave generation - and cannot
+                // change a result, because it reuses values instead of recomputing them.
+                let mut b00 = gen.combined_density(wx0, cy_lo * CH, wz0);
+                let mut b10 = gen.combined_density(wx1, cy_lo * CH, wz0);
+                let mut b01 = gen.combined_density(wx0, cy_lo * CH, wz1);
+                let mut b11 = gen.combined_density(wx1, cy_lo * CH, wz1);
+                for cy in cy_lo..=cy_hi {
+                    let (wy0, wy1) = (cy * CH, cy * CH + CH);
+                    // 8 corners of the combined density (cheese/spaghetti/entrances/pillars + slides+squeeze).
+                    // The wy0 plane was computed as the previous cell's wy1 plane.
+                    let (n000, n100, n001, n101) = (b00, b10, b01, b11);
+                    let n010 = gen.combined_density(wx0, wy1, wz0);
+                    let n110 = gen.combined_density(wx1, wy1, wz0);
+                    let n011 = gen.combined_density(wx0, wy1, wz1);
+                    let n111 = gen.combined_density(wx1, wy1, wz1);
+                    b00 = n010;
+                    b10 = n110;
+                    b01 = n011;
+                    b11 = n111;
+                    let by_lo = wy0.max(MIN_Y + 1);
+                    let by_hi = (wy1 - 1).min(max_surf - TOP_GATE);
+                    for by in by_lo..=by_hi {
+                        let fy = (by - wy0) as f64 / CH as f64;
+                        let xz00 = lerp(fy, n000, n010);
+                        let xz10 = lerp(fy, n100, n110);
+                        let xz01 = lerp(fy, n001, n011);
+                        let xz11 = lerp(fy, n101, n111);
+                        for bx in wx0.max(min_x)..wx1.min(max_x + 1) {
+                            let fx = (bx - wx0) as f64 / CW as f64;
+                            let z0v = lerp(fx, xz00, xz10);
+                            let z1v = lerp(fx, xz01, xz11);
+                            let ix = (bx - min_x) as usize;
+                            for bz in wz0.max(min_z)..wz1.min(max_z + 1) {
+                                let top = surf[ix * h + (bz - min_z) as usize] - TOP_GATE;
+                                if by > top {
+                                    continue;
+                                }
+                                let fz = (bz - wz0) as f64 / CW as f64;
+                                let combined = lerp(fz, z0v, z1v);
+                                // Do NOT add per-block jitter to this threshold: the `squeeze`
+                                // clusters density so tightly near 0 that even a mean-zero ±0.005
+                                // perturbation flips a huge number of cells randomly, producing grainy
+                                // salt-and-pepper walls everywhere. Terracing on big caverns is a
+                                // separate problem needing a coherent isosurface warp, not noise here.
+                                // Carve iff min(combined, noodle) <= 0; noodle is only evaluated when
+                                // combined stays solid. Noodle keeps its 0 gate — the thin worms are the
+                                // CONNECTORS between cave systems, and trimming them fragments the
+                                // network (connectivity collapses to ~29%). Cave size is cut via the
+                                // cheese/carver-room shrinks instead, which preserve connectivity.
+                                let carve = combined <= CARVE_THRESHOLD
+                                    || gen.noodle_density(bx, by, bz) <= 0.0;
+                                if carve {
+                                    out.push((bx, by, bz));
+                                }
                             }
                         }
                     }
                 }
-            }
-            out
-        })
-        .collect();
+                out
+            })
+            .collect()
+    };
 
     // 3) apply caves (noise + carvers) into rock, tracking every cave-air cell for the despeckle.
     let mut air: HashSet<i64> = HashSet::default();

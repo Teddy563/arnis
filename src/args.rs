@@ -82,6 +82,16 @@ pub struct Args {
     #[arg(long)]
     pub luanti: bool,
 
+    /// Evaluate the cave density field on a GPU (EXPERIMENTAL, approximate).
+    ///
+    /// `off` (default) = CPU. `auto` = best adapter, preferring discrete. `dgpu` /
+    /// `igpu` = force that class. Anything else = adapter-name substring. When no
+    /// adapter matches, generation falls back to the CPU with a single warning.
+    /// GPU results are f32 and may shift the odd cave wall by a block versus the
+    /// CPU; the golden-hash gate always runs the CPU path.
+    #[arg(long = "gpu", default_value = "off")]
+    pub gpu: String,
+
     /// Generate into a VOID world: only the generated content exists, everything else
     /// is empty air, in this world and in every chunk the game generates later.
     ///

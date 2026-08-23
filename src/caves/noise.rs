@@ -84,7 +84,7 @@ fn lerp3(
 }
 
 /// One octave of improved perlin noise (`ImprovedNoise`).
-struct ImprovedNoise {
+pub(crate) struct ImprovedNoise {
     p: [u8; 256],
     xo: f64,
     yo: f64,
@@ -270,4 +270,57 @@ impl NormalNoise {
 #[inline]
 fn expected_deviation(octaves: i32) -> f64 {
     0.1 * (1.0 + 1.0 / (octaves as f64 + 1.0))
+}
+
+/// One octave, flattened for the GPU: everything `get_value` needs, with the
+/// per-octave frequency and amplitude scaling already folded in.
+pub(crate) struct OctaveExport {
+    pub perm: [u8; 256],
+    pub xo: f64,
+    pub yo: f64,
+    pub zo: f64,
+    /// Coordinate multiplier for this octave (includes the second stack's
+    /// `INPUT_FACTOR` where applicable).
+    pub input_factor: f64,
+    /// `amplitude * persistence` for this octave; the caller sums
+    /// `value_amp * improved_noise(...)` and multiplies by the noise's
+    /// `value_factor` at the end.
+    pub value_amp: f64,
+}
+
+impl PerlinNoise {
+    fn export_octaves(&self, extra_input: f64, out: &mut Vec<OctaveExport>) {
+        let mut d1 = self.lowest_freq_input_factor;
+        let mut d2 = self.lowest_freq_value_factor;
+        for (idx, lvl) in self.levels.iter().enumerate() {
+            if let Some(n) = lvl {
+                out.push(OctaveExport {
+                    perm: n.p,
+                    xo: n.xo,
+                    yo: n.yo,
+                    zo: n.zo,
+                    input_factor: d1 * extra_input,
+                    value_amp: self.amplitudes[idx] * d2,
+                });
+            }
+            d1 *= 2.0;
+            d2 /= 2.0;
+        }
+    }
+}
+
+impl NormalNoise {
+    /// Flatten both stacks into one octave list. Summing `value_amp * noise(coord *
+    /// input_factor + offset)` over the list and multiplying by [`value_factor`]
+    /// reproduces `get_value` exactly (modulo the caller's float width).
+    pub(crate) fn export_octaves(&self) -> Vec<OctaveExport> {
+        let mut out = Vec::new();
+        self.first.export_octaves(1.0, &mut out);
+        self.second.export_octaves(INPUT_FACTOR, &mut out);
+        out
+    }
+
+    pub(crate) fn export_value_factor(&self) -> f64 {
+        self.value_factor
+    }
 }

@@ -1140,6 +1140,7 @@ fn gui_start_generation(
                 // The GUI names worlds by folder; a typed name would arrive here.
                 level_name: None,
                 void_world: false,
+                gpu: "off".to_string(),
                 region_format: crate::args::RegionFormatArg::Mca,
                 blinear_level: 6,
                 downloader: "requests".to_string(),

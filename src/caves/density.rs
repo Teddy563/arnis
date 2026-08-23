@@ -135,6 +135,36 @@ impl CaveGen {
         }
     }
 
+    /// The 20 noises in FIELD ORDER, plus `cheese_k` - the flattening contract the
+    /// GPU shader's NOISE_* indices are written against. Do not reorder.
+    pub(crate) fn gpu_export(&self) -> ([&NormalNoise; 20], f64) {
+        (
+            [
+                &self.cave_cheese,
+                &self.cave_layer,
+                &self.cave_entrance,
+                &self.spaghetti_2d,
+                &self.spaghetti_2d_elevation,
+                &self.spaghetti_2d_modulator,
+                &self.spaghetti_2d_thickness,
+                &self.spaghetti_3d_1,
+                &self.spaghetti_3d_2,
+                &self.spaghetti_3d_rarity,
+                &self.spaghetti_3d_thickness,
+                &self.spaghetti_roughness,
+                &self.spaghetti_roughness_modulator,
+                &self.noodle,
+                &self.noodle_thickness,
+                &self.noodle_ridge_a,
+                &self.noodle_ridge_b,
+                &self.pillar,
+                &self.pillar_rareness,
+                &self.pillar_thickness,
+            ],
+            self.cheese_k,
+        )
+    }
+
     /// Raw NormalNoise value by id (for the Java value-parity harness — no xz/ys scaling).
     #[allow(dead_code)] // diagnostic API for the probe examples
     pub fn raw_noise(&self, id: &str, x: f64, y: f64, z: f64) -> f64 {

@@ -65,6 +65,14 @@ rusty-leveldb = "3"
 rusqlite = { version = "0.40", features = ["bundled"] }
 zstd = "0.13"
 xxhash-rust = { version = "0.8", features = ["xxh32"] }
+# --gpu: cave density on a compute shader. wgpu needs no user-side toolkit and covers
+# Vulkan/DX12/Metal from one WGSL source; pollster blocks on its async init.
+# Vulkan-only: the DX12 backend pulls a `windows`-crate version that conflicts with
+# the one this tree already pins (0.62), and both target GPUs enumerate on Vulkan.
+# Metal rides along for a future macOS build; it compiles to nothing elsewhere.
+wgpu = { version = "23", default-features = false, features = ["wgsl", "wgc", "metal"] }
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.0", features = ["Win32_System_Console"] }
