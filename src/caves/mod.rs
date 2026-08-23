@@ -146,17 +146,27 @@ pub fn carve_region(
             let mut out: Vec<(i32, i32, i32)> = Vec::new();
             let (wx0, wx1) = (cx * CW, cx * CW + CW);
             let (wz0, wz1) = (cz * CW, cz * CW + CW);
+            // A cell's TOP corner plane is the next cell's BOTTOM plane: same four
+            // coordinates, so the same four values. Carrying it up the column halves the
+            // density evaluations - the dominant cost of cave generation - and cannot
+            // change a result, because it reuses values instead of recomputing them.
+            let mut b00 = gen.combined_density(wx0, cy_lo * CH, wz0);
+            let mut b10 = gen.combined_density(wx1, cy_lo * CH, wz0);
+            let mut b01 = gen.combined_density(wx0, cy_lo * CH, wz1);
+            let mut b11 = gen.combined_density(wx1, cy_lo * CH, wz1);
             for cy in cy_lo..=cy_hi {
                 let (wy0, wy1) = (cy * CH, cy * CH + CH);
-                // 8 corners of the combined density (cheese/spaghetti/entrances/pillars + slides+squeeze)
-                let n000 = gen.combined_density(wx0, wy0, wz0);
-                let n100 = gen.combined_density(wx1, wy0, wz0);
+                // 8 corners of the combined density (cheese/spaghetti/entrances/pillars + slides+squeeze).
+                // The wy0 plane was computed as the previous cell's wy1 plane.
+                let (n000, n100, n001, n101) = (b00, b10, b01, b11);
                 let n010 = gen.combined_density(wx0, wy1, wz0);
                 let n110 = gen.combined_density(wx1, wy1, wz0);
-                let n001 = gen.combined_density(wx0, wy0, wz1);
-                let n101 = gen.combined_density(wx1, wy0, wz1);
                 let n011 = gen.combined_density(wx0, wy1, wz1);
                 let n111 = gen.combined_density(wx1, wy1, wz1);
+                b00 = n010;
+                b10 = n110;
+                b01 = n011;
+                b11 = n111;
                 let by_lo = wy0.max(MIN_Y + 1);
                 let by_hi = (wy1 - 1).min(max_surf - TOP_GATE);
                 for by in by_lo..=by_hi {
@@ -463,24 +473,39 @@ pub fn seal_floating_fluid_region(
     min_z: i32,
     max_z: i32,
 ) {
-    for x in min_x..=max_x {
-        for z in min_z..=max_z {
-            let top = editor.get_ground_level(x, z) + 2;
-            for y in (MIN_Y + 1..=top).rev() {
-                if editor.check_for_block_absolute(x, y, z, Some(&[WATER, LAVA]), None)
-                    && !editor.block_exists_absolute(x, y - 1, z)
-                {
-                    // Do not add a "waterfall exemption" here (skipping the plug when more fluid
-                    // sits a few blocks lower): it legalizes water-over-air-over-water gaps inside
-                    // multi-lobe pools (hundreds of visible floaters per region). The river→pool
-                    // merge is solved at the SOURCE instead: rivers never place a source block over
-                    // air (water.rs), so there is nothing here to plug at a river mouth — the last
-                    // on-rock source flows over the edge at runtime, a real waterfall.
-                    let rock = if y < 1 { DEEPSLATE } else { STONE };
-                    editor.set_block_absolute(rock, x, y - 1, z, Some(&[AIR]), None);
+    // Scan in parallel, then apply. The scan is the expensive half - a full-depth probe
+    // of every column, and the single hottest post-pass - while the writes are rare
+    // (only genuine floaters) and must stay on one thread because the world is a
+    // hash map behind &mut. Columns never read or write outside their own (x, z), so
+    // splitting by column is safe, and rayon's indexed collect preserves input order,
+    // which keeps the applied writes in the same sequence as the serial version.
+    let plugs: Vec<(i32, i32, i32)> = (min_x..=max_x)
+        .into_par_iter()
+        .flat_map_iter(|x| {
+            let mut found: Vec<(i32, i32, i32)> = Vec::new();
+            for z in min_z..=max_z {
+                let top = editor.get_ground_level(x, z) + 2;
+                for y in (MIN_Y + 1..=top).rev() {
+                    if editor.check_for_block_absolute(x, y, z, Some(&[WATER, LAVA]), None)
+                        && !editor.block_exists_absolute(x, y - 1, z)
+                    {
+                        found.push((x, y, z));
+                    }
                 }
             }
-        }
+            found
+        })
+        .collect();
+
+    for (x, y, z) in plugs {
+        // Do not add a "waterfall exemption" here (skipping the plug when more fluid
+        // sits a few blocks lower): it legalizes water-over-air-over-water gaps inside
+        // multi-lobe pools (hundreds of visible floaters per region). The river→pool
+        // merge is solved at the SOURCE instead: rivers never place a source block over
+        // air (water.rs), so there is nothing here to plug at a river mouth — the last
+        // on-rock source flows over the edge at runtime, a real waterfall.
+        let rock = if y < 1 { DEEPSLATE } else { STONE };
+        editor.set_block_absolute(rock, x, y - 1, z, Some(&[AIR]), None);
     }
 }
 
@@ -503,4 +528,74 @@ fn unpack(p: i64) -> (i32, i32, i32) {
 #[inline]
 fn lerp(t: f64, a: f64, b: f64) -> f64 {
     a + t * (b - a)
+}
+
+#[cfg(test)]
+mod corner_cache_tests {
+    use super::*;
+
+    /// The carve loop reuses each cell's top corner plane as the next cell's bottom
+    /// plane instead of recomputing it. That is only sound if the two are the same
+    /// four samples, so this walks a column both ways and compares every value.
+    ///
+    /// It matters because whole-world hashes cannot check this: a 1:1 render is not
+    /// reproducible run to run, so a difference there proves nothing either way.
+    #[test]
+    fn carried_corner_plane_matches_recomputation() {
+        const CW: i32 = 4;
+        const CH: i32 = 8;
+        let gen = CaveGen::new(1234);
+        let (wx0, wx1) = (16, 16 + CW);
+        let (wz0, wz1) = (-48, -48 + CW);
+
+        // Naive: every cell computes all eight corners from scratch.
+        let mut naive = Vec::new();
+        for cy in -8..=2 {
+            let (wy0, wy1) = (cy * CH, cy * CH + CH);
+            naive.push([
+                gen.combined_density(wx0, wy0, wz0),
+                gen.combined_density(wx1, wy0, wz0),
+                gen.combined_density(wx0, wy0, wz1),
+                gen.combined_density(wx1, wy0, wz1),
+                gen.combined_density(wx0, wy1, wz0),
+                gen.combined_density(wx1, wy1, wz0),
+                gen.combined_density(wx0, wy1, wz1),
+                gen.combined_density(wx1, wy1, wz1),
+            ]);
+        }
+
+        // Carried: the bottom plane comes from the previous cell's top plane.
+        let mut b00 = gen.combined_density(wx0, -8 * CH, wz0);
+        let mut b10 = gen.combined_density(wx1, -8 * CH, wz0);
+        let mut b01 = gen.combined_density(wx0, -8 * CH, wz1);
+        let mut b11 = gen.combined_density(wx1, -8 * CH, wz1);
+        for (i, cy) in (-8..=2).enumerate() {
+            let wy1 = cy * CH + CH;
+            let (n000, n100, n001, n101) = (b00, b10, b01, b11);
+            let n010 = gen.combined_density(wx0, wy1, wz0);
+            let n110 = gen.combined_density(wx1, wy1, wz0);
+            let n011 = gen.combined_density(wx0, wy1, wz1);
+            let n111 = gen.combined_density(wx1, wy1, wz1);
+            b00 = n010;
+            b10 = n110;
+            b01 = n011;
+            b11 = n111;
+
+            let carried = [n000, n100, n001, n101, n010, n110, n011, n111];
+            assert_eq!(
+                carried, naive[i],
+                "cell cy={cy}: carried corners differ from recomputed ones"
+            );
+        }
+    }
+
+    /// The density field must be a pure function of its coordinates - the carry is
+    /// only valid because asking twice gives the same answer.
+    #[test]
+    fn combined_density_is_pure() {
+        let gen = CaveGen::new(99);
+        for (x, y, z) in [(0, -40, 0), (12, -8, -60), (-33, -55, 71)] {
+            assert_eq!(gen.combined_density(x, y, z), gen.combined_density(x, y, z));
+        }
+    }
 }
