@@ -1450,7 +1450,10 @@ mod tests {
             .iter()
             .filter(|s| matches!(s, Value::Compound(m) if m.contains_key("BlockLight")))
             .count();
-        assert!(lit > 0, "an emitter must produce at least one BlockLight array");
+        assert!(
+            lit > 0,
+            "an emitter must produce at least one BlockLight array"
+        );
     }
 
     #[test]

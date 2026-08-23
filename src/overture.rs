@@ -355,10 +355,8 @@ fn parse_release_listing(body: &str) -> Result<Vec<String>, Box<dyn std::error::
 
 /// The release that last served a STAC index on this machine, if one ever did.
 fn read_last_good_release() -> Option<String> {
-    let raw = fs::read_to_string(
-        get_overture_cache_dir().join(OVERTURE_LAST_GOOD_RELEASE_FILE),
-    )
-    .ok()?;
+    let raw =
+        fs::read_to_string(get_overture_cache_dir().join(OVERTURE_LAST_GOOD_RELEASE_FILE)).ok()?;
     let name = raw.trim().to_string();
     // Only ever trust something release-shaped, so a truncated or clobbered file cannot
     // turn into a nonsense URL we then spend an attempt on.
