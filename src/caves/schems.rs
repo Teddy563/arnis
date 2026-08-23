@@ -17,7 +17,11 @@ use crate::block_definitions::*;
 use crate::world_editor::WorldEditor;
 use fastnbt::Value;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+// FnvHashSet: std seeds its hasher randomly per process, so iterating one to
+// apply world edits gives a different write order -- and a different world --
+// every run. FNV is deterministic. See the note in caves/mod.rs.
+use fnv::FnvHashSet as HashSet;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

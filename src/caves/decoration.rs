@@ -10,7 +10,11 @@ use super::rng::XoroRandom;
 use crate::block_definitions::*;
 use crate::world_editor::WorldEditor;
 use fastnbt::Value;
-use std::collections::{HashMap, HashSet};
+// FnvHashSet: std seeds its hasher randomly per process, so iterating one to
+// apply world edits gives a different write order -- and a different world --
+// every run. FNV is deterministic. See the note in caves/mod.rs.
+use fnv::FnvHashSet as HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(super) const ROCK: &[Block] = &[
@@ -897,7 +901,7 @@ fn place_geodes(
             //         tracked in `written_shell` so pass 1.5 can clean up any resulting floating nub.
             //         Collect budding cells for the crystal pass.
             let mut buddings: Vec<(i32, i32, i32)> = Vec::new();
-            let mut written_shell: HashSet<(i32, i32, i32)> = HashSet::new();
+            let mut written_shell: HashSet<(i32, i32, i32)> = HashSet::default();
             for dx in -ri..=ri {
                 for dy in -ri..=ri {
                     for dz in -ri..=ri {
@@ -935,7 +939,7 @@ fn place_geodes(
             // skip above removed their only neighbors. Revert any written_shell cell with ZERO real
             // 6-connected support (neither original host rock outside the geode nor another surviving
             // written_shell cell) back to air — same technique as the despeckle pass in mod.rs.
-            let mut reverted: HashSet<(i32, i32, i32)> = HashSet::new();
+            let mut reverted: HashSet<(i32, i32, i32)> = HashSet::default();
             for &(px, py, pz) in &written_shell {
                 let supported = [
                     (px + 1, py, pz),

@@ -17,7 +17,11 @@ use super::decoration::Decor;
 use super::rng::XoroRandom;
 use crate::block_definitions::*;
 use crate::world_editor::WorldEditor;
-use std::collections::{HashMap, HashSet};
+// FnvHashSet: std seeds its hasher randomly per process, so iterating one to
+// apply world edits gives a different write order -- and a different world --
+// every run. FNV is deterministic. See the note in caves/mod.rs.
+use fnv::FnvHashSet as HashSet;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 /// Carve pool caves + rivers for one tile. `air` is the existing DRY cave-air set (read-only — pools
@@ -39,8 +43,8 @@ pub fn carve_water_features(
     cave_host: &[Block],
     top_gate: i32,
 ) -> (HashSet<i64>, HashSet<i64>) {
-    let mut carved: HashSet<i64> = HashSet::new();
-    let mut water: HashSet<i64> = HashSet::new();
+    let mut carved: HashSet<i64> = HashSet::default();
+    let mut water: HashSet<i64> = HashSet::default();
 
     let cx0 = min_x.div_euclid(16);
     let cx1 = max_x.div_euclid(16);
@@ -243,7 +247,7 @@ fn carve_pool(
         + 4;
     let ri_v = lobes.iter().map(|l| l.rv).fold(0.0, f64::max).ceil() as i32;
 
-    let mut cells: HashSet<(i32, i32, i32)> = HashSet::new();
+    let mut cells: HashSet<(i32, i32, i32)> = HashSet::default();
     for dx in -ri_h..=ri_h {
         for dz in -ri_h..=ri_h {
             let (px, pz) = (gx + dx, gz + dz);
@@ -303,7 +307,7 @@ fn carve_pool(
         .filter(|&(_, y, _)| y <= mid)
         .collect();
     fill.sort_unstable_by_key(|&(_, y, _)| y);
-    let mut placed: HashSet<(i32, i32, i32)> = HashSet::new();
+    let mut placed: HashSet<(i32, i32, i32)> = HashSet::default();
     for &(px, py, pz) in &fill {
         if !(editor.block_exists_absolute(px, py - 1, pz) || placed.contains(&(px, py - 1, pz))) {
             continue;

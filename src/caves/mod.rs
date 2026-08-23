@@ -52,7 +52,13 @@ use crate::coordinate_system::cartesian::XZBBox;
 use crate::world_editor::{WorldEditor, MIN_Y};
 use density::CaveGen;
 use rayon::prelude::*;
-use std::collections::HashSet;
+// FnvHashSet, not std HashSet: std seeds its hasher randomly PER PROCESS, so
+// iterating one yields a different order every run. These sets are iterated to apply
+// world edits (despeckle, prune, decoration), and where those edits interact the write
+// ORDER decides the result -- which made a cave render unreproducible from one run to
+// the next. FNV hashes deterministically, so the same insertions iterate the same way
+// every time. The rest of the world model already uses Fnv for this reason.
+use fnv::FnvHashSet as HashSet;
 
 /// Carve only this many blocks below the column's surface (the roof seal — keeps caves from breaching
 /// the surface / exposing grass).
@@ -211,7 +217,7 @@ pub fn carve_region(
         .collect();
 
     // 3) apply caves (noise + carvers) into rock, tracking every cave-air cell for the despeckle.
-    let mut air: HashSet<i64> = HashSet::new();
+    let mut air: HashSet<i64> = HashSet::default();
     for (bx, by, bz) in carved {
         editor.set_block_absolute(AIR, bx, by, bz, Some(CAVE_HOST), None);
         air.insert(pack(bx, by, bz));
@@ -245,7 +251,7 @@ pub fn carve_region(
         ]
     };
     for _ in 0..2 {
-        let mut cand: HashSet<i64> = HashSet::new();
+        let mut cand: HashSet<i64> = HashSet::default();
         let mut remove: Vec<(i32, i32, i32)> = Vec::new();
         for &a in &air {
             let (px, py, pz) = unpack(a);
@@ -278,7 +284,7 @@ pub fn carve_region(
     //    touch the tile boundary are KEPT even when small — they may continue in the neighbor tile,
     //    and refilling only our half would carve a visible seam (the neighbor still carves its side).
     {
-        let mut seen: HashSet<i64> = HashSet::new();
+        let mut seen: HashSet<i64> = HashSet::default();
         let mut refill: Vec<i64> = Vec::new();
         for &start in &air {
             if seen.contains(&start) {
@@ -348,7 +354,7 @@ pub fn carve_region(
             }
             !ed.block_exists_absolute(x, y, z) && !air.contains(&pack(x, y, z))
         };
-        let mut cand: HashSet<i64> = HashSet::new();
+        let mut cand: HashSet<i64> = HashSet::default();
         for &a in &air {
             let (x, y, z) = unpack(a);
             if x < min_x || x > max_x || z < min_z || z > max_z || y >= LAVA_LEVEL {
@@ -364,7 +370,7 @@ pub fn carve_region(
         }
         let mut order: Vec<i64> = cand.iter().copied().collect();
         order.sort_unstable_by_key(|&p| unpack(p).1);
-        let mut supported: HashSet<i64> = HashSet::new();
+        let mut supported: HashSet<i64> = HashSet::default();
         for &a in &order {
             let (x, y, z) = unpack(a);
             if editor.block_exists_absolute(x, y - 1, z) || supported.contains(&pack(x, y - 1, z)) {
@@ -528,6 +534,35 @@ fn unpack(p: i64) -> (i32, i32, i32) {
 #[inline]
 fn lerp(t: f64, a: f64, b: f64) -> f64 {
     a + t * (b - a)
+}
+
+#[cfg(test)]
+mod determinism_tests {
+    use super::*;
+
+    /// The cave passes iterate these sets and apply world edits in whatever order they
+    /// come out, so the iteration order IS part of the world. std's HashSet seeds its
+    /// hasher randomly per process, which made a 1:1 cave render come out different
+    /// every run; FNV hashes deterministically.
+    ///
+    /// This asserts the property directly rather than the type, so swapping the alias
+    /// back to a randomly-seeded hasher fails here instead of silently making renders
+    /// unreproducible again.
+    #[test]
+    fn cave_sets_iterate_in_a_stable_order() {
+        let build = || {
+            let mut set: HashSet<i64> = HashSet::default();
+            for i in 0..512i64 {
+                set.insert(i.wrapping_mul(0x9E37_79B9).wrapping_add(17));
+            }
+            set.iter().copied().collect::<Vec<_>>()
+        };
+        assert_eq!(
+            build(),
+            build(),
+            "the same insertions must iterate identically, or renders stop reproducing"
+        );
+    }
 }
 
 #[cfg(test)]
