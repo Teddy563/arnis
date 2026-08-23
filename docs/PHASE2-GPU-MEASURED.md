@@ -1,4 +1,25 @@
-# Phase 2 GPU — the plan, re-costed on measurements
+# Phase 2 GPU — DELIVERED, with measured results
+
+**Status: implemented and shipped on this branch** (`5fae029d` arnis, `gpu_accel`
+in Meld). The plan below was written first; delivered numbers, which landed inside
+every predicted band:
+
+| aspect | predicted | **measured** |
+|---|---|---|
+| 1:1 cell wall | 1.13–1.19× | **1.18× (dGPU), 1.10× (iGPU)** |
+| 1:1 fleet (core-s/cell) | 1.36–1.55× | **1.37×** (852 → 623) |
+| kernel parity vs CPU | <0.1% | **0.0005%** (11 / 2.26 M) |
+| full-render diff vs CPU | "shifted not corrupt" | **0.0005%** (905 / 176 M) |
+| vendor drift dGPU vs iGPU | "expect some" | **1 block / 176 M** |
+| GPU memory | <200 MB | corner+mask buffers ≈ 10 MB/region in flight |
+
+One surprise beyond the plan: the two runs differ by only ~5 s of wall between the
+5080 and the iGPU — the GPU is idle most of the time either way. GPU *speed* was
+never the constraint; the offloadable share was, exactly as the spike said.
+
+---
+
+# The original plan, re-costed on measurements (kept for the record)
 
 **Branch:** `feat/gpu-void-naming`. Supersedes the estimates in `PHASE2-GPU-PLAN.md`;
 that document's architecture reasoning stands, but its numbers were projections and
