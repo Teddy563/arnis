@@ -215,6 +215,18 @@
           </div>
         </div>
 
+        <!-- World name: names the FOLDER and the world-list entry. Java only; Bedrock
+             and Luanti derive their own names. Blank keeps "Arnis World N". -->
+        <div class="settings-row">
+          <label for="world-name-input">
+            <span data-localize="world_name">World name</span>
+            <span class="tooltip-icon" data-tooltip="Name for the generated world. Shown in the world list and used for the folder (invalid characters are replaced). Leave blank to keep the automatic 'Arnis World N' name.">?</span>
+          </label>
+          <div class="settings-control rotation-control">
+            <input type="text" id="world-name-input" name="world-name-input" maxlength="64" placeholder="Arnis World">
+          </div>
+        </div>
+
         <!-- Tile-Invariant Seed -->
         <div class="settings-row">
           <label for="seed-input">

@@ -282,7 +282,7 @@ fn gui_pick_save_directory(start_path: String) -> Result<String, String> {
 /// Creates a new Java Edition world in the given base save directory.
 /// Called when the user clicks "Create World".
 #[tauri::command]
-fn gui_create_world(save_path: String) -> Result<String, i32> {
+fn gui_create_world(save_path: String, world_name: Option<String>) -> Result<String, i32> {
     let trimmed = save_path.trim();
     if trimmed.is_empty() {
         return Err(3);
@@ -291,7 +291,21 @@ fn gui_create_world(save_path: String) -> Result<String, i32> {
     if !base.is_dir() {
         return Err(3); // Error code 3: Failed to create new world
     }
-    create_new_world(&base).map_err(|_| 3)
+    // A typed name names the folder AND the world; an empty box keeps the
+    // auto-numbered "Arnis World N" behaviour.
+    match world_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+    {
+        Some(name) => crate::world_utils::create_new_world_named(
+            &base,
+            name,
+            crate::mc_version::default_data_version(),
+        )
+        .map_err(|_| 3),
+        None => create_new_world(&base).map_err(|_| 3),
+    }
 }
 
 fn create_new_world(base_path: &Path) -> Result<String, String> {
@@ -1123,6 +1137,8 @@ fn gui_start_generation(
                 luanti: world_format == WorldFormat::LuantiWorld,
                 // B_Linear worlds are server-only and the GUI writes into
                 // .minecraft/saves, where the client has to be able to open them.
+                // The GUI names worlds by folder; a typed name would arrive here.
+                level_name: None,
                 region_format: crate::args::RegionFormatArg::Mca,
                 blinear_level: 6,
                 downloader: "requests".to_string(),

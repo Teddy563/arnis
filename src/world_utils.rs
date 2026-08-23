@@ -84,6 +84,43 @@ pub fn sanitize_for_filename(name: &str) -> String {
     }
 }
 
+/// Windows refuses these as file or directory names whatever the extension, and a
+/// user naming a world "CON" or "AUX" is entirely plausible.
+const RESERVED_DEVICE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Turn a user-typed world name into something safe to use as a FOLDER name.
+///
+/// Deliberately separate from [`sanitize_for_filename`], which exists for
+/// reverse-geocoded place names and falls back to "Unknown Location" - wrong copy for
+/// a name somebody typed on purpose. This adds the two rules that bite on Windows and
+/// that the other function does not cover: reserved device names, and trailing dots or
+/// spaces (which Windows silently strips, so "map." and "map" collide).
+///
+/// The NBT `LevelName` keeps the RAW string; only the directory is sanitised.
+pub fn sanitize_world_folder_name(name: &str) -> String {
+    let mut cleaned = sanitize_for_filename(name);
+    // Windows drops trailing dots and spaces, so keeping them invites collisions.
+    while cleaned.ends_with('.') || cleaned.ends_with(' ') {
+        cleaned.pop();
+    }
+    let stem_upper = cleaned
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    if RESERVED_DEVICE_NAMES.contains(&stem_upper.as_str()) {
+        cleaned = format!("{cleaned}_");
+    }
+    if cleaned.is_empty() || cleaned == "Unknown Location" && name.trim().is_empty() {
+        return "World".to_string();
+    }
+    cleaned
+}
+
 /// Builds the Bedrock output path and level name for a given bounding box.
 /// Combines area name lookup, sanitization, and path construction.
 pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, String) {
@@ -101,6 +138,40 @@ pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, Str
 /// (with updated name, timestamp, and spawn position), and icon.png.
 ///
 /// Returns the full path to the newly created world directory.
+/// Create a world under a user-supplied NAME.
+///
+/// The folder is the sanitised name, uniquified with " (2)", " (3)" on collision so a
+/// second world of the same name never overwrites the first. The NBT `LevelName`
+/// keeps the RAW string, so the world list shows exactly what was typed. Returns the
+/// full world path, matching `create_new_world`.
+///
+/// An empty or all-invalid name falls back to the auto-numbered `create_new_world`.
+pub fn create_new_world_named(
+    base_path: &Path,
+    name: &str,
+    data_version: i32,
+) -> Result<String, String> {
+    let folder_base = sanitize_world_folder_name(name);
+    if name.trim().is_empty() {
+        return create_new_world(base_path, data_version);
+    }
+
+    let mut folder = folder_base.clone();
+    let mut counter = 2;
+    while base_path.join(&folder).exists() {
+        folder = format!("{folder_base} ({counter})");
+        counter += 1;
+        if counter > 9999 {
+            return Err("too many worlds with that name".to_string());
+        }
+    }
+
+    let world_path = base_path.join(&folder);
+    // scaffold_world stamps LevelName; hand it the RAW name, not the folder. It returns
+    // the full path, which is what `create_new_world` returns and what the GUI expects.
+    scaffold_world(&world_path, name, data_version)
+}
+
 pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, String> {
     // Generate a unique world name with proper counter
     // Check for both "Arnis World X" and "Arnis World X: Location" patterns
@@ -735,6 +806,7 @@ pub fn apply_java_world_settings(
     world_path: &Path,
     game_mode: crate::args::GameMode,
     world_time: i64,
+    level_name: Option<&str>,
 ) -> Result<(), String> {
     let level_path = world_path.join("level.dat");
     if !level_path.exists() {
@@ -763,6 +835,11 @@ pub fn apply_java_world_settings(
         let game_type = game_mode.java_game_type();
         data.insert("GameType".to_string(), Value::Int(game_type));
         data.insert("DayTime".to_string(), Value::Long(world_time));
+        // The RAW typed string goes in the NBT; only the folder is ever sanitised, so
+        // a world can be called "Bucharest 1:1" in the world list.
+        if let Some(name) = level_name {
+            data.insert("LevelName".to_string(), Value::String(name.to_string()));
+        }
         if let Some(Value::Compound(ref mut player)) = data.get_mut("Player") {
             player.insert("playerGameType".to_string(), Value::Int(game_type));
         }
@@ -869,5 +946,111 @@ mod pack_mcmeta_tests {
                 "unexpected `formats`: {entry}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod world_naming_tests {
+    use super::*;
+
+    #[test]
+    fn folder_name_replaces_characters_windows_rejects() {
+        let backslash = char::from_u32(92).unwrap();
+        for bad in ['<', '>', ':', '"', '/', '|', '?', '*', backslash] {
+            let out = sanitize_world_folder_name(&format!("a{bad}b"));
+            assert!(!out.contains(bad), "{bad:?} survived into {out:?}");
+        }
+    }
+
+    #[test]
+    fn folder_name_escapes_reserved_device_names() {
+        // Windows refuses these outright, whatever the extension.
+        for reserved in ["CON", "con", "AUX", "COM1", "LPT9", "nul"] {
+            let out = sanitize_world_folder_name(reserved);
+            assert_ne!(
+                out.to_ascii_uppercase(),
+                reserved.to_ascii_uppercase(),
+                "reserved name {reserved:?} was left usable as a folder"
+            );
+        }
+        // A name that merely CONTAINS one is fine.
+        assert_eq!(sanitize_world_folder_name("Conway"), "Conway");
+    }
+
+    #[test]
+    fn folder_name_drops_trailing_dots_and_spaces() {
+        // Windows strips these silently, so "map." and "map" would collide.
+        assert_eq!(sanitize_world_folder_name("map."), "map");
+        assert_eq!(sanitize_world_folder_name("map   "), "map");
+        assert_eq!(sanitize_world_folder_name("map. . "), "map");
+    }
+
+    #[test]
+    fn folder_name_never_returns_empty() {
+        for input in ["", "   ", "...", "///"] {
+            let out = sanitize_world_folder_name(input);
+            assert!(!out.is_empty(), "{input:?} produced an empty folder name");
+        }
+    }
+
+    #[test]
+    fn folder_name_keeps_ordinary_names_intact() {
+        assert_eq!(sanitize_world_folder_name("Bucharest 1-1"), "Bucharest 1-1");
+        assert_eq!(sanitize_world_folder_name("Romania"), "Romania");
+    }
+
+    #[test]
+    fn named_world_keeps_the_raw_name_in_level_dat() {
+        // The FOLDER is sanitised; the world list must still show what was typed.
+        let dir = tempfile::tempdir().unwrap();
+        let typed = "Bucharest 1:1";
+        let world = create_new_world_named(dir.path(), typed, 4189).unwrap();
+        let world = Path::new(&world);
+        let folder = world.file_name().unwrap().to_string_lossy().to_string();
+
+        assert!(
+            !folder.contains(':'),
+            "colon survived into the folder {folder:?}"
+        );
+        let level = world.join("level.dat");
+        assert!(level.is_file(), "level.dat missing at {level:?}");
+
+        let raw = fs::read(&level).unwrap();
+        let mut gz = GzDecoder::new(raw.as_slice());
+        let mut out = Vec::new();
+        gz.read_to_end(&mut out).unwrap();
+        let value: fastnbt::Value = fastnbt::from_bytes(&out).unwrap();
+        let fastnbt::Value::Compound(root) = value else {
+            panic!("level.dat root is not a compound")
+        };
+        let Some(fastnbt::Value::Compound(data)) = root.get("Data") else {
+            panic!("level.dat has no Data compound")
+        };
+        assert_eq!(
+            data.get("LevelName"),
+            Some(&fastnbt::Value::String(typed.to_string())),
+            "LevelName should be the raw typed string, not the sanitised folder"
+        );
+    }
+
+    #[test]
+    fn a_second_world_of_the_same_name_does_not_overwrite_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = create_new_world_named(dir.path(), "Romania", 4189).unwrap();
+        let b = create_new_world_named(dir.path(), "Romania", 4189).unwrap();
+        assert_ne!(a, b, "the second world reused the first world's folder");
+        assert!(Path::new(&a).join("level.dat").is_file());
+        assert!(Path::new(&b).join("level.dat").is_file());
+    }
+
+    #[test]
+    fn a_blank_name_falls_back_to_the_automatic_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = create_new_world_named(dir.path(), "   ", 4189).unwrap();
+        let folder = Path::new(&world).file_name().unwrap().to_string_lossy();
+        assert!(
+            folder.starts_with("Arnis World"),
+            "blank name should keep the automatic scheme, got {folder:?}"
+        );
     }
 }

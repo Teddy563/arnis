@@ -687,6 +687,7 @@ fn run_cli() {
                     &generation_path,
                     args.gamemode,
                     args.world_time,
+                    args.level_name.as_deref(),
                 ) {
                     eprintln!(
                         "{} Failed to apply world settings: {}",

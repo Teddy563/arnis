@@ -82,6 +82,14 @@ pub struct Args {
     #[arg(long)]
     pub luanti: bool,
 
+    /// Name shown in the world list. Java worlds otherwise inherit the folder name.
+    ///
+    /// This sets the name INSIDE level.dat only; it never changes the output
+    /// directory, because callers (Meld) read the world back from the exact path
+    /// they passed in `--output-dir`.
+    #[arg(long = "level-name")]
+    pub level_name: Option<String>,
+
     /// Container for Java region files. `blinear` writes Leaf's B_Linear v3
     /// (`r.X.Z.b_linear`), readable ONLY by Leaf 1.21.11 (June 2026 builds) and newer
     /// and by all 26.x — not by Paper, older Leaf, or the vanilla client.

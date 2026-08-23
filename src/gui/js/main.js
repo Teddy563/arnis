@@ -1538,7 +1538,13 @@ async function startGeneration() {
         return;
       }
       try {
-        const worldName = await invoke('gui_create_world', { savePath: savePath });
+        // Blank stays blank: the Rust side falls back to the auto-numbered name.
+        const nameEl = document.getElementById('world-name-input');
+        const typedName = nameEl ? nameEl.value.trim() : '';
+        const worldName = await invoke('gui_create_world', {
+          savePath: savePath,
+          worldName: typedName || null,
+        });
         if (worldName) {
           worldPath = worldName;
           setWorldNameLabel(basenameFromPath(worldName));
