@@ -10,6 +10,62 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.2] - 2026-08-21
+
+Optional B_Linear output. `--region-format blinear` writes Leaf's own region
+container directly instead of Anvil, so a world destined for a Leaf server needs
+no conversion pass afterwards. Default is unchanged: omit the flag and every
+render is Anvil exactly as before.
+
+**Server support is narrow.** A `.b_linear` world opens only in Leaf 1.21.11
+(June 2026 builds) or newer, or any Leaf 26.x, with
+`misc.region-format.format-name: B_LINEAR`. Paper, Purpur, older Leaf and the
+vanilla client cannot read it, and no `.mca` original is kept alongside.
+
+Measured against Anvil on the same bboxes and seeds:
+
+| | Anvil | B_Linear |
+|---|---|---|
+| dense city, 25 regions | 113.36 MB | **30.57 MB** (3.71x) |
+| terrain + caves + baked light, per region | 4.69 MiB | **1.20 MiB** (3.91x) |
+| 224 regions, streaming eviction | 990.2 MB, peak RAM 1701 MB | **245.7 MB** (4.03x), peak RAM 1810 MB |
+
+### Added
+
+- **`--region-format {mca,blinear}` and `--blinear-level 1..22`.** B_Linear v3
+  groups a region's 1024 chunks into 16 buckets of 64 and zstd-compresses each
+  bucket as one frame, replacing Anvil's per-chunk zlib in 4 KiB sectors. Chunk
+  NBT is untouched by the swap: the container branches where the Anvil writer
+  already hands its serialized chunk to fastanvil, so both containers carry the
+  same world and convert between each other losslessly. Leaf verifies the
+  superblock, the version byte and every chunk's xxh32 (seed `0x0721`, which it
+  hardcodes) strictly, so all three are written to its contract.
+
+  The container is a field on the existing Java path rather than a fourth world
+  format, which leaves parallel tiles, stream-to-disk eviction, the golden-hash
+  gate and every block-entity schema untouched. Regions are built in memory and
+  published by rename, so a killed run leaves whole files or none.
+
+  Not available in the GUI: it writes into `.minecraft/saves`, where the client
+  has to be able to open the world. `--map-item` is skipped for these worlds
+  because its renderer reads regions back through fastanvil, which only speaks
+  Anvil.
+
+### Verified
+
+- Equivalence is established in-process, because generated worlds cannot be
+  compared byte-for-byte at all: palette ordering follows `HashMap` iteration
+  order, so two Anvil runs of one seed differ in every chunk while describing
+  the same world. The same NBT written through both sinks reads back identical
+  from both files, `ARNIS_BLOCK_HASH` agrees across both containers and both
+  eviction modes, and decoding both worlds block by block found **27.3 million
+  non-air positions identical across 22,528 chunks**, with no chunk in a slot
+  its own coordinates do not name.
+
+- A world generated this way was booted on Leaf 1.21.11, force-loaded, saved and
+  re-read: no hash failures, and the regions still verify after the server
+  rewrote them.
+
 ## [3.1.1] - 2026-08-18
 
 Farmland texturing got much cheaper. Nothing about the world changes: every render
