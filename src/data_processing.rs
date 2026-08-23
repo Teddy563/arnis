@@ -392,6 +392,28 @@ pub fn generate_world_with_options(
         },
         args.blinear_level,
     );
+    editor.set_void_world(args.void_world);
+    if args.void_world {
+        // Without this the player spawns at the template's Y=-61 with nothing under
+        // them and falls straight out of the world. Minecraft's own void preset has the
+        // same problem and solves it the same way: a small platform to stand on. Placed
+        // before generation so it flows through the normal write path (and can be built
+        // over by real content if the bbox happens to cover the origin).
+        const VOID_SPAWN_Y: i32 = -60;
+        const VOID_SPAWN_HALF: i32 = 2;
+        for dx in -VOID_SPAWN_HALF..=VOID_SPAWN_HALF {
+            for dz in -VOID_SPAWN_HALF..=VOID_SPAWN_HALF {
+                editor.set_block_absolute(
+                    crate::block_definitions::STONE,
+                    dx,
+                    VOID_SPAWN_Y,
+                    dz,
+                    None,
+                    None,
+                );
+            }
+        }
+    }
     editor.set_projection_info(&args.projection.to_string(), args.scale);
     let ground = Arc::new(ground);
     let mut bench = crate::bench::Bench::new(args.benchmark);
@@ -712,21 +734,24 @@ pub fn generate_world_with_options(
                     let g_max_x = (tile_bounds.max_x - 1).min(xzbbox.max_x());
                     let g_min_z = tile_bounds.min_z.max(xzbbox.min_z());
                     let g_max_z = (tile_bounds.max_z - 1).min(xzbbox.max_z());
-                    ground_generation::generate_ground_region(
-                        &mut tile_editor,
-                        ground.as_ref(),
-                        args,
-                        &xzbbox,
-                        &building_footprints,
-                        &residential_footprint,
-                        &tunnel_footprint,
-                        &bridge_surface,
-                        g_min_x,
-                        g_max_x,
-                        g_min_z,
-                        g_max_z,
-                        false,
-                    );
+                    // A void world has no ground: only what the OSM data puts there exists.
+                    if !args.void_world {
+                        ground_generation::generate_ground_region(
+                            &mut tile_editor,
+                            ground.as_ref(),
+                            args,
+                            &xzbbox,
+                            &building_footprints,
+                            &residential_footprint,
+                            &tunnel_footprint,
+                            &bridge_surface,
+                            g_min_x,
+                            g_max_x,
+                            g_min_z,
+                            g_max_z,
+                            false,
+                        );
+                    }
                     // Rocks/bushes on UNTAGGED satellite cropland/grassland (the
                     // "missing data" plains), chunk-rolled like the field scatter.
                     if args.land_texture {
@@ -1015,7 +1040,8 @@ pub fn generate_world_with_options(
     // True when ground (and the ore/water post-passes) run on the merged editor:
     // the small-area sequential path, or the whole-bbox-ground override. The
     // parallel per-tile path already did ground + ore + water inside the closure.
-    let ground_on_merged = !use_parallel_tiles;
+    // A void world skips the ground layer entirely, on both paths.
+    let ground_on_merged = !use_parallel_tiles && !args.void_world;
 
     if ground_on_merged {
         ground_generation::generate_ground_layer(
@@ -1152,9 +1178,12 @@ pub fn generate_world_with_options(
 
     emit_gui_progress_update(99.0, "Finalizing world...");
 
-    // Update player spawn Y coordinate based on terrain height after generation
+    // Update player spawn Y coordinate based on terrain height after generation.
+    // Skipped for a void world: it derives Y from the ground grid, and a void world has
+    // no ground, so it would drop the player back to the bottom of the world and undo
+    // the spawn platform.
     #[cfg(feature = "gui")]
-    if world_format == WorldFormat::JavaAnvil {
+    if world_format == WorldFormat::JavaAnvil && !args.void_world {
         use crate::gui::update_player_spawn_y_after_generation;
         // Always update spawn Y since we now always set a spawn point (user-selected or default).
         // Use output_path, the actual generated world folder: for CLI/Meld direct --output-dir

@@ -68,13 +68,20 @@ impl<'a> WorldEditor<'a> {
         abs_chunk_z: i32,
         bake_lighting: bool,
         biome_value: &Value,
+        void_world: bool,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        // Use cached sections (computed once on first call)
-        let sections = get_base_chunk_sections();
+        // A void world still WRITES every chunk - it just writes an empty one. Omitting
+        // them instead would leave a header-only region file, which Meld's missing-region
+        // scan treats as a hole to regenerate, offering the retry forever.
+        let sections: Vec<Section> = if void_world {
+            Vec::new()
+        } else {
+            get_base_chunk_sections().to_vec()
+        };
 
         // Prepare chunk data with cloned sections
         let chunk_data = Chunk {
-            sections: sections.to_vec(),
+            sections,
             x_pos: abs_chunk_x,
             z_pos: abs_chunk_z,
             is_light_on: 0,
@@ -232,6 +239,7 @@ impl<'a> WorldEditor<'a> {
             region_to_modify,
             self.region_container,
             self.blinear_level,
+            self.void_world,
         )
     }
 }
@@ -366,6 +374,7 @@ fn write_region_to_disk(
     region_to_modify: &super::common::RegionToModify,
     container: super::RegionContainer,
     blinear_level: i32,
+    void_world: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut region = RegionSink::create(world_dir, region_x, region_z, container, blinear_level)?;
     let mut ser_buffer = Vec::with_capacity(8192);
@@ -450,6 +459,7 @@ fn write_region_to_disk(
                         abs_chunk_z,
                         bake_lighting,
                         &biome_value,
+                        void_world,
                     )?;
                     region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
                 }
@@ -473,6 +483,7 @@ pub(crate) struct RegionWriteCtx {
     bake_lighting: bool,
     container: super::RegionContainer,
     blinear_level: i32,
+    void_world: bool,
 }
 
 impl RegionWriteCtx {
@@ -488,6 +499,7 @@ impl RegionWriteCtx {
         bake_lighting: bool,
         container: super::RegionContainer,
         blinear_level: i32,
+        void_world: bool,
     ) -> Self {
         Self {
             world_dir,
@@ -500,6 +512,7 @@ impl RegionWriteCtx {
             bake_lighting,
             container,
             blinear_level,
+            void_world,
         }
     }
 
@@ -523,6 +536,7 @@ impl RegionWriteCtx {
             region_to_modify,
             self.container,
             self.blinear_level,
+            self.void_world,
         )
     }
 }

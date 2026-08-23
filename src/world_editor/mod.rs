@@ -199,6 +199,8 @@ pub struct WorldEditor<'a> {
     region_container: RegionContainer,
     /// zstd level for the B_Linear container. Leaf's own default is 6.
     blinear_level: i32,
+    /// Void world: no ground layer, and unfilled chunks are written empty.
+    void_world: bool,
 }
 
 impl<'a> WorldEditor<'a> {
@@ -231,6 +233,7 @@ impl<'a> WorldEditor<'a> {
             bake_lighting: false,
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
+            void_world: false,
         }
     }
 
@@ -269,6 +272,7 @@ impl<'a> WorldEditor<'a> {
             bake_lighting: false,
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
+            void_world: false,
         }
     }
 
@@ -307,6 +311,7 @@ impl<'a> WorldEditor<'a> {
             bake_lighting: false,
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
+            void_world: false,
         }
     }
 
@@ -367,6 +372,12 @@ impl<'a> WorldEditor<'a> {
         self.bake_lighting = enabled;
     }
 
+    /// Marks this world as a void world: no ground layer, and every chunk the
+    /// generator does not fill is written empty rather than as a grass plane.
+    pub fn set_void_world(&mut self, void_world: bool) {
+        self.void_world = void_world;
+    }
+
     /// Selects the container for Java region files and the zstd level B_Linear
     /// compresses its buckets with (ignored by the Anvil container).
     pub fn set_region_container(&mut self, container: RegionContainer, blinear_level: i32) {
@@ -414,6 +425,7 @@ impl<'a> WorldEditor<'a> {
             self.bake_lighting,
             self.region_container,
             self.blinear_level,
+            self.void_world,
         )
     }
 

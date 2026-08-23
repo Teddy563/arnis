@@ -2,6 +2,7 @@ use crate::coordinate_system::geographic::LLBBox;
 use crate::retrieve_data;
 use fastnbt::Value;
 use flate2::read::GzDecoder;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
@@ -121,6 +122,60 @@ pub fn sanitize_world_folder_name(name: &str) -> String {
     cleaned
 }
 
+/// Rewrite the overworld generator as Minecraft's own `the_void` superflat preset.
+///
+/// The bundled level.dat ALREADY uses `minecraft:flat` (dirt x2 + grass), which is why
+/// unvisited chunks were a grass plane rather than vanilla terrain. Swapping the preset
+/// is therefore the whole of the "everything else is void" behaviour, and it applies to
+/// a dedicated server and to singleplayer alike, because both read this field.
+///
+/// Copied verbatim from the client's own
+/// `data/minecraft/worldgen/flat_level_generator_preset/the_void.json`: ONE air layer
+/// (not an empty list, which serialises with an ambiguous element type), biome
+/// `minecraft:the_void` so nothing spawns in the emptiness and the sky renders right,
+/// and no structure overrides -- otherwise strongholds and villages generate in mid-air.
+fn apply_void_preset(data: &mut HashMap<String, Value>) {
+    let Some(Value::Compound(world_gen)) = data.get_mut("WorldGenSettings") else {
+        return;
+    };
+    let Some(Value::Compound(dimensions)) = world_gen.get_mut("dimensions") else {
+        return;
+    };
+    let Some(Value::Compound(overworld)) = dimensions.get_mut("minecraft:overworld") else {
+        return;
+    };
+    let Some(Value::Compound(generator)) = overworld.get_mut("generator") else {
+        return;
+    };
+
+    generator.insert(
+        "type".to_string(),
+        Value::String("minecraft:flat".to_string()),
+    );
+
+    let mut air_layer: HashMap<String, Value> = HashMap::new();
+    air_layer.insert(
+        "block".to_string(),
+        Value::String("minecraft:air".to_string()),
+    );
+    air_layer.insert("height".to_string(), Value::Int(1));
+
+    let mut settings: HashMap<String, Value> = HashMap::new();
+    settings.insert(
+        "biome".to_string(),
+        Value::String("minecraft:the_void".to_string()),
+    );
+    settings.insert("features".to_string(), Value::Byte(0));
+    settings.insert("lakes".to_string(), Value::Byte(0));
+    settings.insert(
+        "layers".to_string(),
+        Value::List(vec![Value::Compound(air_layer)]),
+    );
+    settings.insert("structure_overrides".to_string(), Value::List(Vec::new()));
+
+    generator.insert("settings".to_string(), Value::Compound(settings));
+}
+
 /// Builds the Bedrock output path and level name for a given bounding box.
 /// Combines area name lookup, sanitization, and path construction.
 pub fn build_bedrock_output(bbox: &LLBBox, output_dir: PathBuf) -> (PathBuf, String) {
@@ -169,7 +224,7 @@ pub fn create_new_world_named(
     let world_path = base_path.join(&folder);
     // scaffold_world stamps LevelName; hand it the RAW name, not the folder. It returns
     // the full path, which is what `create_new_world` returns and what the GUI expects.
-    scaffold_world(&world_path, name, data_version)
+    scaffold_world(&world_path, name, data_version, false)
 }
 
 pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, String> {
@@ -201,7 +256,7 @@ pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, S
     };
 
     let new_world_path: PathBuf = base_path.join(&unique_name);
-    scaffold_world(&new_world_path, &unique_name, data_version)
+    scaffold_world(&new_world_path, &unique_name, data_version, false)
 }
 
 /// Scaffold a Java world DIRECTLY at `world_path` — no "Arnis World N" subfolder, no uniqueness
@@ -210,13 +265,17 @@ pub fn create_new_world(base_path: &Path, data_version: i32) -> Result<String, S
 /// intended world folder, so nesting another auto-numbered world inside it is unwanted — the caller
 /// owns naming/versioning via the directory it passes in. Overwrites any existing content at that
 /// path (the caller is expected to pick a fresh/intentional directory per generation).
-pub fn create_world_at(world_path: &Path, data_version: i32) -> Result<String, String> {
+pub fn create_world_at(
+    world_path: &Path,
+    data_version: i32,
+    void_world: bool,
+) -> Result<String, String> {
     let level_name = world_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Arnis World")
         .to_string();
-    scaffold_world(world_path, &level_name, data_version)
+    scaffold_world(world_path, &level_name, data_version, void_world)
 }
 
 /// Shared world-scaffold body (region template, level.dat, icon.png) used by both
@@ -225,6 +284,7 @@ fn scaffold_world(
     new_world_path: &Path,
     unique_name: &str,
     data_version: i32,
+    void_world: bool,
 ) -> Result<String, String> {
     // Create the new world directory structure
     fs::create_dir_all(new_world_path.join("region"))
@@ -237,11 +297,17 @@ fn scaffold_world(
     // it verbatim leaves a world holding TWO different DataVersions — the writer's and the
     // template's. Minecraft then runs its DataFixer over half the world, which is exactly
     // the "loads and then quietly misbehaves" outcome the version table exists to prevent.
-    const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
-    let region_path = new_world_path.join("region").join("r.0.0.mca");
-    let stamped = restamp_region_data_version(REGION_TEMPLATE, data_version)
-        .unwrap_or_else(|| REGION_TEMPLATE.to_vec());
-    fs::write(&region_path, stamped).map_err(|e| format!("Failed to create region file: {e}"))?;
+    // The template is 1024 pre-baked COBBLESTONE chunks. In a void world every chunk it
+    // seeds that the generator does not overwrite would survive as solid rock floating in
+    // the emptiness, which is the exact opposite of what was asked for.
+    if !void_world {
+        const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
+        let region_path = new_world_path.join("region").join("r.0.0.mca");
+        let stamped = restamp_region_data_version(REGION_TEMPLATE, data_version)
+            .unwrap_or_else(|| REGION_TEMPLATE.to_vec());
+        fs::write(&region_path, stamped)
+            .map_err(|e| format!("Failed to create region file: {e}"))?;
+    }
 
     // Add the level.dat file
     const LEVEL_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/level.dat");
@@ -265,6 +331,21 @@ fn scaffold_world(
                 "LevelName".to_string(),
                 Value::String(unique_name.to_string()),
             );
+
+            if void_world {
+                apply_void_preset(data);
+                // The template spawns the player at Y=-61 on a grass plane that a void
+                // world does not have. Generation lays a small platform at -60, so put
+                // the player on top of it rather than inside it.
+                data.insert("SpawnY".to_string(), Value::Int(-59));
+                if let Some(Value::Compound(player)) = data.get_mut("Player") {
+                    if let Some(Value::List(pos)) = player.get_mut("Pos") {
+                        if pos.len() == 3 {
+                            pos[1] = Value::Double(-59.0);
+                        }
+                    }
+                }
+            }
 
             // level.dat's version is deliberately NOT restamped.
             //
@@ -946,6 +1027,143 @@ mod pack_mcmeta_tests {
                 "unexpected `formats`: {entry}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod void_world_tests {
+    use super::*;
+
+    fn generator_settings(world: &Path) -> HashMap<String, Value> {
+        let raw = fs::read(world.join("level.dat")).unwrap();
+        let mut gz = GzDecoder::new(raw.as_slice());
+        let mut out = Vec::new();
+        gz.read_to_end(&mut out).unwrap();
+        let value: Value = fastnbt::from_bytes(&out).unwrap();
+        let Value::Compound(root) = value else {
+            panic!("root is not a compound")
+        };
+        let Some(Value::Compound(data)) = root.get("Data") else {
+            panic!("no Data")
+        };
+        let Some(Value::Compound(wgs)) = data.get("WorldGenSettings") else {
+            panic!("no WorldGenSettings")
+        };
+        let Some(Value::Compound(dims)) = wgs.get("dimensions") else {
+            panic!("no dimensions")
+        };
+        let Some(Value::Compound(ow)) = dims.get("minecraft:overworld") else {
+            panic!("no overworld")
+        };
+        let Some(Value::Compound(gen)) = ow.get("generator") else {
+            panic!("no generator")
+        };
+        let Some(Value::Compound(settings)) = gen.get("settings") else {
+            panic!("no generator settings")
+        };
+        settings.clone()
+    }
+
+    /// The whole "everything outside the build is empty" behaviour is this preset, and
+    /// it has to survive a fastnbt round trip - writing it is the one part that could
+    /// not be proven by patching a world from outside.
+    #[test]
+    fn void_world_writes_minecrafts_own_void_preset() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("void");
+        scaffold_world(&world, "Void", 4189, true).unwrap();
+        let settings = generator_settings(&world);
+
+        assert_eq!(
+            settings.get("biome"),
+            Some(&Value::String("minecraft:the_void".to_string())),
+            "the void biome is what stops mobs spawning in the emptiness"
+        );
+
+        // ONE air layer, not an empty list: an empty NBT list has an ambiguous element
+        // type, and this is the form the client itself ships.
+        let Some(Value::List(layers)) = settings.get("layers") else {
+            panic!("layers is not a list")
+        };
+        assert_eq!(
+            layers.len(),
+            1,
+            "expected exactly one layer, got {layers:?}"
+        );
+        let Value::Compound(layer) = &layers[0] else {
+            panic!("layer is not a compound")
+        };
+        assert_eq!(
+            layer.get("block"),
+            Some(&Value::String("minecraft:air".to_string()))
+        );
+        assert_eq!(layer.get("height"), Some(&Value::Int(1)));
+
+        // Otherwise strongholds and villages generate in mid-air.
+        let Some(Value::List(structures)) = settings.get("structure_overrides") else {
+            panic!("structure_overrides is not a list")
+        };
+        assert!(
+            structures.is_empty(),
+            "structures must not generate in void"
+        );
+    }
+
+    #[test]
+    fn a_normal_world_keeps_its_grass_preset() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("normal");
+        scaffold_world(&world, "Normal", 4189, false).unwrap();
+        let settings = generator_settings(&world);
+        let Some(Value::List(layers)) = settings.get("layers") else {
+            panic!("layers is not a list")
+        };
+        assert!(
+            layers.len() > 1,
+            "a non-void world should keep its dirt+grass layers, got {layers:?}"
+        );
+    }
+
+    /// The bundled region template is 1024 cobblestone chunks; any it seeds that the
+    /// generator does not overwrite would hang in the void as solid rock.
+    #[test]
+    fn void_world_does_not_seed_the_cobblestone_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let void = dir.path().join("void");
+        scaffold_world(&void, "Void", 4189, true).unwrap();
+        assert!(
+            !void.join("region").join("r.0.0.mca").exists(),
+            "the void world seeded the Anvil template"
+        );
+
+        let normal = dir.path().join("normal");
+        scaffold_world(&normal, "Normal", 4189, false).unwrap();
+        assert!(
+            normal.join("region").join("r.0.0.mca").exists(),
+            "a normal world should still get its template"
+        );
+    }
+
+    #[test]
+    fn void_world_spawns_the_player_above_the_platform() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("void");
+        scaffold_world(&world, "Void", 4189, true).unwrap();
+
+        let raw = fs::read(world.join("level.dat")).unwrap();
+        let mut gz = GzDecoder::new(raw.as_slice());
+        let mut out = Vec::new();
+        gz.read_to_end(&mut out).unwrap();
+        let value: Value = fastnbt::from_bytes(&out).unwrap();
+        let Value::Compound(root) = value else {
+            panic!("root")
+        };
+        let Some(Value::Compound(data)) = root.get("Data") else {
+            panic!("Data")
+        };
+        // Generation lays a platform at -60; the template would drop the player to -61,
+        // which in a void world means falling out of the world on first join.
+        assert_eq!(data.get("SpawnY"), Some(&Value::Int(-59)));
     }
 }
 

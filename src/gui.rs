@@ -1139,6 +1139,7 @@ fn gui_start_generation(
                 // .minecraft/saves, where the client has to be able to open them.
                 // The GUI names worlds by folder; a typed name would arrive here.
                 level_name: None,
+                void_world: false,
                 region_format: crate::args::RegionFormatArg::Mca,
                 blinear_level: 6,
                 downloader: "requests".to_string(),

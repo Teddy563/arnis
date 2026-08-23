@@ -82,6 +82,15 @@ pub struct Args {
     #[arg(long)]
     pub luanti: bool,
 
+    /// Generate into a VOID world: only the generated content exists, everything else
+    /// is empty air, in this world and in every chunk the game generates later.
+    ///
+    /// Writes Minecraft's own `the_void` superflat preset into level.dat, so unvisited
+    /// chunks stay empty instead of becoming a grass plane, and skips the ground layer
+    /// and the base-chunk fill. Server AND singleplayer.
+    #[arg(long = "void")]
+    pub void_world: bool,
+
     /// Name shown in the world list. Java worlds otherwise inherit the folder name.
     ///
     /// This sets the name INSIDE level.dat only; it never changes the output
@@ -753,6 +762,18 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     // The B_Linear container frames Java chunk NBT; Bedrock and Luanti worlds are not
     // built out of chunk NBT at all, so the combination has no meaning.
+    // Caves carve rock out of solid ground, and --caves force-enables --fillground.
+    // A void world has no rock, so the combination asks for two opposite worlds.
+    if args.void_world && args.caves {
+        return Err(
+            "--void and --caves are mutually exclusive: caves need solid ground to carve into."
+                .to_string(),
+        );
+    }
+    if args.void_world && (args.bedrock || args.luanti) {
+        return Err("--void currently applies to Java worlds only.".to_string());
+    }
+
     if args.region_format == RegionFormatArg::Blinear && (args.bedrock || args.luanti) {
         return Err(
             "--region-format blinear only applies to Java worlds; drop --bedrock/--luanti."
