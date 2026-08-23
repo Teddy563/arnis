@@ -423,7 +423,7 @@ fn fetch_stac_catalog(
         .into_iter()
         .chain(std::iter::once(OVERTURE_STAC_RELEASE_FALLBACK.to_string()))
     {
-        if !candidates.iter().any(|r| *r == tail) {
+        if !candidates.contains(&tail) {
             candidates.push(tail);
         }
     }
