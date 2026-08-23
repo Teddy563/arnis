@@ -1637,43 +1637,89 @@ const _: () = {
 /// backpressure so at most `capacity` evicted regions sit in RAM awaiting write.
 pub(crate) struct FlushWorker {
     tx: Option<std::sync::mpsc::SyncSender<(i32, i32, common::RegionToModify)>>,
-    handle: Option<std::thread::JoinHandle<Result<(), String>>>,
-    // Real write error from the worker, so a failed handoff surfaces the cause
+    handles: Vec<std::thread::JoinHandle<Result<(), String>>>,
+    // Real write error from a worker, so a failed handoff surfaces the cause
     // (disk full, permissions, ...) instead of a generic "terminated early".
     error: Arc<Mutex<Option<String>>>,
 }
 
+/// How many threads serialise regions to disk.
+///
+/// Writing a region means compacting every section, building its chunk NBT,
+/// serialising and compressing it - hundreds of milliseconds of pure CPU that used
+/// to run on ONE thread while the merge thread blocked behind it. On a large build
+/// that was the single biggest phase in the program.
+///
+/// Regions are independent files, so this parallelises cleanly. The count is
+/// deliberately modest rather than core-count: every thread holds one more region
+/// in RAM, and eviction exists precisely to cap memory. `ARNIS_FLUSH_THREADS`
+/// overrides it for tuning.
+fn flush_thread_count() -> usize {
+    if let Some(v) = std::env::var_os("ARNIS_FLUSH_THREADS") {
+        if let Some(n) = v.to_str().and_then(|s| s.trim().parse::<usize>().ok()) {
+            return n.clamp(1, 32);
+        }
+    }
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    (cores / 4).clamp(2, 6)
+}
+
 impl FlushWorker {
     pub(crate) fn spawn(ctx: java::RegionWriteCtx, capacity: usize) -> Self {
-        let (tx, rx) =
-            std::sync::mpsc::sync_channel::<(i32, i32, common::RegionToModify)>(capacity.max(1));
+        let threads = flush_thread_count();
+        // Every worker needs something to pick up, so the queue is at least as deep
+        // as the pool; the caller's capacity is the backpressure floor.
+        let depth = capacity.max(1).max(threads);
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(i32, i32, common::RegionToModify)>(depth);
+        // One receiver shared by the pool: whichever worker is free takes the next
+        // region. The lock is held only for the recv, never across a write.
+        let rx = Arc::new(Mutex::new(rx));
+        let ctx = Arc::new(ctx);
         let error = Arc::new(Mutex::new(None));
-        let error_w = Arc::clone(&error);
-        let handle = std::thread::spawn(move || -> Result<(), String> {
-            while let Ok((rxx, rzz, mut region)) = rx.recv() {
-                for chunk in region.chunks.values_mut() {
-                    for section in chunk.sections.values_mut() {
-                        section.compact();
+
+        let mut handles = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            let rx = Arc::clone(&rx);
+            let ctx = Arc::clone(&ctx);
+            let error_w = Arc::clone(&error);
+            handles.push(std::thread::spawn(move || -> Result<(), String> {
+                loop {
+                    let next = {
+                        let guard = rx.lock().unwrap_or_else(|p| p.into_inner());
+                        guard.recv()
+                    };
+                    let Ok((rxx, rzz, mut region)) = next else {
+                        break;
+                    };
+                    for chunk in region.chunks.values_mut() {
+                        for section in chunk.sections.values_mut() {
+                            section.compact();
+                        }
+                    }
+                    if let Err(e) = ctx.write(rxx, rzz, &region) {
+                        let msg = e.to_string();
+                        if let Ok(mut slot) = error_w.lock() {
+                            if slot.is_none() {
+                                *slot = Some(msg.clone());
+                            }
+                        }
+                        return Err(msg);
                     }
                 }
-                if let Err(e) = ctx.write(rxx, rzz, &region) {
-                    let msg = e.to_string();
-                    if let Ok(mut slot) = error_w.lock() {
-                        *slot = Some(msg.clone());
-                    }
-                    return Err(msg);
-                }
-            }
-            Ok(())
-        });
+                Ok(())
+            }));
+        }
+
         Self {
             tx: Some(tx),
-            handle: Some(handle),
+            handles,
             error,
         }
     }
 
-    /// Enqueue a region; blocks when the channel is full (backpressure). On
+    /// Enqueue a region; blocks when the queue is full (backpressure). On
     /// failure the region is handed back unchanged (so the caller can keep it in
     /// RAM) alongside the worker's real error.
     fn send(
@@ -1699,11 +1745,27 @@ impl FlushWorker {
         }
     }
 
-    /// Close the queue and wait for all pending writes; propagates the first error.
+    /// Close the queue and wait for every pending write; propagates the first error.
     pub(crate) fn finish(mut self) -> Result<(), String> {
         drop(self.tx.take());
-        match self.handle.take() {
-            Some(h) => h.join().map_err(|_| "flush worker panicked".to_string())?,
+        let mut first_err: Option<String> = None;
+        for h in self.handles.drain(..) {
+            match h.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+                Err(_) => {
+                    if first_err.is_none() {
+                        first_err = Some("flush worker panicked".to_string());
+                    }
+                }
+            }
+        }
+        match first_err {
+            Some(e) => Err(e),
             None => Ok(()),
         }
     }
