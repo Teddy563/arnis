@@ -109,9 +109,39 @@ cave-air cell.
 
 ---
 
+## DONE — the four planned items (this session)
+
+| item | commit | evidence |
+|---|---|---|
+| **World naming**, CLI + GUI | `917e1ee7` | 8 tests; `--level-name "Bucharest 1:1"` lands verbatim in level.dat while the folder becomes `Bucharest 1_1`, output dir untouched |
+| **Void worlds** (`--void`) | `27fa504d` | 4 tests; booted on Leaf 1.21.11 -- **1,089 server chunks, 0 non-air blocks**; built region keeps 31,504 blocks of content and none of the 260,300 grass / 13,104 bedrock a normal world has |
+| **Worker governor** | Meld `e13242e` | 17 tests; sampled a real cell at **1.06 cores**, matching the 1.02 measured externally; suggests 21 workers at 1:20 against a stored default of 4 |
+| **1:1 nondeterminism — FIXED** | `b401d1d8` | three identical hashes where every run previously differed; also stable under eviction |
+
+### The nondeterminism, since it was open for a while
+
+Bisected rather than guessed. Without `--caves` a render was already deterministic
+at one thread and at twenty-four; with `--caves` it changed every run. The cave
+passes keep their working sets in **std `HashSet`, whose hasher is seeded randomly
+per process**, and those sets are iterated to apply world edits -- despeckle, prune,
+fluid support, decoration. Where edits interact the write ORDER decides the result,
+so iteration order was part of the world and changed on every launch.
+
+`FnvHashSet` hashes deterministically, and the rest of the world model already used
+Fnv for this reason. Before: `1201d024…`, `fa509e70…`. After: `937c27f3…` three
+times, `e1b16998…` twice under eviction.
+
+**Consequence:** cave layout shifts slightly versus older worlds, because a fixed
+order replaces a random one. Nothing without `--caves` changes.
+
+**This also unblocks Trap 1** below: a 1:1 hash is now a valid way to validate a
+change, which it was not before.
+
+---
+
 ## NOT DONE — ordered by value
 
-### 1. Occupancy-driven worker governor (Meld) — the biggest remaining win
+### 1. Turn the worker governor ON (`worker_autoscale`) once you trust it
 
 Meld's `cpu_target_pct` (90) divides the budget by *assumed* threads per worker. A
 1:20 cell actually uses **1.02 cores** while being allocated ~5 threads, so the box
@@ -126,17 +156,7 @@ RAM cross-check: a 1:20 cell peaks ~1.2 GB, so ~20 fit in 33.8 GB — CPU and RA
 out at about the same point. At 1:1 a cell needs ~4.15 GB with eviction, so RAM
 binds first at ~7 workers.
 
-### 2. A 1:1 render is not reproducible run to run — UNRESOLVED
-
-The same binary, same bbox, same seed, produces different worlds at 1:1 (0.0019%
-of positions). One cause found and pinnable: `should_stream_to_disk()` reads
-**available RAM at the time**, so the path varies, and the hash is computed
-differently under eviction. **But it persists with `ARNIS_STREAM_TO_DISK=0`**, so
-there is a second source — most likely first-writer-wins `set_block` races between
-overlapping parallel tiles. This blocks hash-based validation of everything after
-it and deserves its own investigation.
-
-### 3. Void worlds — designed and PROVEN, not implemented
+### 2. (was void worlds — DONE, see above)
 
 `light-meld/docs/void-naming-gpu-plan.md` has the full plan. The mechanism is
 already verified end to end: patching the bundled `level.dat` to vanilla's own
@@ -161,7 +181,7 @@ lost**. A void cell over sea or forest fails outright. Fix that before shipping.
 Void pairs naturally with B_Linear: an all-air region is 4.2 MB in Anvil but ~8 KB
 in `.b_linear`.
 
-### 4. World naming in the arnis GUI — designed, not implemented
+### 3. (was GUI naming — DONE, see above)
 
 arnis has no naming input anywhere, and Java is broken twice over: both branches
 hard-code `None`, and a name would be dropped anyway because `WorldEditor` stores
@@ -171,7 +191,7 @@ names worlds end to end. Latent bug found while reading: `gui.rs:356` computes
 `30 - base_name.len() - 2`, a usize underflow that becomes reachable the moment a
 user can type a long name.
 
-### 5. Phase 2, the GPU — planned, deliberately last
+### 4. Phase 2, the GPU — planned, deliberately last
 
 See `PHASE2-GPU-PLAN.md`. Phase 1 shrank the prize twice over: the corner carry
 removed half the density calls, and `tile_merge` — which no shader can touch — went
@@ -181,7 +201,7 @@ from 96 s to 15 s. A perfect cave kernel now takes a 1:1 run from 63.9 s to roug
 and requires `arnis --serve` so contexts amortise. VRAM is a non-issue: **under
 200 MB**.
 
-### 6. Smaller items
+### 5. Smaller items
 
 - **Meld should set `ARNIS_FLUSH_THREADS`** per worker from its own CPU budget,
   instead of letting every process pick `cores/4` independently.
