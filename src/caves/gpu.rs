@@ -28,7 +28,15 @@
 
 use super::density::CaveGen;
 use super::noise::OctaveExport;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+
+/// Wall time spent inside GPU dispatches this process, in milliseconds.
+///
+/// Meld reads the report line and budgets workers against a GPU target the same
+/// way it budgets CPU and RAM - it cannot observe an adapter from outside the
+/// process, so the process says what it used.
+pub(crate) static GPU_BUSY_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Fixed noise order shared with the shader; index = position in this list.
 /// The WGSL references noises by these indices, so the two must move together.
@@ -232,6 +240,7 @@ impl GpuCarver {
         top_gate: i32,
         surf: &[i32],
     ) -> Result<Vec<u32>, String> {
+        let started = std::time::Instant::now();
         let w = (max_x - min_x + 1) as u32;
         let h = (max_z - min_z + 1) as u32;
         let cx0 = min_x.div_euclid(4);
@@ -365,6 +374,7 @@ impl GpuCarver {
             .map_err(|e| format!("GPU readback failed: {e:?}"))?;
         let words: Vec<u32> = bytemuck::cast_slice(&slice.get_mapped_range()).to_vec();
         read_buf.unmap();
+        GPU_BUSY_MS.fetch_add(started.elapsed().as_millis() as u64, Ordering::Relaxed);
         Ok(words)
     }
 }

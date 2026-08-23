@@ -1165,6 +1165,14 @@ pub fn generate_world_with_options(
         eprintln!("[BENCHMARK] block_hash={:016x}", h);
     }
 
+    // GPU budget line for the caller: total wall spent in GPU dispatches. Printed
+    // whenever the GPU actually ran, benchmark mode or not, because Meld's worker
+    // governor consumes it the same way it consumes CPU time.
+    let gpu_busy = crate::caves::gpu::GPU_BUSY_MS.load(std::sync::atomic::Ordering::Relaxed);
+    if gpu_busy > 0 {
+        println!("[gpu] busy_ms={gpu_busy}");
+    }
+
     // Save world
     if let Err(e) = editor.save() {
         return Err(e.to_string());
