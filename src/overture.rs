@@ -33,11 +33,22 @@ const OVERTURE_STAC_ROOT: &str = "https://stac.overturemaps.org";
 const OVERTURE_RELEASE_LIST_URL: &str =
     "https://overturemaps-us-west-2.s3.amazonaws.com/?list-type=2&prefix=release/&delimiter=/";
 
-/// Used when release discovery fails; bump occasionally to a recent release.
+/// Last-resort release, used only when discovery fails AND nothing better was ever recorded.
+///
+/// A compile-time date is a rotting fallback: Overture keeps only the newest few releases
+/// online, so this constant is one rotation away from 404ing on every machine that cannot
+/// reach the bucket listing. That already happened once - builds pinned to `2026-05-20.0`
+/// lost their additional buildings entirely. It is now the third choice, behind discovery
+/// and behind whatever release last actually worked on this machine, so a stale value here
+/// costs nothing until all three are exhausted.
 const OVERTURE_STAC_RELEASE_FALLBACK: &str = "2026-07-22.0";
 
+/// Release that last served a STAC index here, remembered next to the cache so the pin above
+/// stops being load-bearing. One line, the release name.
+const OVERTURE_LAST_GOOD_RELEASE_FILE: &str = "last_good_release";
+
 /// Caps how long a broken STAC host can stall the fetch before we give up on it.
-const OVERTURE_MAX_RELEASE_ATTEMPTS: usize = 3;
+const OVERTURE_MAX_RELEASE_ATTEMPTS: usize = 4;
 
 /// High bit marker for Overture IDs to avoid collision with OSM IDs.
 /// OSM IDs are sequential positive u64 (currently up to ~12 billion, well under 2^34).
@@ -342,6 +353,37 @@ fn parse_release_listing(body: &str) -> Result<Vec<String>, Box<dyn std::error::
     Ok(releases)
 }
 
+/// The release that last served a STAC index on this machine, if one ever did.
+fn read_last_good_release() -> Option<String> {
+    let raw = fs::read_to_string(
+        get_overture_cache_dir().join(OVERTURE_LAST_GOOD_RELEASE_FILE),
+    )
+    .ok()?;
+    let name = raw.trim().to_string();
+    // Only ever trust something release-shaped, so a truncated or clobbered file cannot
+    // turn into a nonsense URL we then spend an attempt on.
+    let shaped = name.len() <= 32
+        && !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '-' || c == '.');
+    shaped.then_some(name)
+}
+
+/// Remember a release that worked, so the compile-time fallback stops being load-bearing.
+fn write_last_good_release(release: &str) {
+    let dir = get_overture_cache_dir();
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join(OVERTURE_LAST_GOOD_RELEASE_FILE);
+    // Write-then-rename: several cells run at once, and a half-written name is worse than none.
+    let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
+    if fs::write(&tmp, release).is_ok() {
+        let _ = fs::rename(&tmp, &path);
+    }
+}
+
 /// Release names currently published in the bucket, newest first.
 fn discover_releases(client: &Client) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let body = client
@@ -371,16 +413,19 @@ fn fetch_stac_catalog(
         }
     };
 
-    // Reserve the last attempt for the fallback so it stays reachable on a long listing.
+    // Reserve the last two attempts for the remembered release and the compile-time pin, so
+    // both stay reachable however long the listing is.
     let mut candidates: Vec<String> = releases
         .into_iter()
-        .take(OVERTURE_MAX_RELEASE_ATTEMPTS.saturating_sub(1))
+        .take(OVERTURE_MAX_RELEASE_ATTEMPTS.saturating_sub(2))
         .collect();
-    if !candidates
-        .iter()
-        .any(|r| r == OVERTURE_STAC_RELEASE_FALLBACK)
+    for tail in read_last_good_release()
+        .into_iter()
+        .chain(std::iter::once(OVERTURE_STAC_RELEASE_FALLBACK.to_string()))
     {
-        candidates.push(OVERTURE_STAC_RELEASE_FALLBACK.to_string());
+        if !candidates.iter().any(|r| *r == tail) {
+            candidates.push(tail);
+        }
     }
 
     if debug {
@@ -395,6 +440,7 @@ fn fetch_stac_catalog(
                 if debug {
                     println!("Using Overture release {release}");
                 }
+                write_last_good_release(release);
                 return Ok(response);
             }
             Ok(response) => {
@@ -435,16 +481,36 @@ fn list_partition_files(
         bytes::Bytes::from(fs::read(&idx_path)?)
     } else {
         // Resolve the current release dynamically; old releases are retired and 404.
-        let response = fetch_stac_catalog(client, debug)?;
-        let b = response.bytes()?;
-        if let Some(parent) = idx_path.parent() {
-            let _ = fs::create_dir_all(parent);
-            let tmp = idx_path.with_extension(format!("{}.tmp", std::process::id()));
-            if fs::write(&tmp, &b).is_ok() {
-                let _ = fs::rename(&tmp, &idx_path); // atomic publish
+        match fetch_stac_catalog(client, debug) {
+            Ok(response) => {
+                let b = response.bytes()?;
+                if let Some(parent) = idx_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                    let tmp = idx_path.with_extension(format!("{}.tmp", std::process::id()));
+                    if fs::write(&tmp, &b).is_ok() {
+                        let _ = fs::rename(&tmp, &idx_path); // atomic publish
+                    }
+                }
+                b
             }
+            // A stale index is worth far more than no buildings. It is a list of partition
+            // URLs, and those partitions do not vanish the moment a newer release appears, so
+            // an index some weeks past its refresh window still resolves. Failing here instead
+            // is what turned one afternoon's STAC outage into whole renders with no additional
+            // buildings and nothing but a warning line to say why. Only give up if the refresh
+            // failed AND we have never successfully downloaded an index on this machine.
+            Err(e) => match fs::read(&idx_path) {
+                Ok(cached) => {
+                    let age_days = file_age_secs(&idx_path).unwrap_or(0) / 86_400;
+                    println!(
+                        "Warning: could not refresh the Overture index ({e}); using the cached \
+                         copy from {age_days} day(s) ago"
+                    );
+                    bytes::Bytes::from(cached)
+                }
+                Err(_) => return Err(e),
+            },
         }
-        b
     };
     let reader = SerializedFileReader::new(stac_bytes)?;
 
