@@ -12,8 +12,22 @@ Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier e
 
 ## [Unreleased]
 
-Two silent failures, both found while triaging Discord reports against Meld's
-logs. Neither changes generated output when things are working.
+Two silent failures and one size/CPU win, all found while triaging Discord
+reports against Meld's logs.
+
+### Changed
+
+- **Baked lighting no longer writes an all-zero BlockLight array, or computes
+  one.** Most chunks emit nothing — terrain, fields, water, roads, unlit shells —
+  and for those the block-light pass walked all 98,304 cells of the column to
+  find that out and then propagated a field that was uniformly zero. It is now
+  skipped when nothing emits, and the resulting all-zero array is left out, which
+  the client reads identically. Measured across three real worlds at 4096 chunks
+  each: 481–491 fewer compressed bytes per chunk, about 7% of region-file bytes.
+  SkyLight is unaffected and is still written for every section —
+  `repeatFirstLayer` means an absent one inherits the terrain's shadow rather
+  than reading as zero or as full sky, and with `isLightOn` set the client never
+  relights, so omitting it would turn the sky permanently black.
 
 ### Fixed
 
