@@ -10,6 +10,52 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.4] - 2026-08-23
+
+The performance branch, merged on top of the triage release: a phase of CPU
+fixes measured at 2.38× on the big-world save path, then an experimental GPU
+path for the cave density field — plus void worlds and world naming. Plans,
+measurements and what is still open: `docs/BRANCH-STATUS.md`.
+
+### Added
+
+- **`--gpu off|auto|dgpu|igpu` (experimental).** Evaluates the cave density
+  field on a GPU through wgpu/Vulkan. The adapter is chosen by explicit
+  enumeration — `auto` prefers dedicated, `dgpu`/`igpu` pin a class, any
+  mismatch or missing adapter falls back to CPU without ceremony. f32 by
+  contract, so the CPU stays the reference implementation: the full-render
+  difference is 905 blocks of 176.3 M — the run-to-run noise floor — and the
+  5080 and the iGPU disagree on one block. Measured on a 224-region 1:1 cell:
+  64.7 → 54.7 s wall (1.18×), 852 → 623 core-seconds (1.37× fleet). Prints
+  `[gpu] busy_ms=` per run so a caller scheduling many workers can budget the
+  one shared adapter.
+- **`--void`** generates into a void world: the vanilla flat preset with one
+  air layer and the_void biome, so everything outside the arnis regions is
+  void, in singleplayer and on a server. Excluded with `--caves` and the
+  bedrock/luanti targets.
+- **`--level-name`** names the world from the CLI and the desktop GUI;
+  sanitised for Windows reserved device names, uniquified like vanilla
+  ("name (2)").
+
+### Changed
+
+- **Regions flush on a pool instead of one thread** (`ARNIS_FLUSH_THREADS`,
+  default cores/4 clamped 2..6). The single writer was the real bottleneck of
+  the big-world save path — with streaming eviction it flipped from a 35%
+  penalty into a 9% gain. Phase-1 total on the 224-region cell: 152.3 → 63.9 s
+  (2.38×).
+- Cave corner planes are carried up the column instead of recomputed per
+  block, and the floating-fluid seal scans in parallel.
+- The floating-vegetation sweep runs in parallel.
+
+### Fixed
+
+- **Cave renders are reproducible.** The same binary, seed and flags produced
+  different worlds (~0.002% of blocks): the std HashSet's per-process random
+  hasher made iteration — and therefore write — order random. FnvHashSet now;
+  three consecutive full renders hash identical. Cave layouts shift once
+  against worlds rendered by older builds.
+
 ## [3.1.3] - 2026-08-23
 
 Two silent failures and one size/CPU win, all found while triaging Discord
