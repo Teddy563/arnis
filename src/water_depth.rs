@@ -44,6 +44,7 @@ use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
 use crate::land_cover::LC_WATER;
 use crate::world_editor::{WorldEditor, MIN_Y};
+use rayon::prelude::*;
 
 /// Flat shoal width in chamfer-DT units; slope only starts past it.
 const SHOAL_DT_UNITS: u16 = 9;
@@ -994,26 +995,40 @@ pub fn sweep_floating_veg_region(
         WHITE_CONCRETE,
         CYAN_TERRACOTTA,
     ];
-    for z in min_z..=max_z {
-        for x in min_x..=max_x {
-            let gy = editor.get_ground_level(x, z);
-            let is_water = editor.check_for_block_absolute(x, gy, z, Some(&[WATER]), None);
-            let is_road_ground = road_mask.contains(x, z)
-                || editor.check_for_block_absolute(x, gy, z, Some(road_blocks), None);
-            if !(is_water || is_road_ground) {
-                continue;
-            }
-            // Loose ground veg (flowers/grass/ferns) over water or roads, low. Trees are NOT
-            // stripped here any more: tree placement now skips water cells up front
-            // (`in_water_mask`), so nothing roots in the water, and the canopy that remains over
-            // water is legitimate overhang from a bank tree - which we want to keep.
-            for dy in 1..=5 {
-                let y = gy + dy;
-                if editor.check_for_block_absolute(x, y, z, Some(veg_set), None) {
-                    editor.set_block_absolute(AIR, x, y, z, None, None);
+    // Scan in parallel, clear afterwards. Same shape as the fluid seal in caves::
+    // every column only ever reads and writes its own (x, z), the scan is the
+    // expensive half, and the writes have to stay on one thread because the world is
+    // a hash map behind &mut. Rayon's indexed collect preserves input order, so the
+    // clears land in the same sequence the serial loop produced them.
+    let doomed: Vec<(i32, i32, i32)> = (min_z..=max_z)
+        .into_par_iter()
+        .flat_map_iter(|z| {
+            let mut found: Vec<(i32, i32, i32)> = Vec::new();
+            for x in min_x..=max_x {
+                let gy = editor.get_ground_level(x, z);
+                let is_water = editor.check_for_block_absolute(x, gy, z, Some(&[WATER]), None);
+                let is_road_ground = road_mask.contains(x, z)
+                    || editor.check_for_block_absolute(x, gy, z, Some(road_blocks), None);
+                if !(is_water || is_road_ground) {
+                    continue;
+                }
+                // Loose ground veg (flowers/grass/ferns) over water or roads, low. Trees are NOT
+                // stripped here any more: tree placement now skips water cells up front
+                // (`in_water_mask`), so nothing roots in the water, and the canopy that remains over
+                // water is legitimate overhang from a bank tree - which we want to keep.
+                for dy in 1..=5 {
+                    let y = gy + dy;
+                    if editor.check_for_block_absolute(x, y, z, Some(veg_set), None) {
+                        found.push((x, y, z));
+                    }
                 }
             }
-        }
+            found
+        })
+        .collect();
+
+    for (x, y, z) in doomed {
+        editor.set_block_absolute(AIR, x, y, z, None, None);
     }
 }
 
