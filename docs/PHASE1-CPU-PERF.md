@@ -117,6 +117,58 @@ Full suite: 411 pass, `clippy -D warnings` clean, `cargo fmt` clean.
 
 ---
 
+## Scalability: Phase 1 does NOT carry to big 1:1 worlds, and here is why
+
+Everything above was measured with `ARNIS_STREAM_TO_DISK=0`. Big worlds cannot run
+that way - the RAM heuristic turns eviction on - and **with eviction on the picture
+changes completely**. Same bbox, same seed, forced on:
+
+| | baseline | phase 1 | change |
+|---|---|---|---|
+| wall | 141.0 s | 139.7 s | **0.9%** |
+| CPU | 832.8 core-s | 736.2 core-s | 11.6% less |
+| `element_placement_ms` | 35505 | 29637 | 16.5% faster |
+| `post_passes_ms` | 794 | 799 | **no change** |
+
+Two things to take from this:
+
+- **The fluid-seal parallelisation does nothing under eviction**, because the seal
+  already runs per-tile inside the parallel tile loop (`data_processing.rs`), so it
+  was parallel. It only helps the non-eviction path.
+- **The corner carry still pays** (11.6% less CPU), but the wall barely moves,
+  because a single-run wall is no longer CPU-bound.
+
+### The real bottleneck for big worlds: `tile_merge`
+
+Full phase breakdown, eviction on, 224 regions:
+
+```
+tile_merge_ms        88600   <-- 63% of a 140 s run
+element_placement_ms 35505
+terrain_total_ms      7215
+landcover_osm_repair  4775
+post_passes_ms          794
+save_ms                 206
+```
+
+`tile_merge` is timed around the block that merges each tile into the main world
+**and hands evicted regions to the flush worker**. `FlushWorker::spawn(ctx, 3)`
+starts **one** thread behind a 3-deep channel, and that thread does, per region:
+compact every section, build the chunk NBT, serialise and compress. 224 regions of
+that on one core while 23 sit idle - the merge thread blocks on the channel.
+
+Corroborating numbers:
+- Turning eviction ON costs **+63 s** on identical work (76.6 s -> 139.7 s).
+- Average cores busy across the whole eviction run is **5.3 of 24**.
+- Switching to `--region-format blinear`, whose writer compresses buckets in
+  parallel, moved `tile_merge` only 90141 -> 86386 ms (4%). **So compression is not
+  the cost** - section compaction and NBT serialisation are.
+
+**Therefore the highest-value next change is a POOL of flush workers instead of
+one**, not anything to do with caves and certainly not a GPU. Regions are
+independent files; K threads consuming one channel should turn ~88 s into ~15-25 s
+and roughly halve big-world wall time.
+
 ## What is deliberately NOT done here
 
 `sweep_floating_veg` (`water_depth.rs`) is still single-threaded. It is the same
