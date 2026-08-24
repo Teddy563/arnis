@@ -43,6 +43,10 @@ Elevation data &copy; <a href="https://www.ign.es/" style="color: inherit;" targ
 Elevation data provided by the <a href="https://maps.gsi.go.jp/" style="color: inherit;" target="_blank">Geospatial Information Authority of Japan</a>.
 <br><br>
 
+<b>Overture Maps Buildings:</b><br>
+The "Additional Buildings" data adds building footprints from the <a href="https://overturemaps.org/" style="color: inherit;" target="_blank">Overture Maps Foundation</a> buildings theme, and fills in building heights that OpenStreetMap leaves untagged. Contains information from Overture Maps, which is made available under the <a href="https://opendatacommons.org/licenses/odbl/" style="color: inherit;" target="_blank">Open Database License (ODbL)</a>. &copy; OpenStreetMap contributors; contributing sources include Esri Community Maps, Google Open Buildings, Microsoft Global ML Building Footprints and USGS 3DEP. Full attribution: <a href="https://docs.overturemaps.org/attribution/" style="color: inherit;" target="_blank">docs.overturemaps.org/attribution</a>.
+<br><br>
+
 <b>ESA WorldCover 2021:</b><br>
 Land cover classification data provided by the <a href="https://esa-worldcover.org/en" style="color: inherit;" target="_blank">ESA WorldCover</a> project (10m resolution, v200). Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium. Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" style="color: inherit;" target="_blank">CC-BY 4.0</a>. &copy; ESA WorldCover project 2021.
 <br><br>

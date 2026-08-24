@@ -319,6 +319,7 @@ fn run_cli() {
             args.debug,
             args.tile_invariant_rendering,
         )
+        .elements
         .len();
         println!("Overture prewarm: ranges cached for bbox ({n} buildings in range)");
         std::process::exit(0);
@@ -516,7 +517,7 @@ fn run_cli() {
     // saving (Overture is ~93% of a cell's wall time) rather than an output change.
     if args.buildings && args.overture && !skip_objects {
         println!("{} Fetching Overture Maps data...", "  [+]".bold());
-        let overture_elements = overture::fetch_overture_buildings(
+        let overture_data = overture::fetch_overture_buildings(
             &args.bbox,
             args.scale,
             args.master_origin_lat,
@@ -525,17 +526,27 @@ fn run_cli() {
             args.tile_invariant_rendering,
         );
         bench.mark("overture_fetch");
-        if !overture_elements.is_empty() {
+        // Measured heights first: applied before the dedupe/extend so Overture-added
+        // footprints are never enrichment candidates, and hint-tagged OSM buildings
+        // take the tag path in calculate_building_height (inference skipped).
+        let enriched = overture_data.hints.apply(&mut parsed_elements);
+        if enriched > 0 {
+            println!(
+                "  Filled heights on {} OSM buildings from Overture Maps",
+                enriched.to_string().bright_white().bold()
+            );
+        }
+        if !overture_data.elements.is_empty() {
             let before_count = parsed_elements.len();
             let unique_overture =
-                overture::deduplicate_against_osm(overture_elements, &parsed_elements);
+                overture::deduplicate_against_osm(overture_data.elements, &parsed_elements);
             parsed_elements.extend(unique_overture);
             let added = parsed_elements.len() - before_count;
             println!(
                 "  Added {} buildings from Overture Maps",
                 added.to_string().bright_white().bold()
             );
-        } else {
+        } else if enriched == 0 {
             println!("  No additional buildings from Overture Maps for this area");
         }
     }

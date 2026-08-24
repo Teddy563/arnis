@@ -1301,7 +1301,7 @@ fn gui_start_generation(
                     // then discarded the result. Meld drives the CLI path in main.rs, which was
                     // gated, so only GUI users were affected. Both now honour the same two flags.
                     if args.buildings && args.overture {
-                        let overture_elements = overture::fetch_overture_buildings(
+                        let overture_data = overture::fetch_overture_buildings(
                             &args.bbox,
                             args.scale,
                             args.master_origin_lat,
@@ -1309,9 +1309,10 @@ fn gui_start_generation(
                             args.debug,
                             args.tile_invariant_rendering,
                         );
-                        if !overture_elements.is_empty() {
+                        overture_data.hints.apply(&mut parsed_elements);
+                        if !overture_data.elements.is_empty() {
                             let unique_overture = overture::deduplicate_against_osm(
-                                overture_elements,
+                                overture_data.elements,
                                 &parsed_elements,
                             );
                             parsed_elements.extend(unique_overture);

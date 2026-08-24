@@ -58,6 +58,238 @@ const OVERTURE_ID_HIGH_BIT: u64 = 0x8000_0000_0000_0000;
 /// Maximum number of Overture buildings to add (safety limit for huge areas)
 const MAX_OVERTURE_BUILDINGS: usize = 100_000;
 
+/// Cap on how many OSM buildings can receive Overture attribute hints. Hints are
+/// a few bytes each, so this only guards against a runaway area.
+const MAX_OSM_HINTS: usize = 500_000;
+
+/// Plausibility window for an Overture height (metres) before it may be written
+/// onto an OSM building. ML-derived heights occasionally emit sub-metre slivers
+/// or absurd towers; those are dropped rather than turned into blocks.
+const HINT_MIN_HEIGHT_M: f64 = 2.5;
+const HINT_MAX_HEIGHT_M: f64 = 500.0;
+
+// â”€â”€â”€ Internal data types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/// Back-reference from an Overture row to the OSM element it was conflated from,
+/// parsed out of `sources[].record_id` (e.g. `"w519166507@9"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OsmRef {
+    /// "way" or "relation" - matches `ProcessedElement::kind()`.
+    kind: &'static str,
+    id: u64,
+}
+
+/// Attributes Overture holds for an OSM building that OSM itself does not.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct OsmAttributeHint {
+    height_m: Option<f64>,
+    num_floors: Option<i32>,
+}
+
+impl OsmAttributeHint {
+    /// Drop values the generator would refuse to use, so the hint budget is
+    /// spent only on attributes that can actually reach a building. This is the
+    /// single place those rules live; `apply` trusts what it is given.
+    fn usable(self) -> Self {
+        Self {
+            // ML-derived heights occasionally emit sub-metre slivers or absurd
+            // towers; neither should become blocks.
+            height_m: self
+                .height_m
+                .filter(|h| (HINT_MIN_HEIGHT_M..=HINT_MAX_HEIGHT_M).contains(h)),
+            // A single floor adds nothing over the generator's own inference,
+            // and the upper bound guards against parse noise.
+            num_floors: self.num_floors.filter(|f| (2..200).contains(f)),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.height_m.is_none() && self.num_floors.is_none()
+    }
+}
+
+/// `OsmRef` -> attributes, built from the OSM-sourced Overture rows that the
+/// footprint pass discards.
+#[derive(Debug, Default)]
+pub struct OvertureHints {
+    hints: HashMap<OsmRef, OsmAttributeHint>,
+}
+
+impl OvertureHints {
+    pub fn len(&self) -> usize {
+        self.hints.len()
+    }
+
+    fn insert(&mut self, key: OsmRef, hint: OsmAttributeHint) {
+        self.insert_capped(key, hint, MAX_OSM_HINTS);
+    }
+
+    fn insert_capped(&mut self, key: OsmRef, hint: OsmAttributeHint, cap: usize) {
+        // Most Overture rows carry no height at all; storing those would spend
+        // the budget on entries that could never enrich anything.
+        let hint = hint.usable();
+        if hint.is_empty() {
+            return;
+        }
+
+        // Only a new key costs budget. An already-tracked building must stay
+        // completable, otherwise a full map would freeze half-filled entries.
+        let at_capacity = self.hints.len() >= cap;
+        match self.hints.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                // Overture is one row per building, but a partition boundary can
+                // repeat a row; keep the first, richer entry rather than letting
+                // a later partial one clobber it.
+                let slot = slot.get_mut();
+                if slot.height_m.is_none() {
+                    slot.height_m = hint.height_m;
+                }
+                if slot.num_floors.is_none() {
+                    slot.num_floors = hint.num_floors;
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                if !at_capacity {
+                    slot.insert(hint);
+                }
+            }
+        }
+    }
+
+    /// Fill `height` / `building:levels` on OSM buildings that carry neither.
+    ///
+    /// Strictly additive: an element that already has either tag is left alone,
+    /// so OSM mappers always win over Overture's conflated values. Returns the
+    /// number of elements that were enriched.
+    pub fn apply(&self, elements: &mut [ProcessedElement]) -> usize {
+        if self.hints.is_empty() {
+            return 0;
+        }
+
+        let mut enriched = 0;
+        for element in elements.iter_mut() {
+            let key = OsmRef {
+                kind: match element {
+                    ProcessedElement::Way(_) => "way",
+                    ProcessedElement::Relation(_) => "relation",
+                    // Overture buildings are areas; a node reference cannot be a footprint.
+                    ProcessedElement::Node(_) => continue,
+                },
+                id: element.id(),
+            };
+            let Some(hint) = self.hints.get(&key) else {
+                continue;
+            };
+
+            let tags: &mut HashMap<String, String> = match element {
+                ProcessedElement::Way(way) => &mut way.tags,
+                ProcessedElement::Relation(relation) => &mut relation.tags,
+                ProcessedElement::Node(_) => continue,
+            };
+
+            // Only buildings; Overture's building theme has no other feature type.
+            if !tags.contains_key("building") && !tags.contains_key("building:part") {
+                continue;
+            }
+            // Any existing vertical tag means OSM already knows better.
+            if tags.contains_key("height") || tags.contains_key("building:levels") {
+                continue;
+            }
+
+            // Every stored hint holds at least one validated value (see `insert`).
+            if let Some(floors) = hint.num_floors {
+                tags.insert("building:levels".to_string(), floors.to_string());
+            }
+            if let Some(h) = hint.height_m {
+                tags.insert("height".to_string(), format!("{h:.1}"));
+            }
+            // Marks the provenance for debugging and for the licence notice.
+            tags.insert(
+                "arnis:height_source".to_string(),
+                "overture_maps".to_string(),
+            );
+            enriched += 1;
+        }
+        enriched
+    }
+}
+
+/// Pull the OSM back-reference out of an Overture `sources` value.
+///
+/// The column is `list<struct<property, dataset, record_id, update_time, ...>>`.
+/// Walks the nested value rather than pattern-matching a formatted string, and
+/// returns `None` for any shape it does not recognise so a schema change can
+/// only cost the enrichment, never the footprint pass.
+fn parse_osm_ref(field: &parquet::record::Field) -> Option<OsmRef> {
+    fn walk(field: &parquet::record::Field, out: &mut Option<OsmRef>) {
+        if out.is_some() {
+            return;
+        }
+        match field {
+            parquet::record::Field::ListInternal(list) => {
+                for element in list.elements() {
+                    walk(element, out);
+                    if out.is_some() {
+                        return;
+                    }
+                }
+            }
+            parquet::record::Field::Group(row) => {
+                let mut dataset: Option<&str> = None;
+                let mut record_id: Option<&str> = None;
+                for (name, sub) in row.get_column_iter() {
+                    match (name.as_str(), sub) {
+                        ("dataset", parquet::record::Field::Str(v)) => dataset = Some(v),
+                        ("record_id", parquet::record::Field::Str(v)) => record_id = Some(v),
+                        // A nested group/list (some writers wrap the list element)
+                        _ => walk(sub, out),
+                    }
+                    if out.is_some() {
+                        return;
+                    }
+                }
+                if dataset.is_some_and(|d| d.eq_ignore_ascii_case("OpenStreetMap")) {
+                    if let Some(parsed) = record_id.and_then(parse_record_id) {
+                        *out = Some(parsed);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut out = None;
+    walk(field, &mut out);
+    out
+}
+
+/// `"w519166507@9"` -> way 519166507. Also accepts `r`/`n` prefixes and a
+/// missing `@version` suffix.
+fn parse_record_id(record_id: &str) -> Option<OsmRef> {
+    let record_id = record_id.trim();
+    let mut chars = record_id.chars();
+    let kind = match chars.next()? {
+        'w' | 'W' => "way",
+        'r' | 'R' => "relation",
+        // Nodes cannot carry a building footprint; ignore rather than mismatch.
+        'n' | 'N' => return None,
+        _ => return None,
+    };
+    let rest = chars.as_str();
+    let digits = rest.split('@').next()?;
+    let id: u64 = digits.parse().ok()?;
+    Some(OsmRef { kind, id })
+}
+
+/// What a generation-path Overture fetch produces.
+#[derive(Default)]
+pub struct OvertureData {
+    /// Non-OSM footprints, ready to merge into the element list.
+    pub elements: Vec<ProcessedElement>,
+    /// Attributes for OSM buildings that OSM itself leaves untagged.
+    pub hints: OvertureHints,
+}
+
 /// HTTP client timeout for Overture data fetching. Kept short: every request is now a small range
 /// read (footer or one row group), so a healthy fetch is sub-second; a stalled/dead connection should
 /// fail fast and let that row group be skipped rather than hang the cell.
@@ -78,6 +310,9 @@ struct OvertureBuilding {
     exterior_ring: Vec<(f64, f64)>,
     /// Whether the primary source is OpenStreetMap
     is_osm_sourced: bool,
+    /// OSM way/relation this row mirrors, parsed from sources[].record_id.
+    /// Present only for OSM-sourced rows; keys the height-hint harvest.
+    osm_ref: Option<OsmRef>,
     /// Building height in meters (if available)
     height: Option<f64>,
     /// Minimum height in meters (bottom of building, for elevated parts)
@@ -116,7 +351,7 @@ pub fn fetch_overture_buildings(
     master_origin_lng: Option<f64>,
     debug: bool,
     tile_invariant_rendering: Option<u64>,
-) -> Vec<ProcessedElement> {
+) -> OvertureData {
     match fetch_overture_buildings_inner(
         bbox,
         scale,
@@ -125,13 +360,13 @@ pub fn fetch_overture_buildings(
         debug,
         tile_invariant_rendering,
     ) {
-        Ok(elements) => elements,
+        Ok(data) => data,
         Err(e) => {
             eprintln!(
                 "{} Failed to fetch Overture Maps data: {e}",
                 "Warning:".yellow().bold()
             );
-            Vec::new()
+            OvertureData::default()
         }
     }
 }
@@ -231,7 +466,7 @@ fn fetch_overture_buildings_inner(
     master_origin_lng: Option<f64>,
     debug: bool,
     tile_invariant_rendering: Option<u64>,
-) -> Result<Vec<ProcessedElement>, Box<dyn std::error::Error>> {
+) -> Result<OvertureData, Box<dyn std::error::Error>> {
     let client = Client::builder()
         .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
         .user_agent(concat!(
@@ -250,7 +485,7 @@ fn fetch_overture_buildings_inner(
         if debug {
             println!("No Overture partitions overlap the bbox");
         }
-        return Ok(Vec::new());
+        return Ok(OvertureData::default());
     }
 
     if debug {
@@ -263,13 +498,11 @@ fn fetch_overture_buildings_inner(
     // Process each partition file: read footer, check for bbox overlap, fetch matching rows
     let mut all_buildings: Vec<OvertureBuilding> = Vec::new();
     let mut non_osm_count: usize = 0;
+    let mut hints = OvertureHints::default();
 
     for (i, url) in partition_urls.iter().enumerate() {
-        if non_osm_count >= MAX_OVERTURE_BUILDINGS {
-            if debug {
-                println!("Reached building limit ({MAX_OVERTURE_BUILDINGS}), stopping");
-            }
-            break;
+        if non_osm_count >= MAX_OVERTURE_BUILDINGS && debug {
+            println!("Reached building limit ({MAX_OVERTURE_BUILDINGS}), still harvesting hints");
         }
 
         if debug && i % 10 == 0 {
@@ -282,8 +515,27 @@ fn fetch_overture_buildings_inner(
 
         match process_partition_file(&client, url, bbox, debug) {
             Ok(buildings) => {
-                non_osm_count += buildings.iter().filter(|b| !b.is_osm_sourced).count();
-                all_buildings.extend(buildings.into_iter().filter(|b| !b.is_osm_sourced));
+                for building in buildings {
+                    if building.is_osm_sourced {
+                        // OSM-sourced rows never become footprints (the OSM data has
+                        // them), but their measured height/floors enrich untagged OSM
+                        // buildings. Harvested even past the footprint cap, so hint
+                        // coverage cannot differ between a capped cell and its
+                        // uncapped neighbour (MELD: that difference would be a seam).
+                        if let Some(key) = building.osm_ref {
+                            hints.insert(
+                                key,
+                                OsmAttributeHint {
+                                    height_m: building.height,
+                                    num_floors: building.num_floors,
+                                },
+                            );
+                        }
+                    } else if non_osm_count < MAX_OVERTURE_BUILDINGS {
+                        non_osm_count += 1;
+                        all_buildings.push(building);
+                    }
+                }
             }
             Err(e) => {
                 if debug {
@@ -295,7 +547,11 @@ fn fetch_overture_buildings_inner(
     }
 
     if debug {
-        println!("Overture: {} non-OSM buildings found", all_buildings.len());
+        println!(
+            "Overture: {} non-OSM buildings found, {} height hints harvested",
+            all_buildings.len(),
+            hints.len()
+        );
     }
 
     // Convert to ProcessedElements and clip to xzbbox (matching OSM clipping)
@@ -321,7 +577,7 @@ fn fetch_overture_buildings_inner(
         })
         .collect();
 
-    Ok(elements)
+    Ok(OvertureData { elements, hints })
 }
 
 /// Sorts `YYYY-MM-DD.N` release names, comparing the revision numerically.
@@ -951,6 +1207,7 @@ fn parse_overture_row(
     let mut id: Option<String> = None;
     let mut geometry_bytes: Option<Vec<u8>> = None;
     let mut sources_str: Option<String> = None;
+    let mut osm_ref: Option<OsmRef> = None;
     let mut height: Option<f64> = None;
     let mut min_height: Option<f64> = None;
     let mut num_floors: Option<i32> = None;
@@ -980,8 +1237,11 @@ fn parse_overture_row(
                 }
             }
             "sources" => {
-                // Sources is a complex nested struct; convert to string for analysis
+                // The string test stays AUTHORITATIVE for the is_osm dedup - a schema
+                // change may cost enrichment but must never resurrect duplicate
+                // footprints. The parsed ref only keys the height-hint harvest.
                 sources_str = Some(format!("{field}"));
+                osm_ref = parse_osm_ref(field);
             }
             "height" => {
                 if let parquet::record::Field::Double(v) = field {
@@ -1094,6 +1354,7 @@ fn parse_overture_row(
         id,
         exterior_ring,
         is_osm_sourced: is_osm,
+        osm_ref,
         height,
         min_height,
         num_floors,
@@ -1933,6 +2194,7 @@ mod frame_tests {
             id: "08b2a1072d125fff0200-test".to_string(),
             exterior_ring: ring.clone(),
             is_osm_sourced: false,
+            osm_ref: None,
             height: None,
             min_height: None,
             num_floors: None,
@@ -1951,5 +2213,297 @@ mod frame_tests {
             let expected = transformer.transform_point(LLPoint::new(lat, lng).unwrap());
             assert_eq!((node.x, node.z), (expected.x, expected.z));
         }
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+    use crate::osm_parser::{ProcessedRelation, ProcessedWay};
+    fn hint_way(id: u64, tags: &[(&str, &str)]) -> ProcessedElement {
+        ProcessedElement::Way(ProcessedWay {
+            id,
+            nodes: Vec::new(),
+            tags: tags
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            unclipped_bounds: None,
+            unclipped_polygon_area: None,
+        })
+    }
+
+    fn hints_with(key: OsmRef, hint: OsmAttributeHint) -> OvertureHints {
+        let mut hints = OvertureHints::default();
+        hints.insert(key, hint);
+        hints
+    }
+
+    #[test]
+    fn record_id_parses_way_and_relation_with_and_without_version() {
+        assert_eq!(
+            parse_record_id("w519166507@9"),
+            Some(OsmRef {
+                kind: "way",
+                id: 519166507
+            })
+        );
+        assert_eq!(
+            parse_record_id("r12345"),
+            Some(OsmRef {
+                kind: "relation",
+                id: 12345
+            })
+        );
+        // Nodes cannot be footprints, and junk must not resolve to some way.
+        assert_eq!(parse_record_id("n2757802019@1"), None);
+        assert_eq!(parse_record_id("519166507"), None);
+        assert_eq!(parse_record_id("w"), None);
+        assert_eq!(parse_record_id("wabc@1"), None);
+        assert_eq!(parse_record_id(""), None);
+    }
+
+    #[test]
+    fn hint_fills_height_only_when_osm_has_none() {
+        let key = OsmRef {
+            kind: "way",
+            id: 42,
+        };
+        let hints = hints_with(
+            key,
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: Some(6),
+            },
+        );
+
+        let mut elements = vec![hint_way(42, &[("building", "yes")])];
+        assert_eq!(hints.apply(&mut elements), 1);
+        let tags = elements[0].tags();
+        assert_eq!(tags.get("height").map(String::as_str), Some("18.0"));
+        assert_eq!(tags.get("building:levels").map(String::as_str), Some("6"));
+        assert_eq!(
+            tags.get("arnis:height_source").map(String::as_str),
+            Some("overture_maps")
+        );
+    }
+
+    #[test]
+    fn existing_osm_height_or_levels_is_never_overwritten() {
+        let key = OsmRef {
+            kind: "way",
+            id: 42,
+        };
+        let hints = hints_with(
+            key,
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: Some(6),
+            },
+        );
+
+        // A height tag blocks the whole hint.
+        let mut tagged_height = vec![hint_way(42, &[("building", "yes"), ("height", "7")])];
+        assert_eq!(hints.apply(&mut tagged_height), 0);
+        assert_eq!(
+            tagged_height[0].tags().get("height").map(String::as_str),
+            Some("7")
+        );
+
+        // So does a levels tag, since it is the other vertical source.
+        let mut tagged_levels = vec![hint_way(
+            42,
+            &[("building", "yes"), ("building:levels", "2")],
+        )];
+        assert_eq!(hints.apply(&mut tagged_levels), 0);
+        assert!(!tagged_levels[0].tags().contains_key("height"));
+    }
+
+    #[test]
+    fn hints_skip_non_buildings_and_unmatched_ids() {
+        let hints = hints_with(
+            OsmRef {
+                kind: "way",
+                id: 42,
+            },
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: None,
+            },
+        );
+
+        // Right id, but not a building.
+        let mut not_a_building = vec![hint_way(42, &[("highway", "residential")])];
+        assert_eq!(hints.apply(&mut not_a_building), 0);
+
+        // Building, but a different id.
+        let mut other_id = vec![hint_way(43, &[("building", "yes")])];
+        assert_eq!(hints.apply(&mut other_id), 0);
+
+        // Same numeric id on a relation must not collect a way's hint.
+        let mut relation = vec![ProcessedElement::Relation(ProcessedRelation {
+            id: 42,
+            tags: [("building".to_string(), "yes".to_string())]
+                .into_iter()
+                .collect(),
+            members: Vec::new(),
+        })];
+        assert_eq!(hints.apply(&mut relation), 0);
+    }
+
+    #[test]
+    fn implausible_heights_are_dropped() {
+        let key = OsmRef {
+            kind: "way",
+            id: 42,
+        };
+
+        // Sub-metre ML sliver: rejected, and with no floors nothing is applied.
+        let sliver = hints_with(
+            key,
+            OsmAttributeHint {
+                height_m: Some(0.4),
+                num_floors: None,
+            },
+        );
+        assert_eq!(sliver.len(), 0, "the sliver must not even be stored");
+        let mut elements = vec![hint_way(42, &[("building", "yes")])];
+        assert_eq!(sliver.apply(&mut elements), 0);
+        assert!(!elements[0].tags().contains_key("height"));
+
+        // Absurd tower: same treatment.
+        let absurd = hints_with(
+            key,
+            OsmAttributeHint {
+                height_m: Some(4000.0),
+                num_floors: None,
+            },
+        );
+        let mut elements = vec![hint_way(42, &[("building", "yes")])];
+        assert_eq!(absurd.apply(&mut elements), 0);
+
+        // A single floor adds nothing over the generator's own inference.
+        let one_floor = hints_with(
+            key,
+            OsmAttributeHint {
+                height_m: None,
+                num_floors: Some(1),
+            },
+        );
+        let mut elements = vec![hint_way(42, &[("building", "yes")])];
+        assert_eq!(one_floor.apply(&mut elements), 0);
+    }
+
+    #[test]
+    fn unusable_rows_do_not_occupy_the_hint_budget() {
+        let mut hints = OvertureHints::default();
+        // Most Overture rows carry no height or floor count at all.
+        hints.insert(
+            OsmRef { kind: "way", id: 1 },
+            OsmAttributeHint {
+                height_m: None,
+                num_floors: None,
+            },
+        );
+        // Values the generator would reject are just as useless.
+        hints.insert(
+            OsmRef { kind: "way", id: 2 },
+            OsmAttributeHint {
+                height_m: Some(0.4),
+                num_floors: Some(1),
+            },
+        );
+        assert_eq!(hints.len(), 0);
+
+        // A row with one usable value is still worth keeping.
+        hints.insert(
+            OsmRef { kind: "way", id: 3 },
+            OsmAttributeHint {
+                height_m: Some(0.4),
+                num_floors: Some(4),
+            },
+        );
+        assert_eq!(hints.len(), 1);
+    }
+
+    #[test]
+    fn a_full_map_still_completes_the_buildings_it_tracks() {
+        let tracked = OsmRef { kind: "way", id: 1 };
+        let mut hints = OvertureHints::default();
+        hints.insert_capped(
+            tracked,
+            OsmAttributeHint {
+                height_m: None,
+                num_floors: Some(4),
+            },
+            1,
+        );
+        assert_eq!(hints.len(), 1);
+
+        // At capacity a new building is refused ...
+        hints.insert_capped(
+            OsmRef { kind: "way", id: 2 },
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: None,
+            },
+            1,
+        );
+        assert_eq!(hints.len(), 1);
+
+        // ... but one already tracked can still be completed by a later row.
+        hints.insert_capped(
+            tracked,
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: None,
+            },
+            1,
+        );
+
+        let mut elements = vec![hint_way(1, &[("building", "yes")])];
+        assert_eq!(hints.apply(&mut elements), 1);
+        assert_eq!(
+            elements[0].tags().get("height").map(String::as_str),
+            Some("18.0")
+        );
+        assert_eq!(
+            elements[0]
+                .tags()
+                .get("building:levels")
+                .map(String::as_str),
+            Some("4")
+        );
+    }
+
+    #[test]
+    fn duplicate_rows_do_not_clobber_a_richer_hint() {
+        let key = OsmRef {
+            kind: "way",
+            id: 42,
+        };
+        let mut hints = OvertureHints::default();
+        hints.insert(
+            key,
+            OsmAttributeHint {
+                height_m: Some(18.0),
+                num_floors: Some(6),
+            },
+        );
+        // A second, emptier row for the same building must not erase the first.
+        hints.insert(
+            key,
+            OsmAttributeHint {
+                height_m: None,
+                num_floors: None,
+            },
+        );
+
+        let mut elements = vec![hint_way(42, &[("building", "yes")])];
+        assert_eq!(hints.apply(&mut elements), 1);
+        assert_eq!(
+            elements[0].tags().get("height").map(String::as_str),
+            Some("18.0")
+        );
     }
 }
