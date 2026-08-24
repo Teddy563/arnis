@@ -76,6 +76,10 @@ pub struct LandCoverData {
     /// overkill. Halving the storage saves ~46 MB peak on a Munich-sized
     /// area.
     pub water_blend_grid: Vec<Vec<f32>>,
+    /// Whether this render's grid edge is a real coastline (single bbox) or an
+    /// arbitrary crop through the world (a Meld cell). Recomputes of
+    /// `water_distance` must keep the same rule the first pass used.
+    pub edge_is_shore: bool,
     /// Grid width (matches elevation grid width)
     pub width: usize,
     /// Grid height (matches elevation grid height)
@@ -147,7 +151,7 @@ pub fn fetch_land_cover_data(
     bbox: &LLBBox,
     grid_width: usize,
     grid_height: usize,
-    tiled_render: bool,
+    master: Option<MasterFrame>,
 ) -> Option<LandCoverData> {
     println!("Fetching land cover data (ESA WorldCover 2021)...");
     emit_gui_progress_update(9.0, "Detecting surface types...");
@@ -195,15 +199,13 @@ pub fn fetch_land_cover_data(
         }
     }
 
-    let mut grid = match (
-        &raster,
-        GridMapping::new(
-            bbox,
-            raster.as_ref().map(|r| r.ppd).unwrap_or(0.0),
-            grid_width,
-            grid_height,
-        ),
-    ) {
+    let mut grid = match (&raster, {
+        let ppd = raster.as_ref().map(|r| r.ppd).unwrap_or(0.0);
+        match &master {
+            Some(frame) => GridMapping::new_master(frame, bbox, ppd, grid_width, grid_height),
+            None => GridMapping::new(bbox, ppd, grid_width, grid_height),
+        }
+    }) {
         (Some(r), Some(mapping)) => {
             let mut grid = r.sample_grid(&mapping);
             // Straighten the ESA shoreline below its 10 m pixel size.
@@ -215,7 +217,7 @@ pub fn fetch_land_cover_data(
             // every cell seam, and level_water_surfaces would amplify a 1-cell
             // mask difference into a water-HEIGHT seam. Single-bbox renders
             // (GUI, plain CLI) get upstream behaviour.
-            if !tiled_render || std::env::var_os("ARNIS_SHORELINE_TILED").is_some() {
+            if master.is_none() || std::env::var_os("ARNIS_SHORELINE_TILED").is_some() {
                 crate::land_cover_shoreline::reconstruct_water_shoreline(r, &mapping, &mut grid);
             }
             grid
@@ -246,7 +248,7 @@ pub fn fetch_land_cover_data(
 
     // Compute distance from each water cell to nearest shore via multi-source BFS.
     // Used for shoreline blending (land cells adjacent to water get sand surface).
-    let water_distance = compute_water_distance(&grid, grid_width, grid_height);
+    let water_distance = compute_water_distance(&grid, grid_width, grid_height, master.is_none());
 
     // Pre-smooth the water mask so `ground.water_blend()` returns continuous
     // values around the shoreline even when grid-to-world mapping is 1-to-1
@@ -259,6 +261,7 @@ pub fn fetch_land_cover_data(
         grid,
         water_distance,
         water_blend_grid,
+        edge_is_shore: master.is_none(),
         width: grid_width,
         height: grid_height,
     })
@@ -423,14 +426,14 @@ impl EsaPixelRaster {
         let col_spans: Vec<(usize, usize, usize)> = (0..self.width)
             .filter_map(|px| {
                 let x = (self.x0 + px as i64) as f64;
-                let (lo, hi) = mapping.cell_span(mapping.gx(x), mapping.gx(x + 1.0), gw);
+                let (lo, hi) = mapping.cell_span_x(mapping.gx(x), mapping.gx(x + 1.0));
                 (lo < hi).then_some((px, lo, hi))
             })
             .collect();
         let mut row_buf = vec![0u8; gw];
         for py in 0..self.height {
             let y = (self.y0 + py as i64) as f64;
-            let (z_lo, z_hi) = mapping.cell_span(mapping.gz(y), mapping.gz(y + 1.0), gh);
+            let (z_lo, z_hi) = mapping.cell_span_z(mapping.gz(y), mapping.gz(y + 1.0));
             if z_lo >= z_hi {
                 continue;
             }
@@ -447,21 +450,46 @@ impl EsaPixelRaster {
     }
 }
 
+/// The globally shared frame a Meld cell renders in.
+///
+/// Every cell of one project derives the SAME block coordinate for the same
+/// ESA pixel from these three numbers, so no per-cell float can disagree at a
+/// seam. Mirrors `compute_grid_dims`' master-origin branch exactly, which is
+/// also what `transform_point` lays the world out with.
+#[derive(Clone, Copy, Debug)]
+pub struct MasterFrame {
+    pub origin_lat: f64,
+    pub origin_lng: f64,
+    pub scale: f64,
+}
+
+/// Metres per degree of latitude, the flat constant the master-origin world
+/// layout uses (see `compute_grid_dims`).
+const METERS_PER_DEG_LAT: f64 = 111_320.0;
+
 /// Global ESA pixel coordinates to grid cells, on the elevation grid's convention:
 /// cell `gx` sits at `min_lng + gx / (grid_w - 1) * (max_lng - min_lng)`.
 pub(crate) struct GridMapping {
-    /// Global pixel x of the bbox west edge (fractional).
+    /// Global pixel x of the frame's origin (fractional).
     pub x_origin: f64,
-    /// Global pixel y of the bbox north edge (fractional).
+    /// Global pixel y of the frame's origin (fractional).
     pub y_origin: f64,
     /// Grid cells per pixel along x / y.
     pub sx: f64,
     pub sy: f64,
+    /// Integer grid offset of this cell inside the frame, subtracted AFTER the
+    /// multiply. Two cells sharing a pixel therefore compute the identical
+    /// product and differ only by an exact integer, instead of each scaling
+    /// from its own bbox floats and disagreeing in the last ulp at a seam.
+    /// Zero for single-bbox renders, where the frame IS the bbox.
+    pub off_x: f64,
+    pub off_z: f64,
     pub grid_w: usize,
     pub grid_h: usize,
 }
 
 impl GridMapping {
+    /// Frame anchored on the render's own bbox (single-bbox renders).
     fn new(bbox: &LLBBox, ppd: f64, grid_w: usize, grid_h: usize) -> Option<Self> {
         let lng_px = (bbox.max().lng() - bbox.min().lng()) * ppd;
         let lat_px = (bbox.max().lat() - bbox.min().lat()) * ppd;
@@ -473,28 +501,100 @@ impl GridMapping {
             y_origin: (90.0 - bbox.max().lat()) * ppd,
             sx: (grid_w - 1) as f64 / lng_px,
             sy: (grid_h - 1) as f64 / lat_px,
+            off_x: 0.0,
+            off_z: 0.0,
             grid_w,
             grid_h,
         })
     }
 
-    /// Grid x coordinate of global pixel x.
+    /// Frame anchored on the project's master origin (Meld tiled renders).
+    ///
+    /// `sx`/`sy` are the true blocks-per-pixel of the shared world layout
+    /// rather than this bbox's own span, and the cell's position enters as an
+    /// integer offset. Both are required for cross-cell agreement: the scale
+    /// must not depend on the bbox, and the offset must not go through the
+    /// multiply.
+    fn new_master(
+        frame: &MasterFrame,
+        bbox: &LLBBox,
+        ppd: f64,
+        grid_w: usize,
+        grid_h: usize,
+    ) -> Option<Self> {
+        if !(ppd > 0.0 && frame.scale > 0.0) || grid_w < 2 || grid_h < 2 {
+            return None;
+        }
+        // NaN-safe: a non-finite origin latitude leaves the frame unusable.
+        let mpd_lon = METERS_PER_DEG_LAT * frame.origin_lat.to_radians().cos();
+        if mpd_lon <= 0.0 || !mpd_lon.is_finite() {
+            return None;
+        }
+        // The same floor()s compute_grid_dims used to size this grid, so grid
+        // cell 0 sits exactly on global block `off`.
+        let off_x = ((bbox.min().lng() - frame.origin_lng) * mpd_lon * frame.scale).floor();
+        let off_z =
+            ((frame.origin_lat - bbox.max().lat()) * METERS_PER_DEG_LAT * frame.scale).floor();
+        Some(Self {
+            x_origin: (frame.origin_lng + 180.0) * ppd,
+            y_origin: (90.0 - frame.origin_lat) * ppd,
+            sx: mpd_lon * frame.scale / ppd,
+            sy: METERS_PER_DEG_LAT * frame.scale / ppd,
+            off_x,
+            off_z,
+            grid_w,
+            grid_h,
+        })
+    }
+
+    /// Grid x coordinate of a global pixel x, in the FRAME's coordinates.
+    ///
+    /// Deliberately not cell-local: this value is bit-identical in every cell
+    /// of one master-origin project, and the cell's integer offset is applied
+    /// only after rounding (see `cell_span_x`). Subtracting it here instead
+    /// would round whenever the result crosses a binade, which is exactly how
+    /// two neighbours end up disagreeing about a boundary column.
+    /// For single-bbox renders the offset is zero, so frame == cell.
     #[inline(always)]
     pub(crate) fn gx(&self, px_x: f64) -> f64 {
         (px_x - self.x_origin) * self.sx
     }
 
-    /// Grid z coordinate of global pixel y.
+    /// Grid z coordinate of a global pixel y, in the FRAME's coordinates.
     #[inline(always)]
     pub(crate) fn gz(&self, px_y: f64) -> f64 {
         (px_y - self.y_origin) * self.sy
     }
 
-    /// Cells `[lo, hi)` whose coordinate lies in `[a, b)`, clamped to `0..n`.
+    /// This cell's integer offsets inside the frame.
     #[inline(always)]
-    fn cell_span(&self, a: f64, b: f64, n: usize) -> (usize, usize) {
-        let lo = a.ceil().max(0.0).min(n as f64) as usize;
-        let hi = b.ceil().max(0.0).min(n as f64) as usize;
+    pub(crate) fn off_xi(&self) -> i64 {
+        self.off_x as i64
+    }
+
+    #[inline(always)]
+    pub(crate) fn off_zi(&self) -> i64 {
+        self.off_z as i64
+    }
+
+    /// Local cells `[lo, hi)` whose frame coordinate lies in `[a, b)`.
+    ///
+    /// Rounds in frame space, then shifts by an exact integer, so every cell
+    /// cuts the boundary at the same global block.
+    #[inline(always)]
+    fn cell_span_x(&self, a: f64, b: f64) -> (usize, usize) {
+        Self::span(a, b, self.off_xi(), self.grid_w)
+    }
+
+    #[inline(always)]
+    fn cell_span_z(&self, a: f64, b: f64) -> (usize, usize) {
+        Self::span(a, b, self.off_zi(), self.grid_h)
+    }
+
+    #[inline(always)]
+    fn span(a: f64, b: f64, off: i64, n: usize) -> (usize, usize) {
+        let lo = (a.ceil() as i64 - off).clamp(0, n as i64) as usize;
+        let hi = (b.ceil() as i64 - off).clamp(0, n as i64) as usize;
         (lo, hi)
     }
 }
@@ -1128,10 +1228,17 @@ fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
 /// - 2+ = water cell N blocks from nearest shore
 ///
 /// Capped at 15 to limit BFS depth for very large oceans.
+///
+/// `edge_is_shore` must be false for a cropped render (a Meld cell): the grid
+/// edge is then an arbitrary cut through open water, not a coastline, and
+/// seeding it as shore makes the bed shallow up on the way to a cell border -
+/// an asymmetric channel across the seam. Single-bbox renders keep the old
+/// behaviour, where the edge really is the end of the known world.
 pub(crate) fn compute_water_distance(
     grid: &[Vec<u8>],
     width: usize,
     height: usize,
+    edge_is_shore: bool,
 ) -> Vec<Vec<u8>> {
     let mut distance = vec![vec![0u8; width]; height];
     let mut queue = VecDeque::new();
@@ -1148,7 +1255,7 @@ pub(crate) fn compute_water_distance(
                     let nx = x as i32 + dx;
                     let nz = z as i32 + dz;
                     if nx < 0 || nx >= width as i32 || nz < 0 || nz >= height as i32 {
-                        return true; // Grid edge = shore
+                        return edge_is_shore;
                     }
                     grid[nz as usize][nx as usize] != LC_WATER
                 });
@@ -1434,4 +1541,104 @@ fn read_bits_msb(data: &[u8], bit_offset: usize, n: usize) -> u32 {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod master_frame_tests {
+    use super::*;
+
+    const PPD: f64 = 12_000.0;
+
+    fn frame() -> MasterFrame {
+        MasterFrame {
+            origin_lat: 44.4300,
+            origin_lng: 26.0950,
+            scale: 1.0,
+        }
+    }
+
+    /// Two adjacent cells of one project must map a shared ESA pixel to the
+    /// SAME global block, and must cut the pixel/cell boundary at the same
+    /// global block. This is the property the shoreline pass needs before it
+    /// can run in a tiled render: with per-bbox mappings the two cells scale
+    /// from different spans and a `ceil()` can flip at a seam column.
+    #[test]
+    fn adjacent_cells_agree_on_every_shared_pixel() {
+        let f = frame();
+        // West cell and its eastern neighbour, sharing the 26.11 meridian.
+        let west = LLBBox::new(44.40, 26.10, 44.42, 26.11).unwrap();
+        let east = LLBBox::new(44.40, 26.11, 44.42, 26.12).unwrap();
+        let a = GridMapping::new_master(&f, &west, PPD, 800, 2226).unwrap();
+        let b = GridMapping::new_master(&f, &east, PPD, 800, 2226).unwrap();
+
+        // Every pixel column across both cells, including the shared seam.
+        let first = ((26.10 + 180.0) * PPD).floor() as i64;
+        let last = ((26.12 + 180.0) * PPD).floor() as i64;
+        for px in first..=last {
+            let px = px as f64;
+            // Frame coordinates are bit-identical: both cells ran the same
+            // arithmetic on the same shared constants.
+            assert_eq!(
+                a.gx(px).to_bits(),
+                b.gx(px).to_bits(),
+                "pixel {px} maps differently"
+            );
+            // So the sampling boundary lands on the same global block, and the
+            // two cells' local indices differ by exactly their integer offset.
+            let ca = a.gx(px).ceil() as i64;
+            let cb = b.gx(px).ceil() as i64;
+            assert_eq!(ca - a.off_xi(), cb - b.off_xi() + (b.off_xi() - a.off_xi()));
+            assert_eq!(ca, cb, "cell boundary differs at pixel {px}");
+        }
+    }
+
+    /// The vertical axis has the same requirement; +Z is south.
+    #[test]
+    fn stacked_cells_agree_on_every_shared_row() {
+        let f = frame();
+        let north = LLBBox::new(44.42, 26.10, 44.44, 26.12).unwrap();
+        let south = LLBBox::new(44.40, 26.10, 44.42, 26.12).unwrap();
+        let a = GridMapping::new_master(&f, &north, PPD, 1600, 2226).unwrap();
+        let b = GridMapping::new_master(&f, &south, PPD, 1600, 2226).unwrap();
+
+        let first = ((90.0 - 44.44) * PPD).floor() as i64;
+        let last = ((90.0 - 44.40) * PPD).floor() as i64;
+        for py in first..=last {
+            let py = py as f64;
+            assert_eq!(
+                a.gz(py).to_bits(),
+                b.gz(py).to_bits(),
+                "pixel row {py} maps differently"
+            );
+            assert_eq!(a.gz(py).ceil() as i64, b.gz(py).ceil() as i64);
+        }
+    }
+
+    /// A cell's own grid still starts at its west/north edge: the frame moves
+    /// the anchor, it must not slide the cell off its bbox.
+    #[test]
+    fn cell_grid_still_starts_at_its_own_edge() {
+        let f = frame();
+        let cell = LLBBox::new(44.40, 26.10, 44.42, 26.12).unwrap();
+        let m = GridMapping::new_master(&f, &cell, PPD, 1600, 2226).unwrap();
+        let west_px = (26.10 + 180.0) * PPD;
+        let north_px = (90.0 - 44.42) * PPD;
+        // Frame coordinate minus this cell's offset = the cell-local position,
+        // which must sit inside the first cell of the grid.
+        let local_x = m.gx(west_px) - m.off_x;
+        let local_z = m.gz(north_px) - m.off_z;
+        assert!((0.0..1.0).contains(&local_x), "west edge at {local_x}");
+        assert!((0.0..1.0).contains(&local_z), "north edge at {local_z}");
+    }
+
+    /// Single-bbox renders keep the old anchor-on-the-bbox behaviour exactly.
+    #[test]
+    fn single_bbox_mapping_is_unchanged() {
+        let cell = LLBBox::new(44.40, 26.10, 44.42, 26.12).unwrap();
+        let m = GridMapping::new(&cell, PPD, 1600, 2226).unwrap();
+        assert_eq!(m.off_x, 0.0);
+        assert_eq!(m.off_z, 0.0);
+        assert_eq!(m.gx((26.10 + 180.0) * PPD), 0.0);
+        assert_eq!(m.gz((90.0 - 44.42) * PPD), 0.0);
+    }
 }

@@ -178,7 +178,8 @@ pub fn apply_osm_water_override(
             "OSM water override: reclassified {} cells to LC_WATER inside OSM water polygons/lines",
             changed
         );
-        land_cover.water_distance = compute_water_distance(&land_cover.grid, width, height);
+        land_cover.water_distance =
+            compute_water_distance(&land_cover.grid, width, height, land_cover.edge_is_shore);
         land_cover.refresh_water_blend_grid();
     }
 }

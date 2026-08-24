@@ -598,13 +598,20 @@ fn rasterize_rings(rings: &[Vec<FPt>], px_x0: i64, px_y0: i64, mapping: &GridMap
             let ax = mapping.gx(a.0 + px_x0 as f64);
             let bx = mapping.gx(b.0 + px_x0 as f64);
             let (y_lo, y_hi) = if ay < by { (ay, by) } else { (by, ay) };
-            // Half-open y_lo..y_hi, matching the nearest-neighbour cell assignment.
-            let z_start = y_lo.ceil().max(0.0) as i64;
-            let z_end = (y_hi.ceil() as i64).min(gh as i64);
+            // Half-open y_lo..y_hi, matching the nearest-neighbour cell
+            // assignment. Rows are walked in FRAME coordinates and shifted to
+            // this cell by an exact integer, so the crossing interpolation is
+            // the same arithmetic in every cell that sees this edge.
+            let z_off = mapping.off_zi();
+            let z_start = y_lo.ceil() as i64;
+            let z_end = y_hi.ceil() as i64;
             let mut z = z_start;
             while z < z_end {
-                let t = (z as f64 - ay) / (by - ay);
-                rows[z as usize].push(ax + t * (bx - ax));
+                let local = z - z_off;
+                if (0..gh as i64).contains(&local) {
+                    let t = (z as f64 - ay) / (by - ay);
+                    rows[local as usize].push(ax + t * (bx - ax));
+                }
                 z += 1;
             }
         }
@@ -616,8 +623,9 @@ fn rasterize_rings(rings: &[Vec<FPt>], px_x0: i64, px_y0: i64, mapping: &GridMap
         xs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         let mut i = 0;
         while i + 1 < xs.len() {
-            let x_start = xs[i].ceil().max(0.0) as i64;
-            let x_end = (xs[i + 1].ceil() as i64).min(gw as i64);
+            let x_off = mapping.off_xi();
+            let x_start = (xs[i].ceil() as i64 - x_off).max(0);
+            let x_end = (xs[i + 1].ceil() as i64 - x_off).min(gw as i64);
             let mut x = x_start;
             while x < x_end {
                 set_bit(&mut mask, z * gw + x as usize);
@@ -662,6 +670,8 @@ mod tests {
             sy: cells_y,
             grid_w: (w as f64 * cells_x).round() as usize,
             grid_h: (h as f64 * cells_y).round() as usize,
+            off_x: 0.0,
+            off_z: 0.0,
         };
         (raster, mapping)
     }

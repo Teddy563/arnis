@@ -176,7 +176,8 @@ pub fn apply_osm_land_override(
         "OSM land override: {} shore cells reclassified from ESA water to land",
         changes.len()
     );
-    land_cover.water_distance = compute_water_distance(&land_cover.grid, width, height);
+    land_cover.water_distance =
+        compute_water_distance(&land_cover.grid, width, height, land_cover.edge_is_shore);
     // Fork keeps the blend eager (no OnceCell): recompute it now, same pair the
     // water override uses.
     land_cover.refresh_water_blend_grid();
@@ -504,11 +505,12 @@ mod tests {
         let grid: Vec<Vec<u8>> = (0..60)
             .map(|z| (0..60).map(|x| f(x, z)).collect())
             .collect();
-        let water_distance = compute_water_distance(&grid, 60, 60);
+        let water_distance = compute_water_distance(&grid, 60, 60, true);
         let lc = LandCoverData {
             grid,
             water_distance,
             water_blend_grid: Vec::new(),
+            edge_is_shore: true,
             width: 60,
             height: 60,
         };

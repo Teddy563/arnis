@@ -191,8 +191,12 @@ pub fn apply_land_cover_repair(
     // these cells as water.
     let reclassified = reclassify_non_surface_water_cells(&mut land_cover.grid, &is_water_surface);
     if reclassified > 0 {
-        land_cover.water_distance =
-            crate::land_cover::compute_water_distance(&land_cover.grid, grid_w, grid_h);
+        land_cover.water_distance = crate::land_cover::compute_water_distance(
+            &land_cover.grid,
+            grid_w,
+            grid_h,
+            land_cover.edge_is_shore,
+        );
         // The water-blend smoothing was derived from the pre-reclassify
         // grid — refresh it so the softened shoreline reflects the updated
         // classification.
