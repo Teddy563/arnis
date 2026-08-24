@@ -445,6 +445,8 @@ fn download_tile_once(
     url: &str,
     tile_path: &Path,
 ) -> Result<TileImage, String> {
+    // Global in-flight cap: covers send + body read; released on drop (upstream #1274).
+    let _permit = crate::net::request_permit();
     let response = client.get(url).send().map_err(|e| e.to_string())?;
     response.error_for_status_ref().map_err(|e| e.to_string())?;
     let bytes = response.bytes().map_err(|e| e.to_string())?;
@@ -570,6 +572,7 @@ mod tests {
         let client = Client::new();
         let url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/17436/11365.png";
 
+        let _permit = crate::net::request_permit();
         let response = client.get(url).send();
         assert!(response.is_ok());
 

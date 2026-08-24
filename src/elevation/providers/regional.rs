@@ -271,6 +271,7 @@ pub(super) fn fetch_or_cache(
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
         }
 
+        let _permit = crate::net::request_permit();
         match client.get(url).send() {
             Ok(response) => {
                 let status = response.status();

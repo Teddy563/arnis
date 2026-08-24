@@ -37,6 +37,7 @@ mod map_renderer;
 mod map_transformation;
 mod mc_version;
 mod models_3d;
+mod net;
 mod osm_parser;
 mod overture;
 #[cfg(feature = "gui")]
