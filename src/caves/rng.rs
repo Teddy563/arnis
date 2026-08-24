@@ -211,7 +211,7 @@ fn md5_16(msg: &[u8]) -> [u8; 16] {
     }
     data.extend_from_slice(&bitlen.to_le_bytes());
 
-    for chunk in data.chunks_exact(64) {
+    for chunk in data.as_chunks::<64>().0 {
         let mut m = [0u32; 16];
         for i in 0..16 {
             m[i] = u32::from_le_bytes([
