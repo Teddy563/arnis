@@ -114,6 +114,12 @@ pub fn rgb_distance(from: &RGBTuple, to: &RGBTuple) -> u32 {
 pub fn oklab_distance(from: &RGBTuple, to: &RGBTuple) -> f32 {
     let a = rgb_to_oklab(from.0, from.1, from.2);
     let b = rgb_to_oklab(to.0, to.1, to.2);
+    oklab_distance_lab(a, b)
+}
+
+/// Squared distance between two already-converted Oklab colors, for callers
+/// that precompute a palette's Oklab form once instead of per comparison.
+pub fn oklab_distance_lab(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
     let dl = a.0 - b.0;
     let da = a.1 - b.1;
     let db = a.2 - b.2;
@@ -131,7 +137,7 @@ fn srgb_to_linear(c: u8) -> f32 {
 }
 
 #[inline]
-fn rgb_to_oklab(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+pub fn rgb_to_oklab(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
     let r = srgb_to_linear(r);
     let g = srgb_to_linear(g);
     let b = srgb_to_linear(b);
