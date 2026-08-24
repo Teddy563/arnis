@@ -40,6 +40,28 @@ notes: `docs/SHORELINE-ERA-PORT.md`.
   specialised categories and explicit tags are untouched; untagged parts
   inherit the group's era.
 
+### Added (wave 6)
+
+- **Measured Overture heights for heightless OSM buildings.** The OSM-sourced
+  Overture rows the footprint pass discards now feed an id-keyed hint map that
+  fills height/building:levels on OSM buildings carrying neither, ranked
+  between explicit tags and the per-type inference. Hints are harvested even
+  past the footprint cap so coverage can never differ between adjacent cells.
+- **OSM land override**: within ~15 m of the ESA shore, false-water becomes
+  land where OSM stamps roads/buildings or a mapped water area ends - quays
+  and promenades stop rendering underwater (Constanta live test: 1038 cells
+  reclaimed, water only ever shrinks). ARNIS_NO_LAND_OVERRIDE=1 kill-switch.
+- **Global HTTP permit (16 in-flight per process)** + shared 3D-model clients:
+  the socket-exhaustion crash class under parallel fetches is gone.
+- **Perceptual Oklab map-item colours** (--map-item / --map-item-only).
+- **ARNIS_BUILD_HASH**: the banner prints the commit the binary was built
+  from; bundle forensics become one grep.
+
+### Fixed (wave 6)
+
+- **Trees can no longer root on roofs**: both schematic slot paths re-check
+  the building footprint at the MOVED trunk position, not just the original.
+
 ### Fixed
 
 - **Underground buildings no longer stamp surface footprints** (upstream PR
