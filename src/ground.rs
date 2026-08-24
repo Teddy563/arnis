@@ -414,6 +414,37 @@ impl Ground {
         );
     }
 
+    /// Trim ESA false-water back to land in the mixed-pixel shore band where OSM
+    /// stamps roads/buildings or a mapped water area ends. Runs after the water
+    /// override (OSM water must already be LC_WATER) and before bridge repair.
+    /// Not strictly tile-invariant (band ops truncate at the cell edge), but the
+    /// edits are bounded to ~15 m of the ESA shore; ARNIS_NO_LAND_OVERRIDE=1 is
+    /// the kill-switch if a seam is ever attributed here.
+    pub fn apply_osm_land_override(
+        &mut self,
+        elements: &[ProcessedElement],
+        xzbbox: &XZBBox,
+        scale: f64,
+    ) {
+        if std::env::var_os("ARNIS_NO_LAND_OVERRIDE").is_some() {
+            return;
+        }
+        let Some(lc) = self.land_cover.as_mut() else {
+            return;
+        };
+        let Some(data) = self.elevation_data.as_ref() else {
+            return;
+        };
+        crate::land_cover_osm_land_override::apply_osm_land_override(
+            lc,
+            data.world_width,
+            data.world_height,
+            elements,
+            xzbbox,
+            scale,
+        );
+    }
+
     /// Reclassify cells under OSM-tagged bridges to the surrounding class.
     pub fn apply_bridge_land_cover_repair(
         &mut self,

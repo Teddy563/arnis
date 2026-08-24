@@ -39,14 +39,14 @@ fn get_waterway_width(waterway_type: &str) -> i32 {
 /// Widest channel a `width=*` tag may ask for. Every renderer of a waterway walks its width
 /// squared per centreline point, so an unbounded tag value hangs generation - and OSM does
 /// carry mistyped widths (a `width=1000` on a stream is a survey unit error, not a river).
-const MAX_WATERWAY_WIDTH: i32 = 128;
+pub(crate) const MAX_WATERWAY_WIDTH: i32 = 128;
 
 /// Effective channel width for a way (type default + optional `width` tag).
 ///
 /// The tag is parsed as a float and the unit suffix dropped, so `width=3 m` reads as 3
 /// rather than falling back to the type default. Values below 1, non-finite ones, and
 /// anything unparseable fall back; the rest are clamped to `MAX_WATERWAY_WIDTH`.
-fn waterway_width(way: &ProcessedWay) -> i32 {
+pub(crate) fn waterway_width(way: &ProcessedWay) -> i32 {
     let wt = way.tags.get("waterway").map(String::as_str).unwrap_or("");
     let tagged = way
         .tags
@@ -65,7 +65,7 @@ fn waterway_width(way: &ProcessedWay) -> i32 {
 ///
 /// Outlining these draws a canal down the crest of a dam or along a weir, which is how a
 /// barrage ends up with a river running across the top of it.
-fn is_channel_waterway(waterway_type: &str) -> bool {
+pub(crate) fn is_channel_waterway(waterway_type: &str) -> bool {
     !matches!(
         waterway_type,
         "dam"
@@ -92,7 +92,7 @@ fn is_channel_waterway(waterway_type: &str) -> bool {
 ///
 /// Covers any `tunnel=*` that is not an explicit negative, and any negative `layer`, not
 /// just -1..-3: a culvert drawn as open water cuts a channel straight through its bank.
-fn is_subgrade(way: &ProcessedWay) -> bool {
+pub(crate) fn is_subgrade(way: &ProcessedWay) -> bool {
     if way
         .tags
         .get("tunnel")

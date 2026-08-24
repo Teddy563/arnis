@@ -26,6 +26,7 @@ mod ground_generation;
 mod height_profile;
 mod land_cover;
 mod land_cover_bridge_repair;
+mod land_cover_osm_land_override;
 mod land_cover_osm_water_override;
 mod land_cover_shoreline;
 mod lowland;
@@ -543,8 +544,10 @@ fn run_cli() {
         .sort_by_key(|element: &osm_parser::ProcessedElement| osm_parser::get_priority(element));
     bench.mark("sort_priority");
 
-    // OSM water override first, then bridge repair handles remaining bridge-shadow cells.
+    // OSM water override first, then the land override trims ESA false-water in the
+    // shore band, then bridge repair handles remaining bridge-shadow cells.
     ground.apply_osm_water_override(&parsed_elements, &xzbbox);
+    ground.apply_osm_land_override(&parsed_elements, &xzbbox, args.scale);
     if args.debug {
         ground.save_land_cover_debug_image("landcover_debug_post_osm_water");
     }

@@ -1077,6 +1077,10 @@ fn read_u64(bytes: &[u8], offset: usize, big_endian: bool) -> u64 {
 /// Fill gaps (zero values) in the grid using nearest-neighbor interpolation.
 /// Iterates until no more gaps can be filled or a max number of passes is reached.
 fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
+    // Checked up front so a gap-free grid never pays for the snapshot below.
+    if !grid.iter().any(|row| row.contains(&0)) {
+        return;
+    }
     for _ in 0..10 {
         let mut changed = false;
         // Make a snapshot to read from while writing
