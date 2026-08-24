@@ -60,6 +60,7 @@ trap 'rm -rf "$TMP"' EXIT
 declare -A EXPECTED
 if [[ -f "$MANIFEST" ]]; then
     while IFS=$'\t' read -r name hash; do
+        hash="${hash%$'\r'}" # a CRLF checkout must not turn every row into a false DIFF
         [[ -n "$name" && "${name:0:1}" != "#" ]] && EXPECTED[$name]="$hash"
     done < "$MANIFEST"
 fi
