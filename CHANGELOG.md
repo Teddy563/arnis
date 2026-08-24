@@ -10,6 +10,35 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.5] - 2026-08-24
+
+The Overture placement release, driven by Discord reports of houses missing in
+some areas and overlapping roads in others - both turned out to be one
+projection bug - plus the upstream catch-up that leaves the fork zero commits
+behind louis-e/arnis main (c7b5f19d).
+
+### Fixed
+
+- **Overture footprints are projected in the master-origin frame.** The
+  Overture path built its coordinate transformer without the master origin, so
+  in every Meld master-origin cell the ML-derived buildings were converted in
+  the cell-local frame while OSM roads live in the project-global frame. The
+  cell overlapping the local range rendered them displaced - onto roads,
+  visually mis-oriented against their street - and every other cell silently
+  clipped them away, which read as missing houses. The OSM dedup also compared
+  centroids across the two frames and could never match. One frame now,
+  threaded through both CLI call sites and the GUI; plain-GUI and CLI runs
+  without a master origin are byte-identical (golden gate: all five fixtures
+  unchanged). Residual overlap in dense US suburbs is the ML footprint data
+  itself plus block-scale road widths, which upstream renders identically.
+- **Buildings seat on sunk terrain** (upstream 7c3c188c/a08c23ad, PR #1294,
+  hand-merged under the fork's tile-invariant corner sampling). The start-Y
+  reduction seeded from `args.ground_level`, stranding every building above a
+  terrain base that sits below it; it now reduces over the terrain samples and
+  falls back to `args.ground_level` only when no sample has terrain.
+- The golden-hash gate no longer reports a false DIFF for every fixture on a
+  CRLF checkout.
+
 ## [3.1.4] - 2026-08-23
 
 The performance branch, merged on top of the triage release: a phase of CPU
