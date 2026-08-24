@@ -649,15 +649,22 @@ mod underground_footprint_tests {
     use std::collections::HashMap;
 
     fn building(id: u64, tags: &[(&str, &str)]) -> ProcessedElement {
-        let mut t: HashMap<String, String> =
-            tags.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let mut t: HashMap<String, String> = tags
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         t.insert("building".to_string(), "yes".to_string());
         ProcessedElement::Way(ProcessedWay {
             id,
             tags: t,
             nodes: [(2, 2), (12, 2), (12, 12), (2, 12), (2, 2)]
                 .iter()
-                .map(|&(x, z)| ProcessedNode { id: 0, tags: HashMap::new(), x, z })
+                .map(|&(x, z)| ProcessedNode {
+                    id: 0,
+                    tags: HashMap::new(),
+                    x,
+                    z,
+                })
                 .collect(),
             unclipped_bounds: None,
             unclipped_polygon_area: None,
@@ -676,7 +683,10 @@ mod underground_footprint_tests {
 
         let only_surface = cache.collect_building_footprints(&elements[..1], &xzbbox);
         let both = cache.collect_building_footprints(&elements, &xzbbox);
-        assert!(only_surface.contains(7, 7), "surface building must stamp its footprint");
+        assert!(
+            only_surface.contains(7, 7),
+            "surface building must stamp its footprint"
+        );
         // The underground way adds nothing anywhere.
         for x in 0..20 {
             for z in 0..20 {
@@ -691,6 +701,8 @@ mod underground_footprint_tests {
         let xzbbox = XZBBox::rect_from_xz_lengths(20.0, 20.0).unwrap();
         let el = vec![building(3, &[("location", "surface"), ("layer", "-1")])];
         let cache = FloodFillCache::precompute(&el, None);
-        assert!(cache.collect_building_footprints(&el, &xzbbox).contains(7, 7));
+        assert!(cache
+            .collect_building_footprints(&el, &xzbbox)
+            .contains(7, 7));
     }
 }

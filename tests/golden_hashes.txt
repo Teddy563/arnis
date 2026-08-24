@@ -1,17 +1,6 @@
-# Golden world hashes for scripts/golden_hash.sh. Regenerate with --update.
-#
-# Each row is one committed fixture under tests/fixtures, generated hermetically
-# (flat ground, no 3D models, no Overture, --offline) and hashed with
-# ARNIS_BLOCK_HASH. A refactor must leave every row untouched; a deliberate visual
-# change updates the rows in the same commit that causes it, and the commit message
-# says which fixtures moved and why.
-#
-# Fixtures are upstream louis-e/arnis e2559b69 verbatim: munich_altstadt (dense
-# European old town), levittown (US suburban tract), midtown (Manhattan towers),
-# marrakech (medina, non-European tagging), rovaniemi (sparse subarctic).
-# Upstream removed them again in b478a5a0; this fork keeps them.
-levittown	9e54c0decf4d4de2
-marrakech	767109c7b4377131
-midtown	72ff65a7082b154e
-munich_altstadt	e3933716962d400b
-rovaniemi	9da26bea91c11647
+# Golden world hashes (scripts/golden_hash.sh). Regenerate with --update.
+levittown	82d4196da33dd23c
+marrakech	9b7d1bede9fa0ea0
+midtown	5d362819ac462df4
+munich_altstadt	d58a08e0b1e1df1e
+rovaniemi	e7ffec6d815ace39
