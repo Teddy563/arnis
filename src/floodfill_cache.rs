@@ -440,8 +440,15 @@ impl FloodFillCache {
         for element in elements {
             match element {
                 ProcessedElement::Way(way)
-                    if way.tags.contains_key("building")
-                        || way.tags.contains_key("building:part") =>
+                    if (way.tags.contains_key("building")
+                        || way.tags.contains_key("building:part"))
+                        // An underground building renders nothing at the surface, so its
+                        // footprint must not veto surface features above it (trees, props,
+                        // passages). Upstream PR #1269 slice; the render path already skips
+                        // these buildings with the same predicate.
+                        && !crate::element_processing::buildings::is_underground_building(
+                            &way.tags,
+                        ) =>
                 {
                     if let Some(cached) = self.way_cache.get(&way.id) {
                         for &(x, z) in cached.iter() {
@@ -450,9 +457,12 @@ impl FloodFillCache {
                     }
                 }
                 ProcessedElement::Relation(rel) => {
-                    let is_building = rel.tags.contains_key("building")
+                    let is_building = (rel.tags.contains_key("building")
                         || rel.tags.contains_key("building:part")
-                        || rel.tags.get("type").map(|t| t.as_str()) == Some("building");
+                        || rel.tags.get("type").map(|t| t.as_str()) == Some("building"))
+                        && !crate::element_processing::buildings::is_underground_building(
+                            &rel.tags,
+                        );
                     if is_building {
                         for member in &rel.members {
                             // Only treat outer members as building footprints.
@@ -628,5 +638,59 @@ mod tests {
             (0, 300),
             (0, 0)
         ])));
+    }
+}
+
+#[cfg(test)]
+mod underground_footprint_tests {
+    use super::*;
+    use crate::coordinate_system::cartesian::XZBBox;
+    use crate::osm_parser::{ProcessedElement, ProcessedNode, ProcessedWay};
+    use std::collections::HashMap;
+
+    fn building(id: u64, tags: &[(&str, &str)]) -> ProcessedElement {
+        let mut t: HashMap<String, String> =
+            tags.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        t.insert("building".to_string(), "yes".to_string());
+        ProcessedElement::Way(ProcessedWay {
+            id,
+            tags: t,
+            nodes: [(2, 2), (12, 2), (12, 12), (2, 12), (2, 2)]
+                .iter()
+                .map(|&(x, z)| ProcessedNode { id: 0, tags: HashMap::new(), x, z })
+                .collect(),
+            unclipped_bounds: None,
+            unclipped_polygon_area: None,
+        })
+    }
+
+    /// An underground car park must not stamp a surface footprint: the render path
+    /// skips the building, so its bitmap presence only vetoed trees and props above it.
+    #[test]
+    fn underground_building_leaves_no_footprint() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(20.0, 20.0).unwrap();
+        let surface = building(1, &[]);
+        let parking = building(2, &[("location", "underground")]);
+        let elements = vec![surface, parking];
+        let cache = FloodFillCache::precompute(&elements, None);
+
+        let only_surface = cache.collect_building_footprints(&elements[..1], &xzbbox);
+        let both = cache.collect_building_footprints(&elements, &xzbbox);
+        assert!(only_surface.contains(7, 7), "surface building must stamp its footprint");
+        // The underground way adds nothing anywhere.
+        for x in 0..20 {
+            for z in 0..20 {
+                assert_eq!(only_surface.contains(x, z), both.contains(x, z));
+            }
+        }
+    }
+
+    /// An explicit surface location beats layer=-1 (stacking order, not depth).
+    #[test]
+    fn explicit_surface_location_still_counts() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(20.0, 20.0).unwrap();
+        let el = vec![building(3, &[("location", "surface"), ("layer", "-1")])];
+        let cache = FloodFillCache::precompute(&el, None);
+        assert!(cache.collect_building_footprints(&el, &xzbbox).contains(7, 7));
     }
 }

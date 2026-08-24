@@ -1312,8 +1312,10 @@ impl BuildingBounds {
 
 /// Checks if a building sits underground and must be skipped.
 /// Takes `&HashMap` so the way path and the relation path share one predicate.
+/// pub(crate): the footprint bitmap builder shares it, so an underground car park
+/// stops vetoing trees and props on the surface above it (upstream PR #1269 slice).
 #[inline]
-fn is_underground_building(tags: &HashMap<String, String>) -> bool {
+pub(crate) fn is_underground_building(tags: &HashMap<String, String>) -> bool {
     // An explicit surface location wins over layer=-1, which is only stacking order
     match tags.get("location").map(String::as_str) {
         Some("underground") | Some("subway") => return true,
