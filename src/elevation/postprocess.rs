@@ -177,7 +177,14 @@ pub fn apply_land_cover_repair(
     // rivers are skipped, so downstream passes (pull-down BFS, Gaussian
     // source-masking) use the real water surface and not the contaminated
     // classification.
-    let is_water_surface = level_water_surfaces(heights, &land_cover.grid);
+    // A cropped render (a Meld cell) cannot use body-wide statistics; see
+    // level_water_surfaces_bounded. Single-bbox renders keep the component
+    // path unchanged.
+    let is_water_surface = if land_cover.edge_is_shore {
+        level_water_surfaces(heights, &land_cover.grid)
+    } else {
+        level_water_surfaces_bounded(heights, &land_cover.grid, land_cover.grid_origin)
+    };
 
     // Reclassify LC_WATER cells that weren't actually flattened to water
     // surface (ESA-misclassified riverbank walls / piers / shoreline
@@ -270,13 +277,20 @@ fn level_water_surfaces(heights: &mut [Vec<f64>], lc_grid: &[Vec<u8>]) -> Vec<Ve
     // Radius (in grid cells) for the per-cell local-median surface on
     // flowing water. Big enough to average out LiDAR noise and DSM tile
     // seams, small enough to follow a river's gradient at the scale of
-    // a meander or pool. At 1-to-1 grid-to-world mapping this is also
-    // the smoothing radius in blocks.
+    // a meander or pool.
     const LOCAL_SURFACE_RADIUS: i32 = 12;
     // Minimum neighbour water cells required to compute a stable local
     // median for a flowing-component cell. Cells with fewer fall back
     // to the component's own median.
     const MIN_LOCAL_SAMPLES: usize = 8;
+    // Radius (in grid cells) for the per-cell local-median surface on
+    // flowing water. Big enough to average out LiDAR noise and DSM tile
+    // seams, small enough to follow a river's gradient at the scale of
+    // a meander or pool. At 1-to-1 grid-to-world mapping this is also
+    // the smoothing radius in blocks.
+    // Minimum neighbour water cells required to compute a stable local
+    // median for a flowing-component cell. Cells with fewer fall back
+    // to the component's own median.
 
     let h = heights.len();
     let w = heights[0].len();
@@ -470,6 +484,238 @@ fn interquartile_range(values: &[f64]) -> f64 {
 /// Return the median elevation of water cells within `radius` of `(cx, cy)`,
 /// or `None` if fewer than `min_samples` finite water heights are in range.
 ///
+/// Water surface for a cropped render, computed with bounded support only.
+///
+/// The component path cannot be used in a Meld cell. It reduces each body to
+/// one number - a histogram mode, an adjacent-land clamp taken over the whole
+/// component, and a single still-versus-flowing decision - all measured over
+/// whatever part of the body this particular crop happens to contain. The
+/// neighbouring cell contains a different part, reaches a different number,
+/// and the water surface steps at the boundary; where the still/flowing choice
+/// flips across a seam the step is several blocks.
+///
+/// Here every input is a local statistic inside `LOCAL_SURFACE_RADIUS`, which
+/// is far inside Meld's 128-block cell halo, and the sampling lattice is
+/// anchored to world coordinates rather than to the crop. Two cells therefore
+/// read the same absolute cells and compute the same surface for every block
+/// they share.
+///
+/// A still body needs no special case: its local medians are all equal anyway,
+/// so it flattens to one level without a body-wide statistic.
+fn level_water_surfaces_bounded(
+    heights: &mut [Vec<f64>],
+    lc_grid: &[Vec<u8>],
+    grid_origin: (i64, i64),
+) -> Vec<Vec<bool>> {
+    const WATER_UP_TOLERANCE_M: f64 = 2.0;
+    // Sampling stride inside the window. A median over ~80 samples is as
+    // robust as one over 625, and this keeps an all-water cell to a fraction
+    // of a second. Anchored on world coordinates, so both cells sample the
+    // same absolute rows and columns.
+    const STRIDE: i32 = 3;
+    let h = heights.len();
+    if h == 0 {
+        return Vec::new();
+    }
+    let w = heights[0].len();
+    let mut is_water_surface = vec![vec![false; w]; h];
+    let heights_snapshot: Vec<Vec<f64>> = heights.to_vec();
+
+    let mut cells_leveled = 0usize;
+    let mut cells_skipped = 0usize;
+
+    // The window slides by one cell at a time while its contents barely
+    // change, so the surface is evaluated once per lattice point and shared by
+    // the cells around it: a ninth of the work for a difference well under the
+    // metre this is measuring. The lattice is the same world-anchored one the
+    // sampling uses, and it is extended a step past each edge so no cell has
+    // to fall back to a different centre near the crop boundary.
+    let phase_x = grid_origin.0.rem_euclid(STRIDE as i64) as i32;
+    let phase_y = grid_origin.1.rem_euclid(STRIDE as i64) as i32;
+    let lattice_x = |x: i32| (x + phase_x).div_euclid(STRIDE);
+    let lattice_y = |y: i32| (y + phase_y).div_euclid(STRIDE);
+    let kx0 = lattice_x(0) - 1;
+    let kx1 = lattice_x(w as i32 - 1) + 1;
+    let ky0 = lattice_y(0) - 1;
+    let ky1 = lattice_y(h as i32 - 1) + 1;
+    let lw = (kx1 - kx0 + 1) as usize;
+    let lh = (ky1 - ky0 + 1) as usize;
+    let mut lattice: Vec<Option<f64>> = vec![None; lw * lh];
+    for ky in ky0..=ky1 {
+        for kx in kx0..=kx1 {
+            // Centre of this lattice cell, in local grid coordinates.
+            let cx = kx * STRIDE - phase_x;
+            let cy = ky * STRIDE - phase_y;
+            lattice[((ky - ky0) as usize) * lw + (kx - kx0) as usize] =
+                lattice_surface(&heights_snapshot, lc_grid, cx, cy, grid_origin);
+        }
+    }
+
+    for cy in 0..h {
+        for cx in 0..w {
+            if lc_grid[cy][cx] != LC_WATER {
+                continue;
+            }
+            let orig = heights_snapshot[cy][cx];
+            if !orig.is_finite() {
+                continue;
+            }
+            let kx = lattice_x(cx as i32);
+            let ky = lattice_y(cy as i32);
+            let surface = lattice[((ky - ky0) as usize) * lw + (kx - kx0) as usize];
+            // No usable neighbourhood: leave the cell as terrain rather than
+            // reach for a crop-wide number, which is the thing a neighbouring
+            // cell would disagree about.
+            let Some(surface) = surface else {
+                cells_skipped += 1;
+                continue;
+            };
+
+            let at_or_below = orig <= surface + WATER_UP_TOLERANCE_M;
+            if at_or_below || !has_non_water_neighbor(lc_grid, cx, cy) {
+                heights[cy][cx] = surface;
+                is_water_surface[cy][cx] = true;
+                cells_leveled += 1;
+            } else {
+                cells_skipped += 1;
+            }
+        }
+    }
+
+    if cells_leveled > 0 || cells_skipped > 0 {
+        eprintln!(
+            "Land cover repair: {cells_leveled} water surface cells leveled from local surfaces, {cells_skipped} kept as terrain (cropped render)"
+        );
+    }
+    is_water_surface
+}
+
+/// Water surface at one lattice point: a local median of nearby water,
+/// clamped so a body cannot sit above the land around it. `None` when there is
+/// not enough water in reach to say anything.
+fn lattice_surface(
+    heights: &[Vec<f64>],
+    lc_grid: &[Vec<u8>],
+    cx: i32,
+    cy: i32,
+    grid_origin: (i64, i64),
+) -> Option<f64> {
+    const LOCAL_SURFACE_RADIUS: i32 = 12;
+    const MIN_LOCAL_SAMPLES: usize = 8;
+    // Widened radius for a point whose immediate neighbourhood is too sparse -
+    // a narrow creek, or the corner of a body. Still bounded.
+    const FALLBACK_RADIUS: i32 = 24;
+    const MIN_FALLBACK_SAMPLES: usize = 4;
+    const STRIDE: i32 = 3;
+
+    let surface = strided_local_stat(
+        heights,
+        lc_grid,
+        cx,
+        cy,
+        grid_origin,
+        LOCAL_SURFACE_RADIUS,
+        STRIDE,
+        MIN_LOCAL_SAMPLES,
+        true,
+        0.5,
+    )
+    .or_else(|| {
+        strided_local_stat(
+            heights,
+            lc_grid,
+            cx,
+            cy,
+            grid_origin,
+            FALLBACK_RADIUS,
+            STRIDE,
+            MIN_FALLBACK_SAMPLES,
+            true,
+            0.5,
+        )
+    })?;
+    // Bounded form of the adjacent-land clamp: a body must not sit above the
+    // land around it, measured in the same window.
+    Some(
+        match strided_local_stat(
+            heights,
+            lc_grid,
+            cx,
+            cy,
+            grid_origin,
+            LOCAL_SURFACE_RADIUS,
+            STRIDE,
+            MIN_LOCAL_SAMPLES,
+            false,
+            0.25,
+        ) {
+            Some(land_p25) => surface.min(land_p25),
+            None => surface,
+        },
+    )
+}
+
+/// Quantile of the finite heights of either the water or the non-water cells
+/// in a window around `(cx, cy)`, sampled on a world-anchored lattice.
+///
+/// `quantile` is a fraction of the sorted samples (0.5 = median). The lattice
+/// is keyed on absolute coordinates through `grid_origin`, so a cell that two
+/// renders share is sampled from the same absolute positions in both.
+#[allow(clippy::too_many_arguments)]
+fn strided_local_stat(
+    heights: &[Vec<f64>],
+    lc_grid: &[Vec<u8>],
+    cx: i32,
+    cy: i32,
+    grid_origin: (i64, i64),
+    radius: i32,
+    stride: i32,
+    min_samples: usize,
+    want_water: bool,
+    quantile: f64,
+) -> Option<f64> {
+    let h = heights.len() as i32;
+    if h == 0 {
+        return None;
+    }
+    let w = heights[0].len() as i32;
+    let stride = stride.max(1) as i64;
+    let mut samples: Vec<f64> = Vec::new();
+    for dy in -radius..=radius {
+        let ny = cy + dy;
+        if ny < 0 || ny >= h {
+            continue;
+        }
+        // World row, so the lattice does not move with the crop.
+        if (grid_origin.1 + ny as i64).rem_euclid(stride) != 0 {
+            continue;
+        }
+        for dx in -radius..=radius {
+            let nx = cx + dx;
+            if nx < 0 || nx >= w {
+                continue;
+            }
+            if (grid_origin.0 + nx as i64).rem_euclid(stride) != 0 {
+                continue;
+            }
+            let is_water = lc_grid[ny as usize][nx as usize] == LC_WATER;
+            if is_water != want_water {
+                continue;
+            }
+            let v = heights[ny as usize][nx as usize];
+            if v.is_finite() {
+                samples.push(v);
+            }
+        }
+    }
+    if samples.len() < min_samples {
+        return None;
+    }
+    let idx = ((samples.len() as f64 * quantile) as usize).min(samples.len() - 1);
+    samples.select_nth_unstable_by(idx, |a, b| a.partial_cmp(b).unwrap());
+    Some(samples[idx])
+}
+
 /// Used by the flowing-water path in `level_water_surfaces` to build a
 /// per-cell water surface that follows the river's gradient at scales
 /// longer than the radius, while still averaging out local DSM noise.
@@ -1352,6 +1598,146 @@ mod tests {
             for &h in row {
                 assert!(!h.is_nan(), "NaN values should be filled");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod water_surface_seam_tests {
+    use super::*;
+    use crate::land_cover::LC_GRASSLAND;
+
+    const WORLD_W: usize = 220;
+    const WORLD_H: usize = 60;
+    const RIVER_TOP: usize = 26;
+    const RIVER_BOT: usize = 34;
+
+    /// A river running west to east across the whole world, dropping 9 m over
+    /// its length (steep enough that the component path calls it "flowing" on
+    /// a wide crop and "still" on a narrow one), with per-cell DSM noise.
+    fn world() -> (Vec<Vec<f64>>, Vec<Vec<u8>>) {
+        let mut heights = vec![vec![0.0f64; WORLD_W]; WORLD_H];
+        let mut lc = vec![vec![LC_GRASSLAND; WORLD_W]; WORLD_H];
+        for y in 0..WORLD_H {
+            for x in 0..WORLD_W {
+                // Deterministic, position-only "noise" so both crops see the
+                // identical world.
+                let n = ((x * 7919 + y * 104_729) % 13) as f64 * 0.1;
+                let downstream = 40.0 - (x as f64) * 9.0 / (WORLD_W as f64);
+                if (RIVER_TOP..RIVER_BOT).contains(&y) {
+                    lc[y][x] = LC_WATER;
+                    heights[y][x] = downstream + n;
+                } else {
+                    heights[y][x] = downstream + 12.0 + n;
+                }
+            }
+        }
+        (heights, lc)
+    }
+
+    /// Take the columns `[x0, x1)` of the world as one render's grid.
+    fn crop(
+        heights: &[Vec<f64>],
+        lc: &[Vec<u8>],
+        x0: usize,
+        x1: usize,
+    ) -> (Vec<Vec<f64>>, Vec<Vec<u8>>) {
+        (
+            heights.iter().map(|r| r[x0..x1].to_vec()).collect(),
+            lc.iter().map(|r| r[x0..x1].to_vec()).collect(),
+        )
+    }
+
+    /// The property the whole fix exists for: two overlapping cells must give
+    /// the same water surface to every block they share.
+    ///
+    /// Compared at least `FALLBACK_RADIUS` (24) cells inside each crop's own
+    /// edge, where the sampling window is no longer truncated. Meld renders a
+    /// 128-block halo per cell and discards it at merge, so every block that
+    /// actually survives into the merged world is far inside that margin.
+    #[test]
+    fn adjacent_cells_agree_on_the_water_surface() {
+        let (heights, lc) = world();
+        let (a_x0, a_x1) = (0usize, 160usize);
+        let (b_x0, b_x1) = (40usize, 220usize);
+
+        let (mut ha, la) = crop(&heights, &lc, a_x0, a_x1);
+        let (mut hb, lb) = crop(&heights, &lc, b_x0, b_x1);
+        level_water_surfaces_bounded(&mut ha, &la, (a_x0 as i64, 0));
+        level_water_surfaces_bounded(&mut hb, &lb, (b_x0 as i64, 0));
+
+        let margin = 24usize;
+        let shared_lo = b_x0 + margin;
+        let shared_hi = a_x1 - margin;
+        assert!(shared_hi > shared_lo, "test crops do not overlap enough");
+
+        let mut compared = 0usize;
+        for y in RIVER_TOP..RIVER_BOT {
+            for wx in shared_lo..shared_hi {
+                let va = ha[y][wx - a_x0];
+                let vb = hb[y][wx - b_x0];
+                assert_eq!(
+                    va.to_bits(),
+                    vb.to_bits(),
+                    "water surface differs at world ({wx},{y}): {va} vs {vb}"
+                );
+                compared += 1;
+            }
+        }
+        assert!(compared > 300, "only compared {compared} cells");
+    }
+
+    /// The behaviour that made the fix necessary, kept as documentation: the
+    /// component path reduces the river to one crop-wide decision, so the two
+    /// cells hand the same block different surfaces. If this ever stops
+    /// failing, the component path became tile-safe and the split can go.
+    #[test]
+    fn the_component_path_is_what_disagrees() {
+        let (heights, lc) = world();
+        let (a_x0, a_x1) = (0usize, 160usize);
+        let (b_x0, b_x1) = (40usize, 220usize);
+
+        let (mut ha, la) = crop(&heights, &lc, a_x0, a_x1);
+        let (mut hb, lb) = crop(&heights, &lc, b_x0, b_x1);
+        level_water_surfaces(&mut ha, &la);
+        level_water_surfaces(&mut hb, &lb);
+
+        let mut disagreements = 0usize;
+        for y in RIVER_TOP..RIVER_BOT {
+            for wx in (b_x0 + 24)..(a_x1 - 24) {
+                if ha[y][wx - a_x0] != hb[y][wx - b_x0] {
+                    disagreements += 1;
+                }
+            }
+        }
+        assert!(
+            disagreements > 0,
+            "expected the component path to disagree across crops"
+        );
+    }
+
+    /// A lake still ends up flat: the bounded path needs no still-water case
+    /// because every local median inside a flat body is the same number.
+    #[test]
+    fn a_still_body_still_flattens() {
+        let mut heights = vec![vec![50.0f64; 80]; 80];
+        let mut lc = vec![vec![LC_GRASSLAND; 80]; 80];
+        for y in 20..60 {
+            for x in 20..60 {
+                lc[y][x] = LC_WATER;
+                // Chop: a metre of noise on the surface.
+                heights[y][x] = 30.0 + ((x * 31 + y * 17) % 7) as f64 * 0.15;
+            }
+        }
+        level_water_surfaces_bounded(&mut heights, &lc, (0, 0));
+
+        let centre: Vec<f64> = (30..50).map(|x| heights[40][x]).collect();
+        let first = centre[0];
+        for v in &centre {
+            assert!(
+                (v - first).abs() < 1e-9,
+                "lake surface is not flat: {centre:?}"
+            );
         }
     }
 }

@@ -511,6 +511,7 @@ mod tests {
             water_distance,
             water_blend_grid: Vec::new(),
             edge_is_shore: true,
+            grid_origin: (0, 0),
             width: 60,
             height: 60,
         };

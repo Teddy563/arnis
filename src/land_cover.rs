@@ -80,6 +80,13 @@ pub struct LandCoverData {
     /// arbitrary crop through the world (a Meld cell). Recomputes of
     /// `water_distance` must keep the same rule the first pass used.
     pub edge_is_shore: bool,
+    /// Global block coordinates of grid cell (0, 0) in the shared master
+    /// frame, or `(0, 0)` for a single-bbox render where the grid IS the world.
+    ///
+    /// Lets a pass anchor a sampling lattice to the world instead of to this
+    /// crop, so two cells sample the same absolute positions and agree on
+    /// whatever they compute from them.
+    pub grid_origin: (i64, i64),
     /// Grid width (matches elevation grid width)
     pub width: usize,
     /// Grid height (matches elevation grid height)
@@ -199,6 +206,18 @@ pub fn fetch_land_cover_data(
         }
     }
 
+    let mapping_for_origin = {
+        let ppd = raster.as_ref().map(|r| r.ppd).unwrap_or(0.0);
+        match &master {
+            Some(frame) => GridMapping::new_master(frame, bbox, ppd, grid_width, grid_height),
+            None => GridMapping::new(bbox, ppd, grid_width, grid_height),
+        }
+    };
+    let grid_origin = mapping_for_origin
+        .as_ref()
+        .map(|m| (m.off_xi(), m.off_zi()))
+        .unwrap_or((0, 0));
+
     let mut grid = match (&raster, {
         let ppd = raster.as_ref().map(|r| r.ppd).unwrap_or(0.0);
         match &master {
@@ -262,6 +281,7 @@ pub fn fetch_land_cover_data(
         water_distance,
         water_blend_grid,
         edge_is_shore: master.is_none(),
+        grid_origin,
         width: grid_width,
         height: grid_height,
     })
