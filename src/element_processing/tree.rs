@@ -653,9 +653,13 @@ impl Tree {
             // pick_slot picks the density-aware trunk slot, the grove/clearing gate, and the schem.
             // It returns None for a clearing (spacing gap) - that is how the forest gets its patches.
             if let Some((sx, sz, idx, rot)) = region.pick_slot(x, z, hint, elev_y) {
-                // The slot can be several blocks from (x,z); re-check it isn't on a road/water cell.
+                // The slot can be several blocks from (x,z); re-check EVERY placement gate at the
+                // moved position. The building footprint was missing here (upstream 9da8472
+                // slice D): the footprint was only checked at the original (x,z), so a slot
+                // nudged a few blocks could still root a trunk on a roof.
                 if in_water_mask(sx, sz)
                     || bridge_surface.is_some_and(|b| b.contains(sx, sz))
+                    || building_footprints.is_some_and(|f| f.contains(sx, sz))
                     || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
                 {
                     return;
@@ -702,10 +706,13 @@ impl Tree {
             // (>= 1 block gap), and seed every pick on the slot so all Arnis spawns inside the
             // same cell collapse to the identical tree (idempotent, seam-safe).
             let (sx, sz) = crate::schematic::trunk_slot(x, z, *scale);
-            // The slot can be up to ~2 blocks from (x,z); re-check it is not on a road/water
-            // surface (the top-of-function check ran at the un-snapped point).
+            // The slot can be up to ~2 blocks from (x,z); re-check EVERY placement gate at the
+            // snapped point (the top-of-function checks ran at the un-snapped one). The building
+            // footprint was missing here too - same upstream 9da8472 slice-D bug as the
+            // region-pack path above.
             if in_water_mask(sx, sz)
                 || bridge_surface.is_some_and(|b| b.contains(sx, sz))
+                || building_footprints.is_some_and(|f| f.contains(sx, sz))
                 || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
             {
                 return;
