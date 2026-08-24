@@ -10,11 +10,12 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
-## [Unreleased]
+## [3.1.6] - 2026-08-24
 
-Two upstream feature families hand-ported so the fork renders like current
-louis-e/arnis while staying seam-safe for Meld's multi-cell worlds. Full port
-notes: `docs/SHORELINE-ERA-PORT.md`.
+Building realism and shoreline waves: upstream feature families hand-ported so
+the fork renders like current louis-e/arnis while staying seam-safe for Meld's
+multi-cell worlds, plus a batch of stability fixes. Full port notes:
+`docs/SHORELINE-ERA-PORT.md`; gap audit and wave rows in the triage ledger.
 
 ### Added
 
@@ -40,7 +41,7 @@ notes: `docs/SHORELINE-ERA-PORT.md`.
   specialised categories and explicit tags are untouched; untagged parts
   inherit the group's era.
 
-### Added (wave 6)
+### Added, second wave
 
 - **Measured Overture heights for heightless OSM buildings.** The OSM-sourced
   Overture rows the footprint pass discards now feed an id-keyed hint map that
@@ -57,7 +58,7 @@ notes: `docs/SHORELINE-ERA-PORT.md`.
 - **ARNIS_BUILD_HASH**: the banner prints the commit the binary was built
   from; bundle forensics become one grep.
 
-### Fixed (wave 6)
+### Fixed, second wave
 
 - **Trees can no longer root on roofs**: both schematic slot paths re-check
   the building footprint at the MOVED trunk position, not just the original.
