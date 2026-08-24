@@ -10,6 +10,47 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.7] - 2026-08-24
+
+Underwater terrain and the groundwork for consistent coastlines in multi-cell
+worlds.
+
+### Fixed
+
+- **Riverbeds and underwater slopes are deeper and properly shaped.** The depth
+  curve was rounded down at every column, which both shallowed the whole bed
+  and widened each terrace: a 20-block-wide river came out as a four-block flat
+  shelf followed by two flat steps, reading as a ribbon rather than a channel.
+  It now follows the curve, so a river of that width gets a real channel, and
+  every body sits at the depth its size implies.
+- **A cell no longer treats its own edge as a coastline.** The distance-to-shore
+  field seeded the grid border as shore. That is right for a single-area render,
+  where the border is the end of the known world, and wrong for a Meld cell,
+  where it is an arbitrary cut through open water: the bed shallowed on the
+  approach to the border, so a channel crossing between cells was carved
+  shallower on one bank than the other. The rule now comes from the render's own
+  frame and follows the land-cover data through every recompute.
+
+### Changed
+
+- **Land cover in multi-cell worlds is sampled in one shared frame.** Each cell
+  used to build its pixel-to-block mapping from its own bounding box, so two
+  neighbours scaled from slightly different spans and could disagree about which
+  block a boundary belongs to. Cells now map through the project's shared origin
+  and scale: the mapping produces identical coordinates everywhere, rounding
+  happens in that shared space, and a cell's position is applied afterwards as a
+  whole-block offset. The tiled mapping also uses the true blocks-per-pixel of
+  the shared world layout instead of the cell's own span, which removes a small
+  drift between land cover and the features it sits under. Single-area renders
+  are byte-for-byte unchanged.
+
+### Notes
+
+Water surface levelling across cell boundaries is still open and is the next
+piece of this work; a candidate fix measured worse than the current behaviour on
+a live 4x4 cell test, so it was held back rather than shipped. Design notes for
+the remaining coastline work are in `docs/SHORELINE-TILED-DESIGN.md`.
+
 ## [3.1.6] - 2026-08-24
 
 Building realism and shoreline waves: upstream feature families hand-ported so

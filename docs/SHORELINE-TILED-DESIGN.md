@@ -134,23 +134,46 @@ profile flooring away half a block per column, and `compute_water_distance`
 treating a cropped cell's edge as coastline (which carved one bank of a
 seam-crossing channel shallower than the other).
 
-Also found and NOT yet fixed, ranked by user-visible impact:
+MEASURED 2026-08-24, and it overturns the ranking below. A 4x4 grid of cells
+was rendered over Navodari (Black Sea coast, Lake Siutghiol, the canal) with
+the shipped 3.1.6 and with a candidate fix, using Meld's real geometry: shared
+master origin, the elevation lock, a 128-block halo per cell, and columns
+within 24 blocks of a rendered edge excluded because the merge discards them.
+Water surface height was compared for every world column two neighbouring cells
+both produced.
 
-1. `level_water_surfaces` reduces each water body to one crop-global number
-   (histogram mode, a component-wide land clamp, and a per-crop still-versus-
-   flowing decision) with no master-origin awareness. A river crossing three
-   cells is three components with three surfaces, so the water HEIGHT steps at
-   the seam: about a block routinely, more where the still/flowing choice flips
-   across the boundary. This is a live seam in shipped merged worlds today,
-   independent of the shoreline pass, and it is the biggest remaining water
-   defect. Fix shape: keep the single-bbox path byte-identical, add a tiled
-   path with bounded support instead of whole-component statistics.
-2. Water that exists only in OSM is never surface-levelled at all: the levelling
-   runs during the elevation fetch on the ESA-only mask, and OSM water is
-   stamped afterwards, so an OSM-only river keeps raw DEM noise under it.
+    shipped 3.1.6   4411 of 1069037 shared columns disagree (0.41%), worst 6
+    candidate fix   4850 of 1070199 shared columns disagree (0.45%), worst 6
+
+The candidate replaced `level_water_surfaces`' body-wide statistics with
+bounded local ones, which is what this document previously called the biggest
+remaining water defect. It is not. The four worst cell pairs are unchanged by
+it - 1735 to 1732, 1344 to 1331, 785 to 786, 363 to 363, every one of them
+100% of their shared columns at up to 6 blocks - so whatever drives the real
+seam is upstream of surface levelling. All four involve the westernmost column
+of cells, which is the thread to pull next. The candidate is parked on
+`wip/water-surface-bounded`; it was not shipped, because it adds a code path
+and measures slightly worse.
+
+Two intermediate harness mistakes worth remembering, because both produced
+confident wrong answers:
+
+- Omitting the elevation lock let each cell normalise its own height range, so
+  identical real heights mapped to different Y. That alone reported 637 and 353
+  disagreements where the truth was 46 and 263.
+- Comparing cells rendered edge-to-edge, with no halo, sampled exactly the
+  columns where a bounded window is truncated. That made the bounded candidate
+  look 5x worse than shipped when the real difference is a few percent.
+
+Still open, no longer ranked until the real cause is identified:
+
+1. Whatever produces the 6-block steps on the western cell pairs above.
+2. Water that exists only in OSM is never surface-levelled: the levelling runs
+   during the elevation fetch on the ESA-only mask, and OSM water is stamped
+   afterwards, so an OSM-only river keeps raw DEM noise under it.
 3. `comp_max` is a per-component maximum taken over the crop, so a body cut by
    a cell boundary can pick a different depth band on each side. Worth zero to
-   one block; bound it to the core.
+   one block.
 
 The bed geometry does NOT need the window treatment: its distance transform
 saturates at 85 blocks, inside Meld's 128-block halo, and it already treats its
