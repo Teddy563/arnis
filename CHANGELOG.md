@@ -10,6 +10,44 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [Unreleased]
+
+Two upstream feature families hand-ported so the fork renders like current
+louis-e/arnis while staying seam-safe for Meld's multi-cell worlds. Full port
+notes: `docs/SHORELINE-ERA-PORT.md`.
+
+### Added
+
+- **Sub-pixel ESA shoreline reconstruction** (upstream d594d585). Land-cover
+  coasts no longer render as 10-block staircases at 1:1: the water boundary is
+  traced as pixel rings, simplified against fitted lines and rasterized back.
+  Runs in single-bbox renders only; in Meld master-origin cells it is gated off
+  (ring fitting is not tile-invariant - a smoothed shore would step at every
+  cell seam) with `ARNIS_SHORELINE_TILED=1` as the experimental opt-in. Also
+  no-ops below ~scale 0.216, so 1:10 planet renders are untouched either way.
+  Verified against bare upstream v3.1.0 on a live Black Sea render: water-mask
+  IoU 0.9872, shoreline straightness within 2%.
+- **Per-type building height inference** (upstream bb1fb63c). Buildings with no
+  height data - the common case - draw from per-type storey distributions
+  instead of a flat 10-block default. Deterministic per building via the group
+  seed; explicit tags always win; tagged garages honour the mapper. MELD:
+  the footprint-area steer uses the pre-clip polygon area, so a building
+  straddling two cells infers the same height in both.
+- **Architectural era classification** (upstream 4bef7ad2, fork-native
+  consumer). Heritage/architecture/start_date/material tags classify every
+  building into an era that biases the urban wall palettes (pre-war masonry,
+  panel-era concrete, 1980+ light contemporary) and window-frame frequency;
+  specialised categories and explicit tags are untouched; untagged parts
+  inherit the group's era.
+
+### Fixed
+
+- **Underground buildings no longer stamp surface footprints** (upstream PR
+  #1269 slice), so trees and props are no longer vetoed above underground car
+  parks.
+- ESA land-cover resampling is cell-pull over a real pixel raster instead of
+  pixel-centre scatter - gap-free at any scale.
+
 ## [3.1.5] - 2026-08-24
 
 The Overture placement release, driven by Discord reports of houses missing in
