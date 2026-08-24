@@ -222,7 +222,14 @@ impl Ground {
         let (world_w, world_h, grid_w, grid_h) =
             compute_grid_dims(bbox, scale, master_origin_lat, master_origin_lng);
         let mut land_cover = if fetch_land_cover {
-            let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h);
+            // Master origin set = a Meld tiled cell: the shoreline pass gates
+            // itself off there (see fetch_land_cover_data).
+            let lc = land_cover::fetch_land_cover_data(
+                bbox,
+                grid_w,
+                grid_h,
+                master_origin_lat.is_some() && master_origin_lng.is_some(),
+            );
             if lc.is_some() {
                 println!("Land cover data loaded successfully");
             } else {

@@ -27,6 +27,7 @@ mod height_profile;
 mod land_cover;
 mod land_cover_bridge_repair;
 mod land_cover_osm_water_override;
+mod land_cover_shoreline;
 mod lowland;
 mod luanti_block_map;
 mod map_item;
