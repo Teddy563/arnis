@@ -1377,13 +1377,18 @@ fn calculate_start_y_offset(
                 element.nodes.iter().map(|n| (n.x, n.z)).collect()
             };
 
-        let mut max_ground_level = args.ground_level;
+        // Seeded from the terrain itself, never from args.ground_level: with a sunk
+        // terrain base (deep-floor datapack, scaled Meld renders) a seeded max would
+        // strand every low-lying building up at the requested ground level. Falls back
+        // to args.ground_level only when no sample point has terrain at all.
+        // (Upstream 7c3c188c/a08c23ad, merged into the tile-invariant sampling above.)
+        let mut max_ground_level: Option<i32> = None;
         for &(px, pz) in &sample_points {
             if let Some(level) = editor.terrain_level(px, pz) {
-                max_ground_level = max_ground_level.max(level);
+                max_ground_level = Some(max_ground_level.map_or(level, |m: i32| m.max(level)));
             }
         }
-        max_ground_level + min_level_offset
+        max_ground_level.unwrap_or(args.ground_level) + min_level_offset
     } else {
         min_level_offset
     }
@@ -7947,5 +7952,78 @@ mod height_tests {
             let (h, _) = calculate_building_height(&way, 0, 1.0, None);
             assert_eq!(h, 20, "min_height={bad:?} produced height {h}");
         }
+    }
+}
+
+#[cfg(test)]
+mod start_y_tests {
+    use super::*;
+    use crate::coordinate_system::cartesian::XZBBox;
+    use crate::coordinate_system::geographic::LLBBox;
+    use clap::Parser as _;
+    use std::path::PathBuf;
+
+    /// Terrain mode, flat ground at `terrain_y`, one 10..20 rect building.
+    fn offset_for(terrain_y: Option<i32>) -> i32 {
+        let xzbbox = XZBBox::rect_from_xz_lengths(64.0, 64.0).unwrap();
+        let llbbox = LLBBox::new(54.6, 9.9, 54.61, 9.91).unwrap();
+        let mut editor = WorldEditor::new(PathBuf::from("/dev/null/unused"), &xzbbox, llbbox);
+        if let Some(y) = terrain_y {
+            editor.set_ground(std::sync::Arc::new(crate::ground::Ground::new_flat(y)));
+        }
+        let way = ProcessedWay {
+            id: 1,
+            tags: std::collections::HashMap::from([("building".to_string(), "yes".to_string())]),
+            nodes: vec![
+                ProcessedNode {
+                    id: 1,
+                    tags: Default::default(),
+                    x: 10,
+                    z: 10,
+                },
+                ProcessedNode {
+                    id: 2,
+                    tags: Default::default(),
+                    x: 20,
+                    z: 10,
+                },
+                ProcessedNode {
+                    id: 3,
+                    tags: Default::default(),
+                    x: 20,
+                    z: 20,
+                },
+                ProcessedNode {
+                    id: 4,
+                    tags: Default::default(),
+                    x: 10,
+                    z: 20,
+                },
+            ],
+            unclipped_bounds: Some((10, 20, 10, 20)),
+            unclipped_polygon_area: None,
+        };
+        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4", "--terrain"].iter());
+        calculate_start_y_offset(&editor, &way, &args, 0)
+    }
+
+    /// A sunk terrain base (deep-floor datapack, scaled renders) must pull the
+    /// building down with it instead of stranding it at args.ground_level.
+    /// Upstream 7c3c188c.
+    #[test]
+    fn sunk_terrain_base_does_not_strand_buildings() {
+        assert_eq!(offset_for(Some(-1500)), -1500);
+    }
+
+    #[test]
+    fn vanilla_terrain_is_unchanged() {
+        assert_eq!(offset_for(Some(-62)), -62);
+        assert_eq!(offset_for(Some(80)), 80);
+    }
+
+    /// No terrain data at any sample point: fall back to args.ground_level (-62 default).
+    #[test]
+    fn no_terrain_samples_fall_back_to_ground_level() {
+        assert_eq!(offset_for(None), -62);
     }
 }
