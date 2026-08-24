@@ -7,7 +7,9 @@ use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::historic;
 use crate::element_processing::subprocessor::buildings_interior::generate_building_interior;
 use crate::floodfill_cache::{CoordinateBitmap, FloodFillCache};
-use crate::osm_parser::{ProcessedMemberRole, ProcessedNode, ProcessedRelation, ProcessedWay};
+use crate::osm_parser::{
+    ArchEra, ProcessedMemberRole, ProcessedNode, ProcessedRelation, ProcessedWay,
+};
 use crate::world_editor::WorldEditor;
 use fastnbt::Value;
 use rand::Rng;
@@ -935,6 +937,7 @@ impl BuildingStyle {
         footprint_size: usize,
         _rng: &mut impl Rng,
         tile_invariant_seed: u64,
+        group_seed: u64,
     ) -> Self {
         // Each independent decision below uses its OWN deterministic stream
         // seeded from element.id + a fixed salt, so a tile-variant gate
@@ -955,10 +958,24 @@ impl BuildingStyle {
 
         // === Block Palette ===
 
+        // Architectural era from tags; an untagged building:part inherits the
+        // era of its group via the style hint packed into the shared group
+        // seed, so all parts of one building agree (upstream 4bef7ad2).
+        let era = {
+            let e = crate::osm_parser::building_arch_era(&element.tags);
+            if e == ArchEra::Unknown && element.tags.contains_key("building:part") {
+                crate::osm_parser::arch_era_from_hint(crate::osm_parser::style_hint_from_seed(
+                    group_seed,
+                ))
+            } else {
+                e
+            }
+        };
+
         // Wall block: from tags, preset, or category palette
         let wall_block = preset
             .wall_block
-            .unwrap_or_else(|| determine_wall_block(element, category, &mut rng_wall));
+            .unwrap_or_else(|| determine_wall_block(element, category, era, &mut rng_wall));
 
         // Floor block: from preset or random
         // For glassy/modern skyscrapers, use dark cap materials for the flat roof
@@ -1400,6 +1417,7 @@ fn calculate_start_y_offset(
 fn determine_wall_block(
     element: &ProcessedWay,
     category: BuildingCategory,
+    era: ArchEra,
     rng: &mut impl Rng,
 ) -> Block {
     // Historic castles have their own special treatment.
@@ -1434,8 +1452,48 @@ fn determine_wall_block(
         }
     }
 
-    // Otherwise, select from category-specific palette
-    get_wall_block_for_category(category, rng)
+    // Otherwise, select from category-specific palette, biased by the
+    // building's architectural era (upstream 4bef7ad2, fork-native hook:
+    // explicit material/colour tags above always win, exactly like upstream).
+    get_wall_block_for_category(category, era, rng)
+}
+
+/// Era wall pools for the general urban categories. Sourced from the fork's own
+/// registry so every block already appears in some category palette; the era
+/// only narrows the draw, it never invents a new look.
+const ERA_PREWAR_WALLS: [Block; 6] = [
+    BRICK,
+    STONE_BRICKS,
+    SANDSTONE,
+    SMOOTH_SANDSTONE,
+    MUD_BRICKS,
+    WHITE_TERRACOTTA,
+];
+const ERA_PANEL_WALLS: [Block; 4] = [
+    GRAY_CONCRETE,
+    LIGHT_GRAY_CONCRETE,
+    SMOOTH_STONE,
+    WHITE_CONCRETE,
+];
+const ERA_MODERN_WALLS: [Block; 4] = [
+    WHITE_CONCRETE,
+    QUARTZ_BLOCK,
+    LIGHT_GRAY_CONCRETE,
+    POLISHED_ANDESITE,
+];
+
+/// Whether the era should steer this category's palette. Specialised categories
+/// (farm, religious, industrial, glass towers, sheds…) keep their curated look
+/// untouched, mirroring upstream's scoping.
+fn era_steers_category(category: BuildingCategory) -> bool {
+    matches!(
+        category,
+        BuildingCategory::House
+            | BuildingCategory::Residential
+            | BuildingCategory::Commercial
+            | BuildingCategory::Office
+            | BuildingCategory::Hotel
+    )
 }
 
 /// Walls accepted only ~20% of the time when picked, to keep them rare.
@@ -1458,7 +1516,34 @@ fn pick_with_rare_filter<R: Rng>(palette: &[Block], rng: &mut R) -> Block {
 }
 
 /// Selects a wall block from the appropriate category palette
-fn get_wall_block_for_category(category: BuildingCategory, rng: &mut impl Rng) -> Block {
+fn get_wall_block_for_category(
+    category: BuildingCategory,
+    era: ArchEra,
+    rng: &mut impl Rng,
+) -> Block {
+    // Era bias for the general urban fabric: pre-war reads as masonry, the
+    // panel era as concrete/render, 1980+ as light contemporary. Historic-
+    // ornate buildings borrow the Historic palette outright. 70% adherence,
+    // so an era never produces a uniform street. One rng draw either way
+    // keeps the draw count stable for the fallthrough path.
+    if era_steers_category(category) && era != ArchEra::Unknown {
+        let adhere = rng.random_bool(0.70);
+        if adhere {
+            return match era {
+                ArchEra::HistoricOrnate => pick_with_rare_filter(&HISTORIC_WALL_OPTIONS, rng),
+                ArchEra::TraditionalPreWar => {
+                    ERA_PREWAR_WALLS[rng.random_range(0..ERA_PREWAR_WALLS.len())]
+                }
+                ArchEra::PostWarPanel => {
+                    ERA_PANEL_WALLS[rng.random_range(0..ERA_PANEL_WALLS.len())]
+                }
+                ArchEra::Contemporary => {
+                    ERA_MODERN_WALLS[rng.random_range(0..ERA_MODERN_WALLS.len())]
+                }
+                ArchEra::Unknown => unreachable!(),
+            };
+        }
+    }
     match category {
         BuildingCategory::House | BuildingCategory::Residential => {
             pick_with_rare_filter(&RESIDENTIAL_WALL_OPTIONS, rng)
@@ -3448,18 +3533,32 @@ impl WindowFrameStyle {
 
 /// Picks a per-building frame style for the categories the fork's own residential shutter/sill/
 /// balcony decorator does NOT cover (Commercial/Hotel/Historic), so the two never double-decorate.
-/// House/Residential keep the fork decorator. 55% of eligible buildings get a frame.
-fn pick_window_frame(category: BuildingCategory, element_id: u64) -> Option<WindowFrameStyle> {
+/// House/Residential keep the fork decorator. 55% of eligible buildings get a frame; the
+/// architectural era shifts that (heritage 80% and ornate-first pool, panel era 15%) —
+/// upstream 4bef7ad2's frame modulation, applied inside the fork's category gate.
+fn pick_window_frame(
+    category: BuildingCategory,
+    era: ArchEra,
+    element_id: u64,
+) -> Option<WindowFrameStyle> {
     use WindowFrameStyle::*;
-    let pool: &[WindowFrameStyle] = match category {
-        BuildingCategory::Commercial | BuildingCategory::Hotel => {
+    let pool: &[WindowFrameStyle] = match (era, category) {
+        (ArchEra::HistoricOrnate, BuildingCategory::Commercial | BuildingCategory::Hotel) => {
+            &[StoneOrnate, Blackstone, QuartzModern]
+        }
+        (_, BuildingCategory::Commercial | BuildingCategory::Hotel) => {
             &[QuartzModern, Blackstone, StoneOrnate]
         }
-        BuildingCategory::Historic => &[RusticMossy, StoneOrnate, Blackstone],
+        (_, BuildingCategory::Historic) => &[RusticMossy, StoneOrnate, Blackstone],
         _ => return None,
     };
+    let frame_p = match era {
+        ArchEra::HistoricOrnate => 0.80,
+        ArchEra::PostWarPanel => 0.15,
+        _ => 0.55,
+    };
     let mut rng = element_rng(element_id ^ 0xF7A3_E001_57BD_2210);
-    rng.random_bool(0.55)
+    rng.random_bool(frame_p)
         .then(|| pool[rng.random_range(0..pool.len())])
 }
 
@@ -5037,6 +5136,7 @@ pub fn generate_buildings(
         cached_footprint_size,
         &mut rng,
         args.tile_invariant_rendering.unwrap_or(0),
+        group_seed,
     );
 
     let condition = BuildingCondition::from_tags(&element.tags);
@@ -5144,7 +5244,13 @@ pub fn generate_buildings(
             && min_level_offset == 0
             && element_rng(group_seed ^ 0x5709_EF90_0000_0002).random_bool(0.60),
         window_frame: (has_windows && condition == BuildingCondition::Normal && !is_tall_building)
-            .then(|| pick_window_frame(category, element.id))
+            .then(|| {
+                pick_window_frame(
+                    category,
+                    crate::osm_parser::building_arch_era(&element.tags),
+                    element.id,
+                )
+            })
             .flatten(),
     };
 
@@ -8305,5 +8411,75 @@ mod start_y_tests {
     #[test]
     fn no_terrain_samples_fall_back_to_ground_level() {
         assert_eq!(offset_for(None), -62);
+    }
+}
+
+#[cfg(test)]
+mod era_style_tests {
+    use super::*;
+
+    /// Deterministic over fixed ids: heritage buildings get frames far more
+    /// often than the 55% base, the panel era far less. Counts are exact for
+    /// this seeded RNG, so the assertion can never flake.
+    #[test]
+    fn era_shifts_window_frame_frequency() {
+        let count = |era: ArchEra| {
+            (0..400u64)
+                .filter(|&id| pick_window_frame(BuildingCategory::Commercial, era, id).is_some())
+                .count()
+        };
+        let heritage = count(ArchEra::HistoricOrnate);
+        let normal = count(ArchEra::Unknown);
+        let panel = count(ArchEra::PostWarPanel);
+        assert!(
+            heritage > normal && normal > panel,
+            "expected heritage {heritage} > normal {normal} > panel {panel}"
+        );
+        // The base rate is untouched for era-less buildings: ~55% of 400.
+        assert!((180..=260).contains(&normal), "base rate moved: {normal}");
+    }
+
+    /// The era only steers the general urban fabric; specialised categories
+    /// keep their curated palette even for a heritage-tagged farm.
+    #[test]
+    fn era_never_steers_specialised_categories() {
+        for seed in 0..50u64 {
+            let mut rng = element_rng(seed);
+            let with_era = get_wall_block_for_category(
+                BuildingCategory::Farm,
+                ArchEra::HistoricOrnate,
+                &mut rng,
+            );
+            let mut rng = element_rng(seed);
+            let without =
+                get_wall_block_for_category(BuildingCategory::Farm, ArchEra::Unknown, &mut rng);
+            assert_eq!(with_era, without, "farm palette must ignore the era");
+        }
+    }
+
+    /// Panel-era residential walls are concrete/render dominated: across the
+    /// seeded draws, panel-pool blocks appear far more often than under
+    /// Unknown, and every adhering draw is from the panel pool.
+    #[test]
+    fn panel_era_prefers_concrete_walls() {
+        let in_pool = |b: Block| ERA_PANEL_WALLS.contains(&b);
+        let count = |era: ArchEra| {
+            (0..300u64)
+                .filter(|&seed| {
+                    let mut rng = element_rng(seed);
+                    in_pool(get_wall_block_for_category(
+                        BuildingCategory::Residential,
+                        era,
+                        &mut rng,
+                    ))
+                })
+                .count()
+        };
+        let panel = count(ArchEra::PostWarPanel);
+        let unknown = count(ArchEra::Unknown);
+        assert!(
+            panel > unknown * 2,
+            "panel era should dominate concrete walls: panel {panel} vs unknown {unknown}"
+        );
     }
 }
