@@ -105,10 +105,11 @@ fn run_cli() {
         ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
                      ███    ███
 
-                          version {}
+                          version {} (build {})
                 {}
         "#,
         version,
+        env!("ARNIS_BUILD_HASH"),
         repository.bright_white().bold()
     );
 
