@@ -121,6 +121,41 @@ Verification gate, in order of strength:
 Keep C's inset in the back pocket. If the live 2x2 shows any residual seam that
 step 1 did not explain, the inset contains it without reverting the feature.
 
+## Status
+
+Step 1 is done (commit 70b8cf21): the master frame ships, gx/gz return frame
+coordinates, rounding happens in frame space and the cell offset is applied as
+an exact integer afterwards. Four tests walk every shared pixel of two adjacent
+cells. The single-bbox path is byte-identical, confirmed by the golden gate.
+Steps 2 to 4, the windowed driver itself, are not started.
+
+Two water defects found while doing it, both fixed in the same commit: the bed
+profile flooring away half a block per column, and `compute_water_distance`
+treating a cropped cell's edge as coastline (which carved one bank of a
+seam-crossing channel shallower than the other).
+
+Also found and NOT yet fixed, ranked by user-visible impact:
+
+1. `level_water_surfaces` reduces each water body to one crop-global number
+   (histogram mode, a component-wide land clamp, and a per-crop still-versus-
+   flowing decision) with no master-origin awareness. A river crossing three
+   cells is three components with three surfaces, so the water HEIGHT steps at
+   the seam: about a block routinely, more where the still/flowing choice flips
+   across the boundary. This is a live seam in shipped merged worlds today,
+   independent of the shoreline pass, and it is the biggest remaining water
+   defect. Fix shape: keep the single-bbox path byte-identical, add a tiled
+   path with bounded support instead of whole-component statistics.
+2. Water that exists only in OSM is never surface-levelled at all: the levelling
+   runs during the elevation fetch on the ESA-only mask, and OSM water is
+   stamped afterwards, so an OSM-only river keeps raw DEM noise under it.
+3. `comp_max` is a per-component maximum taken over the crop, so a body cut by
+   a cell boundary can pick a different depth band on each side. Worth zero to
+   one block; bound it to the core.
+
+The bed geometry does NOT need the window treatment: its distance transform
+saturates at 85 blocks, inside Meld's 128-block halo, and it already treats its
+array edge as open rather than as shore.
+
 ## Notes carried forward
 
 - The scale gate stays: below about scale 0.216 the pass no-ops, so 1:10 and
