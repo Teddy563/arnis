@@ -1304,6 +1304,8 @@ fn gui_start_generation(
                         let overture_elements = overture::fetch_overture_buildings(
                             &args.bbox,
                             args.scale,
+                            args.master_origin_lat,
+                            args.master_origin_lng,
                             args.debug,
                             args.tile_invariant_rendering,
                         );

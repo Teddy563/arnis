@@ -112,10 +112,19 @@ struct OvertureBuilding {
 pub fn fetch_overture_buildings(
     bbox: &LLBBox,
     scale: f64,
+    master_origin_lat: Option<f64>,
+    master_origin_lng: Option<f64>,
     debug: bool,
     tile_invariant_rendering: Option<u64>,
 ) -> Vec<ProcessedElement> {
-    match fetch_overture_buildings_inner(bbox, scale, debug, tile_invariant_rendering) {
+    match fetch_overture_buildings_inner(
+        bbox,
+        scale,
+        master_origin_lat,
+        master_origin_lng,
+        debug,
+        tile_invariant_rendering,
+    ) {
         Ok(elements) => elements,
         Err(e) => {
             eprintln!(
@@ -218,6 +227,8 @@ pub fn deduplicate_against_osm(
 fn fetch_overture_buildings_inner(
     bbox: &LLBBox,
     scale: f64,
+    master_origin_lat: Option<f64>,
+    master_origin_lng: Option<f64>,
     debug: bool,
     tile_invariant_rendering: Option<u64>,
 ) -> Result<Vec<ProcessedElement>, Box<dyn std::error::Error>> {
@@ -288,7 +299,8 @@ fn fetch_overture_buildings_inner(
     }
 
     // Convert to ProcessedElements and clip to xzbbox (matching OSM clipping)
-    let (coord_transformer, xzbbox) = CoordTransformer::llbbox_to_xzbbox(bbox, scale, None, None)?;
+    let (coord_transformer, xzbbox) =
+        overture_frame(bbox, scale, master_origin_lat, master_origin_lng)?;
 
     let elements: Vec<ProcessedElement> = all_buildings
         .into_iter()
@@ -1224,6 +1236,29 @@ fn parse_wkb_polygon(wkb: &[u8]) -> Option<Vec<(f64, f64)>> {
     Some(coords)
 }
 
+/// The projection frame Overture footprints are converted and clipped in.
+///
+/// The master origin MUST be forwarded. OSM elements are projected against the
+/// project-wide origin (osm_parser.rs), so a `None, None` transformer here puts every
+/// Overture footprint in cell-local coordinates instead: in a Meld master-origin cell
+/// the buildings land near the world origin (displaced onto roads in the one cell that
+/// contains it, silently clipped away everywhere else) and the OSM dedup compares
+/// frames that can never match.
+fn overture_frame(
+    bbox: &LLBBox,
+    scale: f64,
+    master_origin_lat: Option<f64>,
+    master_origin_lng: Option<f64>,
+) -> Result<
+    (
+        CoordTransformer,
+        crate::coordinate_system::cartesian::XZBBox,
+    ),
+    String,
+> {
+    CoordTransformer::llbbox_to_xzbbox(bbox, scale, master_origin_lat, master_origin_lng)
+}
+
 /// Convert an Overture building to a ProcessedWay with OSM-compatible tags.
 fn building_to_processed_way(
     building: &OvertureBuilding,
@@ -1854,5 +1889,67 @@ mod tests {
         assert_eq!(coords.len(), 4);
         assert_eq!(coords[0], (10.0, 20.0)); // Z is ignored
         assert_eq!(coords[1], (11.0, 20.0));
+    }
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    fn totowa_bbox() -> LLBBox {
+        LLBBox::new(40.90, -74.21, 40.91, -74.20).unwrap()
+    }
+
+    /// The regression that shipped: a `None, None` frame is cell-local (starts at 0,0),
+    /// while OSM elements in a Meld cell live in the master-origin global frame. The
+    /// helper must forward the origin so both datasets share one frame.
+    #[test]
+    fn master_origin_reaches_the_overture_frame() {
+        let (_, global) = overture_frame(&totowa_bbox(), 1.0, Some(44.43), Some(26.10)).unwrap();
+        assert!(
+            global.min_x() != 0 || global.min_z() != 0,
+            "master-origin frame expected, got the cell-local frame"
+        );
+
+        let (_, local) = overture_frame(&totowa_bbox(), 1.0, None, None).unwrap();
+        assert_eq!((local.min_x(), local.min_z()), (0, 0));
+    }
+
+    /// Every converted node must sit exactly where the shared transformer puts its
+    /// lat/lng - the same mapping the OSM parser applies to roads and buildings.
+    #[test]
+    fn overture_nodes_match_the_shared_projection() {
+        let bbox = totowa_bbox();
+        let (transformer, _) = overture_frame(&bbox, 1.0, Some(44.43), Some(26.10)).unwrap();
+
+        let ring = vec![
+            (-74.2050, 40.9050),
+            (-74.2049, 40.9050),
+            (-74.2049, 40.9051),
+            (-74.2050, 40.9051),
+            (-74.2050, 40.9050),
+        ];
+        let building = OvertureBuilding {
+            id: "08b2a1072d125fff0200-test".to_string(),
+            exterior_ring: ring.clone(),
+            is_osm_sourced: false,
+            height: None,
+            min_height: None,
+            num_floors: None,
+            subtype: None,
+            class: None,
+            roof_shape: None,
+            roof_material: None,
+            roof_orientation: None,
+            facade_color: None,
+            roof_color: None,
+        };
+
+        let way = building_to_processed_way(&building, &transformer, &bbox, None).unwrap();
+        assert!(way.nodes.len() >= ring.len());
+        for (node, &(lng, lat)) in way.nodes.iter().zip(ring.iter()) {
+            let expected = transformer.transform_point(LLPoint::new(lat, lng).unwrap());
+            assert_eq!((node.x, node.z), (expected.x, expected.z));
+        }
     }
 }
