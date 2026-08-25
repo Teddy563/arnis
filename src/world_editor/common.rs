@@ -31,7 +31,29 @@ const fn pack_bounds(min_y: i32, max_y: i32) -> i64 {
 }
 
 /// Set the Y range the writer clamps to. Call once, before the first block is placed.
+///
+/// This is process-global config, so a second call with a DIFFERENT range would silently
+/// re-clamp every block placed after it. First value wins: a disagreeing re-set is
+/// IGNORED and reported. In a debug build it panics (a developer wants the stack); in a
+/// release build it prints one warning and returns, because the GUI legitimately runs
+/// `gui_start_generation` twice in one process with a differently fitted (min_y, max_y)
+/// and must not abort. Setting it twice with the same range stays a silent no-op.
 pub fn set_world_bounds(min_y: i32, max_y: i32) {
+    static FIRST_BOUNDS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
+    let first = *FIRST_BOUNDS.get_or_init(|| (min_y, max_y));
+    if first != (min_y, max_y) {
+        let msg = format!(
+            "WORLD_BOUNDS (src/world_editor/common.rs) re-set with a different value: already set to (min_y={}, max_y={}), now being set to (min_y={min_y}, max_y={max_y}). This static is per-process config; two values in one process would write blocks clamped to the wrong world height. The first value wins and the new one is IGNORED.",
+            first.0, first.1,
+        );
+        #[cfg(debug_assertions)]
+        panic!("{msg}");
+        #[cfg(not(debug_assertions))]
+        {
+            eprintln!("warning: {msg}");
+            return;
+        }
+    }
     WORLD_BOUNDS.store(
         pack_bounds(min_y, max_y),
         std::sync::atomic::Ordering::Relaxed,

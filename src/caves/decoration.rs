@@ -96,7 +96,7 @@ pub(super) enum Zone {
 /// A multiplier shifts that biome's noise threshold on a log2 curve (see `eff_thr`), so the
 /// area grows/shrinks smoothly and stays a pure function of (seed, position) — seam-safety is
 /// unaffected because the multipliers are constant for the whole run.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BiomeAmounts {
     pub lush: f64,
     pub dripstone: f64,
@@ -125,6 +125,11 @@ impl Default for BiomeAmounts {
 
 impl BiomeAmounts {
     /// Parse `lush=150,deepdark=0,...` (percent 0..=200, clamped; omitted names stay 100).
+    ///
+    /// Non-finite percents (`nan`, `inf`) are REJECTED rather than clamped: `clamp` passes
+    /// NaN straight through, and a NaN amount would then make `BiomeAmounts` compare
+    /// unequal to itself, so the per-tile `set_biome_amounts` re-set check would fire on
+    /// the second tile of a perfectly ordinary run.
     pub fn parse(spec: &str) -> Result<Self, String> {
         let mut a = BiomeAmounts::default();
         for part in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
@@ -135,6 +140,12 @@ impl BiomeAmounts {
                 .trim()
                 .parse()
                 .map_err(|_| format!("'{part}': percent is not a number"))?;
+            if !pct.is_finite() {
+                return Err(format!(
+                    "'{part}': percent must be a finite number (0..=200), got '{}'",
+                    val.trim()
+                ));
+            }
             let f = (pct.clamp(0.0, 200.0)) / 100.0;
             match name.trim().to_ascii_lowercase().as_str() {
                 "lush" => a.lush = f,
@@ -156,8 +167,22 @@ static BIOME_AMOUNTS: std::sync::OnceLock<BiomeAmounts> = std::sync::OnceLock::n
 
 /// Install the run-wide biome amounts (first caller wins; every cell in a run shares one
 /// process and one --cave-biomes value, so the OnceLock keeps this deterministic).
+///
+/// A re-set with DIFFERENT amounts is IGNORED and reported: silently keeping the first set
+/// would give later cells cave biomes from another run's `--cave-biomes`, which is wrong
+/// blocks rather than an error. Panic in a debug build; in release one warning line, so a
+/// GUI session that generates twice in one process is not aborted.
 pub fn set_biome_amounts(a: BiomeAmounts) {
-    let _ = BIOME_AMOUNTS.set(a);
+    let first = *BIOME_AMOUNTS.get_or_init(|| a);
+    if first != a {
+        let msg = format!(
+            "BIOME_AMOUNTS (src/caves/decoration.rs) re-set with a different value: already set to {first:?}, now being set to {a:?}. This static is per-process config; two --cave-biomes values in one process would decorate cells inconsistently. The first value wins and the new one is IGNORED."
+        );
+        #[cfg(debug_assertions)]
+        panic!("{msg}");
+        #[cfg(not(debug_assertions))]
+        eprintln!("warning: {msg}");
+    }
 }
 
 /// Effective threshold for a biome: default multiplier returns the base EXACTLY (log2(1)=0),
@@ -1023,4 +1048,37 @@ fn grow_cluster(
         nz,
         props(&[("facing", face), ("waterlogged", "false")]),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BiomeAmounts;
+
+    #[test]
+    fn parse_clamps_and_scales_percent() {
+        let a = BiomeAmounts::parse("lush=150,deepdark=0,ice=500").unwrap();
+        assert_eq!(a.lush, 1.5);
+        assert_eq!(a.deepdark, 0.0);
+        assert_eq!(a.ice, 2.0); // clamped to 200%
+        assert_eq!(a.coral, 1.0); // untouched name keeps the default
+    }
+
+    /// `clamp` lets NaN through, and a NaN field makes `BiomeAmounts` unequal to itself,
+    /// so `set_biome_amounts` would report a bogus re-set on the second tile. Reject early.
+    #[test]
+    fn parse_rejects_non_finite_percent() {
+        for spec in ["lush=nan", "lush=NaN", "lush=inf", "lush=-inf"] {
+            let err = BiomeAmounts::parse(spec).unwrap_err();
+            assert!(
+                err.contains("finite"),
+                "{spec} should be rejected as non-finite, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_result_is_self_equal() {
+        let a = BiomeAmounts::parse("lush=200,volcanic=0").unwrap();
+        assert_eq!(a, a, "a parsed value must compare equal to itself");
+    }
 }

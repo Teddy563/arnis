@@ -37,6 +37,7 @@ mod map_preview;
 mod map_renderer;
 mod map_transformation;
 mod mc_version;
+mod meld_telemetry;
 mod models_3d;
 mod net;
 mod osm_parser;
@@ -463,6 +464,7 @@ fn run_cli() {
     }
 
     // Fetch data
+    meld_telemetry::phase("fetch");
     let raw_data = if skip_objects {
         osm_parser::OsmData::empty()
     } else {
@@ -484,10 +486,12 @@ fn run_cli() {
     };
     bench.mark("osm_fetch");
 
+    meld_telemetry::phase("elevation");
     let mut ground = ground::generate_ground_data(&args);
     bench.mark("terrain_total");
 
     // Parse raw data
+    meld_telemetry::phase("parse");
     let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
         osm_parser::parse_osm_data(
             raw_data,
@@ -516,6 +520,7 @@ fn run_cli() {
     // With skip_objects set, parsed_elements is empty anyway, so this gate is a large cost
     // saving (Overture is ~93% of a cell's wall time) rather than an output change.
     if args.buildings && args.overture && !skip_objects {
+        meld_telemetry::phase("overture");
         println!("{} Fetching Overture Maps data...", "  [+]".bold());
         let overture_data = overture::fetch_overture_buildings(
             &args.bbox,
@@ -718,6 +723,12 @@ fn run_cli() {
                     );
                 }
             }
+
+            // Terminating Meld marker: reaching here means the run succeeded.
+            // gpu_ms mirrors the counter behind the existing `[gpu] busy_ms=` line.
+            meld_telemetry::done(
+                caves::gpu::GPU_BUSY_MS.load(std::sync::atomic::Ordering::Relaxed),
+            );
         }
         Err(e) => {
             eprintln!("{} {}", "Error:".red().bold(), e);
@@ -727,6 +738,10 @@ fn run_cli() {
 }
 
 fn main() {
+    // Seed the Meld phase-marker clock before anything else so `t=` is measured
+    // from as close to process start as we can get. No-op unless ARNIS_PHASE_MARKERS=1.
+    meld_telemetry::init();
+
     // If on Windows, free and reattach to the parent console when using as a CLI tool
     // Either of these can fail, but if they do it is not an issue, so the return value is ignored
     #[cfg(target_os = "windows")]

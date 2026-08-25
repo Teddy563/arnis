@@ -573,6 +573,10 @@ pub fn generate_world_with_options(
     // the sequential path (correct, just not tile-parallel).
     let use_parallel_tiles = tiles.len() >= 3 && matches!(world_format, WorldFormat::JavaAnvil);
 
+    // Meld marker: element placement starts here. On the parallel path placement and
+    // per-batch merges interleave, so this span covers both and the `merge` marker
+    // below marks where the batch loop is done and the merge teardown begins.
+    crate::meld_telemetry::phase("place");
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.
         // Each tile gets its own WorldEditor with an expanded bounding box (64-block
@@ -931,6 +935,7 @@ pub fn generate_world_with_options(
             }
             merge_dur += merge_start.elapsed();
         }
+        crate::meld_telemetry::phase("merge");
         bench.report("element_placement", place_dur);
         bench.report("tile_merge", merge_dur);
         bench.reset();
@@ -1043,6 +1048,7 @@ pub fn generate_world_with_options(
     // A void world skips the ground layer entirely, on both paths.
     let ground_on_merged = !use_parallel_tiles && !args.void_world;
 
+    crate::meld_telemetry::phase("ground");
     if ground_on_merged {
         ground_generation::generate_ground_layer(
             &mut editor,
@@ -1073,6 +1079,7 @@ pub fn generate_world_with_options(
     }
     bench.mark("ground_gen");
 
+    crate::meld_telemetry::phase("post");
     if ground_on_merged {
         if args.fillground {
             // Deepslate the bottom (stone→deepslate below Y0) — solid vanilla-ish ground.
@@ -1174,6 +1181,7 @@ pub fn generate_world_with_options(
     }
 
     // Save world
+    crate::meld_telemetry::phase("save");
     if let Err(e) = editor.save() {
         return Err(e.to_string());
     }

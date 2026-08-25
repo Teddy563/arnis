@@ -2,6 +2,7 @@ use geo::orient::{Direction, Orient};
 use geo::{Contains, LineString, Point, Polygon};
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 /// Maximum bounding box area (in blocks) for the BITMAP flood fill.
@@ -25,6 +26,169 @@ pub const MAX_FILL_CELLS: usize = 32_000_000;
 /// else bounds it - the row cap alone let a 4M-row ring with a hundred-thousand-edge coastline
 /// demand ~400 billion edge tests, which is a hang, not a fill. Ported from upstream 3e35621.
 pub const MAX_SCANLINE_EDGE_TESTS: i64 = 200_000_000;
+
+// ---------------------------------------------------------------------------
+// Deterministic fill budget (OPT-IN, env `ARNIS_FILL_BUDGET=1`; default OFF)
+// ---------------------------------------------------------------------------
+//
+// WHY WALL-CLOCK IS A DETERMINISM BUG
+// -----------------------------------
+// Both bitmap fill paths below stop seeding new flood fronts once `--timeout`
+// has elapsed, measured with `Instant::now()`. That check reads the machine,
+// not the input: the same polygon, in the same build, truncates at a different
+// seed depending on how many other cells happen to be resident, how the OS
+// scheduled this thread, and how hot the caches are. Two runs of the same
+// bbox can therefore emit different blocks, and two ADJACENT cells rendered by
+// different workers can disagree along their shared border. Anything that
+// raises the worker count makes it likelier, which is precisely why a
+// higher-concurrency scheduler cannot be proven byte-deterministic while this
+// check is here.
+//
+// WHAT THE BUDGET IS
+// ------------------
+// In budget mode the elapsed-time comparison is replaced by a pure counter of
+// WORK UNITS already spent on this polygon. One work unit is one
+// point-in-polygon decision plus its bitmap bookkeeping - i.e. one call to
+// `Polygon::contains` (a ray cast over the ring's edges) together with the
+// `FloodBitmap` insert/contains and the queue push it is paired with. That is
+// the whole per-cell cost of the loops below; everything else (the ring
+// conversion, the bbox scan setup) is one-off.
+//
+// The counter is a function of the input alone, so the truncation point - if
+// the budget ever binds at all - is identical on an idle laptop and on a box
+// running 24 workers. The check CADENCE is left exactly as it is today (the
+// `filled_area.len() % 100` gate on the optimized path, every seed on the
+// original path) so budget mode differs from the legacy path in one thing
+// only: what the predicate reads.
+//
+// The scanline path needs none of this - it never looks at `timeout` and is
+// already bounded deterministically by MAX_SCANLINE_EDGE_TESTS/MAX_FILL_CELLS.
+//
+// DEFAULT STAYS LEGACY
+// --------------------
+// With `ARNIS_FILL_BUDGET` unset (or set to anything falsey) `FillLimit::new`
+// builds the `Wall` variant, whose predicate is the same
+// `start.elapsed() > timeout` comparison against an `Instant` taken at the
+// same place as before. Nothing about the default path changes, so a run
+// without the env var is byte-identical to today. Meld flips the switch when
+// it is ready to depend on the stronger guarantee.
+
+/// Work units a second of `--timeout` is worth in budget mode.
+///
+/// `--timeout` keeps its meaning for callers (Meld passes 600-1200) through this one
+/// pure constant: `budget_units = timeout_secs * BUDGET_UNITS_PER_SECOND`.
+///
+/// HOW THE VALUE WAS PICKED, from the cost of the loops in this file. A work unit is
+/// dominated by `geo::Polygon::contains(&Point)`, which ray-casts the point against every
+/// edge of the exterior ring: O(E) with a compare and a divide-and-multiply per edge. The
+/// rings that reach the bitmap paths are OSM ways under [`MAX_FLOOD_FILL_AREA`] - buildings,
+/// parks, farmland, forests - so E runs from 4 to a few thousand, with the common case a few
+/// dozen. Around 64 edges that is ~100-200 ns of edge arithmetic, and the `FloodBitmap`
+/// index + bounds-checked byte access, the `VecDeque` push/pop and the `Vec::push` add
+/// roughly as much again. Call it ~250-500 ns per unit, i.e. 2-4 M units per second per
+/// core.
+///
+/// 2 M/s takes the PESSIMISTIC end on purpose. Erring low means the budget can only ever
+/// bind sooner than the wall clock would have on an unloaded machine, never later, so budget
+/// mode cannot turn a polygon that used to be truncated into one that runs away. And it
+/// stays generous in absolute terms: at Meld's 600 s the budget is 1.2 billion units, while
+/// the largest fill the bitmap path will even attempt is [`MAX_FLOOD_FILL_AREA`] = 25 M
+/// cells at ~5 units each, ~125 M units. The budget is a hang guard, exactly as the
+/// wall-clock timeout is in practice - not a routine truncation - so on real input both
+/// modes fill the same cells and budget mode simply removes the load-dependent tail.
+pub const BUDGET_UNITS_PER_SECOND: u64 = 2_000_000;
+
+/// Whether the deterministic work budget is enabled for this process.
+///
+/// Read once and cached: the answer must not change part-way through a run, or two polygons
+/// in the same world would be filled under different rules. Accepts `1`, `true`, `yes`, `on`
+/// (case-insensitive); anything else - including unset and the empty string - is OFF, which
+/// is the legacy wall-clock behaviour.
+pub fn fill_budget_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| match std::env::var("ARNIS_FILL_BUDGET") {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    })
+}
+
+/// Converts a `--timeout` into a deterministic work-unit budget.
+///
+/// Saturating on both ends so an absurd `--timeout` cannot wrap or produce a negative
+/// budget; `Duration` is already non-negative, so the only real guard is the upper clamp.
+#[inline]
+fn budget_units_for(timeout: Duration) -> u64 {
+    let units = timeout.as_secs_f64() * BUDGET_UNITS_PER_SECOND as f64;
+    if !units.is_finite() || units <= 0.0 {
+        0
+    } else if units >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        units as u64
+    }
+}
+
+/// The stop rule for one flood fill: no limit, the legacy wall clock, or the deterministic
+/// work budget. See the module comment above for why the third variant exists.
+enum FillLimit {
+    /// `--timeout` was not given: fills run to completion, as they always have.
+    None,
+    /// LEGACY DEFAULT. Non-deterministic under load; kept bit-for-bit.
+    Wall { start: Instant, timeout: Duration },
+    /// Budget mode (`ARNIS_FILL_BUDGET=1`): a pure function of the input.
+    Budget { budget: u64, used: u64 },
+}
+
+impl FillLimit {
+    /// `budget_mode` is passed in rather than read from the env here so the tests can drive
+    /// both rules without mutating process state.
+    #[inline]
+    fn new(timeout: Option<&Duration>, budget_mode: bool) -> Self {
+        match timeout {
+            None => FillLimit::None,
+            Some(&t) if budget_mode => FillLimit::Budget {
+                budget: budget_units_for(t),
+                used: 0,
+            },
+            Some(&t) => FillLimit::Wall {
+                start: Instant::now(),
+                timeout: t,
+            },
+        }
+    }
+
+    /// Records work already done. A no-op outside budget mode, so the legacy path pays a
+    /// predictable branch and nothing else, and its output cannot move.
+    #[inline]
+    fn charge(&mut self, units: u64) {
+        if let FillLimit::Budget { used, .. } = self {
+            *used = used.saturating_add(units);
+        }
+    }
+
+    /// The budget this limit was built with, for tests; `None` outside budget mode.
+    #[cfg(test)]
+    fn budget_units(&self) -> Option<u64> {
+        match self {
+            FillLimit::Budget { budget, .. } => Some(*budget),
+            _ => None,
+        }
+    }
+
+    /// The stop predicate. `Wall` uses the same strict `>` the old code did, and `Budget`
+    /// mirrors it, so "spent exactly the budget" is still allowed to run.
+    #[inline]
+    fn exhausted(&self) -> bool {
+        match self {
+            FillLimit::None => false,
+            FillLimit::Wall { start, timeout } => start.elapsed() > *timeout,
+            FillLimit::Budget { budget, used } => used > budget,
+        }
+    }
+}
 
 /// A compact bitmap for visited-coordinate tracking during flood fill.
 ///
@@ -119,12 +283,32 @@ pub fn flood_fill_area(
         return scanline_fill_area(polygon_coords, min_x, max_x, min_z, max_z);
     }
 
+    // The stop rule is chosen ONCE per process (see `fill_budget_enabled`) and threaded
+    // down, so every polygon in a world is filled under the same rule.
+    let budget_mode = fill_budget_enabled();
+
     // For small and medium areas, use optimized flood fill with span filling
     if area < 50000 {
-        optimized_flood_fill_area(polygon_coords, timeout, min_x, max_x, min_z, max_z)
+        optimized_flood_fill_area(
+            polygon_coords,
+            timeout,
+            budget_mode,
+            min_x,
+            max_x,
+            min_z,
+            max_z,
+        )
     } else {
         // For larger areas, use original flood fill with grid sampling
-        original_flood_fill_area(polygon_coords, timeout, min_x, max_x, min_z, max_z)
+        original_flood_fill_area(
+            polygon_coords,
+            timeout,
+            budget_mode,
+            min_x,
+            max_x,
+            min_z,
+            max_z,
+        )
     }
 }
 
@@ -219,12 +403,15 @@ fn scanline_fill_area(
 fn optimized_flood_fill_area(
     polygon_coords: &[(i32, i32)],
     timeout: Option<&Duration>,
+    budget_mode: bool,
     min_x: i32,
     max_x: i32,
     min_z: i32,
     max_z: i32,
 ) -> Vec<(i32, i32)> {
-    let start_time = Instant::now();
+    // Built here, not at the caller, so the legacy `Instant::now()` is still taken at exactly
+    // the point in the run it always was.
+    let mut limit = FillLimit::new(timeout, budget_mode);
 
     let mut filled_area = Vec::new();
     let mut visited = FloodBitmap::new(min_x, max_x, min_z, max_z);
@@ -249,16 +436,14 @@ fn optimized_flood_fill_area(
 
     for z in (min_z..=max_z).step_by(step_z as usize) {
         for x in (min_x..=max_x).step_by(step_x as usize) {
-            // Fast timeout check, only every few iterations
-            if filled_area.len() % 100 == 0 {
-                if let Some(timeout) = timeout {
-                    if start_time.elapsed() > *timeout {
-                        return filled_area;
-                    }
-                }
+            // Fast limit check, only every few iterations. Same cadence and same strict
+            // comparison as before; only WHAT is compared changes in budget mode.
+            if filled_area.len() % 100 == 0 && limit.exhausted() {
+                return filled_area;
             }
 
             // Skip if already visited or not inside polygon
+            limit.charge(1);
             if visited.contains(x, z) || !polygon.contains(&Point::new(x as f64, z as f64)) {
                 continue;
             }
@@ -270,6 +455,7 @@ fn optimized_flood_fill_area(
 
             while let Some((curr_x, curr_z)) = queue.pop_front() {
                 // Add current point to filled area
+                limit.charge(1);
                 filled_area.push((curr_x, curr_z));
 
                 // Check all four directions with optimized bounds checking
@@ -288,6 +474,7 @@ fn optimized_flood_fill_area(
                         && visited.insert(nx, nz)
                     {
                         // Only check polygon containment for unvisited points
+                        limit.charge(1);
                         if polygon.contains(&Point::new(nx as f64, nz as f64)) {
                             queue.push_back((nx, nz));
                         }
@@ -304,12 +491,15 @@ fn optimized_flood_fill_area(
 fn original_flood_fill_area(
     polygon_coords: &[(i32, i32)],
     timeout: Option<&Duration>,
+    budget_mode: bool,
     min_x: i32,
     max_x: i32,
     min_z: i32,
     max_z: i32,
 ) -> Vec<(i32, i32)> {
-    let start_time = Instant::now();
+    // Built here, not at the caller, so the legacy `Instant::now()` is still taken at exactly
+    // the point in the run it always was.
+    let mut limit = FillLimit::new(timeout, budget_mode);
     let mut filled_area: Vec<(i32, i32)> = Vec::new();
     let mut visited = FloodBitmap::new(min_x, max_x, min_z, max_z);
 
@@ -335,15 +525,14 @@ fn original_flood_fill_area(
     // Scan for multiple seed points to handle U-shapes and concave polygons
     for z in (min_z..=max_z).step_by(step_z as usize) {
         for x in (min_x..=max_x).step_by(step_x as usize) {
-            // Reduced timeout checking frequency for better performance
-            // Use manual % check since is_multiple_of() is unstable on stable Rust
-            if let Some(timeout) = timeout {
-                if &start_time.elapsed() > timeout {
-                    return filled_area;
-                }
+            // One check per seed candidate, as before; the legacy variant compares the
+            // very same elapsed-vs-timeout durations, budget mode a pure counter.
+            if limit.exhausted() {
+                return filled_area;
             }
 
             // Skip if already processed or not inside polygon
+            limit.charge(1);
             if visited.contains(x, z) || !polygon.contains(&Point::new(x as f64, z as f64)) {
                 continue;
             }
@@ -355,6 +544,7 @@ fn original_flood_fill_area(
 
             while let Some((curr_x, curr_z)) = queue.pop_front() {
                 // Only check polygon containment once per point when adding to filled_area
+                limit.charge(1);
                 if polygon.contains(&Point::new(curr_x as f64, curr_z as f64)) {
                     filled_area.push((curr_x, curr_z));
 
@@ -476,5 +666,126 @@ mod tests {
     fn open_polylines_are_still_rejected() {
         let open = vec![(0, 0), (100, 0), (100, 100)];
         assert!(flood_fill_area(&open, None).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Deterministic work budget (ARNIS_FILL_BUDGET)
+    // -----------------------------------------------------------------------
+
+    /// `--timeout` keeps its meaning for callers through exactly one constant.
+    #[test]
+    fn the_budget_is_timeout_seconds_times_the_documented_constant() {
+        assert_eq!(BUDGET_UNITS_PER_SECOND, 2_000_000);
+        assert_eq!(budget_units_for(Duration::from_secs(1)), 2_000_000);
+        // What Meld actually passes today.
+        assert_eq!(budget_units_for(Duration::from_secs(600)), 1_200_000_000);
+        assert_eq!(budget_units_for(Duration::from_secs(1200)), 2_400_000_000);
+        // Sub-second timeouts scale linearly rather than collapsing to zero.
+        assert_eq!(budget_units_for(Duration::from_millis(1)), 2_000);
+        assert_eq!(budget_units_for(Duration::from_secs(0)), 0);
+        // Absurd input saturates instead of wrapping.
+        assert_eq!(budget_units_for(Duration::MAX), u64::MAX);
+    }
+
+    /// THE DEFAULT PATH GUARD. With budget mode off the stop rule is the same wall-clock
+    /// comparison it has always been, and no amount of charged work can trip it.
+    #[test]
+    fn the_default_stop_rule_is_still_the_wall_clock() {
+        // No --timeout: no limit at all, in either mode.
+        assert!(matches!(FillLimit::new(None, false), FillLimit::None));
+        assert!(matches!(FillLimit::new(None, true), FillLimit::None));
+
+        let long = Duration::from_secs(3600);
+        let mut legacy = FillLimit::new(Some(&long), false);
+        assert!(
+            matches!(legacy, FillLimit::Wall { .. }),
+            "default must be Wall"
+        );
+        legacy.charge(u64::MAX);
+        assert!(
+            !legacy.exhausted(),
+            "charging work must be inert on the legacy path"
+        );
+        assert!(
+            legacy.budget_units().is_none(),
+            "the legacy path has no budget to spend"
+        );
+    }
+
+    /// Budget mode is a pure counter: same charges in, same verdict out, every time.
+    #[test]
+    fn the_budget_verdict_depends_only_on_work_charged() {
+        let t = Duration::from_micros(10); // 20 units
+        for _ in 0..3 {
+            let mut limit = FillLimit::new(Some(&t), true);
+            assert!(matches!(limit.budget_units(), Some(20)));
+            for _ in 0..20 {
+                assert!(!limit.exhausted(), "the budget itself is still spendable");
+                limit.charge(1);
+            }
+            // Spending exactly the budget is allowed; the strict `>` mirrors the wall
+            // clock's `elapsed() > timeout`. One more unit stops the fill.
+            assert!(!limit.exhausted());
+            limit.charge(1);
+            assert!(
+                limit.exhausted(),
+                "one unit past the budget must stop the fill"
+            );
+        }
+    }
+
+    /// A budget big enough to cover the whole fill must not change a single cell.
+    #[test]
+    fn a_generous_budget_fills_exactly_what_an_unbounded_run_does() {
+        // 400 x 400 = 160,000: past the 50,000 split, so this exercises the original path.
+        let poly = rect(0, 0, 399, 399);
+        let unbounded = original_flood_fill_area(&poly, None, false, 0, 399, 0, 399);
+        assert!(!unbounded.is_empty());
+
+        let generous = Duration::from_secs(600); // 1.2e9 units, ~4 orders of magnitude spare
+        let budgeted = original_flood_fill_area(&poly, Some(&generous), true, 0, 399, 0, 399);
+        assert_eq!(
+            budgeted, unbounded,
+            "a non-binding budget must be invisible"
+        );
+
+        // Same for the optimized path, on a polygon small enough to reach it.
+        let small = rect(-30, -20, 29, 19);
+        let a = optimized_flood_fill_area(&small, None, false, -30, 29, -20, 19);
+        let b = optimized_flood_fill_area(&small, Some(&generous), true, -30, 29, -20, 19);
+        assert_eq!(a, b);
+
+        // And the LEGACY branch with a live --timeout still fills the whole polygon, which
+        // is the property the golden-hash fixtures exercise end to end.
+        let legacy = original_flood_fill_area(&poly, Some(&generous), false, 0, 399, 0, 399);
+        assert_eq!(legacy, unbounded, "the wall-clock path must be unchanged");
+    }
+
+    /// The point of the whole exercise: when the budget DOES bind, it binds at the same
+    /// place on every run, because nothing it reads comes from the machine.
+    #[test]
+    fn a_binding_budget_truncates_identically_on_every_run() {
+        let poly = rect(0, 0, 399, 399);
+        let full = original_flood_fill_area(&poly, None, false, 0, 399, 0, 399);
+
+        let tiny = Duration::from_micros(10); // 20 units: spent inside the seed scan
+        let first = original_flood_fill_area(&poly, Some(&tiny), true, 0, 399, 0, 399);
+        assert!(
+            first.len() < full.len(),
+            "a 20-unit budget must actually cut the fill short"
+        );
+        for _ in 0..4 {
+            let again = original_flood_fill_area(&poly, Some(&tiny), true, 0, 399, 0, 399);
+            assert_eq!(again, first, "budget truncation must be reproducible");
+        }
+    }
+
+    /// The env switch itself: unset (as in CI and in every run today) means legacy.
+    #[test]
+    fn budget_mode_is_off_unless_the_env_var_asks_for_it() {
+        assert!(
+            !fill_budget_enabled(),
+            "ARNIS_FILL_BUDGET must be opt-in; the test process never sets it"
+        );
     }
 }

@@ -30,7 +30,27 @@ use std::sync::{Mutex, OnceLock};
 static DATA_VERSION: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(4440);
 
 /// Set the `DataVersion` for this run. Call before the first chunk is written.
+///
+/// Process-global, so a second call with a DIFFERENT version would stamp later chunks
+/// with another format number and yield a world that half-upgrades on load. First value
+/// wins: a disagreeing re-set is IGNORED and reported — panic in a debug build, one
+/// warning line in release, so a GUI session that generates twice in one process is not
+/// aborted. Re-setting the same value is a silent no-op.
 pub fn set_data_version(v: i32) {
+    static FIRST_DATA_VERSION: OnceLock<i32> = OnceLock::new();
+    let first = *FIRST_DATA_VERSION.get_or_init(|| v);
+    if first != v {
+        let msg = format!(
+            "DATA_VERSION (src/world_editor/java.rs) re-set with a different value: already set to {first}, now being set to {v}. This static is per-process config; two values in one process would stamp chunks with mismatched Anvil DataVersions. The first value wins and the new one is IGNORED."
+        );
+        #[cfg(debug_assertions)]
+        panic!("{msg}");
+        #[cfg(not(debug_assertions))]
+        {
+            eprintln!("warning: {msg}");
+            return;
+        }
+    }
     DATA_VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
 }
 

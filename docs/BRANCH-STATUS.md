@@ -229,3 +229,177 @@ with `--osm-tile-dir` it reads a local cache. On one bbox that is **13192 ms vs
 
 Also: pin `ARNIS_STREAM_TO_DISK` when benchmarking, or the run picks its path from
 whatever RAM happens to be free and your numbers will not be comparable.
+
+---
+
+# Branch status — `perf/speed-to-worldgen` (arnis fork)
+
+Added 2026-08-25. **Local only, uncommitted working tree.** Nothing pushed,
+nothing on `main`.
+
+**Full write-up lives Meld-side:**
+`meld-triagefix/docs/generation-performance.md` — the governor, the protocol, the
+settings, the bench, the determinism rules, and the open question. This section is
+the arnis half of the index.
+
+The theme is different from Phase 1 above. Phase 1 made **one cell** faster (2.38x
+at 1:1, from the flush pool). This branch is about how many cells Meld should run
+**at once**, so the arnis work here is almost entirely *instrumentation and
+hardening*: the generator has to be able to report what a cell really costs, and has
+to stop being quietly non-deterministic under load, so Meld's governor can measure
+instead of assume.
+
+## What landed
+
+### 1. Meld stdout protocol v1 — `src/meld_telemetry.rs` (new)
+
+Machine-readable phase markers, **opt-in via `ARNIS_PHASE_MARKERS=1`**. Unset, both
+entry points return before any clock read or formatting, so a default run is
+byte-identical to a build without the module.
+
+```text
+[meld] v=1 phase=<name> t=<ms_since_process_start>
+[meld] v=1 phase=done wall_s=<f.3> cpu_s=<f.3> peak_mb=<f.1> gpu_ms=<u64>
+```
+
+Markers fire at the **start** of a phase, so a duration is `t(next) - t(this)` and
+the last one is `wall_s*1000 - t(last)`. Instrumented boundaries:
+
+| phase | site |
+|---|---|
+| `fetch` | `main.rs:467`, before the OSM source read |
+| `elevation` | `main.rs:489`, before `ground::generate_ground_data` |
+| `parse` | `main.rs:494`, before `osm_parser::parse_osm_data` |
+| `overture` | `main.rs:523`, inside the gate, so it only fires when the fetch runs |
+| `place` | `data_processing.rs:579`, both parallel and sequential paths |
+| `merge` | `data_processing.rs:938`, parallel path only |
+| `ground` | `data_processing.rs:1051` |
+| `post` | `data_processing.rs:1082` |
+| `save` | `data_processing.rs:1184`, immediately before `editor.save()` |
+| `done` | `main.rs:729`, end of the Ok arm, so `wall_s` covers the whole run |
+
+**No new dependency.** `Cargo.toml` already pins `windows = "0.62.0"` but only with
+`Win32_System_Console`, and Cargo.toml was out of scope, so a private `mod win`
+hand-rolls `#[link(name = "kernel32")]` bindings for `GetCurrentProcess`,
+`GetProcessTimes` and `K32GetProcessMemoryInfo` (kernel32 is linked by default on
+both toolchains). `cpu_s` = (kernel+user FILETIME)/1e7, `peak_mb` =
+`PeakWorkingSetSize`/1 MiB. Non-Windows returns `-1.000` / `-1.0` in the same float
+shape, and Meld's psutil sampler covers that case.
+
+Caveat for whoever reads the numbers: on the parallel path, placement and per-batch
+merges **interleave**, so `place` to `merge` is the combined loop and `merge` to
+`ground` is a short teardown. The `bench` output keeps the true `element_placement` /
+`tile_merge` split; v1 has no field for it.
+
+### 2. Deterministic fill budget — `src/floodfill.rs`
+
+`--timeout` was enforced with `Instant::now()` **inside the fill loop**, which makes
+output a function of machine load and worker count rather than of input. That is
+exactly the wrong property for a program Meld runs twelve copies of at once: two runs
+of the same cell on a busier box could truncate different polygons.
+
+`ARNIS_FILL_BUDGET=1` (accepts `1|true|yes|on`) re-expresses the same limit in work
+units: `budget_units = timeout_secs * BUDGET_UNITS_PER_SECOND`, the constant being
+`2_000_000`. A work unit is one `polygon.contains` decision plus its bitmap/queue
+bookkeeping. **2 M/s deliberately takes the pessimistic end** of a reasoned
+2-4 M/s/core range: erring low means the budget can only bind *sooner* than the wall
+clock would on an idle machine, never later, so budget mode can never let a
+previously-truncated polygon run away. In practice it does not bind at all, since
+Meld passes `--timeout 600..1200`, i.e. 1.2-2.4 billion units against a worst case
+near 125 M. The per-unit cost figure is reasoned from the code's structure, not from
+an instrumented micro-benchmark.
+
+The check **cadence** is unchanged (`filled_area.len() % 100` on the optimized path,
+once per seed candidate on the original), the legacy `Instant::now()` is still taken
+at the same line, and the scanline path is untouched because it never read the
+timeout.
+
+**Default path proven identical**: `scripts/golden_hash.sh` OK on all 5 fixtures, and
+the same 5 re-run live with `--timeout 600` gave identical hashes with the env var set
+and unset.
+
+Inherited limitation, not new: the budget is only consulted between seed fronts, so
+one enormous connected component still floods to completion once seeded.
+
+### 3. Process-global config asserts
+
+Four setters now panic with a named message on a **conflicting** re-set, instead of
+silently keeping the first value or the last:
+
+| static | setter |
+|---|---|
+| `WORLD_BOUNDS` | `src/world_editor/common.rs:40` |
+| `DATA_VERSION` | `src/world_editor/java.rs:38` |
+| `NOISE_SEED` | `src/ground_generation.rs:1778` |
+| `BIOME_AMOUNTS` | `src/caves/decoration.rs:163` |
+
+**No assert can fire today.** Every call site runs once per process, audited:
+`data_processing.rs:321/336/338`, `main.rs:264` (the `--cave-zone-map` preview path,
+which exits before world creation) and `caves/mod.rs:114`. They exist to make the
+one-cell-per-process assumption explicit and loud: the day someone adds a `--serve`
+mode or an in-process batch (the natural next step once Meld is paying process-spawn
+cost twelve times a minute), they get a named panic instead of blocks clamped to the
+wrong world height or chunks stamped with mismatched DataVersions. Signatures and
+call sites are unchanged; `BiomeAmounts` gained `Debug, PartialEq`, derive-only.
+
+## Verification
+
+- `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo fmt -- --check`: clean.
+- `cargo test`: **486 passed, 0 failed** (2 telemetry, 6 new floodfill).
+- `scripts/golden_hash.sh` on a release build: **OK on all 5 fixtures** against the
+  committed pre-change baseline (levittown `82d4196da33dd23c`, marrakech
+  `9b7d1bede9fa0ea0`, midtown `368810a05a6ceea0`, munich_altstadt `55fd390be3b95991`,
+  rovaniemi `e7ffec6d815ace39`).
+- Markers live-checked on both the sequential and the 18-tile parallel path; the CPU
+  counters are real (79.6 CPU-s over 12.1 wall-s on 21 threads). With the env var
+  unset and with `=0`: zero `[meld]` lines, and a `Compare-Object` of marker-run
+  stdout (markers stripped) against unset-run stdout differs only in the output path.
+
+## Not done
+
+- **The `overture` marker has never fired in a live run.** It sits inside the exact
+  `if` that gates the fetch, so it is correct by construction, but both smokes were
+  `--mode terrain-only --offline`.
+- **Only a debug build was smoke-tested for markers**; no release marker run.
+- **Nothing sets `ARNIS_FILL_BUDGET`.** Flipping it on is Meld's call.
+- **No `#[should_panic]` test** for the four asserts: the statics are process-global
+  and already set by other tests in the same binary, so tripping one would poison the
+  shared state for the rest of the suite.
+- **No Cargo.toml edit.** If the raw kernel32 FFI in `meld_telemetry.rs` is ever
+  unwanted, the alternative is adding `Win32_System_Threading` /
+  `Win32_System_ProcessStatus` to the existing `windows` pin and rewriting `mod win`.
+
+## The open question, and it is the valuable one
+
+**Nobody has named the 1:1 shared-resource wall.**
+
+Measured on the reference box (24 logical cores, 8P+16E Ultra 9 275HX, 31.4 GB, NVMe),
+1:1 cell size 4, workers raised live mid-run: median cell time goes 21.1 s (8w) to
+33.9 s (12w) to 41.6 s (16w) to 56.5 s (20w) to 63.5 s (24w) while **throughput stays
+flat at 21-23 cells/min the whole way**, at 79% average CPU. There was CPU headroom,
+and adding workers still bought nothing. Something else is saturated.
+
+Candidates, in rough order of suspicion:
+
+1. **Memory bandwidth and last-level cache.** Each 1:1 cell holds a multi-GB world
+   model: measured previously at ~6.2 GB resident world plus ~3.9 GB cave bookkeeping
+   without eviction, ~4.15 GB with. Twelve of those streaming through a shared LLC is
+   the obvious suspect.
+2. **NVMe write pressure** during region flush, now that flushing is a pool and
+   overlaps generation instead of serialising behind it.
+3. **The Windows heap under concurrent NBT allocation.** A known past offender in this
+   codebase: the B_Linear converter was 10-30x slow for exactly this reason and
+   mimalloc fixed it. arnis does its own dense-section allocation under rayon.
+4. **P-core versus E-core placement** past 8 workers. The measured taper does start
+   there, which is why the governor's marginal-gain threshold drops above 8.
+
+Meld's governor **routes around this wall by measuring it. It does not explain it.**
+Whoever names it gets the next real speedup, and the instruments now exist: run
+`bench/bench_scheduler.py` over a worker sweep with `ARNIS_PHASE_MARKERS=1` and see
+which phase inflates. If it is `place`, suspect 1 or 3. If it is `save` or `merge`,
+suspect 2.
+
+**The GPU is not the answer to this.** See `PHASE2-GPU-MEASURED.md`: the dGPU and the
+iGPU finished within about 5 s of each other, so GPU speed was never the constraint,
+the offloadable share was.

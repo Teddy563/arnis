@@ -1769,9 +1769,25 @@ pub fn generate_ground_region(
 // patterns, while different --seed values shuffle them.
 static NOISE_SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
 
-/// Set the global noise seed. Safe to call multiple times; only first wins.
+/// Set the global noise seed. Safe to call repeatedly WITH THE SAME SEED (first wins, the
+/// repeat is a silent no-op); a re-set with a DIFFERENT seed is IGNORED and reported.
+///
+/// Silently keeping the first seed would mean a second cell in the same process renders
+/// its bed/dune/shore patterns from someone else's seed and the tile-invariance guarantee
+/// quietly breaks. So: panic in a debug build, one warning line in release. Release must
+/// not abort, because the GUI's `gui_start_generation` takes `tile_invariant_seed` and a
+/// user can legitimately generate, change the seed, and generate again in one process.
 pub fn set_noise_seed(seed: u64) {
-    let _ = NOISE_SEED.set(seed);
+    let first = *NOISE_SEED.get_or_init(|| seed);
+    if first != seed {
+        let msg = format!(
+            "NOISE_SEED (src/ground_generation.rs) re-set with a different value: already set to {first}, now being set to {seed}. This static is per-process config; two seeds in one process would render tile-inconsistent ground patterns. The first seed wins and the new one is IGNORED."
+        );
+        #[cfg(debug_assertions)]
+        panic!("{msg}");
+        #[cfg(not(debug_assertions))]
+        eprintln!("warning: {msg}");
+    }
 }
 
 #[inline]

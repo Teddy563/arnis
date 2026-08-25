@@ -268,6 +268,21 @@ pub struct Args {
     pub debug: bool,
 
     /// Set floodfill timeout (seconds) (optional)
+    ///
+    /// Guards against a pathological polygon hanging a run: once the budget is spent, the
+    /// fill stops seeding new flood fronts and returns what it has. Omitted = no limit.
+    ///
+    /// TWO MEANINGS, selected by the environment, because a wall clock is not deterministic.
+    /// By DEFAULT this is elapsed time measured with `Instant::now()`, so a fill under heavy
+    /// machine load can truncate at a different point than the same fill on an idle box —
+    /// the same bbox rendered twice can differ, and two adjacent tiles rendered by different
+    /// workers can disagree along their border. With `ARNIS_FILL_BUDGET=1` the seconds are
+    /// converted, through one documented constant in `floodfill.rs`
+    /// (`BUDGET_UNITS_PER_SECOND`), into a work-unit budget counted from the fill's own
+    /// iterations, so the stopping point is a pure function of the input. The flag keeps its
+    /// meaning either way; only what is being counted changes.
+    ///
+    /// The env var is OFF unless set: an unset run behaves exactly as it always has.
     #[arg(long, value_parser = parse_duration)]
     pub timeout: Option<Duration>,
 
