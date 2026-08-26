@@ -179,7 +179,15 @@ pub struct Args {
     /// seam are still authored into the neighbour's territory exactly as before - the
     /// neighbouring cell renders that ground itself. Only the WRITE is skipped. Do not pass
     /// this for a standalone render: it would drop real terrain nobody else generates.
-    #[arg(long, value_name = "RX0,RX1,RZ0,RZ1", value_parser = parse_region_rect)]
+    // allow_hyphen_values: a rectangle west or north of the origin starts with a minus, and
+    // clap otherwise reads "-4,-1,0,3" as an unknown flag and rejects the run. Meld emits the
+    // --flag=VALUE form as well; either alone is enough, both is deliberate.
+    #[arg(
+        long,
+        value_name = "RX0,RX1,RZ0,RZ1",
+        allow_hyphen_values = true,
+        value_parser = parse_region_rect
+    )]
     pub canonical_regions: Option<(i32, i32, i32, i32)>,
 
     /// Underground cave generation (clean-room port of Minecraft 1.21.8 cave worldgen: noise caves +
