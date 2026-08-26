@@ -10,9 +10,17 @@
 #   scripts/golden_hash.sh --update     # rebaseline the manifest (intentional visual change)
 #   scripts/golden_hash.sh munich_altstadt levittown   # subset
 #
-# ARNIS_BIN overrides the binary (default target/release/arnis[.exe]). During an upstream
+# The harness BUILDS FIRST (`cargo build --release --bin arnis`, default features, exactly
+# what CI and the release ship) and then hashes what it just built. Before that it did not,
+# so a green run could be certifying a binary from an hour ago while the change under test
+# sat uncompiled in the working tree - and every generation gate in this repo is this script.
+#
+# ARNIS_BIN overrides the binary (default target/release/arnis[.exe]) AND SUPPRESSES THE
+# BUILD: a pinned binary is hashed exactly as handed over, never rebuilt. During an upstream
 # port the fork builds into an isolated target dir, so set it:
 #   ARNIS_BIN=c:/tmp/arnis-port-target/release/arnis.exe scripts/golden_hash.sh
+# The suppression is announced in the output, because "5/5 OK" against a stale pinned exe is
+# the exact failure this build step exists to prevent.
 #
 # MELD-DIVERGENCE from upstream's copy of this script:
 #   * `--canopy-height=false` is gone: this fork deleted the canopy module.
@@ -31,12 +39,27 @@ cd "$(dirname "$0")/.."
 MANIFEST="tests/golden_hashes.txt"
 FIXDIR="tests/fixtures"
 BIN="${ARNIS_BIN:-}"
-if [[ -z "$BIN" ]]; then
+if [[ -n "$BIN" ]]; then
+    # Caller pinned a binary. Hash THAT, unbuilt - and say so loudly, so nobody reads the
+    # result as a statement about the working tree.
+    echo "WARN  ARNIS_BIN is set: hashing $BIN AS-IS, no rebuild."
+    echo "WARN  This says nothing about the current source tree. Unset ARNIS_BIN to gate a change."
+    if [[ ! -x "$BIN" ]]; then echo "error: ARNIS_BIN=$BIN is not an executable"; exit 1; fi
+else
+    # Build before hashing. `--bin arnis` skips the unrelated refresh_wikidata_index binary;
+    # default features (gui) are deliberate - that is the binary CI and the release produce,
+    # and a --no-default-features build is a different program to hash.
+    echo "BUILD cargo build --release --bin arnis"
+    if ! cargo build --release --bin arnis; then
+        echo "error: cargo build --release --bin arnis failed; refusing to hash a stale binary"
+        exit 1
+    fi
     if [[ -x target/release/arnis.exe ]]; then BIN=target/release/arnis.exe
     elif [[ -x target/release/arnis ]]; then BIN=target/release/arnis
-    else echo "error: build target/release/arnis first (cargo build --release)"; exit 1
+    else echo "error: cargo build succeeded but target/release/arnis[.exe] is missing"; exit 1
     fi
 fi
+echo "BIN   $BIN"
 
 UPDATE=0
 FIXTURES=()

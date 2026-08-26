@@ -16,6 +16,15 @@ mod luanti;
 
 pub mod bedrock;
 
+/// D2 (perf phase 2): `to_bits()` gate for the built-up elevation Gaussian, kept next to
+/// the code it gates in `src/elevation/`. Declared from here only because this crate is a
+/// binary - a `tests/` integration target cannot reach a `pub(crate)` blur - and because
+/// the phase-2 file split put `elevation/postprocess.rs` in another owner's hands. D1's
+/// owner should move this declaration into `postprocess.rs` and delete this note.
+#[cfg(test)]
+#[path = "../elevation/postprocess_bit_exact_test.rs"]
+mod elevation_postprocess_bit_exact_test;
+
 pub(crate) use common::WorldToModify;
 pub use common::{set_world_bounds, world_min_section_y, world_min_y, MIN_Y};
 pub use java::set_data_version;
@@ -121,6 +130,135 @@ impl RegionContainer {
             RegionContainer::BlinearV3 => "b_linear_v3",
         }
     }
+}
+
+/// I5 (perf phase 2): which of the two region-write paths does the discarded work?
+///
+/// A cs4 Meld cell hands arnis a bbox expanded by the seam buffer, so 6x6 = 36 region
+/// files are written while `merge.py` keeps only the canonical 4x4 = 16. The 20 discarded
+/// files leave this process through ONE of two paths, never both, and nothing said which:
+///
+///   * the eviction path - [`WorldEditor::flush_region_via`], used under stream-to-disk,
+///     which hands the region to the background `FlushWorker` (one ACCEPTED handoff is
+///     exactly one region file written, by `java::RegionWriteCtx::write`);
+///   * the final save - `WorldEditor::save_java`, which writes every region still resident
+///     in RAM when generation ends, via `save_single_region`.
+///
+/// Those two are the only callers of `java::write_region_to_disk`, so `flushed + saved` is
+/// the complete count of region files this process wrote.
+///
+/// Counter definitions, exactly:
+///
+/// * `flushed` - regions evicted by `flush_region_via` **and accepted** by the worker. A
+///   handoff that failed and restored the region to RAM is NOT counted here; if the run
+///   reaches the final save, that region is counted by `saved` instead.
+/// * `saved` - regions written by `save_java`, one per **successful** `save_single_region`.
+///   Halo regions rejected by `save_java`'s existing bbox filter are never written and
+///   never counted.
+/// * `canonical` - of `flushed + saved`, those whose whole 512x512 footprint lies inside
+///   the bbox arnis was given; see [`region_is_canonical`].
+/// * `discarded` - `flushed + saved - canonical`: the region files Meld's merge deletes.
+/// * `flushed_discarded` / `saved_discarded` - the same `discarded` total split by path.
+///   **This is the I5 number**: it says whether B1 (the `save_java` filter) or B2 (the
+///   eviction filter) holds the money.
+///
+/// The counters are process-global, not per-editor, because the tile-parallel path builds
+/// many `WorldEditor`s while a run must print exactly one line. That line is emitted once,
+/// from the tail of `save_java`, on every exit path.
+pub(crate) mod region_stats {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static FLUSHED_CANONICAL: AtomicU64 = AtomicU64::new(0);
+    static FLUSHED_HALO: AtomicU64 = AtomicU64::new(0);
+    static SAVED_CANONICAL: AtomicU64 = AtomicU64::new(0);
+    static SAVED_HALO: AtomicU64 = AtomicU64::new(0);
+
+    /// One region file left through the eviction path (`flush_region_via`).
+    pub(crate) fn record_flushed(canonical: bool) {
+        let c = if canonical {
+            &FLUSHED_CANONICAL
+        } else {
+            &FLUSHED_HALO
+        };
+        c.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// One region file left through the final save (`save_java`).
+    pub(crate) fn record_saved(canonical: bool) {
+        let c = if canonical {
+            &SAVED_CANONICAL
+        } else {
+            &SAVED_HALO
+        };
+        c.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The single end-of-run summary line, without its trailing newline.
+    ///
+    /// `Relaxed` loads are sound here: every increment happens-before this call through the
+    /// rayon join in `save_java` and through the `FlushWorker` handoff, both of which
+    /// synchronise.
+    ///
+    /// The `[regions]` prefix is deliberately NOT `[meld]`: Meld's `is_marker_line`
+    /// (`arnis_cmd.py:662`) only swallows `^\s*\[meld\]\s+v=\d+`, so this stays a human
+    /// diagnostic in the cell log and can never be mistaken for a protocol v1 record. It
+    /// carries no `N/M` pair and none of `parse_progress`'s keywords, so it also cannot
+    /// move Meld's progress bar.
+    pub(crate) fn summary_line() -> String {
+        let fc = FLUSHED_CANONICAL.load(Ordering::Relaxed);
+        let fh = FLUSHED_HALO.load(Ordering::Relaxed);
+        let sc = SAVED_CANONICAL.load(Ordering::Relaxed);
+        let sh = SAVED_HALO.load(Ordering::Relaxed);
+        format!(
+            "[regions] flushed={} saved={} canonical={} discarded={} \
+             flushed_discarded={} saved_discarded={}",
+            fc + fh,
+            sc + sh,
+            fc + sc,
+            fh + sh,
+            fh,
+            sh
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_for_test() {
+        for c in [
+            &FLUSHED_CANONICAL,
+            &FLUSHED_HALO,
+            &SAVED_CANONICAL,
+            &SAVED_HALO,
+        ] {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+}
+
+/// True when region `(rx, rz)`'s entire 512x512 block footprint lies inside `bbox`.
+///
+/// Deliberately a geometric test against the bbox arnis was actually given, not a reading of
+/// Meld's `coords.canonical_region_bounds` (arnis is never told the unexpanded cell). The two
+/// agree because a Meld cell is region-aligned and its seam expansion is smaller than one
+/// region (8 chunks = 128 blocks): every fully covered region is then a canonical one, and
+/// every partially covered region is seam halo. If `seam_buffer_chunks` ever reached 32
+/// (512 blocks), a whole halo ring would start reading as canonical and the `[regions]` line
+/// would understate `discarded`.
+///
+/// `max_x`/`max_z` are inclusive (the max over all covered blocks), matching the halo filter
+/// in `save_java`.
+///
+/// Read the `[regions]` line with the run in mind: on a bbox SMALLER than one region - the
+/// golden fixtures, or any small standalone `--bbox` - no region is fully covered, so the
+/// line reports everything as `discarded` even though nothing downstream deletes it. The
+/// canonical/discarded split is a statement about region-aligned Meld cells, which is what
+/// I5 measures.
+pub(crate) fn region_is_canonical(bbox: &XZBBox, rx: i32, rz: i32) -> bool {
+    let x0 = rx as i64 * 512;
+    let z0 = rz as i64 * 512;
+    x0 >= bbox.min_x() as i64
+        && x0 + 511 <= bbox.max_x() as i64
+        && z0 >= bbox.min_z() as i64
+        && z0 + 511 <= bbox.max_z() as i64
 }
 
 /// Metadata saved with the world
@@ -449,6 +587,8 @@ impl<'a> WorldEditor<'a> {
         match worker.send(rx, rz, region) {
             Ok(()) => {
                 self.flushed_regions.insert((rx, rz));
+                // I5: the worker writes exactly one region file per accepted handoff.
+                region_stats::record_flushed(region_is_canonical(self.xzbbox, rx, rz));
                 Ok(true)
             }
             Err((region, err)) => {
@@ -1790,4 +1930,137 @@ fn single_item(id: &str, slot: i8, count: i8) -> HashMap<String, Value> {
     item.insert("Slot".to_string(), Value::Byte(slot));
     item.insert("Count".to_string(), Value::Byte(count));
     item
+}
+
+#[cfg(test)]
+mod region_stats_tests {
+    use super::*;
+    use crate::coordinate_system::cartesian::XZBBox;
+
+    /// The cs4 geometry the phase-2 plan is arguing about: a 4x4-region cell at 1:1,
+    /// expanded by the 8-chunk (128-block) seam buffer, so arnis is handed
+    /// `[-128, 2175]` on both axes. `save_java`'s halo filter writes 6x6 = 36 region
+    /// files; `merge.py` keeps the canonical 4x4 = 16. `region_is_canonical` must split
+    /// them exactly that way, or the `[regions]` line means nothing.
+    #[test]
+    fn canonical_matches_the_cs4_rectangle_meld_keeps() {
+        let bbox = XZBBox::rect_from_min_max(-128, -128, 2175, 2175).unwrap();
+        let mut canonical = 0;
+        let mut written = 0;
+        for rx in -1..=4 {
+            for rz in -1..=4 {
+                written += 1;
+                if region_is_canonical(&bbox, rx, rz) {
+                    canonical += 1;
+                }
+            }
+        }
+        assert_eq!(
+            written, 36,
+            "the halo filter writes 6x6 regions for this bbox"
+        );
+        assert_eq!(canonical, 16, "exactly the 4x4 canonical rectangle");
+
+        assert!(region_is_canonical(&bbox, 0, 0));
+        assert!(region_is_canonical(&bbox, 3, 3));
+        // Partially covered rings are seam halo, not canonical.
+        assert!(!region_is_canonical(&bbox, -1, 0));
+        assert!(!region_is_canonical(&bbox, 4, 3));
+        assert!(!region_is_canonical(&bbox, -1, -1));
+    }
+
+    /// Same, but for a cell that does not sit at the origin - the normal Meld case, where
+    /// the master-origin frame puts the cell at some region offset.
+    #[test]
+    fn canonical_is_offset_independent() {
+        // Canonical regions 40..=43 x -12..=-9, plus the same 128-block seam ring.
+        let bbox = XZBBox::rect_from_min_max(
+            40 * 512 - 128,
+            -12 * 512 - 128,
+            44 * 512 - 1 + 128,
+            -8 * 512 - 1 + 128,
+        )
+        .unwrap();
+        let mut canonical = Vec::new();
+        for rx in 39..=44 {
+            for rz in -13..=-7 {
+                if region_is_canonical(&bbox, rx, rz) {
+                    canonical.push((rx, rz));
+                }
+            }
+        }
+        assert_eq!(canonical.len(), 16);
+        assert!(canonical
+            .iter()
+            .all(|(rx, rz)| (40..=43).contains(rx) && (-12..=-9).contains(rz)));
+    }
+
+    /// A region exactly flush with the bbox on every side is canonical: the bounds are
+    /// inclusive, so `max` is the last covered block, not one past it.
+    #[test]
+    fn exactly_flush_region_is_canonical() {
+        let bbox = XZBBox::rect_from_min_max(0, 0, 511, 511).unwrap();
+        assert!(region_is_canonical(&bbox, 0, 0));
+        assert!(!region_is_canonical(&bbox, 1, 0));
+        let one_short = XZBBox::rect_from_min_max(0, 0, 510, 511).unwrap();
+        assert!(!region_is_canonical(&one_short, 0, 0));
+    }
+
+    /// The `[regions]` line itself: every counter separately observable, and the format
+    /// stable enough for a bench script to parse.
+    #[test]
+    fn summary_line_reports_each_path_separately() {
+        region_stats::reset_for_test();
+        // 2 canonical + 3 halo evicted, 1 canonical + 4 halo written by the final save.
+        for _ in 0..2 {
+            region_stats::record_flushed(true);
+        }
+        for _ in 0..3 {
+            region_stats::record_flushed(false);
+        }
+        region_stats::record_saved(true);
+        for _ in 0..4 {
+            region_stats::record_saved(false);
+        }
+        // Exact, single-space format: a bench script greps this line, so the spelling of
+        // every key and the spacing between them are part of the contract.
+        let five = concat!(
+            "[regions] flushed=5 saved=5 canonical=3 discarded=7",
+            " flushed_discarded=3 saved_discarded=4"
+        );
+        assert_eq!(region_stats::summary_line(), five);
+
+        region_stats::reset_for_test();
+        let zero = concat!(
+            "[regions] flushed=0 saved=0 canonical=0 discarded=0",
+            " flushed_discarded=0 saved_discarded=0"
+        );
+        assert_eq!(region_stats::summary_line(), zero);
+
+        // The line must not look like a `[meld] v=1` protocol record, and must not carry
+        // anything Meld's `parse_progress` scrapes (an `N/M` pair, or the words it keys
+        // on). Asserted here rather than in a test of its own because the counters are
+        // process-global: two tests touching them would race inside one test binary.
+        region_stats::record_flushed(true);
+        let line = region_stats::summary_line();
+        assert!(line.starts_with("[regions] "));
+        assert!(!line.contains("[meld]"));
+        assert!(!line.contains("v="));
+        assert!(!line.contains('/'), "no N/M pair for _PROGRESS_RE to find");
+        let low = line.to_lowercase();
+        for kw in [
+            "fetching",
+            "processing",
+            "ground",
+            "generating",
+            "saving",
+            "done",
+        ] {
+            assert!(
+                !low.contains(kw),
+                "line must not move Meld's progress bar: {kw}"
+            );
+        }
+        region_stats::reset_for_test();
+    }
 }

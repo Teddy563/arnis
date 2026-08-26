@@ -120,7 +120,19 @@ impl<'a> WorldEditor<'a> {
     ///
     /// Uses parallel processing with rayon for fast region saving.
     /// Returns an error if any region fails to save (e.g. disk full).
+    ///
+    /// Thin wrapper around [`Self::save_java_inner`] so the I5 `[regions]` summary is
+    /// printed exactly once per run on EVERY exit path - including the two early returns
+    /// (`regions.is_empty()` and `total_regions == 0`), which is precisely the shape a
+    /// fully streamed-to-disk run takes, and the run whose split matters most.
     pub(super) fn save_java(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let result = self.save_java_inner();
+        // Additive diagnostic; see `super::region_stats` for what each counter counts.
+        eprintln!("{}", super::region_stats::summary_line());
+        result
+    }
+
+    fn save_java_inner(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("{} Saving world...", "[7/7]".bold());
         emit_gui_progress_update(90.0, "Saving world...");
 
@@ -213,6 +225,13 @@ impl<'a> WorldEditor<'a> {
                     should_stop.store(true, Ordering::Release);
                     return;
                 }
+
+                // I5: one region file written by the final-save path.
+                super::region_stats::record_saved(super::region_is_canonical(
+                    self.xzbbox,
+                    *region_x,
+                    *region_z,
+                ));
 
                 // Update progress
                 let regions_done = regions_processed.fetch_add(1, Ordering::SeqCst) + 1;
