@@ -1163,6 +1163,9 @@ fn gui_start_generation(
                 prewarm_overture: false,
                 prewarm_elevation: false,
                 fillground: fillground_enabled,
+                // Never set from the GUI: the halo-write skip is only correct for a
+                // tiled caller that renders the neighbouring cells too.
+                canonical_regions: None,
                 caves: false,
                 cave_asset_pack: None,
                 land_cover: land_cover_enabled,

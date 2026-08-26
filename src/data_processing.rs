@@ -319,6 +319,10 @@ pub fn generate_world_with_options(
     // --tile-invariant-rendering). Drives every value_noise_01 sample so
     // identical seed → identical bed/dune/shore noise patterns.
     crate::ground_generation::set_noise_seed(args.tile_invariant_rendering.unwrap_or(0));
+    // B1: which regions are worth writing. None (every standalone run) keeps today's
+    // behaviour; Meld passes its cell's canonical rectangle so the halo ring it deletes a
+    // moment later is never serialised, compressed or written.
+    crate::world_editor::region_keep::set(args.canonical_regions);
 
     // ── Vertical geometry ────────────────────────────────────────────────────────────
     // One profile per world, computed here because this is the single point both the CLI

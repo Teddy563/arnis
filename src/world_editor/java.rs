@@ -178,6 +178,10 @@ impl<'a> WorldEditor<'a> {
                     && *rx <= max_region_x
                     && *rz >= min_region_z
                     && *rz <= max_region_z
+                    // B1: --canonical-regions narrows this further. The existing filter uses the
+                    // SEAM-EXPANDED bbox arnis was handed, so it keeps the halo ring the caller
+                    // deletes; the keep-rectangle is the caller's real cell.
+                    && super::region_keep::is_kept(*rx, *rz)
             })
             .count() as u64;
 
@@ -209,6 +213,12 @@ impl<'a> WorldEditor<'a> {
                     || *region_z < min_region_z
                     || *region_z > max_region_z
                 {
+                    return;
+                }
+
+                // B1: and skip anything outside the caller's keep-rectangle.
+                if !super::region_keep::is_kept(*region_x, *region_z) {
+                    super::region_stats::record_skipped();
                     return;
                 }
 

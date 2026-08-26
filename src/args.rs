@@ -166,6 +166,22 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub fillground: bool,
 
+    /// Only write region files inside this inclusive region rectangle: `rx0,rx1,rz0,rz1`.
+    ///
+    /// A tiled caller (Meld) renders each cell with a seam-expanded bbox so elements that
+    /// straddle the boundary still place their overhang, which makes arnis touch a ring of
+    /// halo regions around the cell. The caller then keeps only the cell's canonical
+    /// rectangle and deletes the ring - measured at 20 of 36 region files for a 4x4 cell.
+    /// Passing the rectangle here skips writing (and compressing, and serialising) files
+    /// that are deleted moments later.
+    ///
+    /// Placement is untouched: the halo is still GENERATED, so blocks that spill across the
+    /// seam are still authored into the neighbour's territory exactly as before - the
+    /// neighbouring cell renders that ground itself. Only the WRITE is skipped. Do not pass
+    /// this for a standalone render: it would drop real terrain nobody else generates.
+    #[arg(long, value_name = "RX0,RX1,RZ0,RZ1", value_parser = parse_region_rect)]
+    pub canonical_regions: Option<(i32, i32, i32, i32)>,
+
     /// Underground cave generation (clean-room port of Minecraft 1.21.8 cave worldgen: noise caves +
     /// random-walk carvers + pools/rivers + themed biome zones + ores + decoration + asset-pack
     /// formations). Implies --fillground (caves need solid host rock to carve into).
@@ -881,6 +897,30 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntError> {
     let seconds = arg.parse()?;
     Ok(std::time::Duration::from_secs(seconds))
+}
+
+/// Parses `--canonical-regions rx0,rx1,rz0,rz1` (inclusive region coordinates).
+fn parse_region_rect(v: &str) -> Result<(i32, i32, i32, i32), String> {
+    let parts: Vec<&str> = v.split(',').map(|p| p.trim()).collect();
+    if parts.len() != 4 {
+        return Err(format!(
+            "expected four comma-separated region coordinates rx0,rx1,rz0,rz1, got {:?}",
+            v
+        ));
+    }
+    let mut n = [0i32; 4];
+    for (i, p) in parts.iter().enumerate() {
+        n[i] = p
+            .parse::<i32>()
+            .map_err(|e| format!("region coordinate {:?} is not an integer: {e}", p))?;
+    }
+    if n[0] > n[1] || n[2] > n[3] {
+        return Err(format!(
+            "region rectangle is inverted: rx {}..{}, rz {}..{}",
+            n[0], n[1], n[2], n[3]
+        ));
+    }
+    Ok((n[0], n[1], n[2], n[3]))
 }
 
 #[cfg(test)]

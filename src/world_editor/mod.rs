@@ -204,12 +204,20 @@ pub(crate) mod region_stats {
     /// diagnostic in the cell log and can never be mistaken for a protocol v1 record. It
     /// carries no `N/M` pair and none of `parse_progress`'s keywords, so it also cannot
     /// move Meld's progress bar.
+    /// B1: a region the `--canonical-regions` rectangle suppressed. Counted separately from
+    /// `flushed`/`saved` because no file was written for it - it is the work that was skipped.
+    pub(crate) static SKIPPED: AtomicU64 = AtomicU64::new(0);
+
+    pub(crate) fn record_skipped() {
+        SKIPPED.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub(crate) fn summary_line() -> String {
         let fc = FLUSHED_CANONICAL.load(Ordering::Relaxed);
         let fh = FLUSHED_HALO.load(Ordering::Relaxed);
         let sc = SAVED_CANONICAL.load(Ordering::Relaxed);
         let sh = SAVED_HALO.load(Ordering::Relaxed);
-        format!(
+        let base = format!(
             "[regions] flushed={} saved={} canonical={} discarded={} \
              flushed_discarded={} saved_discarded={}",
             fc + fh,
@@ -218,11 +226,18 @@ pub(crate) mod region_stats {
             fh + sh,
             fh,
             sh
-        )
+        );
+        let skipped = SKIPPED.load(Ordering::Relaxed);
+        if super::region_keep::active() {
+            format!("{base} skipped={skipped}")
+        } else {
+            base
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn reset_for_test() {
+        SKIPPED.store(0, Ordering::Relaxed);
         for c in [
             &FLUSHED_CANONICAL,
             &FLUSHED_HALO,
@@ -252,6 +267,52 @@ pub(crate) mod region_stats {
 /// line reports everything as `discarded` even though nothing downstream deletes it. The
 /// canonical/discarded split is a statement about region-aligned Meld cells, which is what
 /// I5 measures.
+/// The region rectangle `--canonical-regions` restricts writes to, if the caller passed one.
+///
+/// Process-global, set once from `Args` before generation, exactly like the other per-run
+/// config statics. `None` (the default, and every standalone run) keeps today's behaviour:
+/// every touched region is written.
+pub mod region_keep {
+    use std::sync::OnceLock;
+
+    static RECT: OnceLock<Option<(i32, i32, i32, i32)>> = OnceLock::new();
+
+    /// Set the keep-rectangle. Re-setting with a DIFFERENT value is a bug in the caller:
+    /// two cells in one process would write each other's halo.
+    pub(crate) fn set(rect: Option<(i32, i32, i32, i32)>) {
+        let first = RECT.get_or_init(|| rect);
+        if *first != rect {
+            #[cfg(debug_assertions)]
+            panic!(
+                "canonical_regions re-set with a different value: already {first:?}, now {rect:?}"
+            );
+            #[cfg(not(debug_assertions))]
+            eprintln!(
+                "warning: canonical_regions re-set with a different value: already {first:?},                  now {rect:?}; keeping the first"
+            );
+        }
+    }
+
+    /// True when this region should be written to disk.
+    pub(crate) fn is_kept(rx: i32, rz: i32) -> bool {
+        keeps(RECT.get().copied().flatten(), rx, rz)
+    }
+
+    /// The decision itself, free of the global so it can be tested exhaustively.
+    /// `None` means "no rectangle in force", which keeps every region.
+    pub(crate) fn keeps(rect: Option<(i32, i32, i32, i32)>, rx: i32, rz: i32) -> bool {
+        match rect {
+            None => true,
+            Some((rx0, rx1, rz0, rz1)) => rx >= rx0 && rx <= rx1 && rz >= rz0 && rz <= rz1,
+        }
+    }
+
+    /// Whether a rectangle is in force at all - for the `[regions]` summary line.
+    pub(crate) fn active() -> bool {
+        RECT.get().copied().flatten().is_some()
+    }
+}
+
 pub(crate) fn region_is_canonical(bbox: &XZBBox, rx: i32, rz: i32) -> bool {
     let x0 = rx as i64 * 512;
     let z0 = rz as i64 * 512;
@@ -584,6 +645,14 @@ impl<'a> WorldEditor<'a> {
         let Some(region) = self.world.regions.remove(&(rx, rz)) else {
             return Ok(false);
         };
+        if !region_keep::is_kept(rx, rz) {
+            // B1: the caller deletes this region the moment the cell merges, so serialising,
+            // compressing and writing it is pure waste. Dropping it here also frees the memory
+            // sooner than the handoff would, which is what eviction is for in the first place.
+            self.flushed_regions.insert((rx, rz));
+            region_stats::record_skipped();
+            return Ok(true);
+        }
         match worker.send(rx, rz, region) {
             Ok(()) => {
                 self.flushed_regions.insert((rx, rz));
@@ -1930,6 +1999,71 @@ fn single_item(id: &str, slot: i8, count: i8) -> HashMap<String, Value> {
     item.insert("Slot".to_string(), Value::Byte(slot));
     item.insert("Count".to_string(), Value::Byte(count));
     item
+}
+
+#[cfg(test)]
+mod region_keep_tests {
+    use super::region_keep::keeps;
+
+    #[test]
+    fn no_rectangle_keeps_everything() {
+        // Every standalone arnis run takes this path - behaviour must be unchanged.
+        for (rx, rz) in [(0, 0), (-1, -1), (9, -9), (i32::MIN, i32::MAX)] {
+            assert!(
+                keeps(None, rx, rz),
+                "({rx},{rz}) must be kept without a rectangle"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cs4_cell_keeps_its_sixteen_and_drops_the_ring() {
+        // The measured case: a 4x4 cell at regions 0..3 touches -1..4 because of the seam
+        // halo, so 36 regions are written and 20 are deleted by the caller.
+        let rect = Some((0, 3, 0, 3));
+        let mut kept = 0;
+        let mut dropped = 0;
+        for rx in -1..=4 {
+            for rz in -1..=4 {
+                if keeps(rect, rx, rz) {
+                    kept += 1
+                } else {
+                    dropped += 1
+                }
+            }
+        }
+        assert_eq!(kept, 16, "the canonical rectangle is 4x4");
+        assert_eq!(dropped, 20, "the halo ring is everything else of the 36");
+    }
+
+    #[test]
+    fn the_rectangle_is_inclusive_on_both_edges() {
+        let rect = Some((-2, 1, 3, 5));
+        assert!(
+            keeps(rect, -2, 3) && keeps(rect, 1, 5),
+            "corners are inside"
+        );
+        assert!(
+            !keeps(rect, -3, 3) && !keeps(rect, 2, 5),
+            "one past x is outside"
+        );
+        assert!(
+            !keeps(rect, 0, 2) && !keeps(rect, 0, 6),
+            "one past z is outside"
+        );
+    }
+
+    #[test]
+    fn a_single_region_rectangle_keeps_exactly_one() {
+        let rect = Some((7, 7, -4, -4));
+        assert!(keeps(rect, 7, -4));
+        for (rx, rz) in [(6, -4), (8, -4), (7, -5), (7, -3)] {
+            assert!(
+                !keeps(rect, rx, rz),
+                "({rx},{rz}) is outside a 1x1 rectangle"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
