@@ -61,6 +61,18 @@ fn codec() -> impl Options {
 
 /// `<tile>.json` -> `<tile>.osmbin` (paired files, same directory, same stem —
 /// Meld's TTL/prune/cleanup deletes them together).
+/// Are sidecars enabled at all? `ARNIS_OSM_SIDECARS=0` disables both the read and the
+/// bake, so a cache-size-sensitive install never grows an .osmbin next to its tiles.
+/// Anything else (unset included) keeps the default: enabled. Read once.
+pub fn sidecars_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("ARNIS_OSM_SIDECARS")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    })
+}
+
 pub fn sidecar_path(json_path: &str) -> String {
     match json_path.strip_suffix(".json") {
         Some(stem) => format!("{stem}.osmbin"),

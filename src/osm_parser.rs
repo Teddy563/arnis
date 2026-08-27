@@ -184,8 +184,16 @@ impl OsmData {
                 // EVERY read (content hash, never mtime); any mismatch, short file, or
                 // decode error falls through silently to the JSON path below — which is
                 // byte-for-byte the code A1 shipped — and re-bakes the sidecar.
+                // ARNIS_OSM_SIDECARS=0 opts out of the whole sidecar system (an .osmbin
+                // costs roughly two thirds of its tile's size on disk).
+                let use_sidecars = crate::osm_sidecar::sidecars_enabled();
                 let bin_path = crate::osm_sidecar::sidecar_path(&path);
-                let tile_elements = match crate::osm_sidecar::read_verified(&bin_path, &buf) {
+                let cached = if use_sidecars {
+                    crate::osm_sidecar::read_verified(&bin_path, &buf)
+                } else {
+                    None
+                };
+                let tile_elements = match cached {
                     Some(els) => els,
                     None => {
                         let mut de = serde_json::Deserializer::from_slice(&buf);
@@ -196,9 +204,11 @@ impl OsmData {
                                 continue;
                             }
                         };
-                        // Bake-on-first-miss piggybacks on the decode this cell paid
-                        // anyway (verify-at-bake + atomic rename inside).
-                        crate::osm_sidecar::bake(&bin_path, &buf, &data.elements);
+                        if use_sidecars {
+                            // Bake-on-first-miss piggybacks on the decode this cell paid
+                            // anyway (verify-at-bake + atomic rename inside).
+                            crate::osm_sidecar::bake(&bin_path, &buf, &data.elements);
+                        }
                         data.elements
                     }
                 };
