@@ -389,6 +389,79 @@ pub(crate) struct WorldMetadata {
     pub region_container: String,
 }
 
+/// Process-global `--road-grade` switch. A static rather than editor state
+/// because the override fold in `register_road_surface_y` and the tile
+/// merges must agree across every editor in the run (main + all tiles) and
+/// `Args` is not visible at the merge call sites. Pattern precedent:
+/// `WORLD_BOUNDS` in common.rs, `sidecars_enabled` in osm_parser.rs.
+static ROAD_GRADE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Wire the `--road-grade` flag into the override-fold semantics. Called
+/// before highways register any override (highway processing is the only
+/// writer of the override map). First value wins; a disagreeing re-set is
+/// IGNORED and reported (debug builds panic) — flipping mid-process would
+/// mix last-writer and min-fold entries in one override map.
+pub fn set_road_grade(enabled: bool) {
+    let first = *ROAD_GRADE.get_or_init(|| enabled);
+    if first != enabled {
+        let msg = format!(
+            "ROAD_GRADE (src/world_editor/mod.rs) re-set with a different value: already {first}, now {enabled}. This static is per-process config; the first value wins and the new one is IGNORED."
+        );
+        #[cfg(debug_assertions)]
+        panic!("{msg}");
+        #[cfg(not(debug_assertions))]
+        eprintln!("warning: {msg}");
+    }
+}
+
+/// True when `--road-grade on` reached `set_road_grade`. Unset == off: a
+/// run that never processes a highway never registers an override, so the
+/// default cannot affect output.
+pub fn road_grade_enabled() -> bool {
+    *ROAD_GRADE.get().unwrap_or(&false)
+}
+
+/// Fold one road Y into an override map.
+///
+/// Legacy (min_fold false): last writer wins — today's byte-exact behaviour.
+/// Road-grade (min_fold true): min-Y wins. Min is commutative and
+/// associative, so the final map is independent of element order, tile batch
+/// order, the LPT/band sort, ARNIS_NO_BAND, stream-to-disk eviction, and the
+/// sequential-vs-tiled paths — that order-freedom is the point, not a
+/// tie-break detail. The ground pass follows the folded map, so terrain
+/// stays consistent wherever two graded ways overlap off-node.
+#[inline]
+fn fold_road_surface_y(
+    map: &mut FnvHashMap<(i32, i32), i32>,
+    key: (i32, i32),
+    y: i32,
+    min_fold: bool,
+) {
+    if min_fold {
+        map.entry(key).and_modify(|v| *v = (*v).min(y)).or_insert(y);
+    } else {
+        map.insert(key, y);
+    }
+}
+
+/// Merge a tile editor's overrides into `dst` under the same fold semantics
+/// as `fold_road_surface_y`. Kept as a free function so the commutativity
+/// property is testable without a WorldEditor (and without touching the
+/// process-global flag from tests).
+fn merge_road_surface_overrides_into(
+    dst: &mut FnvHashMap<(i32, i32), i32>,
+    src: FnvHashMap<(i32, i32), i32>,
+    min_fold: bool,
+) {
+    if min_fold {
+        for (key, y) in src {
+            fold_road_surface_y(dst, key, y, true);
+        }
+    } else {
+        dst.extend(src);
+    }
+}
+
 /// The main world editor struct for placing blocks and saving worlds.
 ///
 /// The lifetime `'a` is tied to the `XZBBox` reference, which defines
@@ -816,12 +889,18 @@ impl<'a> WorldEditor<'a> {
     /// and the override lets the later ground pass fill below / cut above to
     /// match, yielding natural embankments/cuts instead of floating strips.
     ///
-    /// Last writer wins — acceptable because road placements for the same
-    /// cell come from overlapping stamps of adjacent centerline points whose
-    /// target Ys differ by at most ~1 block.
+    /// Legacy (road-grade off): last writer wins — acceptable because road
+    /// placements for the same cell come from overlapping stamps of adjacent
+    /// centerline points whose target Ys differ by at most ~1 block.
+    /// Road-grade on: min-Y wins (see `fold_road_surface_y`).
     #[inline]
     pub fn register_road_surface_y(&mut self, x: i32, z: i32, y: i32) {
-        self.road_surface_overrides.insert((x, z), y);
+        fold_road_surface_y(
+            &mut self.road_surface_overrides,
+            (x, z),
+            y,
+            road_grade_enabled(),
+        );
     }
 
     /// Take this editor's road-surface overrides (tile editors hand theirs to the main editor).
@@ -831,7 +910,11 @@ impl<'a> WorldEditor<'a> {
 
     /// Merge in road-surface overrides from a tile editor so post-merge passes stay road-aware.
     pub(crate) fn merge_road_surface_overrides(&mut self, overrides: FnvHashMap<(i32, i32), i32>) {
-        self.road_surface_overrides.extend(overrides);
+        merge_road_surface_overrides_into(
+            &mut self.road_surface_overrides,
+            overrides,
+            road_grade_enabled(),
+        );
     }
 
     /// Merge only the overrides whose cell falls in `regions`. Under stream-to-disk, only the
@@ -841,11 +924,20 @@ impl<'a> WorldEditor<'a> {
         overrides: FnvHashMap<(i32, i32), i32>,
         regions: &std::collections::HashSet<(i32, i32)>,
     ) {
-        self.road_surface_overrides.extend(
-            overrides
+        if road_grade_enabled() {
+            for (key, y) in overrides
                 .into_iter()
-                .filter(|((x, z), _)| regions.contains(&(x >> 9, z >> 9))),
-        );
+                .filter(|((x, z), _)| regions.contains(&(x >> 9, z >> 9)))
+            {
+                fold_road_surface_y(&mut self.road_surface_overrides, key, y, true);
+            }
+        } else {
+            self.road_surface_overrides.extend(
+                overrides
+                    .into_iter()
+                    .filter(|((x, z), _)| regions.contains(&(x >> 9, z >> 9))),
+            );
+        }
     }
 
     /// Get the water-appropriate Y level at a world coordinate.
@@ -2256,5 +2348,112 @@ mod region_stats_tests {
             );
         }
         region_stats::reset_for_test();
+    }
+}
+
+#[cfg(test)]
+mod road_override_fold_tests {
+    use super::{fold_road_surface_y, merge_road_surface_overrides_into};
+    use fnv::FnvHashMap;
+
+    // Tests exercise the fold helpers with an explicit `min_fold` bool
+    // instead of setting the process-global ROAD_GRADE: cargo test shares
+    // one process across tests, and a OnceLock set to `on` here would leak
+    // min-fold semantics into every other test's editor.
+
+    type Overrides = FnvHashMap<(i32, i32), i32>;
+
+    fn registrations() -> Vec<((i32, i32), i32)> {
+        vec![
+            ((0, 0), 70),
+            ((1, 0), 68),
+            ((0, 0), 66), // same cell, lower way
+            ((2, 3), 71),
+            ((0, 0), 69), // same cell, third way
+            ((1, 0), 72),
+        ]
+    }
+
+    #[test]
+    fn legacy_fold_is_last_writer_wins() {
+        let mut map = Overrides::default();
+        for (key, y) in registrations() {
+            fold_road_surface_y(&mut map, key, y, false);
+        }
+        assert_eq!(map[&(0, 0)], 69, "last writer must win with the flag off");
+        assert_eq!(map[&(1, 0)], 72);
+        assert_eq!(map[&(2, 3)], 71);
+    }
+
+    #[test]
+    fn min_fold_register_is_order_free() {
+        // Every permutation of the registration order yields the identical map.
+        let regs = registrations();
+        let mut reference: Option<Overrides> = None;
+        // 6 registrations -> permute by rotating and swapping; full n! is
+        // overkill, but cover rotations plus the reversed order.
+        let mut orders: Vec<Vec<((i32, i32), i32)>> = (0..regs.len())
+            .map(|r| {
+                let mut v = regs.clone();
+                v.rotate_left(r);
+                v
+            })
+            .collect();
+        orders.push(regs.iter().rev().cloned().collect());
+        for order in orders {
+            let mut map = Overrides::default();
+            for (key, y) in order {
+                fold_road_surface_y(&mut map, key, y, true);
+            }
+            assert_eq!(map[&(0, 0)], 66, "min must win regardless of order");
+            match &reference {
+                None => reference = Some(map),
+                Some(r) => assert_eq!(&map, r, "override map must be order-independent"),
+            }
+        }
+    }
+
+    #[test]
+    fn min_fold_merge_is_batch_order_free() {
+        // Three tile batches with overlapping halo columns; every merge order
+        // (and merging into a pre-seeded main map) converges to one map.
+        let batch = |v: &[((i32, i32), i32)]| -> Overrides { v.iter().cloned().collect() };
+        let a = batch(&[((5, 5), 70), ((6, 5), 71)]);
+        let b = batch(&[((5, 5), 68), ((7, 5), 64)]);
+        let c = batch(&[((6, 5), 69), ((7, 5), 65)]);
+
+        let mut orders: Vec<Vec<&Overrides>> = vec![
+            vec![&a, &b, &c],
+            vec![&a, &c, &b],
+            vec![&b, &a, &c],
+            vec![&b, &c, &a],
+            vec![&c, &a, &b],
+            vec![&c, &b, &a],
+        ];
+        let mut reference: Option<Overrides> = None;
+        for order in orders.drain(..) {
+            let mut main = Overrides::default();
+            fold_road_surface_y(&mut main, (5, 5), 73, true); // main editor registered first
+            for src in order {
+                merge_road_surface_overrides_into(&mut main, src.clone(), true);
+            }
+            assert_eq!(main[&(5, 5)], 68);
+            assert_eq!(main[&(6, 5)], 69);
+            assert_eq!(main[&(7, 5)], 64);
+            match &reference {
+                None => reference = Some(main),
+                Some(r) => assert_eq!(&main, r, "merge order must not matter"),
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_merge_is_extend() {
+        let mut main = Overrides::default();
+        main.insert((5, 5), 73);
+        let mut src = Overrides::default();
+        src.insert((5, 5), 90); // HIGHER than existing: extend must clobber
+        merge_road_surface_overrides_into(&mut main, src, false);
+        assert_eq!(main[&(5, 5)], 90, "flag off keeps extend (last batch wins)");
     }
 }
