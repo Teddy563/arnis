@@ -49,6 +49,7 @@ mod progress;
 mod projection;
 mod region;
 mod retrieve_data;
+mod river_bed;
 mod road_bearings;
 mod schematic;
 mod structures;

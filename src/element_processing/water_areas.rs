@@ -213,7 +213,7 @@ fn verify_closed_rings(rings: &[Vec<ProcessedNode>]) -> bool {
 // rings).
 
 /// A polygon edge segment for scanline intersection testing.
-struct ScanlineEdge {
+pub(crate) struct ScanlineEdge {
     x1: f64,
     z1: f64,
     x2: f64,
@@ -224,7 +224,7 @@ struct ScanlineEdge {
 ///
 /// If the ring is not perfectly closed (last point != first point),
 /// the closing edge is added explicitly.
-fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
+pub(crate) fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
     let mut edges = Vec::new();
     if ring.len() < 2 {
         return edges;
@@ -259,7 +259,7 @@ fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
 /// Collects edges from multiple rings into a single list.
 /// Used for inner rings where even-odd on combined edges is correct
 /// (inner rings of a valid multipolygon do not overlap).
-fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
+pub(crate) fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
     let mut edges = Vec::new();
     for ring in rings {
         edges.extend(collect_ring_edges(ring));
@@ -273,7 +273,7 @@ fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
 /// The crossing test uses the same convention as `geo::Contains`:
 /// an edge crosses the scanline when one endpoint is strictly above `z`
 /// and the other is at or below.
-fn compute_scanline_spans(
+pub(crate) fn compute_scanline_spans(
     edges: &[ScanlineEdge],
     z: f64,
     min_x: i32,
@@ -321,7 +321,7 @@ fn compute_scanline_spans(
 }
 
 /// Merges two sorted, non-overlapping span lists into their union.
-fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
+pub(crate) fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
     if a.is_empty() {
         return b.to_vec();
     }
@@ -354,7 +354,7 @@ fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
 ///
 /// Both inputs must be sorted and non-overlapping.
 /// Returns sorted, non-overlapping spans representing `a \ b`.
-fn subtract_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
+pub(crate) fn subtract_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
     if b.is_empty() {
         return a.to_vec();
     }
