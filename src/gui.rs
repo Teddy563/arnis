@@ -1202,6 +1202,10 @@ fn gui_start_generation(
                         _ => "max".to_string(),
                     }
                 },
+                // Quality features stay legacy in single-world GUI runs until the
+                // front end grows toggles for them; Meld drives them via CLI.
+                river_bed: "off".to_string(),
+                road_grade: "off".to_string(),
                 tile_invariant_rendering: tile_invariant_seed,
                 // The front end has always sent this (gui/js/main.js sets bakeLightingEnabled
                 // from the Bake lighting checkbox) and the parameter has always been accepted

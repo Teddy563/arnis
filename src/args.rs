@@ -471,6 +471,36 @@ pub struct Args {
           value_parser = ["max", "clean", "compact"])]
     pub road_detail: String,
 
+    /// River bed profile.
+    ///
+    ///   off  (default) — legacy terraced bed; byte-identical output.
+    ///   v1             — OSM-tagged rivers (waterway=river/stream/canal
+    ///                    ways, water=river polygons, riverbanks) get a
+    ///                    smooth width-scaled U profile: soft banks, rounded
+    ///                    bottom, no dunes or bank wobble.
+    ///
+    /// RIVERS ONLY — lake and coastline beds are untouched, and a river
+    /// blends into them instead of stepping. Versioned: any future retune of
+    /// the profile tables ships as `v2`, never as a changed `v1`, so a world
+    /// generated with `v1` is reproducible forever.
+    #[arg(long = "river-bed", default_value = "off",
+          value_parser = ["off", "v1"])]
+    pub river_bed: String,
+
+    /// Road longitudinal grading.
+    ///
+    ///   off  (default) — legacy cross-section-only flattening;
+    ///                    byte-identical output.
+    ///   on             — each road is graded along its length with a
+    ///                    slope-limited profile (per-class max grade), so
+    ///                    surfaces climb in evenly spaced ramps instead of
+    ///                    following terrain contour steps. Junction Ys are
+    ///                    pinned so crossing roads agree, and road-surface
+    ///                    overrides fold by min-Y so results are order-free.
+    #[arg(long = "road-grade", default_value = "off",
+          value_parser = ["off", "on"])]
+    pub road_grade: String,
+
     /// Bake per-chunk lighting so distant chunks render lit in LOD mods
     /// (Voxy/Chunky) without visiting them. Slower; off by default.
     #[arg(long, default_value_t = false)]
