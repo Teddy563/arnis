@@ -959,3 +959,6 @@ fn tent3(src: &[f32], w: usize, h: usize) -> Vec<f32> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;
