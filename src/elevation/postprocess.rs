@@ -995,8 +995,34 @@ fn gaussian_blur_grid_reported(
         report(0.5 * (after_h.len() as f64 / h as f64));
     }
 
-    // Vertical pass — columns are independent. Work column-at-a-time to keep
-    // memory access sequential within each parallel task.
+    // Transpose once into a flat column-major buffer, so the vertical pass reads a
+    // contiguous slice per column instead of gathering it.
+    //
+    // The old code built each column with `after_h.iter().map(|row| row[x])`, which
+    // pointer-chases `h` independent heap allocations per column - h*w scattered reads,
+    // essentially one cache miss each. A blocked transpose touches the same values but
+    // reuses every cache line it pulls in, and it happens once instead of per column.
+    //
+    // Bit-exactness: this reorders nothing. Each column still holds the same values in the
+    // same order, so the taps accumulate in the same sequence and every output bit pattern
+    // is unchanged. `postprocess_bit_exact_test.rs` is the gate for exactly that.
+    const TBLK: usize = 32;
+    let mut col_major: Vec<f64> = vec![0.0; w * h];
+    for y0 in (0..h).step_by(TBLK) {
+        let y1 = (y0 + TBLK).min(h);
+        for x0b in (0..w).step_by(TBLK) {
+            let x1b = (x0b + TBLK).min(w);
+            for y in y0..y1 {
+                let row = &after_h[y];
+                for x in x0b..x1b {
+                    col_major[x * h + y] = row[x];
+                }
+            }
+        }
+    }
+    drop(after_h);
+
+    // Vertical pass — columns are independent and now contiguous.
     let col_chunk = w.div_ceil(CHUNKS);
     let mut out: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
     let mut x0 = 0usize;
@@ -1005,7 +1031,7 @@ fn gaussian_blur_grid_reported(
         let blurred: Vec<(usize, Vec<f64>)> = (x0..x1)
             .into_par_iter()
             .map(|x| {
-                let column: Vec<f64> = after_h.iter().map(|row| row[x]).collect();
+                let column: &[f64] = &col_major[x * h..(x + 1) * h];
                 let col_len = column.len() as i32;
                 let col: Vec<f64> = (0..column.len())
                     .map(|y| {
