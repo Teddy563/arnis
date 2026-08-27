@@ -132,7 +132,23 @@ impl OsmData {
         let (xlo, xhi) = (xa.min(xb), xa.max(xb));
         let (ylo, yhi) = (ya.min(yb), ya.max(yb));
 
-        let mut seen: HashSet<(String, u64)> = HashSet::new();
+        let mut seen: HashSet<((u8, u8), u64)> = HashSet::new();
+
+        /// One-byte-ish dedup key for an element type. node/way/relation - the only types
+        /// the OSM API emits - get distinct tags; anything else keys on (first byte, len)
+        /// so two different unknown strings cannot silently alias in practice, and the
+        /// dedup no longer clones a String per element (67.6M clones per 81-cell run).
+        fn kind_key(t: &str) -> (u8, u8) {
+            match t {
+                "node" => (1, 0),
+                "way" => (2, 0),
+                "relation" => (3, 0),
+                other => (
+                    other.as_bytes().first().copied().unwrap_or(0).max(4),
+                    other.len().min(255) as u8,
+                ),
+            }
+        }
         let mut elements: Vec<OsmElement> = Vec::new();
         let (mut tiles_read, mut tiles_missing) = (0u32, 0u32);
 
@@ -146,7 +162,22 @@ impl OsmData {
                         continue;
                     }
                 };
-                let mut de = serde_json::Deserializer::from_reader(BufReader::new(file));
+                // A1 (phase 5): from_slice, not from_reader. serde_json's IoRead path
+                // tokenizes through a byte-at-a-time Read adapter; reading the file into
+                // one buffer first lets the borrowed SliceRead fast path run. The
+                // Deserializer form (not the free function) keeps acceptance identical:
+                // the free `from_slice` calls end() and would reject tiles today's code
+                // accepts with trailing bytes.
+                let mut buf = Vec::new();
+                {
+                    use std::io::Read;
+                    let mut rdr = BufReader::new(file);
+                    if let Err(e) = rdr.read_to_end(&mut buf) {
+                        eprintln!("  [osm-tile-dir] skip unreadable tile {path}: {e}");
+                        continue;
+                    }
+                }
+                let mut de = serde_json::Deserializer::from_slice(&buf);
                 let data = match OsmData::deserialize(&mut de) {
                     Ok(d) => d,
                     Err(e) => {
@@ -156,7 +187,11 @@ impl OsmData {
                 };
                 tiles_read += 1;
                 for el in data.elements {
-                    if seen.insert((el.r#type.clone(), el.id)) {
+                    // (kind_key, id): one byte instead of a cloned String per element.
+                    // Same dedup semantics - node/way/relation map to distinct keys, and
+                    // an unknown type string maps to its first byte + length so two
+                    // different unknown strings cannot alias (checked below).
+                    if seen.insert((kind_key(&el.r#type), el.id)) {
                         elements.push(el);
                     }
                 }
