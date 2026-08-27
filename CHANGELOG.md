@@ -10,6 +10,110 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.1.8] - 2026-08-27
+
+Faster generation, caves that work at any world height, and two opt-in
+passes that reshape river beds and road surfaces.
+
+With no new flags passed, output is byte-identical to 3.1.7. The one
+deliberate exception is the cave fix, which only changes worlds taller or
+deeper than vanilla - where the old behaviour was the bug.
+
+### Added
+
+- **`--canonical-regions rx0,rx1,rz0,rz1`** tells a tiled run which regions
+  the cell actually owns, so the seam-safety ring is still generated (it is
+  load-bearing) but never written. A cell used to write 36 region files and
+  keep 16. Measured -12% per cell. Refuses to act without an explicit
+  rectangle, so a plain bbox render is untouched.
+- **Pre-parsed OSM tile sidecars.** Each cached tile gets an `.osmbin`
+  written beside it on first use; repeat renders read that instead of
+  re-parsing JSON, cutting decode from 946 ms to 429 ms per cell. Freshness
+  is content-based - the sidecar stores a hash of the source and re-verifies
+  on every read - and writes are atomic, so a stale, truncated or
+  half-written sidecar can never reach output. `ARNIS_OSM_SIDECARS=0` opts
+  out; the cost is roughly two thirds more OSM cache on disk.
+- **`--river-bed off|v1`** (default off). River beds were built from integer
+  depth tiers, which read as concentric terraced shelves, with a flat shallow
+  ring at the bank, a noise wobble on the contours and dune bumps on the
+  floor. `v1` gives a river a smooth profile instead: depth follows distance
+  from the nearest bank and the local half-width, so the bed grades gently
+  down from the shore, rounds across the middle and comes back up
+  symmetrically, with the bank curve scaling to width and map scale. Bed
+  dunes and bank wobble are off for river columns.
+
+  Rivers only - lakes, oceans and coastlines keep their existing beds and
+  their existing noise. That is enforced, not assumed: mapped lake polygons
+  are subtracted from the river mask, and a centreline running inside a wide
+  body of water with no river-polygon evidence is suppressed outright, since
+  OSM routinely draws river centrelines straight through lakes. A river
+  blends into a lake or the sea across a band rather than stepping. A render
+  containing only lakes and ocean is byte-identical with the flag on.
+
+  Known limitation: the blend is seeded from land-cover water next to the
+  mask, and land-cover rasters rarely align exactly with OSM geometry. Where
+  one overhangs the river outline by even a block, the whole channel falls
+  inside the blend band and keeps some of the old terracing - beds come out
+  smoother, not always completely shelf-free. Rivers with no river tagging
+  keep the legacy bed by design. Versioned deliberately: a future retune
+  ships as `v2`, never as a changed `v1`.
+- **`--road-grade off|on`** (default off). Road surfaces were decided
+  cross-section by cross-section from the terrain height directly beneath
+  them; because that height is rounded to whole blocks, a road on a gentle
+  slope crosses a rounding boundary partway along a straight and the full
+  carriageway width steps by a block there. Nothing graded a road along its
+  length - the only smoothing was a three-sample median documented as passing
+  such steps through.
+
+  `on` computes one profile per road before placement from the *unrounded*
+  terrain and limits its climb to at most one block per N travelled, N by
+  class (12 motorway/trunk/primary, 8 secondary/tertiary, 6
+  residential/unclassified/service, 4 footway/path/track, scaled with map
+  scale). Steps become evenly spaced minimum ramps instead of contour
+  cliffs, and since height is now a function of distance along the road
+  alone, two further step sources vanish structurally: overlapping stamps on
+  diagonal runs and the sampling-axis flip at bends. Junctions are pinned so
+  every road meeting at a node derives the same height from node coordinates
+  and terrain alone, and road-surface overrides fold by lowest Y instead of
+  last-writer-wins, so results no longer depend on element processing order.
+  Stairs are excluded; bridges, elevated sections and tunnels are unchanged.
+- **Machine-readable run summary on stdout**: per-phase wall and CPU time,
+  peak memory, and region-write counts by path, so an orchestrator can read
+  real per-cell cost instead of sampling it from outside.
+
+### Fixed
+
+- **Caves at any world height.** Vanilla's limits were baked in as constants
+  and worlds outside its range broke at both ends. Above roughly y=256 every
+  underground block became air - one giant void under any mountain reaching
+  past it - because vanilla's top fade exists to thin caves near its ceiling,
+  and here density is only ever evaluated inside terrain, so the fade could
+  never do its vanilla job and could only hollow peaks. Below y=-64 no caves
+  generated at all, just solid rock, because the fade-in band was pinned to
+  vanilla's floor rather than the world's own - and floors down to -2032 are
+  legal. Both bands now follow this world's real floor and ceiling, including
+  any ceiling a future Minecraft version introduces. At vanilla bounds the
+  new formulas land on exactly the old numbers, bit for bit.
+- **Generation no longer depends on machine load.** The flood-fill work
+  limiter used a budget that varied with how busy the machine was, so
+  identical input could produce different output on a loaded box. It is now
+  deterministic and settable with `ARNIS_FILL_BUDGET`.
+- **`--canonical-regions` accepts negative rectangles.** Every cell west or
+  north of the origin has negative indices, and the parser read them as
+  unknown flags - so precisely those cells failed.
+
+### Changed
+
+- OSM tiles decode straight from the byte slice rather than an intermediate
+  string, and element parsing no longer clones a `String` per element.
+- The elevation blur's vertical pass transposes once into a flat buffer
+  instead of gathering each column across thousands of separate heap
+  allocations.
+- Region and section save paths gained fast paths and tighter buffer reuse,
+  and grid types were flattened to one contiguous allocation. These measured
+  real but below this project's acceptance threshold, so they ship as code
+  quality with no performance claim.
+
 ## [3.1.7] - 2026-08-24
 
 Underwater terrain and the groundwork for consistent coastlines in multi-cell
