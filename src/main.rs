@@ -19,6 +19,7 @@ mod element_processing;
 mod elevation;
 mod elevation_data;
 mod elevation_map;
+mod flat_grid;
 mod floodfill;
 mod floodfill_cache;
 mod ground;

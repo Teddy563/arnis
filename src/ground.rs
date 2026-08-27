@@ -482,7 +482,7 @@ impl Ground {
         };
         let (mut gx0, mut gz0, mut gx1, mut gz1) = (usize::MAX, usize::MAX, 0usize, 0usize);
         let mut any = false;
-        for (z, row) in lc.grid.iter().enumerate() {
+        for (z, row) in lc.grid.rows().enumerate() {
             for (x, &c) in row.iter().enumerate() {
                 if c == land_cover::LC_WATER {
                     gx0 = gx0.min(x);
@@ -512,7 +512,7 @@ impl Ground {
             let z_ratio = (coord.z as f64 / (data.world_height - 1).max(1) as f64).clamp(0.0, 1.0);
             let x = ((x_ratio * (lc.width - 1) as f64).round() as usize).min(lc.width - 1);
             let z = ((z_ratio * (lc.height - 1) as f64).round() as usize).min(lc.height - 1);
-            lc.grid[z][x]
+            lc.grid.at(z, x)
         } else {
             0
         }
@@ -527,7 +527,7 @@ impl Ground {
             let z_ratio = (coord.z as f64 / (data.world_height - 1).max(1) as f64).clamp(0.0, 1.0);
             let x = ((x_ratio * (lc.width - 1) as f64).round() as usize).min(lc.width - 1);
             let z = ((z_ratio * (lc.height - 1) as f64).round() as usize).min(lc.height - 1);
-            lc.water_distance[z][x]
+            lc.water_distance.at(z, x)
         } else {
             0
         }
@@ -569,10 +569,10 @@ impl Ground {
             // doesn't recover the ~10⁻⁷ precision lost at storage, but it
             // prevents extra rounding from accumulating in the four
             // multiply-adds + the threshold comparison downstream.
-            let w00 = lc.water_blend_grid[z0][x0] as f64;
-            let w10 = lc.water_blend_grid[z0][x1] as f64;
-            let w01 = lc.water_blend_grid[z1][x0] as f64;
-            let w11 = lc.water_blend_grid[z1][x1] as f64;
+            let w00 = lc.water_blend_grid.at(z0, x0) as f64;
+            let w10 = lc.water_blend_grid.at(z0, x1) as f64;
+            let w01 = lc.water_blend_grid.at(z1, x0) as f64;
+            let w11 = lc.water_blend_grid.at(z1, x1) as f64;
 
             // Bilinear interpolation
             let top = w00 * (1.0 - tx) + w10 * tx;
@@ -707,10 +707,10 @@ impl Ground {
         // smaller than the 0.5-block half-width used by `round()` below.
         // So for any value that isn't pathologically close to a half-integer
         // boundary, the final `result.round() as i32` matches the f64 path.
-        let v00 = data.heights[z0][x0] as f64;
-        let v10 = data.heights[z0][x1] as f64;
-        let v01 = data.heights[z1][x0] as f64;
-        let v11 = data.heights[z1][x1] as f64;
+        let v00 = data.heights.at(z0, x0) as f64;
+        let v10 = data.heights.at(z0, x1) as f64;
+        let v01 = data.heights.at(z1, x0) as f64;
+        let v11 = data.heights.at(z1, x1) as f64;
         let lerp_top = v00 + (v10 - v00) * dx;
         let lerp_bot = v01 + (v11 - v01) * dx;
         let result = lerp_top + (lerp_bot - lerp_top) * dz;
@@ -729,11 +729,15 @@ impl Ground {
     ) {
         if let Some(ref mut data) = self.elevation_data {
             // Rotation operators build a fresh f64 work grid; downcast here to
-            // match `ElevationData::heights`'s f32 storage layout.
-            data.heights = heights
-                .into_iter()
-                .map(|row| row.into_iter().map(|v| v as f32).collect())
-                .collect();
+            // match `ElevationData::heights`'s flat f32 storage layout
+            // (row-major, same element order as the nested rows).
+            let gh = heights.len();
+            let gw = heights.first().map_or(0, Vec::len);
+            let mut flat: Vec<f32> = Vec::with_capacity(gw * gh);
+            for row in &heights {
+                flat.extend(row.iter().map(|&v| v as f32));
+            }
+            data.heights = crate::flat_grid::FlatGrid::from_vec(flat, gw, gh);
             data.width = grid_width;
             data.height = grid_height;
             data.world_width = world_width;
@@ -751,8 +755,8 @@ impl Ground {
         height: usize,
     ) {
         if let Some(ref mut lc) = self.land_cover {
-            lc.grid = grid;
-            lc.water_distance = water_distance;
+            lc.grid = crate::flat_grid::FlatGrid::from_rows(grid);
+            lc.water_distance = crate::flat_grid::FlatGrid::from_rows(water_distance);
             lc.width = width;
             lc.height = height;
             // The water-blend mask was derived from the pre-rotation grid —
@@ -798,7 +802,7 @@ impl Ground {
         }
         let mut img: image::ImageBuffer<Rgb<u8>, Vec<u8>> =
             RgbImage::new(lc.width as u32, lc.height as u32);
-        for (y, row) in lc.grid.iter().enumerate() {
+        for (y, row) in lc.grid.rows().enumerate() {
             for (x, &class) in row.iter().enumerate() {
                 let color = match class {
                     land_cover::LC_TREE_COVER => Rgb([0x00, 0x6e, 0x00]),
@@ -833,29 +837,27 @@ impl Ground {
             .as_ref()
             .expect("Elevation data not available")
             .heights;
-        if heights.is_empty() || heights[0].is_empty() {
+        if heights.is_empty() {
             return;
         }
 
-        let height: usize = heights.len();
-        let width: usize = heights[0].len();
+        let height: usize = heights.height();
+        let width: usize = heights.width();
         let mut img: image::ImageBuffer<Rgb<u8>, Vec<u8>> =
             RgbImage::new(width as u32, height as u32);
 
         let mut min_height: f32 = f32::MAX;
         let mut max_height: f32 = f32::MIN;
 
-        for row in heights {
-            for &h in row {
-                if h.is_finite() {
-                    min_height = min_height.min(h);
-                    max_height = max_height.max(h);
-                }
+        for &h in heights.as_slice() {
+            if h.is_finite() {
+                min_height = min_height.min(h);
+                max_height = max_height.max(h);
             }
         }
 
         let range = max_height - min_height;
-        for (y, row) in heights.iter().enumerate() {
+        for (y, row) in heights.rows().enumerate() {
             for (x, &h) in row.iter().enumerate() {
                 let normalized: u8 = if range > 0.0 {
                     (((h - min_height) / range) * 255.0) as u8
@@ -944,7 +946,7 @@ mod tests {
             elevation_enabled: true,
             ground_level: 0,
             elevation_data: Some(ElevationData {
-                heights,
+                heights: crate::flat_grid::FlatGrid::from_rows(heights),
                 width: w,
                 height: h,
                 world_width: w,
@@ -996,7 +998,7 @@ mod tests {
     #[test]
     fn snow_threshold_inverts_the_scale() {
         let ed = |min_m: f64, bpm: f64| ElevationData {
-            heights: vec![vec![0.0; 2]; 2],
+            heights: crate::flat_grid::FlatGrid::new(2, 2, 0.0f32),
             width: 2,
             height: 2,
             world_width: 2,
@@ -1016,7 +1018,7 @@ mod tests {
     fn snow_peaks_caps_the_top_percent() {
         // min 0 m -> Y0, range 1000 m at 0.1 block/m -> peak Y100. Top 10% -> snow above Y90.
         let ed = ElevationData {
-            heights: vec![vec![0.0; 2]; 2],
+            heights: crate::flat_grid::FlatGrid::new(2, 2, 0.0f32),
             width: 2,
             height: 2,
             world_width: 2,

@@ -447,24 +447,22 @@ fn bowl_depth_small_scale(
 
 /// Safe upper bound on a map's deepest carve, from the pre-repair water mask.
 pub fn estimate_max_carve_depth(
-    lc_grid: &[Vec<u8>],
+    lc_grid: &crate::flat_grid::FlatGrid<u8>,
     world_width: usize,
     world_height: usize,
     scale: f64,
 ) -> i32 {
-    let gh = lc_grid.len();
-    let gw = lc_grid.first().map_or(0, Vec::len);
+    let gh = lc_grid.height();
+    let gw = lc_grid.width();
     if gw == 0 || gh == 0 {
         return 0;
     }
     let mut dt = vec![0u8; gw * gh];
     let mut any_water = false;
-    for (z, row) in lc_grid.iter().enumerate() {
-        for (x, &c) in row.iter().enumerate() {
-            if c == LC_WATER {
-                dt[z * gw + x] = DT_MAX;
-                any_water = true;
-            }
+    for (i, &c) in lc_grid.as_slice().iter().enumerate() {
+        if c == LC_WATER {
+            dt[i] = DT_MAX;
+            any_water = true;
         }
     }
     if !any_water {
@@ -1111,24 +1109,24 @@ mod tests {
 
     #[test]
     fn small_scale_estimate_returns_cap() {
-        let grid = vec![vec![LC_WATER; 32]; 32];
+        let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
         assert_eq!(
             estimate_max_carve_depth(&grid, 32, 32, 0.2),
             SMALL_SCALE_MAX_DEPTH
         );
-        let empty = vec![vec![0u8; 16]; 16];
+        let empty = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
         assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2), 0);
     }
 
     #[test]
     fn estimate_no_water_is_zero() {
-        let grid = vec![vec![0u8; 16]; 16];
+        let grid = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
         assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0), 0);
     }
 
     #[test]
     fn estimate_large_open_water_reaches_max() {
-        let grid = vec![vec![LC_WATER; 32]; 32];
+        let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
         assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0), 6);
     }
 

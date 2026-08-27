@@ -250,7 +250,10 @@ pub fn apply_land_cover_repair(
 /// The returned bool grid marks which cells actually became water surface,
 /// so the coastal pull-down and Gaussian source-masking operate on the
 /// real water surface rather than the ESA classification.
-fn level_water_surfaces(heights: &mut [Vec<f64>], lc_grid: &[Vec<u8>]) -> Vec<Vec<bool>> {
+fn level_water_surfaces(
+    heights: &mut [Vec<f64>],
+    lc_grid: &crate::flat_grid::FlatGrid<u8>,
+) -> Vec<Vec<bool>> {
     // Cells up to this many metres above the estimated surface are still
     // treated as water (covers noise / wave chop / 10 m ESA mixed-pixel
     // bleed). Beyond this they are real walls and kept as terrain.
@@ -296,7 +299,7 @@ fn level_water_surfaces(heights: &mut [Vec<f64>], lc_grid: &[Vec<u8>]) -> Vec<Ve
 
     for start_y in 0..h {
         for start_x in 0..w {
-            if visited[start_y][start_x] || lc_grid[start_y][start_x] != LC_WATER {
+            if visited[start_y][start_x] || lc_grid.at(start_y, start_x) != LC_WATER {
                 continue;
             }
 
@@ -316,7 +319,7 @@ fn level_water_surfaces(heights: &mut [Vec<f64>], lc_grid: &[Vec<u8>]) -> Vec<Ve
                     }
                     let nxu = nx as usize;
                     let nyu = ny as usize;
-                    if !visited[nyu][nxu] && lc_grid[nyu][nxu] == LC_WATER {
+                    if !visited[nyu][nxu] && lc_grid.at(nyu, nxu) == LC_WATER {
                         visited[nyu][nxu] = true;
                         queue.push_back((nxu, nyu));
                     }
@@ -475,7 +478,7 @@ fn interquartile_range(values: &[f64]) -> f64 {
 /// longer than the radius, while still averaging out local DSM noise.
 fn local_water_median(
     heights: &[Vec<f64>],
-    lc_grid: &[Vec<u8>],
+    lc_grid: &crate::flat_grid::FlatGrid<u8>,
     cx: usize,
     cy: usize,
     radius: i32,
@@ -498,7 +501,7 @@ fn local_water_median(
             if nx < 0 || nx >= w {
                 continue;
             }
-            if lc_grid[ny as usize][nx as usize] != LC_WATER {
+            if lc_grid.at(ny as usize, nx as usize) != LC_WATER {
                 continue;
             }
             let v = heights[ny as usize][nx as usize];
@@ -519,12 +522,12 @@ fn local_water_median(
 /// classified as `LC_WATER`. Used to distinguish real shore walls (border
 /// cells, keep as terrain) from interior DSM artifacts (surrounded by water,
 /// flatten).
-fn has_non_water_neighbor(lc_grid: &[Vec<u8>], x: usize, y: usize) -> bool {
-    let h = lc_grid.len();
+fn has_non_water_neighbor(lc_grid: &crate::flat_grid::FlatGrid<u8>, x: usize, y: usize) -> bool {
+    let h = lc_grid.height();
     if h == 0 {
         return false;
     }
-    let w = lc_grid[0].len();
+    let w = lc_grid.width();
     for (dx, dy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
         let nx = x as i32 + dx;
         let ny = y as i32 + dy;
@@ -534,7 +537,7 @@ fn has_non_water_neighbor(lc_grid: &[Vec<u8>], x: usize, y: usize) -> bool {
             // keep its edge cells as wall if they stick above the surface.
             return true;
         }
-        if lc_grid[ny as usize][nx as usize] != LC_WATER {
+        if lc_grid.at(ny as usize, nx as usize) != LC_WATER {
             return true;
         }
     }
@@ -601,7 +604,7 @@ fn clamp_by_adjacent_land(
     proposed: f64,
     component: &[(usize, usize)],
     heights: &[Vec<f64>],
-    lc_grid: &[Vec<u8>],
+    lc_grid: &crate::flat_grid::FlatGrid<u8>,
 ) -> f64 {
     let h = heights.len();
     if h == 0 {
@@ -620,7 +623,7 @@ fn clamp_by_adjacent_land(
             }
             let nxu = nx as usize;
             let nyu = ny as usize;
-            if lc_grid[nyu][nxu] == LC_WATER {
+            if lc_grid.at(nyu, nxu) == LC_WATER {
                 continue;
             }
             if !seen.insert((nxu, nyu)) {
@@ -663,17 +666,17 @@ fn clamp_by_adjacent_land(
 ///
 /// Returns the number of cells reclassified.
 fn reclassify_non_surface_water_cells(
-    lc_grid: &mut [Vec<u8>],
+    lc_grid: &mut crate::flat_grid::FlatGrid<u8>,
     is_water_surface: &[Vec<bool>],
 ) -> usize {
     const SEARCH_RADIUS: i32 = 8;
     const FALLBACK_CLASS: u8 = crate::land_cover::LC_BARE;
 
-    let h = lc_grid.len();
+    let h = lc_grid.height();
     if h == 0 {
         return 0;
     }
-    let w = lc_grid[0].len();
+    let w = lc_grid.width();
     if w == 0 {
         return 0;
     }
@@ -683,9 +686,12 @@ fn reclassify_non_surface_water_cells(
     // the classification ripples unpredictably.
     let mut replacements: Vec<(usize, usize, u8)> = Vec::new();
 
+    // Range loops kept deliberately: identical traversal order to the
+    // pre-flattening code, with the grid read through the single accessor.
+    #[allow(clippy::needless_range_loop)]
     for y in 0..h {
         for x in 0..w {
-            if lc_grid[y][x] != LC_WATER || is_water_surface[y][x] {
+            if lc_grid.at(y, x) != LC_WATER || is_water_surface[y][x] {
                 continue;
             }
 
@@ -703,7 +709,7 @@ fn reclassify_non_surface_water_cells(
                         if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
                             continue;
                         }
-                        let c = lc_grid[ny as usize][nx as usize];
+                        let c = lc_grid.at(ny as usize, nx as usize);
                         if c != LC_WATER && c != 0 {
                             found = Some(c);
                             break 'outer;
@@ -717,7 +723,7 @@ fn reclassify_non_surface_water_cells(
 
     let n = replacements.len();
     for (x, y, c) in replacements {
-        lc_grid[y][x] = c;
+        lc_grid.set(y, x, c);
     }
 
     if n > 0 {
@@ -836,7 +842,7 @@ fn pull_coastal_land_toward_water(
 /// native resolution already exceeds our target smoothing scale).
 fn smooth_built_up_gaussian(
     heights: &mut [Vec<f64>],
-    lc_grid: &[Vec<u8>],
+    lc_grid: &crate::flat_grid::FlatGrid<u8>,
     is_water_surface: &[Vec<bool>],
     sigma_cells: f64,
     report: &dyn Fn(f64),
@@ -851,8 +857,8 @@ fn smooth_built_up_gaussian(
 
     // Early out: if there are no built-up cells, nothing to do.
     let built_up_count: usize = lc_grid
+        .as_slice()
         .iter()
-        .flat_map(|row| row.iter())
         .filter(|&&c| c == LC_BUILT_UP)
         .count();
     if built_up_count == 0 {
@@ -860,10 +866,12 @@ fn smooth_built_up_gaussian(
     }
 
     // Binary built-up mask (1.0 = built-up, 0.0 = everything else).
-    let mask: Vec<Vec<f64>> = lc_grid
-        .par_iter()
-        .map(|row| {
-            row.iter()
+    let mask: Vec<Vec<f64>> = (0..h)
+        .into_par_iter()
+        .map(|z| {
+            lc_grid
+                .row(z)
+                .iter()
                 .map(|&c| if c == LC_BUILT_UP { 1.0 } else { 0.0 })
                 .collect()
         })

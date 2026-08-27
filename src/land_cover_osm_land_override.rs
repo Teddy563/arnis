@@ -40,7 +40,7 @@ pub fn apply_osm_land_override(
     }
     let n = width * height;
     let grid = &land_cover.grid;
-    let is_water = |idx: usize| grid[idx / width][idx % width] == LC_WATER;
+    let is_water = |idx: usize| grid.at(idx / width, idx % width) == LC_WATER;
     if !(0..n).any(is_water) {
         return;
     }
@@ -170,7 +170,7 @@ pub fn apply_osm_land_override(
         return;
     }
     for &(x, z, c) in &changes {
-        land_cover.grid[z as usize][x as usize] = c;
+        land_cover.grid.set(z as usize, x as usize, c);
     }
     eprintln!(
         "OSM land override: {} shore cells reclassified from ESA water to land",
@@ -502,14 +502,16 @@ mod tests {
     }
 
     fn grid_from(f: impl Fn(usize, usize) -> u8) -> (LandCoverData, XZBBox) {
-        let grid: Vec<Vec<u8>> = (0..60)
-            .map(|z| (0..60).map(|x| f(x, z)).collect())
-            .collect();
+        let grid = crate::flat_grid::FlatGrid::from_rows(
+            (0..60)
+                .map(|z| (0..60).map(|x| f(x, z)).collect())
+                .collect(),
+        );
         let water_distance = compute_water_distance(&grid, 60, 60, true);
         let lc = LandCoverData {
             grid,
             water_distance,
-            water_blend_grid: Vec::new(),
+            water_blend_grid: crate::flat_grid::FlatGrid::new(0, 0, 0.0f32),
             edge_is_shore: true,
             width: 60,
             height: 60,
@@ -535,8 +537,8 @@ mod tests {
             &[("highway", "footway")],
         )];
         run(&mut lc, &bbox, &elements);
-        assert_eq!(lc.grid[30][32], LC_GRASSLAND);
-        assert_eq!(lc.grid[30][50], LC_WATER);
+        assert_eq!(lc.grid.at(30, 32), LC_GRASSLAND);
+        assert_eq!(lc.grid.at(30, 50), LC_WATER);
     }
 
     #[test]
@@ -552,10 +554,10 @@ mod tests {
         let elements = vec![way(2, ring, &[("natural", "water")])];
         run(&mut lc, &bbox, &elements);
         for x in 30..34 {
-            assert_ne!(lc.grid[30][x], LC_WATER, "x={x} should be land");
+            assert_ne!(lc.grid.at(30, x), LC_WATER, "x={x} should be land");
         }
         for x in 34..60 {
-            assert_eq!(lc.grid[30][x], LC_WATER, "x={x} should stay water");
+            assert_eq!(lc.grid.at(30, x), LC_WATER, "x={x} should stay water");
         }
     }
 
@@ -577,7 +579,7 @@ mod tests {
         )];
         run(&mut lc, &bbox, &elements);
         for x in 20..40 {
-            assert_eq!(lc.grid[30][x], LC_WATER, "x={x} should stay water");
+            assert_eq!(lc.grid.at(30, x), LC_WATER, "x={x} should stay water");
         }
     }
 
@@ -602,7 +604,8 @@ mod tests {
         run(&mut lc, &bbox, &elements);
         for x in 40..55 {
             assert_eq!(
-                lc.grid[30][x], LC_WATER,
+                lc.grid.at(30, x),
+                LC_WATER,
                 "unmapped body at x={x} was trimmed"
             );
         }
@@ -630,8 +633,8 @@ mod tests {
             ),
         ];
         run(&mut lc, &bbox, &elements);
-        assert_eq!(lc.grid[15][32], LC_WATER, "bridge deck became land");
-        assert_eq!(lc.grid[35][34], LC_WATER, "pier became land");
+        assert_eq!(lc.grid.at(15, 32), LC_WATER, "bridge deck became land");
+        assert_eq!(lc.grid.at(35, 34), LC_WATER, "pier became land");
     }
 
     #[test]
@@ -646,8 +649,8 @@ mod tests {
         ];
         let elements = vec![way(8, ring, &[("building", "yes")])];
         run(&mut lc, &bbox, &elements);
-        assert_ne!(lc.grid[30][31], LC_WATER);
-        assert_eq!(lc.grid[30][50], LC_WATER);
+        assert_ne!(lc.grid.at(30, 31), LC_WATER);
+        assert_eq!(lc.grid.at(30, 50), LC_WATER);
     }
 
     #[test]
@@ -659,6 +662,6 @@ mod tests {
             &[("waterway", "river"), ("width", "999999999")],
         )];
         run(&mut lc, &bbox, &elements);
-        assert_eq!(lc.grid[30][50], LC_WATER);
+        assert_eq!(lc.grid.at(30, 50), LC_WATER);
     }
 }

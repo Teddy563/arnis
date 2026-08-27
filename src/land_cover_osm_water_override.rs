@@ -18,14 +18,14 @@ const LINEAR_ASPECT_RATIO: f64 = 3.0;
 const MAX_CELLS_FOR_ELEV_GUARD: usize = 100 * 1024 * 1024;
 
 struct WaterContext {
-    nearest_y: Option<Vec<Vec<f32>>>,
+    nearest_y: Option<crate::flat_grid::FlatGrid<f32>>,
     protected_mask: Vec<u64>,
     width: usize,
 }
 
 pub fn apply_osm_water_override(
     land_cover: &mut LandCoverData,
-    heights: &[Vec<f32>],
+    heights: &crate::flat_grid::FlatGrid<f32>,
     world_width: usize,
     world_height: usize,
     elements: &[ProcessedElement],
@@ -248,10 +248,10 @@ fn get_waterway_width(waterway_type: &str, tags: &HashMap<String, String>) -> i3
 
 #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 fn fill_polygon_scanline(
-    grid: &mut [Vec<u8>],
+    grid: &mut crate::flat_grid::FlatGrid<u8>,
     outers: &[&[(i32, i32)]],
     inners: &[&[(i32, i32)]],
-    heights: &[Vec<f32>],
+    heights: &crate::flat_grid::FlatGrid<f32>,
     context: Option<&WaterContext>,
     min_x_world: i32,
     min_z_world: i32,
@@ -327,7 +327,7 @@ fn fill_polygon_scanline(
         if !outer_x_world.len().is_multiple_of(2) {
             continue;
         }
-        let row = &mut grid[gz];
+        let row = grid.row_mut(gz);
         let mut i = 0;
         while i + 1 < outer_x_world.len() {
             let wx_start = outer_x_world[i];
@@ -401,10 +401,10 @@ fn point_in_sorted_ranges(x: f64, sorted: &[f64]) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 fn rasterize_line(
-    grid: &mut [Vec<u8>],
+    grid: &mut crate::flat_grid::FlatGrid<u8>,
     nodes: &[ProcessedNode],
     half_width: i32,
-    heights: &[Vec<f32>],
+    heights: &crate::flat_grid::FlatGrid<f32>,
     context: Option<&WaterContext>,
     min_x_world: i32,
     min_z_world: i32,
@@ -457,8 +457,8 @@ fn rasterize_line(
                     if !passes_water_guard(heights, context, gx_u, gz_u) {
                         continue;
                     }
-                    if grid[gz_u][gx_u] != LC_WATER {
-                        grid[gz_u][gx_u] = LC_WATER;
+                    if grid.at(gz_u, gx_u) != LC_WATER {
+                        grid.set(gz_u, gx_u, LC_WATER);
                         count += 1;
                     }
                 }
@@ -470,8 +470,8 @@ fn rasterize_line(
 
 // Returns None when there are no ESA water cells, disabling the guard.
 fn build_water_context(
-    grid: &[Vec<u8>],
-    heights: &[Vec<f32>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
+    heights: &crate::flat_grid::FlatGrid<f32>,
     width: usize,
     height: usize,
     scale_to_grid_x: f64,
@@ -480,16 +480,13 @@ fn build_water_context(
     if width < 2 || height < 2 {
         return None;
     }
-    if heights.len() < height || heights.first().map_or(0, |r| r.len()) < width {
+    if heights.height() < height || heights.width() < width {
         return None;
     }
-    if grid.len() < height || grid.first().map_or(0, |r| r.len()) < width {
+    if grid.height() < height || grid.width() < width {
         return None;
     }
-    let has_seeds = grid
-        .iter()
-        .take(height)
-        .any(|row| row.iter().take(width).any(|&c| c == LC_WATER));
+    let has_seeds = (0..height).any(|z| grid.row(z).iter().take(width).any(|&c| c == LC_WATER));
     if !has_seeds {
         return None;
     }
@@ -520,7 +517,7 @@ fn build_water_context(
 
 // Two-pass: classify components without storing cells, then re-walk protected seeds.
 fn build_protected_land_bitset(
-    grid: &[Vec<u8>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
     width: usize,
     height: usize,
     small_threshold_cells: usize,
@@ -536,7 +533,7 @@ fn build_protected_land_bitset(
     // Pass 1: classify each component, remember protected seeds.
     for start_z in 0..height {
         for start_x in 0..width {
-            if grid[start_z][start_x] == LC_WATER {
+            if grid.at(start_z, start_x) == LC_WATER {
                 continue;
             }
             let start_idx = start_z * width + start_x;
@@ -581,7 +578,7 @@ fn build_protected_land_bitset(
                     }
                     let nxu = nx as usize;
                     let nzu = nz as usize;
-                    if grid[nzu][nxu] == LC_WATER {
+                    if grid.at(nzu, nxu) == LC_WATER {
                         continue;
                     }
                     let n_idx = nzu * width + nxu;
@@ -628,7 +625,7 @@ fn build_protected_land_bitset(
                 }
                 let nxu = nx as usize;
                 let nzu = nz as usize;
-                if grid[nzu][nxu] == LC_WATER {
+                if grid.at(nzu, nxu) == LC_WATER {
                     continue;
                 }
                 let n_idx = nzu * width + nxu;
@@ -646,21 +643,21 @@ fn build_protected_land_bitset(
 
 // Multi-source BFS: each cell gets the terrain Y of its nearest LC_WATER seed.
 fn compute_nearest_water_y(
-    grid: &[Vec<u8>],
-    heights: &[Vec<f32>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
+    heights: &crate::flat_grid::FlatGrid<f32>,
     width: usize,
     height: usize,
-) -> Vec<Vec<f32>> {
-    let mut result: Vec<Vec<f32>> = vec![vec![f32::NAN; width]; height];
+) -> crate::flat_grid::FlatGrid<f32> {
+    let mut result = crate::flat_grid::FlatGrid::new(width, height, f32::NAN);
     let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
     for z in 0..height {
-        let row = &grid[z];
-        let h_row = &heights[z];
+        let row = grid.row(z);
+        let h_row = heights.row(z);
         for x in 0..width {
             if row[x] == LC_WATER {
                 let h = h_row[x];
                 if h.is_finite() {
-                    result[z][x] = h;
+                    result.set(z, x, h);
                     queue.push_back((x as u32, z as u32));
                 }
             }
@@ -672,7 +669,7 @@ fn compute_nearest_water_y(
     let width_i32 = width as i32;
     let height_i32 = height as i32;
     while let Some((x, z)) = queue.pop_front() {
-        let cell_y = result[z as usize][x as usize];
+        let cell_y = result.at(z as usize, x as usize);
         for (dx, dz) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
             let nx = x as i32 + dx;
             let nz = z as i32 + dz;
@@ -681,8 +678,8 @@ fn compute_nearest_water_y(
             }
             let nxu = nx as usize;
             let nzu = nz as usize;
-            if result[nzu][nxu].is_nan() {
-                result[nzu][nxu] = cell_y;
+            if result.at(nzu, nxu).is_nan() {
+                result.set(nzu, nxu, cell_y);
                 queue.push_back((nx as u32, nz as u32));
             }
         }
@@ -692,7 +689,7 @@ fn compute_nearest_water_y(
 
 #[inline]
 fn passes_water_guard(
-    heights: &[Vec<f32>],
+    heights: &crate::flat_grid::FlatGrid<f32>,
     context: Option<&WaterContext>,
     gx: usize,
     gz: usize,
@@ -704,11 +701,11 @@ fn passes_water_guard(
     if get_bit(&c.protected_mask, idx) {
         return false;
     }
-    let Some(nearest_y) = c.nearest_y.as_deref() else {
+    let Some(nearest_y) = c.nearest_y.as_ref() else {
         return true;
     };
-    let cell_y = heights[gz][gx];
-    let water_y = nearest_y[gz][gx];
+    let cell_y = heights.at(gz, gx);
+    let water_y = nearest_y.at(gz, gx);
     if !cell_y.is_finite() || !water_y.is_finite() {
         return true;
     }

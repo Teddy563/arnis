@@ -31,7 +31,7 @@ type FPt = (f64, f64);
 pub(crate) fn reconstruct_water_shoreline(
     raster: &EsaPixelRaster,
     mapping: &GridMapping,
-    grid: &mut [Vec<u8>],
+    grid: &mut crate::flat_grid::FlatGrid<u8>,
 ) {
     if mapping.sx.max(mapping.sy) < MIN_CELLS_PER_PIXEL {
         return;
@@ -55,10 +55,14 @@ pub(crate) fn reconstruct_water_shoreline(
     let mask = rasterize_rings(&simplified, raster.x0, raster.y0, mapping);
 
     let (gw, gh) = (mapping.grid_w, mapping.grid_h);
-    let before = grid
-        .iter()
-        .take(gh)
-        .map(|row| row.iter().take(gw).filter(|&&c| c == LC_WATER).count())
+    let before = (0..gh)
+        .map(|z| {
+            grid.row(z)
+                .iter()
+                .take(gw)
+                .filter(|&&c| c == LC_WATER)
+                .count()
+        })
         .sum::<usize>();
     let after = mask.iter().map(|b| b.count_ones() as usize).sum::<usize>();
     let allowed = MAX_AREA_CHANGE_FRACTION * before as f64 + 4.0 * mapping.sx * mapping.sy;
@@ -77,7 +81,7 @@ pub(crate) fn reconstruct_water_shoreline(
     for z in 0..gh {
         for x in 0..gw {
             let is_water = get_bit(&mask, z * gw + x);
-            let cur = grid[z][x];
+            let cur = grid.at(z, x);
             if is_water && cur != LC_WATER {
                 to_water.push((x, z));
             } else if !is_water && cur == LC_WATER {
@@ -89,10 +93,10 @@ pub(crate) fn reconstruct_water_shoreline(
     }
     let (to_water_n, to_land_n) = (to_water.len(), to_land.len());
     for (x, z) in to_water {
-        grid[z][x] = LC_WATER;
+        grid.set(z, x, LC_WATER);
     }
     for (x, z, c) in to_land {
-        grid[z][x] = c;
+        grid.set(z, x, c);
     }
     if to_water_n + to_land_n > 0 {
         eprintln!(
@@ -676,13 +680,11 @@ mod tests {
         (raster, mapping)
     }
 
-    fn water_cells(grid: &[Vec<u8>]) -> usize {
-        grid.iter()
-            .map(|r| r.iter().filter(|&&c| c == LC_WATER).count())
-            .sum()
+    fn water_cells(grid: &crate::flat_grid::FlatGrid<u8>) -> usize {
+        grid.as_slice().iter().filter(|&&c| c == LC_WATER).count()
     }
 
-    fn run(raster: &EsaPixelRaster, mapping: &GridMapping) -> Vec<Vec<u8>> {
+    fn run(raster: &EsaPixelRaster, mapping: &GridMapping) -> crate::flat_grid::FlatGrid<u8> {
         let mut grid = raster.sample_grid(mapping);
         reconstruct_water_shoreline(raster, mapping, &mut grid);
         grid
@@ -709,7 +711,7 @@ mod tests {
             .map(|r| r.iter().map(|&(x, y)| (x as f64, y as f64)).collect())
             .collect();
         let mask = rasterize_rings(&exact, raster.x0, raster.y0, &mapping);
-        for (z, row) in grid.iter().enumerate() {
+        for (z, row) in grid.rows().enumerate() {
             for (x, &cell) in row.iter().enumerate() {
                 assert_eq!(
                     get_bit(&mask, z * mapping.grid_w + x),
@@ -751,8 +753,9 @@ mod tests {
             let mut worst = 0.0f64;
             for z in 1..mapping.grid_h - 1 {
                 for x in 1..mapping.grid_w - 1 {
-                    let here = grid[z][x] == LC_WATER;
-                    if here != (grid[z][x + 1] == LC_WATER) || here != (grid[z + 1][x] == LC_WATER)
+                    let here = grid.at(z, x) == LC_WATER;
+                    if here != (grid.at(z, x + 1) == LC_WATER)
+                        || here != (grid.at(z + 1, x) == LC_WATER)
                     {
                         // Cell (x, z) sits at pixel coordinate (x/10, z/10).
                         let d = ((x as f64 / 10.0 - 20.0) * s - (z as f64 / 10.0 - 20.0) * c).abs();
@@ -807,7 +810,7 @@ mod tests {
                 }
                 raster.data[py * 40 + px] = if is_bump { LC_WATER } else { LC_TREE_COVER };
                 let grid = run(&raster, &mapping);
-                let centre = grid[py * 10 + 5][px * 10 + 5];
+                let centre = grid.at(py * 10 + 5, px * 10 + 5);
                 if is_bump {
                     assert_eq!(
                         centre, LC_WATER,
@@ -844,12 +847,12 @@ mod tests {
         let grid = run(&raster, &mapping);
         // The pond keeps its full pixel footprint (8x8 cells).
         let pond: usize = (24..32)
-            .map(|z| (24..32).filter(|&x| grid[z][x] == LC_WATER).count())
+            .map(|z| (24..32).filter(|&x| grid.at(z, x) == LC_WATER).count())
             .sum();
         assert_eq!(pond, 64);
         // The island still exists and kept its class.
-        assert_eq!(grid[68][68], LC_TREE_COVER);
-        assert_eq!(grid[68][60], LC_WATER);
+        assert_eq!(grid.at(68, 68), LC_TREE_COVER);
+        assert_eq!(grid.at(68, 60), LC_WATER);
     }
 
     #[test]
@@ -868,7 +871,7 @@ mod tests {
         let ratio = after as f64 / before as f64;
         assert!((0.8..=1.2).contains(&ratio), "river area ratio {ratio}");
         // Land cells that turned to water and back must carry a land class.
-        assert!(grid.iter().flatten().all(|&c| c != 0));
+        assert!(grid.as_slice().iter().all(|&c| c != 0));
     }
 
     #[test]
@@ -884,7 +887,7 @@ mod tests {
         }
         let nn = raster.sample_grid(&mapping);
         let grid = run(&raster, &mapping);
-        assert_eq!(nn, grid);
+        assert_eq!(nn.as_slice(), grid.as_slice());
     }
 
     #[test]

@@ -26,7 +26,12 @@ pub struct ElevationData {
     /// grid that can easily hit 10+ million cells on a city-sized bbox
     /// (≈80 MB at f64, halved at f32). Postprocess still runs in f64 for
     /// numerical stability; the downcast happens once at construction.
-    pub(crate) heights: Vec<Vec<f32>>,
+    ///
+    /// Stored flat (row-major, z outer / x inner, stride = `width`) behind
+    /// `FlatGrid`'s single inline `at(z, x)` accessor — same bits, same
+    /// element order as the old nested layout, one allocation instead of
+    /// one per row.
+    pub(crate) heights: crate::flat_grid::FlatGrid<f32>,
     /// Width of the elevation grid (may be smaller than world width due to capping)
     pub(crate) width: usize,
     /// Height of the elevation grid (may be smaller than world height due to capping)
@@ -350,10 +355,16 @@ pub fn fetch_elevation_data(
     // cost paid here so the large grid sits at half the memory for the rest
     // of the generation run. NaN/infinity preservation is a requirement —
     // downstream `is_finite` checks rely on non-finite sentinels surviving.
-    let mc_heights_f32: Vec<Vec<f32>> = mc_heights
-        .into_iter()
-        .map(|row| row.into_iter().map(|v| v as f32).collect())
-        .collect();
+    // Flat row-major buffer: rows appended in the same z-then-x order the
+    // nested layout stored, so element order (and every bit) is unchanged.
+    let gh = mc_heights.len();
+    let gw = mc_heights.first().map_or(0, Vec::len);
+    let mut flat: Vec<f32> = Vec::with_capacity(gw * gh);
+    for row in &mc_heights {
+        flat.extend(row.iter().map(|&v| v as f32));
+    }
+    let mc_heights_f32 = crate::flat_grid::FlatGrid::from_vec(flat, gw, gh);
+    drop(mc_heights);
     bench.mark("elev_downcast");
     emit_gui_progress_update(18.0, "Processing elevation...");
 

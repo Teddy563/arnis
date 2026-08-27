@@ -58,11 +58,12 @@ pub const LC_MOSS: u8 = 100;
 /// Land cover classification grid aligned with the elevation grid.
 #[derive(Clone)]
 pub struct LandCoverData {
-    /// Classification values (ESA codes) for each grid cell, indexed as [z][x]
-    pub grid: Vec<Vec<u8>>,
-    /// Distance from each water cell to nearest shore, indexed as [z][x].
+    /// Classification values (ESA codes) for each grid cell, indexed as (z, x)
+    /// through the flat row-major accessor.
+    pub grid: crate::flat_grid::FlatGrid<u8>,
+    /// Distance from each water cell to nearest shore, indexed as (z, x).
     /// 0 = non-water, 1 = shore water, 2+ = progressively deeper water.
-    pub water_distance: Vec<Vec<u8>>,
+    pub water_distance: crate::flat_grid::FlatGrid<u8>,
     /// Pre-smoothed water-ness field in [0, 1] — a Gaussian-blurred version
     /// of the binary `grid == LC_WATER` mask. Sampled via `ground.water_blend()`
     /// and compared against a hard 0.5 threshold inside `ground_generation`
@@ -75,7 +76,7 @@ pub struct LandCoverData {
     /// compared against a 0.5 threshold, so f32's ~7 decimal digits are
     /// overkill. Halving the storage saves ~46 MB peak on a Munich-sized
     /// area.
-    pub water_blend_grid: Vec<Vec<f32>>,
+    pub water_blend_grid: crate::flat_grid::FlatGrid<f32>,
     /// Whether this render's grid edge is a real coastline (single bbox) or an
     /// arbitrary crop through the world (a Meld cell). Recomputes of
     /// `water_distance` must keep the same rule the first pass used.
@@ -105,17 +106,20 @@ impl LandCoverData {
 /// - Coarser grid-to-world (large bbox, capped at 4096): each cell already
 ///   represents many blocks, so a 3-cell blur represents many blocks of
 ///   softening — appropriate for the coarser effective resolution.
-fn compute_water_blend_smooth(grid: &[Vec<u8>], width: usize, height: usize) -> Vec<Vec<f32>> {
+fn compute_water_blend_smooth(
+    grid: &crate::flat_grid::FlatGrid<u8>,
+    width: usize,
+    height: usize,
+) -> crate::flat_grid::FlatGrid<f32> {
     const SIGMA_CELLS: f64 = 3.0;
 
     if width == 0 || height == 0 {
-        return Vec::new();
+        return crate::flat_grid::FlatGrid::new(0, 0, 0.0f32);
     }
-    let binary: Vec<Vec<f64>> = grid
-        .iter()
-        .take(height)
-        .map(|row| {
-            row.iter()
+    let binary: Vec<Vec<f64>> = (0..height)
+        .map(|z| {
+            grid.row(z)
+                .iter()
                 .take(width)
                 .map(|&c| if c == LC_WATER { 1.0 } else { 0.0 })
                 .collect()
@@ -124,10 +128,12 @@ fn compute_water_blend_smooth(grid: &[Vec<u8>], width: usize, height: usize) -> 
     // Gaussian blur runs in f64 for numerical stability, then we drop down to
     // f32 for storage — values land in [0, 1] and are only ever compared to a
     // 0.5 threshold, so precision beyond f32 is wasted.
-    crate::elevation::postprocess::gaussian_blur_grid(&binary, SIGMA_CELLS)
-        .into_iter()
-        .map(|row| row.into_iter().map(|v| v as f32).collect())
-        .collect()
+    let blurred = crate::elevation::postprocess::gaussian_blur_grid(&binary, SIGMA_CELLS);
+    let mut flat: Vec<f32> = Vec::with_capacity(width * height);
+    for row in &blurred {
+        flat.extend(row.iter().map(|&v| v as f32));
+    }
+    crate::flat_grid::FlatGrid::from_vec(flat, width, height)
 }
 
 /// Metadata parsed from a COG (Cloud-Optimized GeoTIFF) IFD.
@@ -222,12 +228,12 @@ pub fn fetch_land_cover_data(
             }
             grid
         }
-        _ => vec![vec![0u8; grid_width]; grid_height],
+        _ => crate::flat_grid::FlatGrid::new(grid_width, grid_height, 0u8),
     };
     drop(raster);
 
     // Check if we got any valid data
-    let has_data = grid.iter().any(|row| row.iter().any(|&v| v != 0));
+    let has_data = grid.as_slice().iter().any(|&v| v != 0);
     if !has_data {
         eprintln!("Warning: No land cover data received for this area");
         #[cfg(feature = "gui")]
@@ -414,9 +420,9 @@ impl EsaPixelRaster {
 
     /// Nearest-neighbour resample: every grid cell takes the class of its pixel.
     /// Nodata pixels leave 0 for `fill_gaps`.
-    pub(crate) fn sample_grid(&self, mapping: &GridMapping) -> Vec<Vec<u8>> {
+    pub(crate) fn sample_grid(&self, mapping: &GridMapping) -> crate::flat_grid::FlatGrid<u8> {
         let (gw, gh) = (mapping.grid_w, mapping.grid_h);
-        let mut grid = vec![vec![0u8; gw]; gh];
+        let mut grid = crate::flat_grid::FlatGrid::new(gw, gh, 0u8);
         if gw == 0 || gh == 0 || self.width == 0 || self.height == 0 {
             return grid;
         }
@@ -442,8 +448,8 @@ impl EsaPixelRaster {
             for &(px, lo, hi) in &col_spans {
                 row_buf[lo..hi].fill(src[px]);
             }
-            for row in grid.iter_mut().take(z_hi).skip(z_lo) {
-                row.copy_from_slice(&row_buf);
+            for z in z_lo..z_hi {
+                grid.row_mut(z).copy_from_slice(&row_buf);
             }
         }
         grid
@@ -778,7 +784,7 @@ fn read_esa_tile_into_raster(
 
 /// Class of the nearest non-water, non-nodata cell (ring search), if any.
 pub(crate) fn nearest_land_class(
-    grid: &[Vec<u8>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
     gw: usize,
     gh: usize,
     x: usize,
@@ -791,7 +797,7 @@ pub(crate) fn nearest_land_class(
             if nz < 0 || nz >= gh as i32 {
                 continue;
             }
-            let row = &grid[nz as usize];
+            let row = grid.row(nz as usize);
             // Only the ring at Chebyshev distance exactly r.
             let step = if dz.abs() == r { 1 } else { 2 * r };
             let mut dx = -r;
@@ -1176,19 +1182,19 @@ fn read_u64(bytes: &[u8], offset: usize, big_endian: bool) -> u64 {
 
 /// Fill gaps (zero values) in the grid using nearest-neighbor interpolation.
 /// Iterates until no more gaps can be filled or a max number of passes is reached.
-fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
+fn fill_gaps(grid: &mut crate::flat_grid::FlatGrid<u8>, width: usize, height: usize) {
     // Checked up front so a gap-free grid never pays for the snapshot below.
-    if !grid.iter().any(|row| row.contains(&0)) {
+    if !grid.as_slice().contains(&0) {
         return;
     }
     for _ in 0..10 {
         let mut changed = false;
         // Make a snapshot to read from while writing
-        let snapshot: Vec<Vec<u8>> = grid.to_vec();
+        let snapshot = grid.clone();
 
         for z in 0..height {
             for x in 0..width {
-                if snapshot[z][x] != 0 {
+                if snapshot.at(z, x) != 0 {
                     continue;
                 }
                 // Check 4 neighbors
@@ -1198,7 +1204,7 @@ fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
                     let nx = x as i64 + dx;
                     let nz = z as i64 + dz;
                     if nx >= 0 && nx < width as i64 && nz >= 0 && nz < height as i64 {
-                        let val = snapshot[nz as usize][nx as usize];
+                        let val = snapshot.at(nz as usize, nx as usize);
                         if val != 0 {
                             best = val;
                             break;
@@ -1206,7 +1212,7 @@ fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
                     }
                 }
                 if best != 0 {
-                    grid[z][x] = best;
+                    grid.set(z, x, best);
                     changed = true;
                 }
             }
@@ -1235,18 +1241,18 @@ fn fill_gaps(grid: &mut [Vec<u8>], width: usize, height: usize) {
 /// an asymmetric channel across the seam. Single-bbox renders keep the old
 /// behaviour, where the edge really is the end of the known world.
 pub(crate) fn compute_water_distance(
-    grid: &[Vec<u8>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
     width: usize,
     height: usize,
     edge_is_shore: bool,
-) -> Vec<Vec<u8>> {
-    let mut distance = vec![vec![0u8; width]; height];
+) -> crate::flat_grid::FlatGrid<u8> {
+    let mut distance = crate::flat_grid::FlatGrid::new(width, height, 0u8);
     let mut queue = VecDeque::new();
 
     // Seed BFS with shore water cells (water cells adjacent to non-water or grid edge)
     for z in 0..height {
         for x in 0..width {
-            if grid[z][x] != LC_WATER {
+            if grid.at(z, x) != LC_WATER {
                 continue;
             }
             let is_shore = [(0i32, 1i32), (0, -1), (1, 0), (-1, 0)]
@@ -1257,10 +1263,10 @@ pub(crate) fn compute_water_distance(
                     if nx < 0 || nx >= width as i32 || nz < 0 || nz >= height as i32 {
                         return edge_is_shore;
                     }
-                    grid[nz as usize][nx as usize] != LC_WATER
+                    grid.at(nz as usize, nx as usize) != LC_WATER
                 });
             if is_shore {
-                distance[z][x] = 1;
+                distance.set(z, x, 1);
                 queue.push_back((x, z));
             }
         }
@@ -1268,7 +1274,7 @@ pub(crate) fn compute_water_distance(
 
     // BFS inward from shore cells
     while let Some((x, z)) = queue.pop_front() {
-        let d = distance[z][x];
+        let d = distance.at(z, x);
         if d >= 15 {
             continue;
         }
@@ -1278,8 +1284,8 @@ pub(crate) fn compute_water_distance(
             if nx >= 0 && nx < width as i32 && nz >= 0 && nz < height as i32 {
                 let nx = nx as usize;
                 let nz = nz as usize;
-                if grid[nz][nx] == LC_WATER && distance[nz][nx] == 0 {
-                    distance[nz][nx] = d + 1;
+                if grid.at(nz, nx) == LC_WATER && distance.at(nz, nx) == 0 {
+                    distance.set(nz, nx, d + 1);
                     queue.push_back((nx, nz));
                 }
             }
@@ -1319,7 +1325,7 @@ pub(crate) fn compute_water_distance(
 /// usually fine because OSM waterways render rivers as a separate
 /// overlay; for other classes it cleans up what's often classifier noise
 /// at the 10 m grain.
-fn smooth_class_boundaries(grid: &mut [Vec<u8>], width: usize, height: usize) {
+fn smooth_class_boundaries(grid: &mut crate::flat_grid::FlatGrid<u8>, width: usize, height: usize) {
     const SIGMA_CELLS: f64 = 2.0;
     let radius = (SIGMA_CELLS * 3.0).ceil() as i32;
     let kernel_size = (radius * 2 + 1) as usize;
@@ -1337,103 +1343,109 @@ fn smooth_class_boundaries(grid: &mut [Vec<u8>], width: usize, height: usize) {
     }
 
     // Snapshot once so all cells vote against the pre-mutation grid.
-    let snapshot: Vec<Vec<u8>> = grid.to_vec();
+    let snapshot = grid.clone();
 
     // Parallelise over rows. Each row reads from `snapshot` (shared
     // read-only) and writes only to its own row of `grid`, so there's no
     // data dependency between rows. On a 4096² grid this typically
     // amounts to 0.8M–2.4M boundary cells each doing ~169 kernel samples
     // — clearly worth the rayon dispatch.
-    grid.par_iter_mut().enumerate().for_each(|(y, row)| {
-        // Per-row scratch buffers reused across every boundary cell on
-        // this row. `votes` is 2 KB on the stack; zero-filling it anew
-        // per cell dominated runtime on large grids (1-2 M boundary
-        // cells × 2 KB zero-fill per cell). We now clear only the class
-        // slots we actually touched (`seen`) between cells — typically
-        // 2-5 writes instead of 256.
-        let mut votes = [0.0f64; 256];
-        let mut seen: [u8; 16] = [0; 16];
-        let mut seen_len = 0usize;
+    grid.as_mut_slice()
+        .par_chunks_exact_mut(width)
+        .enumerate()
+        .for_each(|(y, row)| {
+            // Per-row scratch buffers reused across every boundary cell on
+            // this row. `votes` is 2 KB on the stack; zero-filling it anew
+            // per cell dominated runtime on large grids (1-2 M boundary
+            // cells × 2 KB zero-fill per cell). We now clear only the class
+            // slots we actually touched (`seen`) between cells — typically
+            // 2-5 writes instead of 256.
+            let mut votes = [0.0f64; 256];
+            let mut seen: [u8; 16] = [0; 16];
+            let mut seen_len = 0usize;
 
-        for x in 0..width {
-            let center_class = snapshot[y][x];
-            if center_class == 0 {
-                continue;
-            }
-
-            // Skip unless this cell is on a class boundary. Everything inside
-            // a flood-fill of one class has identical votes across the cell
-            // and all its neighbors, so it would win itself — expensive no-op.
-            let mut is_boundary = false;
-            for (dx, dz) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
-                let nx = x as i32 + dx;
-                let nz = y as i32 + dz;
-                if nx < 0 || nz < 0 || nx >= width as i32 || nz >= height as i32 {
+            // Range loop kept: same traversal as pre-flattening, row written
+            // by index while the snapshot is read via the flat accessor.
+            #[allow(clippy::needless_range_loop)]
+            for x in 0..width {
+                let center_class = snapshot.at(y, x);
+                if center_class == 0 {
                     continue;
                 }
-                let nc = snapshot[nz as usize][nx as usize];
-                if nc != 0 && nc != center_class {
-                    is_boundary = true;
-                    break;
+
+                // Skip unless this cell is on a class boundary. Everything inside
+                // a flood-fill of one class has identical votes across the cell
+                // and all its neighbors, so it would win itself — expensive no-op.
+                let mut is_boundary = false;
+                for (dx, dz) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    let nx = x as i32 + dx;
+                    let nz = y as i32 + dz;
+                    if nx < 0 || nz < 0 || nx >= width as i32 || nz >= height as i32 {
+                        continue;
+                    }
+                    let nc = snapshot.at(nz as usize, nx as usize);
+                    if nc != 0 && nc != center_class {
+                        is_boundary = true;
+                        break;
+                    }
                 }
-            }
-            if !is_boundary {
-                continue;
-            }
-
-            // Reset only the slots touched by the previous boundary cell
-            // on this row. `seen` maxes at 16 classes — ESA has ~11 —
-            // so this is a handful of writes, not a 256-entry memset.
-            for i in 0..seen_len {
-                votes[seen[i] as usize] = 0.0;
-            }
-            seen_len = 0;
-
-            for ky in 0..kernel_size {
-                let nz = y as i32 + ky as i32 - radius;
-                if nz < 0 || nz >= height as i32 {
+                if !is_boundary {
                     continue;
                 }
-                let kernel_row = ky * kernel_size;
-                let src_row = &snapshot[nz as usize];
-                for kx in 0..kernel_size {
-                    let nx = x as i32 + kx as i32 - radius;
-                    if nx < 0 || nx >= width as i32 {
-                        continue;
-                    }
-                    let nc = src_row[nx as usize];
-                    if nc == 0 {
-                        continue;
-                    }
-                    let prev = votes[nc as usize];
-                    votes[nc as usize] = prev + kernel[kernel_row + kx];
-                    // Track the class code on first contribution only.
-                    // `seen` maxes at 16 classes — ESA has ~11 defined —
-                    // so we never overflow in practice.
-                    if prev == 0.0 && seen_len < seen.len() {
-                        seen[seen_len] = nc;
-                        seen_len += 1;
-                    }
-                }
-            }
 
-            // Find the max over only the class codes actually seen in
-            // the neighbourhood (typically 2-5 at a class boundary)
-            // rather than scanning all 256 entries.
-            let mut best_idx = 0u8;
-            let mut best_val = 0.0f64;
-            for &cls in &seen[..seen_len] {
-                let v = votes[cls as usize];
-                if v > best_val {
-                    best_idx = cls;
-                    best_val = v;
+                // Reset only the slots touched by the previous boundary cell
+                // on this row. `seen` maxes at 16 classes — ESA has ~11 —
+                // so this is a handful of writes, not a 256-entry memset.
+                for i in 0..seen_len {
+                    votes[seen[i] as usize] = 0.0;
+                }
+                seen_len = 0;
+
+                for ky in 0..kernel_size {
+                    let nz = y as i32 + ky as i32 - radius;
+                    if nz < 0 || nz >= height as i32 {
+                        continue;
+                    }
+                    let kernel_row = ky * kernel_size;
+                    let src_row = snapshot.row(nz as usize);
+                    for kx in 0..kernel_size {
+                        let nx = x as i32 + kx as i32 - radius;
+                        if nx < 0 || nx >= width as i32 {
+                            continue;
+                        }
+                        let nc = src_row[nx as usize];
+                        if nc == 0 {
+                            continue;
+                        }
+                        let prev = votes[nc as usize];
+                        votes[nc as usize] = prev + kernel[kernel_row + kx];
+                        // Track the class code on first contribution only.
+                        // `seen` maxes at 16 classes — ESA has ~11 defined —
+                        // so we never overflow in practice.
+                        if prev == 0.0 && seen_len < seen.len() {
+                            seen[seen_len] = nc;
+                            seen_len += 1;
+                        }
+                    }
+                }
+
+                // Find the max over only the class codes actually seen in
+                // the neighbourhood (typically 2-5 at a class boundary)
+                // rather than scanning all 256 entries.
+                let mut best_idx = 0u8;
+                let mut best_val = 0.0f64;
+                for &cls in &seen[..seen_len] {
+                    let v = votes[cls as usize];
+                    if v > best_val {
+                        best_idx = cls;
+                        best_val = v;
+                    }
+                }
+                if best_val > 0.0 {
+                    row[x] = best_idx;
                 }
             }
-            if best_val > 0.0 {
-                row[x] = best_idx;
-            }
-        }
-    });
+        });
 }
 
 /// Simple deterministic hash from coordinates (for dithering and block variety).

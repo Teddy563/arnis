@@ -109,7 +109,7 @@ pub fn apply_bridge_land_cover_repair(
             if get_bit(&bridge_mask, nidx) {
                 continue;
             }
-            if land_cover.grid[nz as usize][nx as usize] == LC_WATER {
+            if land_cover.grid.at(nz as usize, nx as usize) == LC_WATER {
                 assigned.insert(b_idx, LC_WATER);
                 current.push_back((b_idx, LC_WATER));
                 break;
@@ -134,7 +134,7 @@ pub fn apply_bridge_land_cover_repair(
             if get_bit(&bridge_mask, nidx) {
                 continue;
             }
-            let cls = land_cover.grid[nz as usize][nx as usize];
+            let cls = land_cover.grid.at(nz as usize, nx as usize);
             if cls == 0 || cls == LC_WATER {
                 continue;
             }
@@ -182,11 +182,11 @@ pub fn apply_bridge_land_cover_repair(
         let bi = b_idx as usize;
         let x = bi % width;
         let z = bi / width;
-        let old_class = land_cover.grid[z][x];
+        let old_class = land_cover.grid.at(z, x);
         if new_class == old_class {
             continue;
         }
-        land_cover.grid[z][x] = new_class;
+        land_cover.grid.set(z, x, new_class);
         mutated += 1;
         if new_class == LC_WATER {
             to_water += 1;
@@ -243,7 +243,7 @@ fn world_to_grid(rel_x: i32, rel_z: i32, scale_x: f64, scale_z: f64) -> (i32, i3
 fn stamp_square(
     mask: &mut [u64],
     bridge_indices: &mut Vec<u32>,
-    grid: &[Vec<u8>],
+    grid: &crate::flat_grid::FlatGrid<u8>,
     cx: i32,
     cz: i32,
     range_x: i32,
@@ -265,7 +265,7 @@ fn stamp_square(
         let row_start = zu * width;
         for x in lo_x..=hi_x {
             // Only stamp built-up cells; the margin must not clobber real water/forest.
-            if grid[zu][x as usize] != LC_BUILT_UP {
+            if grid.at(zu, x as usize) != LC_BUILT_UP {
                 continue;
             }
             let idx = row_start + x as usize;

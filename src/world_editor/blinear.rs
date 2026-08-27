@@ -33,9 +33,13 @@
 //! ignores the timestamp and the two informational header fields. There is no footer.
 
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use xxhash_rust::xxh32::xxh32;
+use zstd::zstd_safe::{
+    self, zstd_sys::ZSTD_EndDirective, CParameter, InBuffer, OutBuffer, ResetDirective,
+};
 
 /// File magic shared by every B_Linear version.
 const SUPERBLOCK: i64 = -0x0000_2008_1225_0269;
@@ -46,20 +50,50 @@ const VERSION: u8 = 3;
 const HASH_SEED: u32 = 0x0721;
 const BUCKET_COUNT: usize = 16;
 const BUCKET_SIZE: usize = 64;
+/// Only the test-side decoder still iterates whole regions; the writer stages
+/// per-bucket since the arena rework.
+#[cfg(test)]
 const CHUNKS_PER_REGION: usize = BUCKET_COUNT * BUCKET_SIZE;
 const HEADER_SIZE: u64 = 14;
 const DATA_START: u64 = HEADER_SIZE + (BUCKET_COUNT as u64) * 8;
+
+/// One bucket's staging area. Sections are framed straight into `arena` as chunks
+/// arrive (in whatever order the region map yields them); `slots` records where each
+/// chunk's framed section lives so compression can feed them in ascending slot order
+/// without ever assembling a contiguous ordered copy of the bucket.
+struct Bucket {
+    /// Framed sections (`i32 sectionLen | i32 nbtLen | i64 ts | u32 xxh32 | nbt`) in
+    /// arrival order. A rewritten chunk leaves its old section orphaned here — never
+    /// emitted, and rewrites do not happen on the region save path anyway.
+    arena: Vec<u8>,
+    /// Per slot: (offset, len) of its framed section in `arena`; len 0 = chunk absent
+    /// (a real section is never shorter than its 20-byte prefix+header).
+    slots: [(usize, usize); BUCKET_SIZE],
+}
+
+impl Default for Bucket {
+    fn default() -> Self {
+        Self {
+            arena: Vec::new(),
+            slots: [(0, 0); BUCKET_SIZE],
+        }
+    }
+}
 
 /// Accumulates one region's chunk NBT, then writes it out as a B_Linear v3 file.
 ///
 /// Buffering the whole region is inherent to the format: buckets are compressed as
 /// units and chunks arrive in hash-map order, so no bucket is known to be complete
 /// until the region is. Peak cost is the region's raw NBT, released bucket by bucket
-/// as [`finish`](Self::finish) compresses.
+/// as [`finish`](Self::finish) compresses. Chunks are framed into their bucket's
+/// arena at [`write_chunk`](Self::write_chunk) time, so the NBT is copied exactly
+/// once between the serializer's buffer and the compressor.
 pub(crate) struct BlinearRegionWriter {
-    slots: Vec<Option<Vec<u8>>>,
+    buckets: Vec<Bucket>,
     level: i32,
     out_path: PathBuf,
+    /// One save timestamp per region, stamped into every section. Leaf ignores it.
+    timestamp_millis: i64,
 }
 
 impl BlinearRegionWriter {
@@ -73,13 +107,15 @@ impl BlinearRegionWriter {
         let region_dir = world_dir.join("region");
         std::fs::create_dir_all(&region_dir)?;
         Ok(Self {
-            slots: (0..CHUNKS_PER_REGION).map(|_| None).collect(),
+            buckets: (0..BUCKET_COUNT).map(|_| Bucket::default()).collect(),
             level,
             out_path: region_dir.join(format!("r.{}.{}.b_linear", region_x, region_z)),
+            timestamp_millis: now_millis(),
         })
     }
 
-    /// Stage one chunk's uncompressed NBT at its region-local coordinates.
+    /// Stage one chunk's uncompressed NBT at its region-local coordinates, framing it
+    /// (length prefix + section header + hash) directly into its bucket's arena.
     ///
     /// Same signature and index convention as `fastanvil::Region::write_chunk`, so the
     /// two containers are drop-in alternatives at the call site.
@@ -90,7 +126,29 @@ impl BlinearRegionWriter {
         nbt: &[u8],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let index = (chunk_x & 31) + (chunk_z & 31) * 32;
-        self.slots[index] = Some(nbt.to_vec());
+        // Section length covers the 16-byte section header plus the NBT.
+        let section_len = i32::try_from(nbt.len() + 16)
+            .map_err(|_| "chunk NBT exceeds the 2 GiB b_linear section limit")?;
+        let nbt_len = section_len - 16;
+        let bucket = &mut self.buckets[index / BUCKET_SIZE];
+        if bucket.arena.is_empty() {
+            // Chunks within a region are similar-sized, so size the arena off the
+            // first arrival: a full bucket is 64 of them. This replaces a fixed
+            // 512 KiB guess that undershot real buckets by ~an order of magnitude
+            // and cost a cascade of multi-MB realloc copies per bucket.
+            bucket.arena.reserve((nbt.len() + 20) * BUCKET_SIZE);
+        }
+        let start = bucket.arena.len();
+        bucket.arena.extend_from_slice(&section_len.to_be_bytes());
+        bucket.arena.extend_from_slice(&nbt_len.to_be_bytes());
+        bucket
+            .arena
+            .extend_from_slice(&self.timestamp_millis.to_be_bytes());
+        bucket
+            .arena
+            .extend_from_slice(&xxh32(nbt, HASH_SEED).to_be_bytes());
+        bucket.arena.extend_from_slice(nbt);
+        bucket.slots[index % BUCKET_SIZE] = (start, bucket.arena.len() - start);
         Ok(())
     }
 
@@ -148,25 +206,26 @@ impl BlinearRegionWriter {
     /// stalls the whole eviction queue and pushes the generator's peak memory up.
     /// Each bucket's raw chunk NBT is dropped as soon as its frame exists.
     fn encode(&mut self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let timestamp_millis = now_millis();
         let level = self.level.clamp(1, 22);
 
-        // Hand each bucket its own 64 slots so the raw NBT can be released per bucket
-        // rather than being held for the whole region.
-        let mut rest = std::mem::take(&mut self.slots);
-        let mut buckets: Vec<Vec<Option<Vec<u8>>>> = Vec::with_capacity(BUCKET_COUNT);
-        for _ in 0..BUCKET_COUNT {
-            let tail = rest.split_off(BUCKET_SIZE);
-            buckets.push(rest);
-            rest = tail;
-        }
-
+        // Move each bucket out so its raw NBT arena can be released as soon as its
+        // frame exists, rather than being held for the whole region.
+        let buckets = std::mem::take(&mut self.buckets);
         let frames: Vec<BucketFrame> = buckets
             .into_par_iter()
-            .map(|slots| encode_bucket(slots, timestamp_millis, level))
+            .map(|bucket| encode_bucket(bucket, level))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut out = Vec::with_capacity(1 << 20);
+        // Every frame is in hand, so the file image's size is exact: header table plus
+        // an 8-byte record header and the frame per present bucket. (The old fixed
+        // 1 MiB guess undershot real region files and realloc-copied the image
+        // several times over.)
+        let body: usize = frames
+            .iter()
+            .flatten()
+            .map(|(_, compressed)| 8 + compressed.len())
+            .sum();
+        let mut out = Vec::with_capacity(DATA_START as usize + body);
         out.extend_from_slice(&SUPERBLOCK.to_be_bytes());
         out.push(VERSION);
         out.push(level as u8);
@@ -207,37 +266,100 @@ impl BlinearRegionWriter {
 /// bucket whose 64 slots are all empty, which is written as an absent offset.
 type BucketFrame = Option<(usize, Vec<u8>)>;
 
-/// Frame one bucket, compressing its 64 slots into a single zstd frame.
+thread_local! {
+    /// One zstd compression context per rayon worker, reused across every bucket and
+    /// region that worker compresses. Reuse only recycles the context's workspace
+    /// allocation (the multi-MB match-state that `zstd::bulk::compress` used to
+    /// allocate and free once per bucket); it cannot change the bytes produced: for a
+    /// pinned zstd (zstd-sys 2.0.16+zstd.1.5.7 in Cargo.lock) a frame is a pure
+    /// function of (parameters, pledged source size, input bytes). Every frame here
+    /// starts with `ZSTD_CCtx_reset(SessionOnly)` + explicit level + pledged size, and
+    /// `ZSTD_e_end` fully closes the previous frame, so no session state crosses
+    /// buckets. Feeding the input as multiple `compressStream2` calls does not move
+    /// block boundaries either — zstd cuts blocks by internal window fill, not call
+    /// granularity — so the frame equals the single-shot `ZSTD_compress2` output for
+    /// the same level.
+    static ZSTD_CCTX: RefCell<zstd_safe::CCtx<'static>> = RefCell::new(zstd_safe::CCtx::create());
+}
+
+/// Absent-chunk marker: a zero `i32` section length.
+const ABSENT_SLOT: [u8; 4] = [0; 4];
+
+fn zstd_err(code: usize) -> Box<dyn std::error::Error + Send + Sync> {
+    format!("zstd: {}", zstd_safe::get_error_name(code)).into()
+}
+
+/// Compress one staged bucket into a single zstd frame, streaming its 64 slots in
+/// ascending index order straight out of the arrival-order arena. The old path first
+/// concatenated the ordered sections into a contiguous `raw` buffer — a full extra
+/// copy of the bucket's NBT — purely to satisfy the one-shot compress API.
 fn encode_bucket(
-    slots: Vec<Option<Vec<u8>>>,
-    timestamp_millis: i64,
+    bucket: Bucket,
     level: i32,
 ) -> Result<BucketFrame, Box<dyn std::error::Error + Send + Sync>> {
     // An all-empty bucket is represented by its offset staying 0. Leaf skips those
     // without reading anything, so emitting a record would be wasted.
-    if slots.iter().all(Option::is_none) {
+    if bucket.slots.iter().all(|&(_, len)| len == 0) {
         return Ok(None);
     }
 
-    let mut raw: Vec<u8> = Vec::with_capacity(1 << 19);
-    for slot in slots {
-        match slot {
-            Some(nbt) => {
-                let nbt_len = i32::try_from(nbt.len())
-                    .map_err(|_| "chunk NBT exceeds the 2 GiB b_linear section limit")?;
-                // Section length covers the 16-byte section header plus the NBT.
-                raw.extend_from_slice(&(nbt_len + 16).to_be_bytes());
-                raw.extend_from_slice(&nbt_len.to_be_bytes());
-                raw.extend_from_slice(&timestamp_millis.to_be_bytes());
-                raw.extend_from_slice(&xxh32(&nbt, HASH_SEED).to_be_bytes());
-                raw.extend_from_slice(&nbt);
-            }
-            None => raw.extend_from_slice(&0i32.to_be_bytes()),
-        }
-    }
+    let raw_len: usize = bucket
+        .slots
+        .iter()
+        .map(|&(_, len)| if len == 0 { ABSENT_SLOT.len() } else { len })
+        .sum();
+    // With the source size pledged and no intermediate flush, the frame fits in
+    // compress_bound(raw_len) by zstd's contract, so this buffer never grows.
+    let mut compressed: Vec<u8> = Vec::with_capacity(zstd_safe::compress_bound(raw_len));
 
-    let compressed = zstd::bulk::compress(&raw, level)?;
-    Ok(Some((raw.len(), compressed)))
+    ZSTD_CCTX.with(
+        |cell| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let mut cctx = cell.borrow_mut();
+            cctx.reset(ResetDirective::SessionOnly).map_err(zstd_err)?;
+            cctx.set_parameter(CParameter::CompressionLevel(level))
+                .map_err(zstd_err)?;
+            cctx.set_pledged_src_size(Some(raw_len as u64))
+                .map_err(zstd_err)?;
+
+            let mut out = OutBuffer::around(&mut compressed);
+            for (slot, &(offset, len)) in bucket.slots.iter().enumerate() {
+                let piece: &[u8] = if len == 0 {
+                    &ABSENT_SLOT
+                } else {
+                    &bucket.arena[offset..offset + len]
+                };
+                let last = slot + 1 == BUCKET_SIZE;
+                let directive = if last {
+                    ZSTD_EndDirective::ZSTD_e_end
+                } else {
+                    ZSTD_EndDirective::ZSTD_e_continue
+                };
+                let mut input = InBuffer::around(piece);
+                loop {
+                    let before = (input.pos(), out.pos());
+                    let remaining = cctx
+                        .compress_stream2(&mut out, &mut input, directive)
+                        .map_err(zstd_err)?;
+                    let done = if last {
+                        remaining == 0
+                    } else {
+                        input.pos() == piece.len()
+                    };
+                    if done {
+                        break;
+                    }
+                    if (input.pos(), out.pos()) == before {
+                        // Cannot happen with a compress_bound-sized buffer; fail rather
+                        // than spin if that invariant is ever broken.
+                        return Err("zstd made no progress (output buffer full?)".into());
+                    }
+                }
+            }
+            Ok(())
+        },
+    )?;
+
+    Ok(Some((raw_len, compressed)))
 }
 
 /// Chunk save time. Leaf reads this field and currently ignores it; converters treat
@@ -313,9 +435,10 @@ mod tests {
 
     fn writer(level: i32) -> BlinearRegionWriter {
         BlinearRegionWriter {
-            slots: (0..CHUNKS_PER_REGION).map(|_| None).collect(),
+            buckets: (0..BUCKET_COUNT).map(|_| Bucket::default()).collect(),
             level,
             out_path: PathBuf::from("r.0.0.b_linear"),
+            timestamp_millis: now_millis(),
         }
     }
 
@@ -346,6 +469,20 @@ mod tests {
             assert_eq!(slots[x + z * 32].as_deref(), Some(nbt.as_slice()));
         }
         assert_eq!(slots.iter().filter(|s| s.is_some()).count(), payloads.len());
+    }
+
+    #[test]
+    fn out_of_order_and_rewritten_chunks_land_in_their_slots() {
+        // Chunks arrive in hash-map order, so the arena holds them out of slot order;
+        // the emitted bucket must still be ascending, and a rewrite must win.
+        let mut w = writer(6);
+        w.write_chunk(9, 0, b"later-slot-first").unwrap();
+        w.write_chunk(2, 0, b"earlier-slot-second").unwrap();
+        w.write_chunk(9, 0, b"rewritten").unwrap();
+        let slots = decode(&w.encode().unwrap());
+        assert_eq!(slots[2].as_deref(), Some(b"earlier-slot-second".as_slice()));
+        assert_eq!(slots[9].as_deref(), Some(b"rewritten".as_slice()));
+        assert_eq!(slots.iter().filter(|s| s.is_some()).count(), 2);
     }
 
     #[test]
