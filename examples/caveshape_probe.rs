@@ -23,6 +23,9 @@ mod world_editor {
     pub fn world_max_y() -> i32 {
         319
     }
+    pub fn world_min_y() -> i32 {
+        -64
+    }
 }
 
 #[path = "../src/caves/density.rs"]

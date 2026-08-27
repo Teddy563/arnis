@@ -317,16 +317,32 @@ impl CaveGen {
         let pillars = self.pillars(xf, yf, zf);
         let pillars_gated = if pillars < 0.03 { -1.0e6 } else { pillars };
         let cave = t2.max(pillars_gated);
-        // depth slides (cancel to `cave` in the main band; pinch toward solid near world top/bottom)
-        let yg1 = y_clamped_gradient(yf, -64, -40, 0.0, 1.0);
-        // The top pinch band must follow the WORLD top, not vanilla's. Vanilla hardcodes
-        // 240..256 because its world ends at 320 - i.e. top-80..top-64 - and above 256 the
-        // fade zeroes the cave term and the residual constants sum to -0.078125: constant
-        // AIR for every block, regardless of the noise. In vanilla that never shows (the
-        // terrain density dominates up there); in a tall Meld world it carved one giant
-        // void under every surface above y~256 - the reported bug. The formula below IS
-        // vanilla at vanilla height (319+1-80 = 240, 319+1-64 = 256), so standard worlds
-        // are byte-identical, and a tall world pinches at its own ceiling instead.
+        // depth slides. Both Y bands are anchored to THIS WORLD's bounds, not vanilla's:
+        //
+        // BOTTOM: vanilla fades caves in over the first 24 blocks above its floor
+        // (-64..-40). Hardcoding that meant a deep world (floors down to -2032 are legal)
+        // had NO caves below y=-64 - below the band yg1 is 0 and the density is a constant
+        // +0.117 = solid. Anchoring to the real floor is vanilla-exact at the vanilla
+        // floor (min_y=-64 -> -64..-40, bit for bit) and gives deep worlds their caves.
+        //
+        // TOP: vanilla fades the cave term to nothing over 240..256, and above 256 the
+        // residual constants are a flat -0.078125 = unconditional AIR. That was the
+        // reported giant-void bug in tall worlds. In this port the density is only ever
+        // evaluated INSIDE terrain (fillground columns) - the sky never asks - so the top
+        // fade cannot do its vanilla job (blending against a terrain field we do not
+        // have); the only thing it can do is hollow the peaks that reach into it. And the
+        // fitted height profile reserves only `headroom` (default 32) above the tallest
+        // terrain, so ANY world-top-relative band closer than the headroom re-voids the
+        // peaks. The band therefore sits entirely ABOVE the world ceiling: yg2 stays 1.0
+        // for every Y that can hold a block, at any world height - including whatever
+        // vanilla moves its ceiling to next, since it tracks this world's bounds.
+        //
+        // Byte-identity: golden fixtures have no terrain above y=239, and below 240 both
+        // old and new yg2 are exactly 1.0, so standard-world hashes are unchanged. Cells
+        // whose terrain does cross y~240 change deliberately: what the old fade produced
+        // there was the void/hollow-peak bug.
+        let floor = crate::world_editor::world_min_y();
+        let yg1 = y_clamped_gradient(yf, floor, floor + 24, 0.0, 1.0);
         let (pinch_lo, pinch_hi) = top_pinch_band();
         let yg2 = y_clamped_gradient(yf, pinch_lo, pinch_hi, 1.0, 0.0);
         let inner = 0.1171875 + yg1 * (-0.1171875 + (-0.078125 + yg2 * (0.078125 + cave)));
@@ -419,17 +435,17 @@ fn squeeze(v: f64) -> f64 {
     c / 2.0 - c * c * c / 24.0
 }
 
-/// The Y band over which caves fade to solid below the world ceiling: `top-80 .. top-64`
-/// in exclusive-top terms, which is exactly vanilla's 240..256 for the standard 320 world.
-/// Reads the world bounds the run has already registered; the default (2031) only applies
-/// to code paths that never generate a world.
+/// The Y band over which the cave term would fade out near the ceiling - placed entirely
+/// ABOVE the world top, so it never touches a Y that can hold a block. See the long
+/// comment at the use site: in this port density is only evaluated inside terrain, the
+/// fitted profile guarantees only ~32 blocks of headroom, and any band inside the world
+/// re-creates the hollow-peak/void bug the field report caught.
+/// (The standalone probe examples compile this file via #[path] outside the crate and
+/// carry a one-line `mod world_editor` shim returning 319.)
 #[inline]
 fn top_pinch_band() -> (i32, i32) {
-    // NOTE for the standalone probe examples: they compile this file via #[path] outside
-    // the crate, so each carries a one-line `mod world_editor` shim returning 319 - the
-    // vanilla top, which reproduces the historical 240..256 band there.
     let top_excl = crate::world_editor::world_max_y() + 1;
-    (top_excl - 80, top_excl - 64)
+    (top_excl, top_excl + 16)
 }
 
 #[inline]
@@ -509,8 +525,14 @@ mod top_pinch_tests {
         // Process default bounds are (-64, 2031) unless a generation set a profile.
         let (lo, hi) = top_pinch_band();
         let top_excl = crate::world_editor::world_max_y() + 1;
-        assert_eq!((lo, hi), (top_excl - 80, top_excl - 64));
-        // And the formula reproduces vanilla exactly at the standard 319 ceiling.
-        assert_eq!((319 + 1 - 80, 319 + 1 - 64), (240, 256));
+        assert_eq!(
+            (lo, hi),
+            (top_excl, top_excl + 16),
+            "band must sit above the ceiling"
+        );
+        // Every in-world Y keeps the cave term fully active: the fade can only ever
+        // hollow peaks here (density is never evaluated above terrain), and the profile
+        // guarantees only ~32 blocks of headroom - less than any in-world band's 64.
+        assert!(lo > crate::world_editor::world_max_y());
     }
 }
