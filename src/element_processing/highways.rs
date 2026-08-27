@@ -13,7 +13,7 @@ use crate::element_processing::surfaces::{
 use crate::floodfill_cache::{CoordinateBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedElement, ProcessedWay};
 use crate::world_editor::WorldEditor;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Upper bound on `block_range` used by wide-road width flattening. The
 /// stamp is `2 * block_range + 1`; with `MAX_BLOCK_RANGE = 8` we can sort
@@ -163,6 +163,372 @@ fn perpendicular_median_ground_y(
     let mut arr = [t_prev, t_curr, t_next];
     arr.sort_unstable();
     arr[1]
+}
+
+// ---- Road longitudinal grading (`--road-grade on`) ----
+//
+// With the flag off none of this runs: `compute_road_profile` returns `None`
+// on its first line, `flatten_width` keeps its legacy `block_range >= 1`
+// form, and the placement loop takes the unchanged `precompute_row_medians`
+// path. Flag-off output is byte-identical.
+
+/// Absolute-`tds` spacing of the hard profile anchors, in stations (K).
+///
+/// Anchors are the tile-invariance mechanism, not a smoothing knob. Every
+/// station whose way-intrinsic `tds` is a multiple of K is pinned to its own
+/// terrain sample and the profile is solved independently inside each
+/// anchor-delimited window, which bounds the reach of any single DEM sample
+/// to K stations. That matters because `Ground::get_data_coordinates` clamps
+/// reads to the render bbox: a sample taken outside one Meld cell's bbox is
+/// edge-clamped, and clamped differently in the neighbouring cell. Unbounded,
+/// the slope clamp would carry that difference the whole length of the way
+/// and across the cell; bounded, it dies at the next anchor. `tds` counts
+/// from the way's first node and ways are assigned to tiles whole, so the
+/// anchor stations are identical in every tile and every cell.
+const GRADE_ANCHOR_PERIOD: usize = 64;
+
+/// Max-grade denominator N by highway class: at most one block of climb per
+/// N blocks of run. `None` means the class is never graded — `highway=steps`
+/// is stairs, and stairs are supposed to step.
+///
+/// `*_link` ramps inherit their parent class. Classes outside the table take
+/// the residential tier rather than going ungraded, so an exotic `highway=*`
+/// value never silently keeps the contour steps this pass exists to remove.
+fn road_grade_denominator(highway_type: &str) -> Option<u32> {
+    match highway_type.strip_suffix("_link").unwrap_or(highway_type) {
+        "steps" => None,
+        "motorway" | "trunk" | "primary" => Some(12),
+        "secondary" | "tertiary" => Some(8),
+        "footway" | "path" | "track" => Some(4),
+        _ => Some(6),
+    }
+}
+
+/// Max grade `g` in blocks per block of run for this class at this scale.
+///
+/// `N_eff = max(2, round(N * scale))`: N is expressed in real-world blocks,
+/// so at 1:2 an unscaled 1-in-12 motorway limit would read as 1-in-6 in world
+/// blocks. The floor of 2 keeps the rounded profile from stepping every
+/// single block at tiny scales, where one block is the whole road.
+fn road_grade_step(highway_type: &str, scale: f64) -> Option<f64> {
+    let n = road_grade_denominator(highway_type)?;
+    let n_eff = ((n as f64 * scale).round() as i64).max(2) as f64;
+    Some(1.0 / n_eff)
+}
+
+/// One centerline station, indexed by `tds`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct GradeStation {
+    x: i32,
+    z: i32,
+    /// Travel direction of the segment this station came from; selects the
+    /// axis the width strip is sampled along, mirroring `dir_horizontal` in
+    /// the placement loop.
+    dir_horizontal: bool,
+}
+
+/// Station list for a way, indexed exactly as the placement loop indexes
+/// `tds`.
+///
+/// The mapping reproduced here is `tds = cumulative_distance_from_start +
+/// point_index`, with `cumulative_distance_from_start += segment_length - 1`
+/// after each segment, and `skip_first == 0` for every way that can be graded
+/// (only bridges and bridge ramps skip, and those are never graded). That
+/// `- 1` makes a segment's first point share its `tds` with the previous
+/// segment's last point, so a shared node coordinate is written TWICE at the
+/// SAME index. This builder must OVERWRITE there and never append: one stray
+/// push shifts every later station by one and desyncs `profile[tds]` from
+/// placement for the entire rest of the way.
+///
+/// At a shared station the later segment's `dir_horizontal` wins, matching
+/// the placement loop's own last-write ordering. Both writes carry the same
+/// coordinate, so only the sampling axis is ever at stake.
+fn road_grade_stations(nodes: &[crate::osm_parser::ProcessedNode]) -> Vec<GradeStation> {
+    let mut stations: Vec<GradeStation> = Vec::new();
+    let mut cumulative_distance_from_start: usize = 0;
+    for pair in nodes.windows(2) {
+        let points = bresenham_line(pair[0].x, 0, pair[0].z, pair[1].x, 0, pair[1].z);
+        let segment_length = points.len();
+        let dir_horizontal = (pair[1].x - pair[0].x).abs() >= (pair[1].z - pair[0].z).abs();
+        for (point_index, (x, _, z)) in points.iter().enumerate() {
+            let tds = cumulative_distance_from_start + point_index;
+            let station = GradeStation {
+                x: *x,
+                z: *z,
+                dir_horizontal,
+            };
+            match stations.get_mut(tds) {
+                Some(slot) => *slot = station,
+                None => {
+                    debug_assert_eq!(tds, stations.len(), "station list must stay dense in tds");
+                    stations.push(station);
+                }
+            }
+        }
+        cumulative_distance_from_start += segment_length - 1;
+    }
+    stations
+}
+
+/// `tds` of every way node: node 0 at 0, then the running sum of each
+/// segment's `segment_length - 1`, which is exactly `max(|dx|, |dz|)`. Same
+/// accumulation as `road_grade_stations`, without re-rasterizing.
+fn road_grade_node_stations(nodes: &[crate::osm_parser::ProcessedNode]) -> Vec<usize> {
+    let mut out = Vec::with_capacity(nodes.len());
+    let mut cumulative: usize = 0;
+    out.push(0);
+    for pair in nodes.windows(2) {
+        let dx = (pair[1].x - pair[0].x).unsigned_abs() as usize;
+        let dz = (pair[1].z - pair[0].z).unsigned_abs() as usize;
+        cumulative += dx.max(dz);
+        out.push(cumulative);
+    }
+    out
+}
+
+/// Median of the PRE-ROUND terrain surface across the road's width strip at
+/// one station — the float twin of `perpendicular_median_raw`'s geometry
+/// (`2 * block_range + 1` samples on the axis perpendicular to travel).
+///
+/// Reads `terrain_level_f64`, never `get_ground_level`. `get_ground_level`
+/// folds in the road override map, which would make this way's Y depend on
+/// which roads were processed before it — the order- and tile-coupled
+/// feedback loop this pass exists to sever. Sampling the float field rather
+/// than `terrain_level` is the other half of the fix: the 0.5-contour
+/// crossings that rounding creates ARE the mid-segment steps being removed,
+/// so the profile has to be built before they exist.
+fn grade_strip_median(
+    editor: &WorldEditor,
+    station: GradeStation,
+    block_range: i32,
+) -> Option<f64> {
+    debug_assert!(block_range as usize <= MAX_BLOCK_RANGE);
+    let len = 2 * block_range as usize + 1;
+    let mut ys = [0.0f64; 2 * MAX_BLOCK_RANGE + 1];
+    for (i, t) in (-block_range..=block_range).enumerate() {
+        let (sx, sz) = if station.dir_horizontal {
+            (station.x, station.z + t)
+        } else {
+            (station.x + t, station.z)
+        };
+        ys[i] = editor.terrain_level_f64(sx, sz)?;
+    }
+    ys[..len].sort_by(f64::total_cmp);
+    Some(ys[len / 2])
+}
+
+/// Junction pin: median of the pre-round terrain surface over a fixed 3x3
+/// window at the node.
+///
+/// Deliberately independent of road width, class and way direction, so every
+/// way meeting at this node — in every tile and every Meld cell — derives the
+/// identical pin from (node coords, DEM) alone. That is what makes crossing
+/// roads agree at the shared column with no ordering input of any kind.
+fn grade_junction_pin(editor: &WorldEditor, x: i32, z: i32) -> Option<f64> {
+    let mut ys = [0.0f64; 9];
+    let mut i = 0;
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            ys[i] = editor.terrain_level_f64(x + dx, z + dz)?;
+            i += 1;
+        }
+    }
+    ys.sort_by(f64::total_cmp);
+    Some(ys[4])
+}
+
+/// Slope-limited profile over ONE anchor-delimited window.
+///
+/// `constraints` is `(index within the window, value)` in ascending index
+/// order and includes the window's boundary anchors. Closed form, no
+/// iteration to a fixpoint, so the result cannot depend on an iteration
+/// count:
+/// - per-edge grade caps `gstep`, relaxed to the constraint-pair linear grade
+///   on any interval whose two constraints are steeper than `g` — an
+///   infeasible pair must not make the solve unsatisfiable, and a relaxed
+///   interval is still never steeper than the ungraded terrain it replaces;
+/// - envelopes `L[i] = max_j(c_j - d_ij)`, `U[i] = min_j(c_j + d_ij)`;
+/// - `A[i] = min_j(base[j] + d_ij)`, the largest g-Lipschitz minorant of
+///   base, and `B[i] = max_j(base[j] - d_ij)`, the smallest majorant;
+/// - `p = clamp((A + B) / 2, L, U)`.
+///
+/// `d_ij` is the sum of `gstep` over the edges between i and j, so each field
+/// is a two-sweep O(n) infimal convolution. Min, max and clamp of g-Lipschitz
+/// functions are g-Lipschitz, so `p` respects the grade everywhere; at a
+/// constraint `L == U == c`, so constraints are held exactly. `d_ij` is
+/// symmetric in i and j and the two sweeps are mirror images of each other,
+/// so reversing the input mirrors the output bit for bit — which matters
+/// because OSM way direction is arbitrary.
+fn grade_solve_window(base: &[f64], constraints: &[(usize, f64)], g: f64) -> Vec<f64> {
+    let m = base.len();
+    if m == 0 {
+        return Vec::new();
+    }
+
+    // Per-edge grade cap. Edge e joins stations e and e + 1.
+    let mut gstep = vec![g; m.saturating_sub(1)];
+    for pair in constraints.windows(2) {
+        let (ia, ca) = pair[0];
+        let (ib, cb) = pair[1];
+        if ib <= ia {
+            continue;
+        }
+        let needed = (cb - ca).abs() / (ib - ia) as f64;
+        if needed > g {
+            for step in &mut gstep[ia..ib] {
+                *step = needed;
+            }
+        }
+    }
+
+    let mut upper = vec![f64::INFINITY; m];
+    let mut lower = vec![f64::NEG_INFINITY; m];
+    for &(i, c) in constraints {
+        upper[i] = c;
+        lower[i] = c;
+    }
+    let mut minorant = base.to_vec();
+    let mut majorant = base.to_vec();
+
+    for i in 1..m {
+        let step = gstep[i - 1];
+        upper[i] = upper[i].min(upper[i - 1] + step);
+        lower[i] = lower[i].max(lower[i - 1] - step);
+        minorant[i] = minorant[i].min(minorant[i - 1] + step);
+        majorant[i] = majorant[i].max(majorant[i - 1] - step);
+    }
+    for i in (0..m.saturating_sub(1)).rev() {
+        let step = gstep[i];
+        upper[i] = upper[i].min(upper[i + 1] + step);
+        lower[i] = lower[i].max(lower[i + 1] - step);
+        minorant[i] = minorant[i].min(minorant[i + 1] + step);
+        majorant[i] = majorant[i].max(majorant[i + 1] - step);
+    }
+
+    let mut profile: Vec<f64> = (0..m)
+        .map(|i| {
+            let mid = 0.5 * (minorant[i] + majorant[i]);
+            // `L <= U` holds by the triangle inequality along the relaxed
+            // constraint chain; `.max().min()` rather than `clamp()` so float
+            // jitter can never turn into a panic.
+            mid.max(lower[i]).min(upper[i])
+        })
+        .collect();
+
+    // Restate constraints bit-exactly. The clamp above already lands on them
+    // to within float epsilon, but epsilon is not enough here: two ways
+    // meeting at a junction whose pin sits on an exact .5 would round to
+    // different integers off a 1-ulp difference — the very disagreement the
+    // pin exists to prevent.
+    for &(i, c) in constraints {
+        profile[i] = c;
+    }
+    profile
+}
+
+/// Whole-way profile: anchors every `GRADE_ANCHOR_PERIOD` stations, junction
+/// pins as extra hard constraints, one independent solve per anchor-delimited
+/// window.
+///
+/// Windows share their boundary anchor station and both solves reproduce the
+/// constraint value there exactly, so the concatenation is continuous. A pin
+/// landing on an anchor index REPLACES that anchor: the pin is the value
+/// every way at that junction must share, and being a hard constraint it
+/// bounds DEM influence exactly as well as the anchor it replaces.
+fn grade_profile(base: &[f64], pins: &BTreeMap<usize, f64>, g: f64) -> Vec<f64> {
+    let n = base.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut constraints: BTreeMap<usize, f64> = (0..n)
+        .step_by(GRADE_ANCHOR_PERIOD)
+        .map(|i| (i, base[i]))
+        .collect();
+    for (&i, &v) in pins {
+        if i < n {
+            constraints.insert(i, v);
+        }
+    }
+
+    let mut bounds: Vec<usize> = (0..n).step_by(GRADE_ANCHOR_PERIOD).collect();
+    if bounds[bounds.len() - 1] != n - 1 {
+        bounds.push(n - 1);
+    }
+
+    let mut profile = vec![0.0f64; n];
+    if bounds.len() == 1 {
+        profile[0] = constraints[&0];
+        return profile;
+    }
+    for w in bounds.windows(2) {
+        let (lo, hi) = (w[0], w[1]);
+        let local: Vec<(usize, f64)> = constraints
+            .range(lo..=hi)
+            .map(|(&i, &c)| (i - lo, c))
+            .collect();
+        let solved = grade_solve_window(&base[lo..=hi], &local, g);
+        profile[lo..=hi].copy_from_slice(&solved);
+    }
+    profile
+}
+
+/// Per-way longitudinal profile in float blocks, indexed by `tds`, or `None`
+/// when the way is not graded: flag off, bridge or bridge ramp (their deck Y
+/// comes from `y_at` and they must never register ground overrides),
+/// `highway=steps`, fewer than two nodes, or no terrain data at all.
+///
+/// Rounded to i32 only at placement. Rounding a slope-limited profile puts
+/// its 1-block steps at least `N_eff` blocks apart — the voxel-minimum ramp —
+/// instead of clustering them on terrain contour crossings.
+#[allow(clippy::too_many_arguments)]
+fn compute_road_profile(
+    editor: &WorldEditor,
+    way: &ProcessedWay,
+    highway_type: &str,
+    args: &Args,
+    connectivity: &HighwayConnectivityMap,
+    block_range: i32,
+    is_bridge: bool,
+    total_bresenham_length: usize,
+) -> Option<Vec<f64>> {
+    if args.road_grade != "on" || is_bridge || way.nodes.len() < 2 {
+        return None;
+    }
+    let g = road_grade_step(highway_type, args.scale)?;
+
+    let stations = road_grade_stations(&way.nodes);
+    debug_assert_eq!(
+        stations.len(),
+        total_bresenham_length,
+        "station list must span exactly the placement loop's tds range"
+    );
+    if stations.len() != total_bresenham_length {
+        // A desync would misalign `profile[tds]` from placement for the whole
+        // way; fall back to the legacy median path rather than place garbage.
+        return None;
+    }
+
+    let sample_range = block_range.clamp(0, MAX_BLOCK_RANGE as i32);
+    let mut base = Vec::with_capacity(stations.len());
+    for station in &stations {
+        base.push(grade_strip_median(editor, *station, sample_range)?);
+    }
+
+    let mut pins: BTreeMap<usize, f64> = BTreeMap::new();
+    for (node, &tds) in way
+        .nodes
+        .iter()
+        .zip(road_grade_node_stations(&way.nodes).iter())
+    {
+        if tds < base.len() && connectivity.is_junction((node.x, node.z)) {
+            if let Some(pin) = grade_junction_pin(editor, node.x, node.z) {
+                pins.insert(tds, pin);
+            }
+        }
+    }
+
+    Some(grade_profile(&base, &pins, g))
 }
 
 /// Default block-mix used for road surfaces when no `surface=*` tag is
@@ -368,6 +734,14 @@ pub fn generate_highways(
     tunnel_internal_endpoints: &TunnelInternalEndpoints,
     tunnel_cells: &mut Vec<HighwayTunnelCell>,
 ) {
+    // Publish the flag to the override-fold semantics in `world_editor`. Here
+    // rather than at the render entry point because highway processing is the
+    // only writer of the road-override map, so this necessarily runs before
+    // the first `register_road_surface_y` and before any tile merge, on every
+    // path (sequential and tiled alike). `set_road_grade` is a first-value-
+    // wins `OnceLock`, so the repeat calls are an atomic load each.
+    crate::world_editor::set_road_grade(args.road_grade == "on");
+
     // Highway tunnels render a covered shell instead of a surface road.
     if let ProcessedElement::Way(way) = element {
         if renders_as_highway_tunnel(way) {
@@ -1320,6 +1694,22 @@ fn generate_highways_internal(
                 )
                 && element.tags().get("crossing:markings").map(|s| s.as_str()) != Some("no");
 
+            // Longitudinal grade profile, indexed by `tds`. Built here because
+            // this is the last point where the way's full node list, the final
+            // `block_range` and the exact `total_bresenham_length` are all in
+            // hand and nothing cell-local has been touched yet. `None` with
+            // the flag off, so everything below stays on the legacy path.
+            let road_profile: Option<Vec<f64>> = compute_road_profile(
+                editor,
+                way,
+                highway_type.as_str(),
+                args,
+                highway_connectivity,
+                block_range,
+                is_bridge_member || is_bridge_ramp,
+                total_bresenham_length,
+            );
+
             // Iterate over nodes to create the highway
             let mut segment_index = 0;
             let total_segments = way.nodes.len() - 1;
@@ -1358,7 +1748,14 @@ fn generate_highways_internal(
                     // per-call behaviour; everything else gets the
                     // perpendicular median via
                     // `perpendicular_median_ground_y`.
-                    let flatten_width = !is_bridge_member && !is_bridge_ramp && block_range >= 1;
+                    // Grading extends this gate to `block_range == 0`: at
+                    // reduced scale the range floors to 0, and such roads get
+                    // no flattening and register no ground override at all
+                    // today. With a profile they take a graded Y and register
+                    // their 1-wide column like every other road.
+                    let flatten_width = !is_bridge_member
+                        && !is_bridge_ramp
+                        && (block_range >= 1 || (road_profile.is_some() && block_range >= 0));
                     // Whether the road cross-section also registers an
                     // effective-ground override is decided per bresenham
                     // point below — `offset` varies inside a segment (slope
@@ -1553,7 +1950,22 @@ fn generate_highways_internal(
                         // ground samples) for every `(dx, dz)` cell, making
                         // wide-road rendering O(width²) per centerline.
                         let mut row_medians = [0i32; 2 * MAX_BLOCK_RANGE + 1];
-                        if flatten_width {
+                        if let Some(profile) = road_profile.as_deref() {
+                            // Graded ways take one Y for the entire
+                            // cross-section from `tds` alone, so no terrain
+                            // sampling happens here at all. Being a pure
+                            // function of `tds` is also what structurally
+                            // removes the two secondary step sources: the
+                            // diagonal-travel stamp overlap and the
+                            // per-segment `dir_horizontal` axis flip can no
+                            // longer hand one column two different Ys.
+                            debug_assert!(
+                                tds < profile.len(),
+                                "profile must span every placement tds"
+                            );
+                            let graded = profile[tds.min(profile.len() - 1)].round() as i32;
+                            row_medians[..2 * block_range as usize + 1].fill(graded);
+                        } else if flatten_width {
                             precompute_row_medians(
                                 editor,
                                 *x,
@@ -2932,7 +3344,10 @@ mod tests {
         assert!(map.is_junction((100, 0)), "shared endpoint = junction");
         assert!(!map.is_junction((0, 0)), "dead end is not a junction");
         assert!(!map.is_junction((160, 0)), "dead end is not a junction");
-        assert!(!map.is_junction((75, 0)), "a bresenham point that is not a node never pins");
+        assert!(
+            !map.is_junction((75, 0)),
+            "a bresenham point that is not a node never pins"
+        );
     }
 
     #[test]
@@ -2942,5 +3357,302 @@ mod tests {
         assert!(map.is_junction((0, 0)), "closure coordinate occurs twice");
         assert!(!map.is_junction((30, 0)));
     }
-}
 
+    // ---- G3: station list is byte-exact against the placement loop ----
+
+    fn nodes_at(coords: &[(i32, i32)]) -> Vec<ProcessedNode> {
+        coords
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, z))| ProcessedNode {
+                id: i as u64,
+                tags: StdMap::new(),
+                x,
+                z,
+            })
+            .collect()
+    }
+
+    /// Independent re-derivation of the placement loop's `tds` indexing,
+    /// transcribed from `generate_highways_internal`: `skip_first == 0` on
+    /// every non-bridge way, `tds = cumulative_distance_from_start +
+    /// point_index`, `cumulative_distance_from_start += segment_length - 1`
+    /// after each segment, later writes at a repeated `tds` winning. Returns
+    /// the map plus the way's `total_bresenham_length` computed by the
+    /// separate formula the real code uses for it.
+    fn placement_tds_map(nodes: &[ProcessedNode]) -> (BTreeMap<usize, (i32, i32)>, usize) {
+        let mut seen: BTreeMap<usize, (i32, i32)> = BTreeMap::new();
+        let mut cumulative_distance_from_start: usize = 0;
+        let mut previous_node: Option<(i32, i32)> = None;
+        for node in nodes {
+            if let Some((x1, z1)) = previous_node {
+                let points = bresenham_line(x1, 0, z1, node.x, 0, node.z);
+                let segment_length = points.len();
+                for (point_index, (x, _, z)) in points.iter().enumerate() {
+                    seen.insert(cumulative_distance_from_start + point_index, (*x, *z));
+                }
+                cumulative_distance_from_start += segment_length - 1;
+            }
+            previous_node = Some((node.x, node.z));
+        }
+        let total = nodes
+            .windows(2)
+            .map(|p| {
+                let dx = (p[1].x - p[0].x).unsigned_abs() as usize;
+                let dz = (p[1].z - p[0].z).unsigned_abs() as usize;
+                dx.max(dz)
+            })
+            .sum::<usize>()
+            + 1;
+        (seen, total)
+    }
+
+    #[test]
+    fn grade_stations_reproduce_placement_loop_tds() {
+        // Axis-aligned, pure diagonal, a bend past 45 degrees (the axis-flip
+        // case), a zero-length segment, a closed loop, and a way long enough
+        // to span several anchor windows.
+        let shapes: Vec<Vec<(i32, i32)>> = vec![
+            vec![(0, 0), (40, 0)],
+            vec![(0, 0), (40, 40)],
+            vec![(10, 10), (60, 14), (64, 70), (5, 90)],
+            vec![(0, 0), (25, 3), (25, 3), (25, 60)],
+            vec![(0, 0), (30, 0), (30, 30), (0, 30), (0, 0)],
+            vec![(-120, -40), (-3, 17), (200, 9), (205, 400)],
+            vec![(7, 7), (7, 7)],
+        ];
+        for shape in shapes {
+            let nodes = nodes_at(&shape);
+            let (expected, total) = placement_tds_map(&nodes);
+            let stations = road_grade_stations(&nodes);
+
+            assert_eq!(
+                stations.len(),
+                total,
+                "station_count must equal total_bresenham_length for {shape:?}"
+            );
+            assert_eq!(
+                expected.len(),
+                total,
+                "placement tds range must be dense 0..total for {shape:?}"
+            );
+            for (i, station) in stations.iter().enumerate() {
+                assert_eq!(
+                    expected[&i],
+                    (station.x, station.z),
+                    "station {i} diverges from placement tds for {shape:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grade_stations_overwrite_shared_endpoints() {
+        // Two segments meeting at (20, 0). The placement loop emits that node
+        // twice at the SAME tds (skip_first == 0 and the `- 1` accumulation),
+        // so the builder must overwrite rather than append.
+        let nodes = nodes_at(&[(0, 0), (20, 0), (20, 15)]);
+        let stations = road_grade_stations(&nodes);
+        assert_eq!(stations.len(), 20 + 15 + 1, "no double-counted endpoint");
+        assert_eq!((stations[20].x, stations[20].z), (20, 0));
+        // The later segment's sampling axis wins at the shared station.
+        assert!(!stations[20].dir_horizontal, "second segment is z-dominant");
+        assert!(stations[19].dir_horizontal, "first segment is x-dominant");
+
+        // A zero-length segment advances tds by nothing and simply rewrites
+        // the station in place.
+        let degenerate = nodes_at(&[(0, 0), (5, 0), (5, 0), (9, 0)]);
+        assert_eq!(road_grade_stations(&degenerate).len(), 10);
+    }
+
+    #[test]
+    fn grade_node_stations_land_on_their_own_station() {
+        let nodes = nodes_at(&[(10, 10), (60, 14), (64, 70), (5, 90)]);
+        let stations = road_grade_stations(&nodes);
+        let node_tds = road_grade_node_stations(&nodes);
+        assert_eq!(node_tds.len(), nodes.len());
+        assert_eq!(node_tds[0], 0);
+        assert_eq!(*node_tds.last().unwrap(), stations.len() - 1);
+        for (node, &tds) in nodes.iter().zip(node_tds.iter()) {
+            assert_eq!(
+                (stations[tds].x, stations[tds].z),
+                (node.x, node.z),
+                "junction pin at tds {tds} must sit on its own node"
+            );
+        }
+    }
+
+    // ---- G9: profile properties ----
+
+    const G: f64 = 1.0 / 6.0;
+    const EPS: f64 = 1e-9;
+
+    /// Gently rising terrain with sub-block ripple: deterministic, and shallow
+    /// enough that no anchor pair is infeasible, so `g` is the cap everywhere.
+    fn gentle_base(n: usize) -> Vec<f64> {
+        (0..n)
+            .map(|i| 60.0 + i as f64 * 0.05 + ((i * 7 % 13) as f64) * 0.11)
+            .collect()
+    }
+
+    fn max_abs_delta(p: &[f64]) -> f64 {
+        p.windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn grade_bound_holds_everywhere() {
+        let base = gentle_base(200);
+        let profile = grade_profile(&base, &BTreeMap::new(), G);
+        assert_eq!(profile.len(), base.len());
+        assert!(
+            max_abs_delta(&profile) <= G + EPS,
+            "profile exceeded the grade cap: {}",
+            max_abs_delta(&profile)
+        );
+        // The raw terrain it was built from does exceed it — otherwise this
+        // test would pass on a no-op.
+        assert!(max_abs_delta(&base) > G);
+    }
+
+    #[test]
+    fn grade_holds_pins_and_anchors_exactly() {
+        // Flat terrain with one mid-way junction pin 2 blocks above it: the
+        // case a forward-first clamp destroys (it biases toward the way's
+        // start and walks the pin away).
+        let base = vec![64.0; 129];
+        let mut pins = BTreeMap::new();
+        pins.insert(30, 66.0);
+        let profile = grade_profile(&base, &pins, G);
+
+        assert_eq!(profile[30], 66.0, "mid-way pin must be exact");
+        for anchor in [0usize, 64, 128] {
+            assert_eq!(profile[anchor], 64.0, "anchor {anchor} must be exact");
+        }
+        assert!(max_abs_delta(&profile) <= G + EPS);
+        // Beyond the anchor that bounds the pin's window, the profile is the
+        // terrain again — pin influence is window-local, not way-global.
+        assert_eq!(profile[100], 64.0);
+    }
+
+    #[test]
+    fn grade_relaxes_infeasible_pin_pair() {
+        // Two pins 10 blocks apart demanding 10 blocks of climb: 1.0 per block
+        // against a cap of 1/6. The interval between them relaxes to its own
+        // linear grade; every other interval keeps `g`.
+        let base = vec![60.0; 41];
+        let mut pins = BTreeMap::new();
+        pins.insert(10, 60.0);
+        pins.insert(20, 70.0);
+        let profile = grade_profile(&base, &pins, G);
+
+        assert_eq!(profile[0], 60.0, "anchor still exact");
+        assert_eq!(profile[10], 60.0);
+        assert_eq!(profile[20], 70.0);
+        for i in 10..20 {
+            assert!(
+                (profile[i + 1] - profile[i]).abs() <= 1.0 + EPS,
+                "relaxed interval must not exceed its own pin-to-pin grade"
+            );
+        }
+        for i in (0..10).chain(20..40) {
+            assert!(
+                (profile[i + 1] - profile[i]).abs() <= G + EPS,
+                "relaxation must stay inside the infeasible interval (edge {i})"
+            );
+        }
+    }
+
+    #[test]
+    fn grade_solver_is_direction_invariant() {
+        // Way direction is arbitrary in OSM, so the solver must be a mirror of
+        // itself. Asserted bit-exactly, not within epsilon: the two sweeps
+        // accumulate the same edge costs in the same order under reversal.
+        let base = gentle_base(101);
+        let constraints = vec![(0usize, base[0]), (37, 62.5), (100, base[100])];
+        let forward = grade_solve_window(&base, &constraints, G);
+
+        let reversed_base: Vec<f64> = base.iter().rev().copied().collect();
+        let reversed_constraints: Vec<(usize, f64)> = constraints
+            .iter()
+            .rev()
+            .map(|&(i, c)| (100 - i, c))
+            .collect();
+        let reversed = grade_solve_window(&reversed_base, &reversed_constraints, G);
+
+        for i in 0..101 {
+            assert_eq!(forward[i], reversed[100 - i], "mirror mismatch at {i}");
+        }
+    }
+
+    #[test]
+    fn grade_profile_is_direction_invariant_when_anchors_mirror() {
+        // 129 stations puts anchors at {0, 64, 128}, a set that is symmetric
+        // under reversal. Anchors are measured from the way's FIRST node by
+        // design (that is what makes them identical in every tile and cell),
+        // so at other lengths reversal relocates them; the solver symmetry
+        // asserted above is the direction-free part.
+        let base = gentle_base(129);
+        let mut pins = BTreeMap::new();
+        pins.insert(40, 63.25);
+        let forward = grade_profile(&base, &pins, G);
+
+        let reversed_base: Vec<f64> = base.iter().rev().copied().collect();
+        let mut reversed_pins = BTreeMap::new();
+        reversed_pins.insert(128 - 40, 63.25);
+        let reversed = grade_profile(&reversed_base, &reversed_pins, G);
+
+        for i in 0..129 {
+            assert_eq!(forward[i], reversed[128 - i], "mirror mismatch at {i}");
+        }
+    }
+
+    #[test]
+    fn grade_window_locality_bounds_dem_influence() {
+        // The tile-invariance property: a terrain sample cannot reach past the
+        // anchors that bracket it, so an edge-clamped DEM read near a Meld
+        // cell border cannot propagate into the cell.
+        let mut base = gentle_base(200);
+        let before = grade_profile(&base, &BTreeMap::new(), G);
+
+        base[150] += 5.0; // inside window [128, 192], far from every other one
+        let after = grade_profile(&base, &BTreeMap::new(), G);
+
+        assert_ne!(before[150], after[150], "the perturbed window must move");
+        for i in 0..=128 {
+            assert_eq!(before[i], after[i], "window before the anchor moved at {i}");
+        }
+        for i in 192..200 {
+            assert_eq!(before[i], after[i], "window after the anchor moved at {i}");
+        }
+    }
+
+    #[test]
+    fn grade_class_table_and_scale() {
+        assert_eq!(road_grade_denominator("motorway"), Some(12));
+        assert_eq!(road_grade_denominator("motorway_link"), Some(12));
+        assert_eq!(road_grade_denominator("tertiary"), Some(8));
+        assert_eq!(road_grade_denominator("service"), Some(6));
+        assert_eq!(road_grade_denominator("path"), Some(4));
+        assert_eq!(
+            road_grade_denominator("living_street"),
+            Some(6),
+            "unlisted classes take the residential tier, never ungraded"
+        );
+        assert_eq!(
+            road_grade_denominator("steps"),
+            None,
+            "stairs are supposed to step"
+        );
+
+        assert!(road_grade_step("steps", 1.0).is_none());
+        assert_eq!(road_grade_step("residential", 1.0), Some(1.0 / 6.0));
+        assert_eq!(road_grade_step("motorway", 0.5), Some(1.0 / 6.0));
+        assert_eq!(
+            road_grade_step("footway", 0.3),
+            Some(0.5),
+            "N_eff floors at 2 so tiny scales do not step every block"
+        );
+    }
+}
