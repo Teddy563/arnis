@@ -447,17 +447,30 @@ fn bowl_depth_small_scale(
 }
 
 /// Safe upper bound on a map's deepest carve, from the pre-repair water mask.
+///
+/// `river_bed_v1` is `--river-bed v1`. The legacy bound is derived from the map's own land
+/// cover, so a narrow LC water strip reserves only 2-3 blocks - but a wide `waterway=*` tag
+/// crossing that strip reaches the river cap, and the `.min(water_y - MIN_Y - 2)` clamp in
+/// `carve_water_column_with_flags` would then silently flatten the bed onto the reserved floor.
+/// With the flag on the bound is raised to the river cap; with it off this function is
+/// byte-identical to before, which is what keeps flag-off renders hash-stable.
 pub fn estimate_max_carve_depth(
     lc_grid: &crate::flat_grid::FlatGrid<u8>,
     world_width: usize,
     world_height: usize,
     scale: f64,
+    river_bed_v1: bool,
 ) -> i32 {
     let gh = lc_grid.height();
     let gw = lc_grid.width();
     if gw == 0 || gh == 0 {
         return 0;
     }
+    let river_floor = if river_bed_v1 {
+        crate::river_bed::river_depth_cap_blocks(scale)
+    } else {
+        0
+    };
     let mut dt = vec![0u8; gw * gh];
     let mut any_water = false;
     for (i, &c) in lc_grid.as_slice().iter().enumerate() {
@@ -467,12 +480,12 @@ pub fn estimate_max_carve_depth(
         }
     }
     if !any_water {
-        return 0;
+        return river_floor;
     }
     // Small-scale uses the bowl model (cap SMALL_SCALE_MAX_DEPTH); return that as the
     // upper bound so the reserved world floor always covers the deepest carve.
     if scale < SMALL_SCALE_THRESHOLD {
-        return SMALL_SCALE_MAX_DEPTH;
+        return SMALL_SCALE_MAX_DEPTH.max(river_floor);
     }
     chamfer_3_4_dt(&mut dt, gw, gh);
     let grid_max_dt = dt.iter().copied().max().unwrap_or(0);
@@ -481,7 +494,7 @@ pub fn estimate_max_carve_depth(
     let hr = world_height.saturating_sub(1).max(1) as f64 / gh.saturating_sub(1).max(1) as f64;
     let block_max_dt = f64::from(grid_max_dt) * wr.max(hr).max(1.0);
     let comp_max = block_max_dt.min(f64::from(u16::MAX)) as u16;
-    depth_from_dt(block_max_dt + 2.0, comp_max)
+    depth_from_dt(block_max_dt + 2.0, comp_max).max(river_floor)
 }
 
 /// Place the underwater stack: WATER column, then a SAND/GRAVEL bed over SANDSTONE/STONE.
@@ -1143,23 +1156,23 @@ mod tests {
     fn small_scale_estimate_returns_cap() {
         let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
         assert_eq!(
-            estimate_max_carve_depth(&grid, 32, 32, 0.2),
+            estimate_max_carve_depth(&grid, 32, 32, 0.2, false),
             SMALL_SCALE_MAX_DEPTH
         );
         let empty = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
-        assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2), 0);
+        assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2, false), 0);
     }
 
     #[test]
     fn estimate_no_water_is_zero() {
         let grid = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
-        assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0), 0);
+        assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0, false), 0);
     }
 
     #[test]
     fn estimate_large_open_water_reaches_max() {
         let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
-        assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0), 6);
+        assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0, false), 6);
     }
 
     #[test]
