@@ -43,6 +43,7 @@ use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
 use crate::land_cover::LC_WATER;
+use crate::river_bed::RiverBedField;
 use crate::world_editor::{WorldEditor, MIN_Y};
 use rayon::prelude::*;
 
@@ -487,6 +488,13 @@ pub fn estimate_max_carve_depth(
 /// Suppresses the Meld blob/dune/vegetation overlays when
 /// the cell is adjacent to a bridge/road. Plain WATER + GRAVEL bed under
 /// causeways so the bridge "shadow" doesn't get textured with DIRT strips.
+///
+/// `is_river` marks a column whose depth came from the `--river-bed v1` field. It exempts the
+/// column from every HEIGHT-affecting noise pass (the dune bumps), because those are exactly
+/// the shelves the U-shaped profile exists to remove; the depth field itself is already free of
+/// the legacy bank wobble, which it bypasses structurally. Palette noise has no height effect
+/// and stays, minus the sea-floor-only arms.
+#[allow(clippy::too_many_arguments)]
 pub fn carve_water_column_with_flags(
     editor: &mut WorldEditor,
     x: i32,
@@ -495,6 +503,7 @@ pub fn carve_water_column_with_flags(
     depth: i32,
     near_bridge: bool,
     body_max: i32,
+    is_river: bool,
 ) {
     debug_assert!(
         depth <= MAX_WATER_DEPTH,
@@ -599,9 +608,9 @@ pub fn carve_water_column_with_flags(
                 } else {
                     GRAVEL
                 }
-            } else if d >= 5 && n_magma > 0.96 {
+            } else if !is_river && d >= 5 && n_magma > 0.96 {
                 MAGMA_BLOCK
-            } else if d >= 5 && n_soul > 0.96 {
+            } else if !is_river && d >= 5 && n_soul > 0.96 {
                 SOUL_SAND
             } else if n_clay > 0.74 {
                 CLAY
@@ -636,13 +645,16 @@ pub fn carve_water_column_with_flags(
 
     // v2.8.7 F8 — dunes fire at depth>=1 (was >=2). Shallow shore-band dunes
     // give the bed natural undulation even where the water is just 1 block deep.
-    if depth >= 1 && !near_bridge {
+    // River columns are exempt: a dune is a 1-4 block bump on the bed, i.e. exactly the
+    // terracing the U profile removes. Not re-seeded elsewhere - removed.
+    if depth >= 1 && !near_bridge && !is_river {
         place_underwater_dunes(editor, x, z, water_y, bed_y, depth, body_max, top_block);
     }
 
-    // v2.8.4 — sparse underwater vegetation in deep water far from bridges.
+    // v2.8.4 — sparse underwater vegetation in deep water far from bridges. Kept for rivers:
+    // it plants above the bed and adds no height noise to it.
     if depth >= 3 && !near_bridge {
-        place_underwater_vegetation(editor, x, z, water_y, bed_y, depth, body_max);
+        place_underwater_vegetation(editor, x, z, water_y, bed_y, depth, body_max, is_river);
     }
 }
 
@@ -650,7 +662,12 @@ pub fn carve_water_column_with_flags(
 /// inside `place_underwater_dunes` exactly so vegetation can plant ABOVE
 /// the dune top instead of inside it (which dug holes in the bed when
 /// veg paint was AIR-gated).
-fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32) -> i32 {
+pub(crate) fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32, is_river: bool) -> i32 {
+    // Mirrors the dune gate in `carve_water_column_with_flags`: a river column has no dune, so
+    // vegetation must plant on the bare bed, not on a bump that was never placed.
+    if is_river {
+        return 0;
+    }
     let target_amp: i32 = match body_max {
         0..=3 => 2,
         4..=6 => 3,
@@ -687,6 +704,7 @@ fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32) -> i32 {
 ///
 /// User feedback v2.8.5: "patches of seagrass should be like bigger clumps
 /// and better like random patches with the tall kelp rarer".
+#[allow(clippy::too_many_arguments)]
 fn place_underwater_vegetation(
     editor: &mut WorldEditor,
     x: i32,
@@ -695,10 +713,11 @@ fn place_underwater_vegetation(
     bed_y: i32,
     depth: i32,
     body_max: i32,
+    is_river: bool,
 ) {
     // v2.8.10 — true bed top = bed_y + dune bump for this cell. Veg plants
     // ABOVE the dune (avoids carving "holes" where veg cells lack dune blocks).
-    let bump = dune_bump_at(x, z, depth, body_max);
+    let bump = dune_bump_at(x, z, depth, body_max, is_river);
     let bed_top = bed_y + bump;
     // Big patches (scale 30) carve broad meadows; cluster (scale 10) carves
     // the clumpy interior. Multiply them so SEAGRASS lands in 8-20-cell
@@ -835,11 +854,13 @@ fn place_underwater_dunes(
 }
 
 /// Post-pass carving every LC_WATER cell, so ESA-only water gets depth too.
+#[allow(clippy::too_many_arguments)]
 pub fn carve_lc_water_pass(
     editor: &mut WorldEditor,
     ground: &Ground,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
     tunnel_footprint: &RoadMaskBitmap,
 ) {
@@ -850,6 +871,7 @@ pub fn carve_lc_water_pass(
         ground,
         xzbbox,
         bwf,
+        river_field,
         road_mask,
         tunnel_footprint,
         bwf.min_x,
@@ -868,6 +890,7 @@ pub fn carve_lc_water_region(
     ground: &Ground,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
     tunnel_footprint: &RoadMaskBitmap,
     iter_min_x: i32,
@@ -929,14 +952,23 @@ pub fn carve_lc_water_region(
                     }
                 }
             }
+            // Depth-only, never carve-creation: the override is consulted ONLY here, inside
+            // the branch that has already decided this column carves today. At scale < 0.5 this
+            // also replaces `bowl_depth_small_scale` for river columns and only for them - the
+            // bowl is baked into `bwf` and every non-river column still reads it.
+            let (depth, is_river) = match river_field.depth_override(x, z) {
+                Some(d) => (d, true),
+                None => (bwf.depth_at(x, z), false),
+            };
             carve_water_column_with_flags(
                 editor,
                 x,
                 z,
                 water_y,
-                bwf.depth_at(x, z),
+                depth,
                 near_bridge,
                 body_max,
+                is_river,
             );
         }
     }

@@ -51,6 +51,7 @@ fn process_element(
     road_mask: &CoordinateBitmap,
     xzbbox: &XZBBox,
     big_water_field: &crate::water_depth::BigWaterField,
+    river_bed_field: &crate::river_bed::RiverBedField,
     bridge_structures: &bridges::BridgeStructureMap,
     bridge_surface: &bridges::BridgeSurfaceMap,
     bridge_outlines: &bridge_styles::BridgeOutlineIndex,
@@ -131,6 +132,7 @@ fn process_element(
                         way,
                         xzbbox,
                         big_water_field,
+                        river_bed_field,
                         road_mask,
                     );
                 } else {
@@ -241,6 +243,7 @@ fn process_element(
                     rel,
                     xzbbox,
                     big_water_field,
+                    river_bed_field,
                     road_mask,
                 );
             } else if rel.tags.contains_key("natural") {
@@ -462,6 +465,18 @@ pub fn generate_world_with_options(
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
     let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox, args.scale);
+
+    // River-only U-shaped bed override (--river-bed). Built once per render, pre-tiling, from
+    // element geometry + tag values, so both neighbouring Meld cells rasterize the same mask.
+    // `off` returns an empty field and every consumer falls back to `big_water_field`.
+    let river_bed_field = crate::river_bed::compute_river_bed_field(
+        &elements,
+        &ground,
+        &big_water_field,
+        &xzbbox,
+        args.scale,
+        crate::river_bed::RiverBedMode::from_arg(&args.river_bed),
+    );
 
     // Line-waterway channel field (rivers/streams). Rasterized once from element geometry; carved
     // post-ground-gen (carve_waterway_region) for a real bed, and also handed to the tree spawner
@@ -734,6 +749,7 @@ pub fn generate_world_with_options(
                             // editor still bounds the actual writes.
                             &xzbbox,
                             &big_water_field,
+                            &river_bed_field,
                             &bridge_structures,
                             &bridge_surface,
                             &bridge_outlines,
@@ -814,6 +830,7 @@ pub fn generate_world_with_options(
                         ground.as_ref(),
                         &xzbbox,
                         &big_water_field,
+                        &river_bed_field,
                         &road_mask,
                         &tunnel_footprint,
                         g_min_x,
@@ -1032,6 +1049,7 @@ pub fn generate_world_with_options(
                 &road_mask,
                 &xzbbox,
                 &big_water_field,
+                &river_bed_field,
                 &bridge_structures,
                 &bridge_surface,
                 &bridge_outlines,
@@ -1120,6 +1138,7 @@ pub fn generate_world_with_options(
             ground.as_ref(),
             &xzbbox,
             &big_water_field,
+            &river_bed_field,
             &road_mask,
             &tunnel_footprint,
         );

@@ -1,5 +1,6 @@
 use crate::clipping::clip_water_ring_to_bbox;
 use crate::floodfill_cache::RoadMaskBitmap;
+use crate::river_bed::RiverBedField;
 use crate::water_depth::{carve_water_column_with_flags, BigWaterField};
 use crate::{
     coordinate_system::cartesian::{XZBBox, XZPoint},
@@ -12,6 +13,7 @@ pub fn generate_water_area_from_way(
     element: &ProcessedWay,
     _xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     let outers = [element.nodes.clone()];
@@ -20,14 +22,16 @@ pub fn generate_water_area_from_way(
         return;
     }
 
-    generate_water_areas(editor, &outers, &[], bwf, road_mask);
+    generate_water_areas(editor, &outers, &[], bwf, river_field, road_mask);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_water_areas_from_relation(
     editor: &mut WorldEditor,
     element: &ProcessedRelation,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Check if this is a water relation (either with water tag or natural=water)
@@ -121,7 +125,7 @@ pub fn generate_water_areas_from_relation(
         return;
     }
 
-    generate_water_areas(editor, &outers, &inners, bwf, road_mask);
+    generate_water_areas(editor, &outers, &inners, bwf, river_field, road_mask);
 }
 
 fn generate_water_areas(
@@ -129,6 +133,7 @@ fn generate_water_areas(
     outers: &[Vec<ProcessedNode>],
     inners: &[Vec<ProcessedNode>],
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Calculate polygon bounding box to limit fill area
@@ -169,7 +174,16 @@ fn generate_water_areas(
         .collect();
 
     scanline_fill_water(
-        min_x, min_z, max_x, max_z, &outers_xz, &inners_xz, editor, bwf, road_mask,
+        min_x,
+        min_z,
+        max_x,
+        max_z,
+        &outers_xz,
+        &inners_xz,
+        editor,
+        bwf,
+        river_field,
+        road_mask,
     );
     // Scatter a few moored boats over the filled open water.
     crate::structures::boat::scatter_boats(editor, min_x, min_z, max_x, max_z);
@@ -403,6 +417,7 @@ fn scanline_fill_water(
     inners: &[Vec<XZPoint>],
     editor: &mut WorldEditor,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Collect edges per outer ring so we can union their spans correctly,
@@ -468,14 +483,21 @@ fn scanline_fill_water(
                         }
                     }
                 }
+                // Same substitution as the land-cover pass, and for the same reason: this is
+                // inside the branch that has already decided the column carves.
+                let (depth, is_river) = match river_field.depth_override(x, z) {
+                    Some(d) => (d, true),
+                    None => (bwf.depth_at(x, z), false),
+                };
                 carve_water_column_with_flags(
                     editor,
                     x,
                     z,
                     water_y,
-                    bwf.depth_at(x, z),
+                    depth,
                     near_bridge,
                     body_max,
+                    is_river,
                 );
             }
         }
