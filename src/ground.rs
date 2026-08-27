@@ -213,6 +213,8 @@ impl Ground {
         vertical_exaggeration: f64,
         snow: SnowConfig,
         carve_clearance: WaterCarveClearance,
+        // --river-bed v1 only: raises the Measured reservation to the river depth cap.
+        river_bed_v1: bool,
     ) -> Self {
         let mut bench = crate::bench::Bench::new(benchmark);
         // Fetch land cover FIRST so we can feed it into the elevation
@@ -260,8 +262,15 @@ impl Ground {
             }
             WaterCarveClearance::Measured => match &land_cover {
                 Some(lc) => {
+                    // --river-bed v1: a tag-derived river half-width can legitimately exceed
+                    // the LC-derived bound, so the estimate takes max(legacy, river cap).
+                    // Flag off, this is byte-identical to before.
                     let max_depth = crate::water_depth::estimate_max_carve_depth(
-                        &lc.grid, world_w, world_h, scale,
+                        &lc.grid,
+                        world_w,
+                        world_h,
+                        scale,
+                        river_bed_v1,
                     );
                     ground_level.max(crate::world_editor::MIN_Y + max_depth + 2)
                 }
@@ -946,6 +955,7 @@ pub fn generate_ground_data(args: &Args) -> Ground {
                     std::process::exit(1);
                 }
             },
+            crate::river_bed::RiverBedMode::from_arg(&args.river_bed).enabled(),
         );
         if args.debug {
             ground.save_debug_image("elevation_debug");

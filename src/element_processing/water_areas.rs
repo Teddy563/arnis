@@ -1,5 +1,6 @@
 use crate::clipping::clip_water_ring_to_bbox;
 use crate::floodfill_cache::RoadMaskBitmap;
+use crate::river_bed::RiverBedField;
 use crate::water_depth::{carve_water_column_with_flags, BigWaterField};
 use crate::{
     coordinate_system::cartesian::{XZBBox, XZPoint},
@@ -12,6 +13,7 @@ pub fn generate_water_area_from_way(
     element: &ProcessedWay,
     _xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     let outers = [element.nodes.clone()];
@@ -20,14 +22,16 @@ pub fn generate_water_area_from_way(
         return;
     }
 
-    generate_water_areas(editor, &outers, &[], bwf, road_mask);
+    generate_water_areas(editor, &outers, &[], bwf, river_field, road_mask);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_water_areas_from_relation(
     editor: &mut WorldEditor,
     element: &ProcessedRelation,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Check if this is a water relation (either with water tag or natural=water)
@@ -121,7 +125,7 @@ pub fn generate_water_areas_from_relation(
         return;
     }
 
-    generate_water_areas(editor, &outers, &inners, bwf, road_mask);
+    generate_water_areas(editor, &outers, &inners, bwf, river_field, road_mask);
 }
 
 fn generate_water_areas(
@@ -129,6 +133,7 @@ fn generate_water_areas(
     outers: &[Vec<ProcessedNode>],
     inners: &[Vec<ProcessedNode>],
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Calculate polygon bounding box to limit fill area
@@ -169,7 +174,16 @@ fn generate_water_areas(
         .collect();
 
     scanline_fill_water(
-        min_x, min_z, max_x, max_z, &outers_xz, &inners_xz, editor, bwf, road_mask,
+        min_x,
+        min_z,
+        max_x,
+        max_z,
+        &outers_xz,
+        &inners_xz,
+        editor,
+        bwf,
+        river_field,
+        road_mask,
     );
     // Scatter a few moored boats over the filled open water.
     crate::structures::boat::scatter_boats(editor, min_x, min_z, max_x, max_z);
@@ -213,7 +227,7 @@ fn verify_closed_rings(rings: &[Vec<ProcessedNode>]) -> bool {
 // rings).
 
 /// A polygon edge segment for scanline intersection testing.
-struct ScanlineEdge {
+pub(crate) struct ScanlineEdge {
     x1: f64,
     z1: f64,
     x2: f64,
@@ -224,7 +238,7 @@ struct ScanlineEdge {
 ///
 /// If the ring is not perfectly closed (last point != first point),
 /// the closing edge is added explicitly.
-fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
+pub(crate) fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
     let mut edges = Vec::new();
     if ring.len() < 2 {
         return edges;
@@ -259,7 +273,7 @@ fn collect_ring_edges(ring: &[XZPoint]) -> Vec<ScanlineEdge> {
 /// Collects edges from multiple rings into a single list.
 /// Used for inner rings where even-odd on combined edges is correct
 /// (inner rings of a valid multipolygon do not overlap).
-fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
+pub(crate) fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
     let mut edges = Vec::new();
     for ring in rings {
         edges.extend(collect_ring_edges(ring));
@@ -273,7 +287,7 @@ fn collect_all_ring_edges(rings: &[Vec<XZPoint>]) -> Vec<ScanlineEdge> {
 /// The crossing test uses the same convention as `geo::Contains`:
 /// an edge crosses the scanline when one endpoint is strictly above `z`
 /// and the other is at or below.
-fn compute_scanline_spans(
+pub(crate) fn compute_scanline_spans(
     edges: &[ScanlineEdge],
     z: f64,
     min_x: i32,
@@ -321,7 +335,7 @@ fn compute_scanline_spans(
 }
 
 /// Merges two sorted, non-overlapping span lists into their union.
-fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
+pub(crate) fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
     if a.is_empty() {
         return b.to_vec();
     }
@@ -354,7 +368,7 @@ fn union_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
 ///
 /// Both inputs must be sorted and non-overlapping.
 /// Returns sorted, non-overlapping spans representing `a \ b`.
-fn subtract_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
+pub(crate) fn subtract_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
     if b.is_empty() {
         return a.to_vec();
     }
@@ -403,6 +417,7 @@ fn scanline_fill_water(
     inners: &[Vec<XZPoint>],
     editor: &mut WorldEditor,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
 ) {
     // Collect edges per outer ring so we can union their spans correctly,
@@ -468,14 +483,21 @@ fn scanline_fill_water(
                         }
                     }
                 }
+                // Same substitution as the land-cover pass, and for the same reason: this is
+                // inside the branch that has already decided the column carves.
+                let (depth, is_river) = match river_field.depth_override(x, z) {
+                    Some(d) => (d, true),
+                    None => (bwf.depth_at(x, z), false),
+                };
                 carve_water_column_with_flags(
                     editor,
                     x,
                     z,
                     water_y,
-                    bwf.depth_at(x, z),
+                    depth,
                     near_bridge,
                     body_max,
+                    is_river,
                 );
             }
         }

@@ -43,6 +43,7 @@ use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
 use crate::land_cover::LC_WATER;
+use crate::river_bed::RiverBedField;
 use crate::world_editor::{WorldEditor, MIN_Y};
 use rayon::prelude::*;
 
@@ -75,7 +76,7 @@ const PUDDLE_CELL_THRESHOLD: usize = 25;
 /// Scale below which the per-body bowl model replaces the tiered/sqrt depth, so that
 /// narrow, few-block-wide rivers and pools still carve instead of rendering flat.
 /// At or above this scale the original model runs unchanged (byte-identical).
-const SMALL_SCALE_THRESHOLD: f64 = 0.5;
+pub(crate) const SMALL_SCALE_THRESHOLD: f64 = 0.5;
 
 /// World-lattice wavelength of the bank-contour wobble, in blocks.
 ///
@@ -301,7 +302,7 @@ pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox, scale: f64) -> 
 }
 
 /// In-place two-sweep chamfer-3-4 DT. Input: 0 = shore, `DT_MAX` = water seed.
-fn chamfer_3_4_dt(d: &mut [u8], w: usize, h: usize) {
+pub(crate) fn chamfer_3_4_dt(d: &mut [u8], w: usize, h: usize) {
     let step = |v: u8, add: u8| v.saturating_add(add);
     for j in 0..h {
         for i in 0..w {
@@ -446,17 +447,30 @@ fn bowl_depth_small_scale(
 }
 
 /// Safe upper bound on a map's deepest carve, from the pre-repair water mask.
+///
+/// `river_bed_v1` is `--river-bed v1`. The legacy bound is derived from the map's own land
+/// cover, so a narrow LC water strip reserves only 2-3 blocks - but a wide `waterway=*` tag
+/// crossing that strip reaches the river cap, and the `.min(water_y - MIN_Y - 2)` clamp in
+/// `carve_water_column_with_flags` would then silently flatten the bed onto the reserved floor.
+/// With the flag on the bound is raised to the river cap; with it off this function is
+/// byte-identical to before, which is what keeps flag-off renders hash-stable.
 pub fn estimate_max_carve_depth(
     lc_grid: &crate::flat_grid::FlatGrid<u8>,
     world_width: usize,
     world_height: usize,
     scale: f64,
+    river_bed_v1: bool,
 ) -> i32 {
     let gh = lc_grid.height();
     let gw = lc_grid.width();
     if gw == 0 || gh == 0 {
         return 0;
     }
+    let river_floor = if river_bed_v1 {
+        crate::river_bed::river_depth_cap_blocks(scale)
+    } else {
+        0
+    };
     let mut dt = vec![0u8; gw * gh];
     let mut any_water = false;
     for (i, &c) in lc_grid.as_slice().iter().enumerate() {
@@ -466,12 +480,12 @@ pub fn estimate_max_carve_depth(
         }
     }
     if !any_water {
-        return 0;
+        return river_floor;
     }
     // Small-scale uses the bowl model (cap SMALL_SCALE_MAX_DEPTH); return that as the
     // upper bound so the reserved world floor always covers the deepest carve.
     if scale < SMALL_SCALE_THRESHOLD {
-        return SMALL_SCALE_MAX_DEPTH;
+        return SMALL_SCALE_MAX_DEPTH.max(river_floor);
     }
     chamfer_3_4_dt(&mut dt, gw, gh);
     let grid_max_dt = dt.iter().copied().max().unwrap_or(0);
@@ -480,13 +494,20 @@ pub fn estimate_max_carve_depth(
     let hr = world_height.saturating_sub(1).max(1) as f64 / gh.saturating_sub(1).max(1) as f64;
     let block_max_dt = f64::from(grid_max_dt) * wr.max(hr).max(1.0);
     let comp_max = block_max_dt.min(f64::from(u16::MAX)) as u16;
-    depth_from_dt(block_max_dt + 2.0, comp_max)
+    depth_from_dt(block_max_dt + 2.0, comp_max).max(river_floor)
 }
 
 /// Place the underwater stack: WATER column, then a SAND/GRAVEL bed over SANDSTONE/STONE.
 /// Suppresses the Meld blob/dune/vegetation overlays when
 /// the cell is adjacent to a bridge/road. Plain WATER + GRAVEL bed under
 /// causeways so the bridge "shadow" doesn't get textured with DIRT strips.
+///
+/// `is_river` marks a column whose depth came from the `--river-bed v1` field. It exempts the
+/// column from every HEIGHT-affecting noise pass (the dune bumps), because those are exactly
+/// the shelves the U-shaped profile exists to remove; the depth field itself is already free of
+/// the legacy bank wobble, which it bypasses structurally. Palette noise has no height effect
+/// and stays, minus the sea-floor-only arms.
+#[allow(clippy::too_many_arguments)]
 pub fn carve_water_column_with_flags(
     editor: &mut WorldEditor,
     x: i32,
@@ -495,6 +516,7 @@ pub fn carve_water_column_with_flags(
     depth: i32,
     near_bridge: bool,
     body_max: i32,
+    is_river: bool,
 ) {
     debug_assert!(
         depth <= MAX_WATER_DEPTH,
@@ -599,9 +621,9 @@ pub fn carve_water_column_with_flags(
                 } else {
                     GRAVEL
                 }
-            } else if d >= 5 && n_magma > 0.96 {
+            } else if !is_river && d >= 5 && n_magma > 0.96 {
                 MAGMA_BLOCK
-            } else if d >= 5 && n_soul > 0.96 {
+            } else if !is_river && d >= 5 && n_soul > 0.96 {
                 SOUL_SAND
             } else if n_clay > 0.74 {
                 CLAY
@@ -636,13 +658,16 @@ pub fn carve_water_column_with_flags(
 
     // v2.8.7 F8 — dunes fire at depth>=1 (was >=2). Shallow shore-band dunes
     // give the bed natural undulation even where the water is just 1 block deep.
-    if depth >= 1 && !near_bridge {
+    // River columns are exempt: a dune is a 1-4 block bump on the bed, i.e. exactly the
+    // terracing the U profile removes. Not re-seeded elsewhere - removed.
+    if depth >= 1 && !near_bridge && !is_river {
         place_underwater_dunes(editor, x, z, water_y, bed_y, depth, body_max, top_block);
     }
 
-    // v2.8.4 — sparse underwater vegetation in deep water far from bridges.
+    // v2.8.4 — sparse underwater vegetation in deep water far from bridges. Kept for rivers:
+    // it plants above the bed and adds no height noise to it.
     if depth >= 3 && !near_bridge {
-        place_underwater_vegetation(editor, x, z, water_y, bed_y, depth, body_max);
+        place_underwater_vegetation(editor, x, z, water_y, bed_y, depth, body_max, is_river);
     }
 }
 
@@ -650,7 +675,12 @@ pub fn carve_water_column_with_flags(
 /// inside `place_underwater_dunes` exactly so vegetation can plant ABOVE
 /// the dune top instead of inside it (which dug holes in the bed when
 /// veg paint was AIR-gated).
-fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32) -> i32 {
+pub(crate) fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32, is_river: bool) -> i32 {
+    // Mirrors the dune gate in `carve_water_column_with_flags`: a river column has no dune, so
+    // vegetation must plant on the bare bed, not on a bump that was never placed.
+    if is_river {
+        return 0;
+    }
     let target_amp: i32 = match body_max {
         0..=3 => 2,
         4..=6 => 3,
@@ -687,6 +717,7 @@ fn dune_bump_at(x: i32, z: i32, depth: i32, body_max: i32) -> i32 {
 ///
 /// User feedback v2.8.5: "patches of seagrass should be like bigger clumps
 /// and better like random patches with the tall kelp rarer".
+#[allow(clippy::too_many_arguments)]
 fn place_underwater_vegetation(
     editor: &mut WorldEditor,
     x: i32,
@@ -695,10 +726,11 @@ fn place_underwater_vegetation(
     bed_y: i32,
     depth: i32,
     body_max: i32,
+    is_river: bool,
 ) {
     // v2.8.10 — true bed top = bed_y + dune bump for this cell. Veg plants
     // ABOVE the dune (avoids carving "holes" where veg cells lack dune blocks).
-    let bump = dune_bump_at(x, z, depth, body_max);
+    let bump = dune_bump_at(x, z, depth, body_max, is_river);
     let bed_top = bed_y + bump;
     // Big patches (scale 30) carve broad meadows; cluster (scale 10) carves
     // the clumpy interior. Multiply them so SEAGRASS lands in 8-20-cell
@@ -835,11 +867,13 @@ fn place_underwater_dunes(
 }
 
 /// Post-pass carving every LC_WATER cell, so ESA-only water gets depth too.
+#[allow(clippy::too_many_arguments)]
 pub fn carve_lc_water_pass(
     editor: &mut WorldEditor,
     ground: &Ground,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
     tunnel_footprint: &RoadMaskBitmap,
 ) {
@@ -850,6 +884,7 @@ pub fn carve_lc_water_pass(
         ground,
         xzbbox,
         bwf,
+        river_field,
         road_mask,
         tunnel_footprint,
         bwf.min_x,
@@ -868,6 +903,7 @@ pub fn carve_lc_water_region(
     ground: &Ground,
     xzbbox: &XZBBox,
     bwf: &BigWaterField,
+    river_field: &RiverBedField,
     road_mask: &RoadMaskBitmap,
     tunnel_footprint: &RoadMaskBitmap,
     iter_min_x: i32,
@@ -929,14 +965,23 @@ pub fn carve_lc_water_region(
                     }
                 }
             }
+            // Depth-only, never carve-creation: the override is consulted ONLY here, inside
+            // the branch that has already decided this column carves today. At scale < 0.5 this
+            // also replaces `bowl_depth_small_scale` for river columns and only for them - the
+            // bowl is baked into `bwf` and every non-river column still reads it.
+            let (depth, is_river) = match river_field.depth_override(x, z) {
+                Some(d) => (d, true),
+                None => (bwf.depth_at(x, z), false),
+            };
             carve_water_column_with_flags(
                 editor,
                 x,
                 z,
                 water_y,
-                bwf.depth_at(x, z),
+                depth,
                 near_bridge,
                 body_max,
+                is_river,
             );
         }
     }
@@ -1111,23 +1156,23 @@ mod tests {
     fn small_scale_estimate_returns_cap() {
         let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
         assert_eq!(
-            estimate_max_carve_depth(&grid, 32, 32, 0.2),
+            estimate_max_carve_depth(&grid, 32, 32, 0.2, false),
             SMALL_SCALE_MAX_DEPTH
         );
         let empty = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
-        assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2), 0);
+        assert_eq!(estimate_max_carve_depth(&empty, 16, 16, 0.2, false), 0);
     }
 
     #[test]
     fn estimate_no_water_is_zero() {
         let grid = crate::flat_grid::FlatGrid::new(16, 16, 0u8);
-        assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0), 0);
+        assert_eq!(estimate_max_carve_depth(&grid, 16, 16, 1.0, false), 0);
     }
 
     #[test]
     fn estimate_large_open_water_reaches_max() {
         let grid = crate::flat_grid::FlatGrid::new(32, 32, LC_WATER);
-        assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0), 6);
+        assert_eq!(estimate_max_carve_depth(&grid, 32, 32, 1.0, false), 6);
     }
 
     #[test]
