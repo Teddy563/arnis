@@ -783,6 +783,21 @@ impl<'a> WorldEditor<'a> {
         })
     }
 
+    /// Pre-round terrain elevation at world (x, z) — `Ground::level_f64`
+    /// through the ground origin, tile-safe like `terrain_level`; None
+    /// without terrain data. Road grading samples THIS, never
+    /// `get_ground_level`: folding in the override map there would couple a
+    /// road's profile to whichever roads ran before it (order- and
+    /// tile-dependent Y). `terrain_level(x,z) == Some(round)` of this.
+    pub fn terrain_level_f64(&self, x: i32, z: i32) -> Option<f64> {
+        self.ground.as_ref().map(|g| {
+            g.level_f64(XZPoint::new(
+                x - self.ground_origin_x,
+                z - self.ground_origin_z,
+            ))
+        })
+    }
+
     /// Land-cover class at world (x, z) via the ground origin (tile-safe, unlike
     /// get_min_coords/get_ground); None without land-cover data. Used by the
     /// building water-skip so it works in tile/master-origin mode.

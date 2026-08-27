@@ -621,6 +621,30 @@ impl Ground {
         self.interpolate_height(x_ratio, z_ratio, data)
     }
 
+    /// Pre-round terrain surface at the given coordinates: the same bilinear
+    /// field `level` samples, before its `.round()`. Road grading builds its
+    /// longitudinal profile from this field because the 0.5-contour crossings
+    /// that rounding creates are exactly the mid-segment road steps being
+    /// removed; `level(c) == level_f64(c).round() as i32` always holds.
+    ///
+    /// Near-seam residual (documented, not fixed here): `get_data_coordinates`
+    /// clamps to the render bbox, so samples outside it return edge-clamped
+    /// values — wrong, and wrong differently in each neighbouring Meld cell.
+    /// The road-grade absolute-tds anchors bound any sample's influence to K
+    /// stations; a master-anchored DEM halo pad of K+8 blocks (plan task G2)
+    /// would remove the remaining near-seam mismatch entirely and is
+    /// deliberately not part of this change.
+    #[inline(always)]
+    pub fn level_f64(&self, coord: XZPoint) -> f64 {
+        if !self.elevation_enabled || self.elevation_data.is_none() {
+            return self.ground_level as f64;
+        }
+
+        let data: &ElevationData = self.elevation_data.as_ref().unwrap();
+        let (x_ratio, z_ratio) = self.get_data_coordinates(coord, data);
+        self.interpolate_height_f64(x_ratio, z_ratio, data)
+    }
+
     /// Returns the appropriate Y level for water placement.
     /// On steep terrain, snaps to the local minimum within a small radius
     /// to compensate for spatial misalignment between water classification
@@ -689,9 +713,12 @@ impl Ground {
         (x_ratio.clamp(0.0, 1.0), z_ratio.clamp(0.0, 1.0))
     }
 
-    /// Bilinearly interpolates height value from the elevation grid
+    /// Bilinearly interpolates height value from the elevation grid,
+    /// returning the pre-round float surface. `interpolate_height` (and
+    /// therefore `level`) is exactly this value through `.round()`, so the
+    /// integer and float accessors cannot drift apart.
     #[inline(always)]
-    fn interpolate_height(&self, x_ratio: f64, z_ratio: f64, data: &ElevationData) -> i32 {
+    fn interpolate_height_f64(&self, x_ratio: f64, z_ratio: f64, data: &ElevationData) -> f64 {
         let fx = x_ratio * (data.width - 1) as f64;
         let fz = z_ratio * (data.height - 1) as f64;
         let x0 = fx.floor() as usize;
@@ -704,17 +731,25 @@ impl Ground {
         // property we rely on: across the Minecraft Y range (roughly −64 up
         // through a few thousand even with --disable-height-limit), f32's
         // mantissa gives ~10⁻⁷ precision per stored cell, which is far
-        // smaller than the 0.5-block half-width used by `round()` below.
-        // So for any value that isn't pathologically close to a half-integer
-        // boundary, the final `result.round() as i32` matches the f64 path.
+        // smaller than the 0.5-block half-width used by the `round()` in
+        // `interpolate_height`. So for any value that isn't pathologically
+        // close to a half-integer boundary, `result.round() as i32` matches
+        // the f64 path.
         let v00 = data.heights.at(z0, x0) as f64;
         let v10 = data.heights.at(z0, x1) as f64;
         let v01 = data.heights.at(z1, x0) as f64;
         let v11 = data.heights.at(z1, x1) as f64;
         let lerp_top = v00 + (v10 - v00) * dx;
         let lerp_bot = v01 + (v11 - v01) * dx;
-        let result = lerp_top + (lerp_bot - lerp_top) * dz;
-        result.round() as i32
+        lerp_top + (lerp_bot - lerp_top) * dz
+    }
+
+    /// Bilinearly interpolates height value from the elevation grid
+    #[inline(always)]
+    fn interpolate_height(&self, x_ratio: f64, z_ratio: f64, data: &ElevationData) -> i32 {
+        // Golden hashes depend on this exact rounding of the float field;
+        // any change here changes every elevation-enabled world.
+        self.interpolate_height_f64(x_ratio, z_ratio, data).round() as i32
     }
 
     /// Replace the elevation grid with new rotated/transformed data.
@@ -959,6 +994,63 @@ mod tests {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
         }
+    }
+
+    // Like `ground_with`, but with world dims larger than the grid so integer
+    // block coords land between grid nodes and exercise the bilinear interior.
+    fn ground_with_world(heights: Vec<Vec<f32>>, world_w: usize, world_h: usize) -> Ground {
+        let h = heights.len();
+        let w = heights[0].len();
+        Ground {
+            climate: crate::climate::Climate::Temperate,
+            koppen_affine: None,
+            elevation_enabled: true,
+            ground_level: 0,
+            elevation_data: Some(ElevationData {
+                heights: crate::flat_grid::FlatGrid::from_rows(heights),
+                width: w,
+                height: h,
+                world_width: world_w,
+                world_height: world_h,
+                min_height_m: 0.0,
+                max_height_m: 0.0,
+                blocks_per_meter: 1.0,
+            }),
+            land_cover: None,
+            rotation_mask: None,
+            snow_threshold_y: i32::MAX,
+        }
+    }
+
+    // The contract road grading leans on: the integer accessor is exactly the
+    // float accessor through today's rounding, at every column — including
+    // bbox-edge-clamped samples and the elevation-disabled fallback.
+    #[test]
+    fn level_is_exactly_rounded_level_f64() {
+        // Irrational-ish slopes so many samples land near 0.5 contours, on a
+        // world 4x the grid so bilinear weights take fractional values.
+        let heights: Vec<Vec<f32>> = (0..9)
+            .map(|z| {
+                (0..9)
+                    .map(|x| 40.0 + x as f32 * 0.37 + z as f32 * 0.23 + (x * z) as f32 * 0.011)
+                    .collect()
+            })
+            .collect();
+        let g = ground_with_world(heights, 33, 33);
+        for z in -4..40 {
+            for x in -4..40 {
+                let c = XZPoint::new(x, z);
+                assert_eq!(
+                    g.level(c),
+                    g.level_f64(c).round() as i32,
+                    "level vs level_f64 diverged at ({x},{z})"
+                );
+            }
+        }
+        // Elevation-disabled fallback pair.
+        let flat = Ground::new_flat(7);
+        assert_eq!(flat.level_f64(XZPoint::new(3, -4)), 7.0);
+        assert_eq!(flat.level(XZPoint::new(3, -4)), 7);
     }
 
     // Water snaps to the local floor over small DEM steps, but not across a real cliff.
