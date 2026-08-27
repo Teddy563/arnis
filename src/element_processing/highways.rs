@@ -280,7 +280,42 @@ fn road_detail_skip(highway_type: &str, tags: &HashMap<String, String>, detail: 
 }
 
 /// Type alias for highway connectivity map
-pub type HighwayConnectivityMap = HashMap<(i32, i32), Vec<i32>>;
+/// Highway node connectivity, built once per render from ALL parsed elements.
+///
+/// Two views over the same node scan, kept separate so the legacy slope
+/// logic stays byte-identical with road grading off OR on:
+/// - `endpoint_layers`: way ENDPOINTS only — the historical map consumed by
+///   `should_add_slope_at_node`. Folding mid-way nodes in here would change
+///   slope decisions for overpass ramps, i.e. change output with the flag off.
+/// - `node_occurrences`: occurrence count over ALL nodes of ALL highway ways
+///   (G5). A coordinate seen >= 2 times is a junction — including mid-way
+///   T-junctions — used for road-grade junction pins. A pure function of the
+///   parsed element set: whole-element tile assignment plus Meld's
+///   seam-expanded fetch give every tile/cell the same junction set.
+pub struct HighwayConnectivityMap {
+    endpoint_layers: HashMap<(i32, i32), Vec<i32>>,
+    node_occurrences: HashMap<(i32, i32), u32>,
+}
+
+impl HighwayConnectivityMap {
+    /// Legacy endpoint view: layers of ways starting/ending at this coord.
+    fn endpoint_layers(&self, coord: &(i32, i32)) -> Option<&Vec<i32>> {
+        self.endpoint_layers.get(coord)
+    }
+
+    /// Legacy "no connectivity information" probe (endpoint view only).
+    fn endpoints_is_empty(&self) -> bool {
+        self.endpoint_layers.is_empty()
+    }
+
+    /// True when >= 2 highway-way node occurrences share this coordinate
+    /// (mid-way nodes included). Closed ways count their closure coordinate
+    /// twice and self-intersections count each visit — both deterministic,
+    /// both legitimately pinned by road grading.
+    pub fn is_junction(&self, coord: (i32, i32)) -> bool {
+        self.node_occurrences.get(&coord).copied().unwrap_or(0) >= 2
+    }
+}
 
 // 4-connected stair fill from `prev` (exclusive) to `curr` (inclusive).
 fn stair_fill_cells(prev: (i32, i32), curr: (i32, i32)) -> Vec<(i32, i32)> {
@@ -361,9 +396,11 @@ pub fn generate_highways(
     );
 }
 
-/// Build a connectivity map for highway endpoints to determine where slopes are needed.
+/// Build a connectivity map for highway endpoints to determine where slopes are needed,
+/// plus the all-node occurrence view used for road-grade junction pins.
 pub fn build_highway_connectivity_map(elements: &[ProcessedElement]) -> HighwayConnectivityMap {
     let mut connectivity_map: HashMap<(i32, i32), Vec<i32>> = HashMap::new();
+    let mut node_occurrences: HashMap<(i32, i32), u32> = HashMap::new();
 
     for element in elements {
         if let ProcessedElement::Way(way) = element {
@@ -394,11 +431,20 @@ pub fn build_highway_connectivity_map(elements: &[ProcessedElement]) -> HighwayC
                         .or_default()
                         .push(layer_value);
                 }
+
+                // All-node view (endpoints included) so mid-way T-junctions
+                // pin too. Kept out of `connectivity_map` — see the struct doc.
+                for node in &way.nodes {
+                    *node_occurrences.entry((node.x, node.z)).or_insert(0) += 1;
+                }
             }
         }
     }
 
-    connectivity_map
+    HighwayConnectivityMap {
+        endpoint_layers: connectivity_map,
+        node_occurrences,
+    }
 }
 
 // ---- Highway tunnels ----
@@ -797,7 +843,7 @@ fn generate_highways_internal(
     editor: &mut WorldEditor,
     element: &ProcessedElement,
     args: &Args,
-    highway_connectivity: &HashMap<(i32, i32), Vec<i32>>, // Maps node coordinates to list of layers that connect to this node
+    highway_connectivity: &HighwayConnectivityMap,
     flood_fill_cache: &FloodFillCache,
     road_mask: &RoadMaskBitmap,
     bridge_structures: &BridgeStructureMap,
@@ -1978,17 +2024,17 @@ fn generate_highways_internal(
 fn should_add_slope_at_node(
     node: &crate::osm_parser::ProcessedNode,
     current_layer: i32,
-    highway_connectivity: &HashMap<(i32, i32), Vec<i32>>,
+    highway_connectivity: &HighwayConnectivityMap,
 ) -> bool {
     let node_coord = (node.x, node.z);
 
     // If we don't have connectivity information, always add slopes for non-zero layers
-    if highway_connectivity.is_empty() {
+    if highway_connectivity.endpoints_is_empty() {
         return current_layer != 0;
     }
 
     // Check if there are other highways at different layers connected to this node
-    if let Some(connected_layers) = highway_connectivity.get(&node_coord) {
+    if let Some(connected_layers) = highway_connectivity.endpoint_layers(&node_coord) {
         // Count how many ways are at the same layer as current way
         let same_layer_count = connected_layers
             .iter()
@@ -2839,4 +2885,62 @@ mod tests {
             "taxiway intact off-runway"
         );
     }
+
+    // ---- G5: connectivity struct keeps endpoint semantics, adds junctions ----
+
+    fn highway_way(id: u64, coords: &[(i32, i32)]) -> ProcessedElement {
+        let mut tags = StdMap::new();
+        tags.insert("highway".to_string(), "residential".to_string());
+        ProcessedElement::Way(ProcessedWay {
+            id,
+            nodes: coords
+                .iter()
+                .enumerate()
+                .map(|(i, &(x, z))| ProcessedNode {
+                    id: id * 1000 + i as u64,
+                    tags: StdMap::new(),
+                    x,
+                    z,
+                })
+                .collect(),
+            tags,
+            unclipped_bounds: None,
+            unclipped_polygon_area: None,
+        })
+    }
+
+    #[test]
+    fn connectivity_endpoints_unchanged_and_midway_junctions_detected() {
+        // A: (0,0)-(50,0)-(100,0). B: T-junction ending on A's MID node.
+        // C: shares only A's endpoint (100,0).
+        let elements = vec![
+            highway_way(1, &[(0, 0), (50, 0), (100, 0)]),
+            highway_way(2, &[(50, 0), (50, 60)]),
+            highway_way(3, &[(100, 0), (160, 0)]),
+        ];
+        let map = build_highway_connectivity_map(&elements);
+
+        // Endpoint view must NOT contain A's mid node: only B's endpoint
+        // registers at (50,0). Anything else changes legacy slope decisions.
+        assert_eq!(map.endpoint_layers(&(50, 0)).map_or(0, |v| v.len()), 1);
+        assert_eq!(map.endpoint_layers(&(0, 0)).map_or(0, |v| v.len()), 1);
+        assert_eq!(map.endpoint_layers(&(100, 0)).map_or(0, |v| v.len()), 2);
+        assert!(map.endpoint_layers(&(50, 60)).is_some());
+
+        // Junction view: mid-way T-junction pins now exist.
+        assert!(map.is_junction((50, 0)), "A-mid + B-end = junction");
+        assert!(map.is_junction((100, 0)), "shared endpoint = junction");
+        assert!(!map.is_junction((0, 0)), "dead end is not a junction");
+        assert!(!map.is_junction((160, 0)), "dead end is not a junction");
+        assert!(!map.is_junction((75, 0)), "a bresenham point that is not a node never pins");
+    }
+
+    #[test]
+    fn connectivity_closed_way_closure_is_a_junction() {
+        let elements = vec![highway_way(9, &[(0, 0), (30, 0), (30, 30), (0, 0)])];
+        let map = build_highway_connectivity_map(&elements);
+        assert!(map.is_junction((0, 0)), "closure coordinate occurs twice");
+        assert!(!map.is_junction((30, 0)));
+    }
 }
+
