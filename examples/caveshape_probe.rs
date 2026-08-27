@@ -17,11 +17,17 @@
 // ^ diagnostic tooling: kept readable over lint-perfect; dead_code covers the shared
 //   src modules compiled into this standalone example target.
 
-// density.rs reads the world top for its cave pinch band; outside the real crate this
-// shim supplies the vanilla top (319), reproducing the historical 240..256 band.
+// density.rs reads the world bounds for its cave fade bands; outside the real crate this
+// shim stands in for world_editor. It MUST report the same bounds the crate's statics
+// default to (MIN_Y = -64, LEGACY_MAX_Y = 2031, see src/world_editor/common.rs), because
+// density.rs's own unit tests are compiled into this target through the #[path] include
+// below and they assert against that default. A shimmed 319 ceiling - the pre-fix vanilla
+// value this used to carry - puts the tests' y=400 and y=800 samples above the world, where
+// the top fade correctly zeroes them, and `tall_world_keeps_rock_above_256` then fails here
+// while passing in the crate: a shim artefact reported as the giant-void regression.
 mod world_editor {
     pub fn world_max_y() -> i32 {
-        319
+        2031
     }
     pub fn world_min_y() -> i32 {
         -64
