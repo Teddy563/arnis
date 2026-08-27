@@ -21,6 +21,10 @@ tauri-build = {version = "2", optional = true}
 
 [dependencies]
 base64 = "0.22.1"
+# OSM tile sidecar codec (osm_sidecar.rs): compact non-self-describing payload
+# encoding, 1.x pinned. OUTPUT-AFFECTING PIN (plan G5): any bincode bump changes
+# wire bytes with zero Rust-shape change and MUST bump OSM_SIDECAR_CODEC_VERSION.
+bincode = "1.3"
 bytes = "1"
 byteorder = "1.5"
 clap = { version = "4.6.0", features = ["derive", "env"] }
@@ -64,7 +68,10 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 rusty-leveldb = "3"
 rusqlite = { version = "0.40", features = ["bundled"] }
 zstd = "0.13"
-xxhash-rust = { version = "0.8", features = ["xxh32"] }
+# xxh3 feature: content hash of source .json bytes for the OSM sidecar
+# (osm_sidecar.rs), re-hashed on every read - crate was already in-tree (xxh32),
+# so this adds a feature, not a dependency.
+xxhash-rust = { version = "0.8", features = ["xxh32", "xxh3"] }
 # --gpu: cave density on a compute shader. wgpu needs no user-side toolkit and covers
 # Vulkan/DX12/Metal from one WGSL source; pollster blocks on its async init.
 # Vulkan-only: the DX12 backend pulls a `windows`-crate version that conflicts with

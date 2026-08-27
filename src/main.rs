@@ -41,6 +41,7 @@ mod meld_telemetry;
 mod models_3d;
 mod net;
 mod osm_parser;
+mod osm_sidecar;
 mod overture;
 #[cfg(feature = "gui")]
 mod progress;

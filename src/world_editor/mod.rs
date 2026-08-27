@@ -208,8 +208,20 @@ pub(crate) mod region_stats {
     /// `flushed`/`saved` because no file was written for it - it is the work that was skipped.
     pub(crate) static SKIPPED: AtomicU64 = AtomicU64::new(0);
 
+    /// D1a: a halo region's `RegionToModify` dropped at merge time (`WorldToModify::merge`)
+    /// instead of being carried in RAM until flush/save. Counts TILE CONTRIBUTIONS, not
+    /// distinct regions: one halo region bordering several tiles is dropped once per
+    /// contributing tile (up to 9). No file was ever going to be written for any of them,
+    /// so they appear in neither `flushed` nor `saved`; a merge-dropped region also never
+    /// becomes resident, so it is NOT double-counted in `skipped`.
+    pub(crate) static MERGE_DROPPED: AtomicU64 = AtomicU64::new(0);
+
     pub(crate) fn record_skipped() {
         SKIPPED.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_merge_dropped() {
+        MERGE_DROPPED.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn summary_line() -> String {
@@ -228,8 +240,9 @@ pub(crate) mod region_stats {
             sh
         );
         let skipped = SKIPPED.load(Ordering::Relaxed);
+        let merge_dropped = MERGE_DROPPED.load(Ordering::Relaxed);
         if super::region_keep::active() {
-            format!("{base} skipped={skipped}")
+            format!("{base} skipped={skipped} merge_dropped={merge_dropped}")
         } else {
             base
         }
@@ -238,6 +251,7 @@ pub(crate) mod region_stats {
     #[cfg(test)]
     pub(crate) fn reset_for_test() {
         SKIPPED.store(0, Ordering::Relaxed);
+        MERGE_DROPPED.store(0, Ordering::Relaxed);
         for c in [
             &FLUSHED_CANONICAL,
             &FLUSHED_HALO,
@@ -310,6 +324,37 @@ pub mod region_keep {
     /// Whether a rectangle is in force at all - for the `[regions]` summary line.
     pub(crate) fn active() -> bool {
         RECT.get().copied().flatten().is_some()
+    }
+
+    /// D1a: whether `WorldToModify::merge` may drop a non-kept region's tile
+    /// contribution outright instead of merging it (freeing the halo RAM at merge time
+    /// rather than at flush/save). Canonical OUTPUT is unaffected either way - halo
+    /// regions are separate files that `flush_region_via` and `save_java` already
+    /// refuse to write.
+    ///
+    /// The one thing the drop does change is the plain `ARNIS_BLOCK_HASH` whole-world
+    /// diagnostic hash, whose fold includes the merged halo regions' content by
+    /// construction. That hash is the historical comparison currency (e.g. the ring-3
+    /// cell's `54e7c9becb2f8f80`), so the drop is suppressed exactly when that
+    /// currency is being emitted: `ARNIS_BLOCK_HASH` set without
+    /// `ARNIS_BLOCK_HASH_CANONICAL`. Default runs (no hash env) and canonical-hash
+    /// runs (currency restricted to kept regions, D2) drop as intended.
+    /// `ARNIS_HALO_MERGE_DROP=0|1` overrides the inference - the A/B switch for parity
+    /// runs and benches (e.g. canonical-hash arms with the drop forced off vs on).
+    /// Forcing `1` under a plain `ARNIS_BLOCK_HASH` run knowingly changes that
+    /// whole-world value; that is the operator's explicit choice.
+    pub(crate) fn merge_drop_active() -> bool {
+        static ACTIVE: OnceLock<bool> = OnceLock::new();
+        *ACTIVE.get_or_init(
+            || match std::env::var("ARNIS_HALO_MERGE_DROP").ok().as_deref() {
+                Some("0") => false,
+                Some("1") => true,
+                _ => {
+                    std::env::var_os("ARNIS_BLOCK_HASH").is_none()
+                        || std::env::var_os("ARNIS_BLOCK_HASH_CANONICAL").is_some()
+                }
+            },
+        )
     }
 }
 

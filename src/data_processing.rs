@@ -561,7 +561,17 @@ pub fn generate_world_with_options(
     // Stream-to-disk eviction state (populated in the parallel branch below).
     let mut eviction_active = false;
     let hash_check = std::env::var_os("ARNIS_BLOCK_HASH").is_some();
+    // D2: ARNIS_BLOCK_HASH_CANONICAL restricts the emitted hash to the regions the
+    // `--canonical-regions` rectangle keeps. That is the comparison currency for halo
+    // A/Bs: halo-dropping changes the whole-world fold by construction, while the kept
+    // set's content must not move. Unset = today's whole-world `block_hash` line,
+    // byte-identical. Only meaningful together with ARNIS_BLOCK_HASH.
+    let hash_canonical = hash_check && std::env::var_os("ARNIS_BLOCK_HASH_CANONICAL").is_some();
     let mut hash_acc: u64 = 0;
+    // Canonical mode: per-region hashes of the kept set, captured at each point where a
+    // region's content is final (just before flush under eviction; at the end otherwise).
+    // Emitted sorted so the lines are comparable across runs and across the two paths.
+    let mut canon_region_hashes: Vec<((i32, i32), u64)> = Vec::new();
     let mut real_regions: HashSet<(i32, i32)> = HashSet::new();
     let mut evicted_regions: HashSet<(i32, i32)> = HashSet::new();
     // Background writer for eviction; None unless eviction is active.
@@ -907,8 +917,19 @@ pub fn generate_world_with_options(
                                     && !model_regions.contains(&d)
                                 {
                                     if hash_check {
-                                        hash_acc = hash_acc
-                                            .wrapping_add(editor.region_content_hash(d.0, d.1));
+                                        // D2: canonical mode folds kept regions only. This
+                                        // is the last moment the region is resident (it is
+                                        // flushed right below), so capture its hash here.
+                                        if !hash_canonical {
+                                            hash_acc = hash_acc
+                                                .wrapping_add(editor.region_content_hash(d.0, d.1));
+                                        } else if crate::world_editor::region_keep::is_kept(
+                                            d.0, d.1,
+                                        ) {
+                                            let h = editor.region_content_hash(d.0, d.1);
+                                            hash_acc = hash_acc.wrapping_add(h);
+                                            canon_region_hashes.push((d, h));
+                                        }
                                     }
                                     if let Some(w) = flush_worker.as_ref() {
                                         editor.flush_region_via(w, d.0, d.1)?;
@@ -1148,7 +1169,14 @@ pub fn generate_world_with_options(
         leftover.sort_unstable();
         for (rx, rz) in leftover {
             if hash_check {
-                hash_acc = hash_acc.wrapping_add(editor.region_content_hash(rx, rz));
+                // D2: canonical mode folds kept regions only (see the flush loop above).
+                if !hash_canonical {
+                    hash_acc = hash_acc.wrapping_add(editor.region_content_hash(rx, rz));
+                } else if crate::world_editor::region_keep::is_kept(rx, rz) {
+                    let h = editor.region_content_hash(rx, rz);
+                    hash_acc = hash_acc.wrapping_add(h);
+                    canon_region_hashes.push(((rx, rz), h));
+                }
             }
             if let Some(w) = flush_worker.as_ref() {
                 editor.flush_region_via(w, rx, rz)?;
@@ -1156,9 +1184,18 @@ pub fn generate_world_with_options(
             evicted_regions.insert((rx, rz));
         }
         // Hash remaining (out-of-bbox halo) regions so hash_acc == the whole-world hash.
+        // Canonical mode: these are outside the keep-rectangle by construction (it lies
+        // within the bbox), but filter uniformly anyway so a stray kept-region resident
+        // could never silently leave the currency.
         if hash_check {
             for (rx, rz) in editor.resident_region_keys() {
-                hash_acc = hash_acc.wrapping_add(editor.region_content_hash(rx, rz));
+                if !hash_canonical {
+                    hash_acc = hash_acc.wrapping_add(editor.region_content_hash(rx, rz));
+                } else if crate::world_editor::region_keep::is_kept(rx, rz) {
+                    let h = editor.region_content_hash(rx, rz);
+                    hash_acc = hash_acc.wrapping_add(h);
+                    canon_region_hashes.push(((rx, rz), h));
+                }
             }
         }
         // Wait for all background writes to land (and surface any I/O error) before save.
@@ -1170,10 +1207,34 @@ pub fn generate_world_with_options(
     if hash_check {
         let h = if eviction_active {
             hash_acc
+        } else if hash_canonical {
+            // D2, non-eviction path: everything is still resident, so the kept set is
+            // hashed here. Same per-region hash + wrapping_add fold as the eviction
+            // path, so the two paths (and drop/no-drop arms) emit comparable values.
+            let mut keys = editor.resident_region_keys();
+            keys.retain(|&(rx, rz)| crate::world_editor::region_keep::is_kept(rx, rz));
+            let mut acc = 0u64;
+            for (rx, rz) in keys {
+                let rh = editor.region_content_hash(rx, rz);
+                acc = acc.wrapping_add(rh);
+                canon_region_hashes.push(((rx, rz), rh));
+            }
+            acc
         } else {
             editor.content_hash()
         };
-        eprintln!("[BENCHMARK] block_hash={:016x}", h);
+        if hash_canonical {
+            // Per-region lines first (sorted: comparable across runs and bisectable per
+            // region for the halo corpus), then the fold. Distinct label so a canonical
+            // value can never be mistaken for the whole-world `block_hash` currency.
+            canon_region_hashes.sort_unstable_by_key(|&(key, _)| key);
+            for ((rx, rz), rh) in &canon_region_hashes {
+                eprintln!("[BENCHMARK] region_content_hash r.{rx}.{rz}={rh:016x}");
+            }
+            eprintln!("[BENCHMARK] block_hash_canonical={h:016x}");
+        } else {
+            eprintln!("[BENCHMARK] block_hash={:016x}", h);
+        }
     }
 
     // GPU budget line for the caller: total wall spent in GPU dispatches. Printed

@@ -4,7 +4,7 @@ use crate::coordinate_system::geographic::{LLBBox, LLPoint};
 use crate::coordinate_system::transformation::CoordTransformer;
 use crate::progress::emit_gui_progress_update;
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufReader;
@@ -72,15 +72,17 @@ fn filter_tags(mut tags: HashMap<String, String>) -> HashMap<String, String> {
 
 // Raw data from OSM
 
-#[derive(Debug, Deserialize)]
-struct OsmMember {
-    r#type: String,
-    r#ref: u64,
-    r#role: String,
+// Serialize: for the osm_sidecar bincode bake (phase-5 A2). Any shape change
+// to OsmMember/OsmElement MUST bump osm_sidecar::OSM_SIDECAR_CODEC_VERSION.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct OsmMember {
+    pub(crate) r#type: String,
+    pub(crate) r#ref: u64,
+    pub(crate) r#role: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct OsmElement {
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct OsmElement {
     pub r#type: String,
     pub id: u64,
     pub lat: Option<f64>,
@@ -177,16 +179,31 @@ impl OsmData {
                         continue;
                     }
                 }
-                let mut de = serde_json::Deserializer::from_slice(&buf);
-                let data = match OsmData::deserialize(&mut de) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("  [osm-tile-dir] skip unreadable tile {path}: {e}");
-                        continue;
+                // A3 (phase 5): per-tile bincode sidecar fast path. The source .json
+                // bytes were just read above and are re-hashed inside read_verified on
+                // EVERY read (content hash, never mtime); any mismatch, short file, or
+                // decode error falls through silently to the JSON path below — which is
+                // byte-for-byte the code A1 shipped — and re-bakes the sidecar.
+                let bin_path = crate::osm_sidecar::sidecar_path(&path);
+                let tile_elements = match crate::osm_sidecar::read_verified(&bin_path, &buf) {
+                    Some(els) => els,
+                    None => {
+                        let mut de = serde_json::Deserializer::from_slice(&buf);
+                        let data = match OsmData::deserialize(&mut de) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                eprintln!("  [osm-tile-dir] skip unreadable tile {path}: {e}");
+                                continue;
+                            }
+                        };
+                        // Bake-on-first-miss piggybacks on the decode this cell paid
+                        // anyway (verify-at-bake + atomic rename inside).
+                        crate::osm_sidecar::bake(&bin_path, &buf, &data.elements);
+                        data.elements
                     }
                 };
                 tiles_read += 1;
-                for el in data.elements {
+                for el in tile_elements {
                     // (kind_key, id): one byte instead of a cloned String per element.
                     // Same dedup semantics - node/way/relation map to distinct keys, and
                     // an unknown type string maps to its first byte + length so two

@@ -148,6 +148,10 @@ pub(crate) struct PaletteItem {
 ///
 /// Both are heap-allocated via `Vec`, so the inline size inside the parent
 /// `FnvHashMap` entry is only 24 bytes.
+///
+/// `Clone` exists for the B2 wholesale-copy fast path in the section merges; it is a
+/// deep copy (the `Vec` variants clone their buffer).
+#[derive(Clone)]
 pub(crate) enum BlockStorage {
     /// Every position is the same block (commonly AIR).
     Uniform(Block),
@@ -916,6 +920,20 @@ impl WorldToModify {
         authoritative_max_z: i32,
     ) {
         for ((region_x, region_z), other_region) in other.regions {
+            // D1a: a region outside the `--canonical-regions` keep-rectangle never
+            // reaches disk (`flush_region_via` and `save_java` both refuse to write
+            // it), so merging it only parks halo blocks in RAM until flush/save.
+            // Drop the tile's whole `RegionToModify` here instead: `other_region`
+            // is owned, so `continue` frees its memory at merge time. Kept regions
+            // are untouched and regions are separate files, so canonical output is
+            // bit-identical by construction. `merge_drop_active` keeps the plain
+            // whole-world `ARNIS_BLOCK_HASH` currency intact (see its doc).
+            if !super::region_keep::is_kept(region_x, region_z)
+                && super::region_keep::merge_drop_active()
+            {
+                super::region_stats::record_merge_dropped();
+                continue;
+            }
             // Region block-coordinate bounds (32 chunks × 16 blocks = 512 per side)
             let r_min_x = region_x << 9;
             let r_max_x = r_min_x + 511;
@@ -1124,36 +1142,83 @@ impl WorldToModify {
     }
 
     /// Merge a single section using write-if-AIR (no coordinate checks).
+    ///
+    /// B2 fast paths. `no_props`: with BOTH property maps empty, the per-index property
+    /// bookkeeping (`insert` where the source has a compound, `remove` otherwise) is a
+    /// no-op at every index - there is nothing to insert and removing from an empty map
+    /// does nothing - so the loops may legally skip it, and it is hoisted out of the
+    /// 4096-iteration loops. `dest_all_air`: with the destination Uniform(AIR) the
+    /// write-if-AIR test passes at every index, so the merged result is exactly the
+    /// source section's logical content and the storage can be replaced wholesale.
+    ///
+    /// The wholesale paths can leave a DIFFERENT storage representation than the
+    /// per-index path did (Uniform where the old code built a one-block Full vec; the
+    /// source's own variant where the old code might have built Full instead of a
+    /// decayed FullWide). That cannot reach output bytes: `region_content_hash` hashes
+    /// logical block ids (representation-independent by its own doc/test), and every
+    /// serialize path compacts first (`save` -> `compact_sections`, the `FlushWorker`
+    /// -> `section.compact`) with `to_section` iterating logical blocks for Full and
+    /// FullWide alike.
     fn merge_section_write_if_air(
         self_section: &mut SectionToModify,
         other_section: &SectionToModify,
     ) {
+        let no_props = other_section.properties.is_empty() && self_section.properties.is_empty();
+        let dest_all_air = matches!(&self_section.storage, BlockStorage::Uniform(b) if *b == AIR);
         match &other_section.storage {
             BlockStorage::Uniform(block) if *block == AIR => {}
             BlockStorage::Uniform(block) => {
                 let block = *block;
-                for idx in 0..4096usize {
-                    if self_section.storage.get(idx) == AIR {
-                        self_section.storage.set(idx, block);
-                        if let Some(props) = other_section.properties.get(&idx) {
-                            self_section.properties.insert(idx, props.clone());
-                        } else {
-                            self_section.properties.remove(&idx);
+                if no_props && dest_all_air {
+                    // Every destination index is AIR, so every index takes the source's
+                    // uniform block and no properties move.
+                    self_section.storage = BlockStorage::Uniform(block);
+                } else if no_props {
+                    for idx in 0..4096usize {
+                        if self_section.storage.get(idx) == AIR {
+                            self_section.storage.set(idx, block);
+                        }
+                    }
+                } else {
+                    for idx in 0..4096usize {
+                        if self_section.storage.get(idx) == AIR {
+                            self_section.storage.set(idx, block);
+                            if let Some(props) = other_section.properties.get(&idx) {
+                                self_section.properties.insert(idx, props.clone());
+                            } else {
+                                self_section.properties.remove(&idx);
+                            }
                         }
                     }
                 }
             }
             _ => {
-                for (idx, block) in other_section.storage.iter().enumerate() {
-                    if block == AIR {
-                        continue;
+                if no_props && dest_all_air {
+                    // Dest is all AIR: source AIR indices leave AIR (equal to the source's
+                    // own AIR), source non-AIR indices take the source block - the result
+                    // is logically the source storage exactly, so copy it wholesale.
+                    self_section.storage = other_section.storage.clone();
+                } else if no_props {
+                    for (idx, block) in other_section.storage.iter().enumerate() {
+                        if block == AIR {
+                            continue;
+                        }
+                        if self_section.storage.get(idx) == AIR {
+                            self_section.storage.set(idx, block);
+                        }
                     }
-                    if self_section.storage.get(idx) == AIR {
-                        self_section.storage.set(idx, block);
-                        if let Some(props) = other_section.properties.get(&idx) {
-                            self_section.properties.insert(idx, props.clone());
-                        } else {
-                            self_section.properties.remove(&idx);
+                } else {
+                    for (idx, block) in other_section.storage.iter().enumerate() {
+                        if block == AIR {
+                            continue;
+                        }
+                        if self_section.storage.get(idx) == AIR {
+                            self_section.storage.set(idx, block);
+                            if let Some(props) = other_section.properties.get(&idx) {
+                                self_section.properties.insert(idx, props.clone());
+                            } else {
+                                self_section.properties.remove(&idx);
+                            }
                         }
                     }
                 }
@@ -1166,10 +1231,17 @@ impl WorldToModify {
     ///
     /// Auth-tile non-AIR blocks always overwrite. Auth-tile AIR positions
     /// preserve whatever halo data was already written there.
+    /// B2 fast paths, same reasoning as `merge_section_write_if_air`: `no_props` makes
+    /// the per-index property bookkeeping a provable no-op (nothing to insert, removes
+    /// hit an empty map), so it is hoisted out of the 4096-iteration loops; the
+    /// wholesale storage replacements are exactly the loop's fixed point and any
+    /// representation difference is unobservable (logical-id hashing + compact-before-
+    /// serialize, see the write_if_air doc).
     fn merge_section_auth_overwrite_nonair(
         self_section: &mut SectionToModify,
         other_section: &SectionToModify,
     ) {
+        let no_props = other_section.properties.is_empty() && self_section.properties.is_empty();
         match &other_section.storage {
             BlockStorage::Uniform(block) if *block == AIR => {
                 // Auth tile is entirely AIR in this section; keep all halo data.
@@ -1177,26 +1249,50 @@ impl WorldToModify {
             BlockStorage::Uniform(block) => {
                 // Auth tile is uniformly one non-AIR block; overwrite everything.
                 let block = *block;
-                for idx in 0..4096usize {
-                    self_section.storage.set(idx, block);
-                    if let Some(props) = other_section.properties.get(&idx) {
-                        self_section.properties.insert(idx, props.clone());
-                    } else {
-                        self_section.properties.remove(&idx);
+                if no_props {
+                    // Every index is unconditionally overwritten with `block`, so the
+                    // destination's prior content is irrelevant: the loop's result is
+                    // provably an all-`block` section whatever the dest held.
+                    self_section.storage = BlockStorage::Uniform(block);
+                } else {
+                    for idx in 0..4096usize {
+                        self_section.storage.set(idx, block);
+                        if let Some(props) = other_section.properties.get(&idx) {
+                            self_section.properties.insert(idx, props.clone());
+                        } else {
+                            self_section.properties.remove(&idx);
+                        }
                     }
                 }
             }
             _ => {
-                for (idx, block) in other_section.storage.iter().enumerate() {
-                    if block == AIR {
-                        // Auth tile placed nothing here; preserve halo data.
-                        continue;
+                let dest_all_air =
+                    matches!(&self_section.storage, BlockStorage::Uniform(b) if *b == AIR);
+                if no_props && dest_all_air {
+                    // Dest is all AIR: auth AIR indices preserve the dest's AIR, which
+                    // equals the source's own AIR there; auth non-AIR indices take the
+                    // source block. The result is logically the source storage exactly.
+                    self_section.storage = other_section.storage.clone();
+                } else if no_props {
+                    for (idx, block) in other_section.storage.iter().enumerate() {
+                        if block == AIR {
+                            // Auth tile placed nothing here; preserve halo data.
+                            continue;
+                        }
+                        self_section.storage.set(idx, block);
                     }
-                    self_section.storage.set(idx, block);
-                    if let Some(props) = other_section.properties.get(&idx) {
-                        self_section.properties.insert(idx, props.clone());
-                    } else {
-                        self_section.properties.remove(&idx);
+                } else {
+                    for (idx, block) in other_section.storage.iter().enumerate() {
+                        if block == AIR {
+                            // Auth tile placed nothing here; preserve halo data.
+                            continue;
+                        }
+                        self_section.storage.set(idx, block);
+                        if let Some(props) = other_section.properties.get(&idx) {
+                            self_section.properties.insert(idx, props.clone());
+                        } else {
+                            self_section.properties.remove(&idx);
+                        }
                     }
                 }
             }
