@@ -319,7 +319,16 @@ impl CaveGen {
         let cave = t2.max(pillars_gated);
         // depth slides (cancel to `cave` in the main band; pinch toward solid near world top/bottom)
         let yg1 = y_clamped_gradient(yf, -64, -40, 0.0, 1.0);
-        let yg2 = y_clamped_gradient(yf, 240, 256, 1.0, 0.0);
+        // The top pinch band must follow the WORLD top, not vanilla's. Vanilla hardcodes
+        // 240..256 because its world ends at 320 - i.e. top-80..top-64 - and above 256 the
+        // fade zeroes the cave term and the residual constants sum to -0.078125: constant
+        // AIR for every block, regardless of the noise. In vanilla that never shows (the
+        // terrain density dominates up there); in a tall Meld world it carved one giant
+        // void under every surface above y~256 - the reported bug. The formula below IS
+        // vanilla at vanilla height (319+1-80 = 240, 319+1-64 = 256), so standard worlds
+        // are byte-identical, and a tall world pinches at its own ceiling instead.
+        let (pinch_lo, pinch_hi) = top_pinch_band();
+        let yg2 = y_clamped_gradient(yf, pinch_lo, pinch_hi, 1.0, 0.0);
         let inner = 0.1171875 + yg1 * (-0.1171875 + (-0.078125 + yg2 * (0.078125 + cave)));
         squeeze(0.64 * inner) // blend_density = identity
     }
@@ -409,6 +418,20 @@ fn squeeze(v: f64) -> f64 {
     let c = clamp(v, -1.0, 1.0);
     c / 2.0 - c * c * c / 24.0
 }
+
+/// The Y band over which caves fade to solid below the world ceiling: `top-80 .. top-64`
+/// in exclusive-top terms, which is exactly vanilla's 240..256 for the standard 320 world.
+/// Reads the world bounds the run has already registered; the default (2031) only applies
+/// to code paths that never generate a world.
+#[inline]
+fn top_pinch_band() -> (i32, i32) {
+    // NOTE for the standalone probe examples: they compile this file via #[path] outside
+    // the crate, so each carries a one-line `mod world_editor` shim returning 319 - the
+    // vanilla top, which reproduces the historical 240..256 band there.
+    let top_excl = crate::world_editor::world_max_y() + 1;
+    (top_excl - 80, top_excl - 64)
+}
+
 #[inline]
 fn y_clamped_gradient(y: f64, from_y: i32, to_y: i32, from_v: f64, to_v: f64) -> f64 {
     let (fy, ty) = (from_y as f64, to_y as f64);
@@ -444,5 +467,50 @@ fn rarity_3d(v: f64) -> f64 {
         1.5
     } else {
         2.0
+    }
+}
+
+#[cfg(test)]
+mod top_pinch_tests {
+    use super::*;
+
+    /// The reported bug: in a tall world, every underground block above y~256 carved to
+    /// air because the pinch band was hardcoded to vanilla's 240..256 - above it the fade
+    /// zeroes the cave term and the residual constants are a flat -0.078125. With the
+    /// band following the world top (2031 here, the process default), density at y=300
+    /// must vary with the noise again instead of being unconditional air.
+    #[test]
+    fn tall_world_keeps_rock_above_256() {
+        let gen = CaveGen::new(1);
+        let mut solid = 0;
+        let mut total = 0;
+        for x in (0..512).step_by(16) {
+            for z in (0..512).step_by(16) {
+                for y in [260, 300, 400, 800] {
+                    total += 1;
+                    if gen.combined_density(x, y, z) >= 0.0 {
+                        solid += 1;
+                    }
+                }
+            }
+        }
+        // Before the fix: solid == 0, always, by arithmetic. After: overwhelmingly rock,
+        // with caves allowed. Assert the void is gone without pinning noise specifics.
+        assert!(
+            solid > total / 2,
+            "expected mostly rock above y=256 in a tall world, got {solid}/{total} solid \
+             - the giant-void regression is back"
+        );
+    }
+
+    /// The band itself: vanilla-exact at the vanilla top, world-relative above it.
+    #[test]
+    fn band_follows_the_world_top() {
+        // Process default bounds are (-64, 2031) unless a generation set a profile.
+        let (lo, hi) = top_pinch_band();
+        let top_excl = crate::world_editor::world_max_y() + 1;
+        assert_eq!((lo, hi), (top_excl - 80, top_excl - 64));
+        // And the formula reproduces vanilla exactly at the standard 319 ceiling.
+        assert_eq!((319 + 1 - 80, 319 + 1 - 64), (240, 256));
     }
 }

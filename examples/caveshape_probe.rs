@@ -17,6 +17,14 @@
 // ^ diagnostic tooling: kept readable over lint-perfect; dead_code covers the shared
 //   src modules compiled into this standalone example target.
 
+// density.rs reads the world top for its cave pinch band; outside the real crate this
+// shim supplies the vanilla top (319), reproducing the historical 240..256 band.
+mod world_editor {
+    pub fn world_max_y() -> i32 {
+        319
+    }
+}
+
 #[path = "../src/caves/density.rs"]
 mod density;
 #[path = "../src/caves/noise.rs"]
