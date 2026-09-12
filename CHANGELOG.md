@@ -50,6 +50,16 @@ two halves.
   merge - two signs on opposite faces of one post, say. The dedup key now carries the
   entity's UUID where it has one.
 - An iron door's upper half is written as an upper half on Bedrock.
+- Scattered trees, park vegetation and natural-area fill no longer land on roads, pitches,
+  courts, playgrounds or parking. The block under a column cannot answer this on its own: an
+  OSM `surface=dirt` track is dirt like any field, and an area drawn after the one around it
+  has not been painted yet when that one scatters. The sealed columns are resolved once from
+  the element list instead and shared with the tile editors. A mapped `natural=tree` keeps
+  its paving exception.
+- Gray concrete powder - the primary road surface - has a map-preview palette entry, so
+  roads no longer render as stone's grey.
+- Overture roof shape, material and orientation are interned instead of heap Strings: three
+  allocations per building row.
 
 ### Not taken from upstream, and why
 - **The Mapillary and preset building facades.** 45 634 lines, 63% of upstream's whole

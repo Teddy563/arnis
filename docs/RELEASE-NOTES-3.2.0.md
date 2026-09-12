@@ -73,12 +73,28 @@ cache, moves by one.
   merge — two signs on opposite faces of one post, say. The dedup key now carries the
   entity's UUID where it has one.
 - **An iron door's upper half is written as an upper half on Bedrock.**
+- **Trees, park vegetation and natural fill stay off sealed surfaces.** A block check cannot
+  tell a paved area from natural ground - `surface=dirt` reads as dirt like any field, and a
+  pitch drawn after the park around it has not been painted yet when the park scatters its
+  vegetation. The columns owned by roads, pitches, courts, playgrounds and parking are
+  resolved once from the element list, before anything is placed. A mapped `natural=tree`
+  keeps its paving exception.
+- **Roads are separable from stone in `--map-preview`.** Gray concrete powder is the primary
+  road surface and had no palette entry, so it rendered as stone's grey.
+- **Overture roof strings are interned**, taking three allocations per building off a fetch
+  that runs to hundreds of thousands of rows on a large area.
 
 ## Also
 
 Georgian localisation (ka-GE), and a refreshed baked Wikidata 3D model index.
 
 ---
+
+## How much of upstream this is
+
+85% of what a user would name, 39% by commit count, and the difference is one feature:
+upstream's building facades are 28 commits and 51 668 lines - 72% of its whole delta.
+The measurement, three ways, is in [UPSTREAM-3.2.0-COVERAGE.md](UPSTREAM-3.2.0-COVERAGE.md).
 
 ## Not taken from upstream, and why
 
@@ -113,7 +129,7 @@ an older generator keeps working with it unchanged.
 
 ## Verification
 
-- `cargo test`: 584 passed, 0 failed, 8 ignored
+- `cargo test`: 587 passed, 0 failed, 8 ignored
 - `cargo check --all-targets`: clean
 - Moon world confirmed using NASA PDS LOLA data end to end
 - `--voxy-lod` confirmed writing a complete cache (`CURRENT`, `IDENTITY`, `MANIFEST`, WAL)
