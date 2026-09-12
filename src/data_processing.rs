@@ -387,7 +387,18 @@ pub fn generate_world_with_options(
             args.disable_height_limit,
         )
     };
-    editor.set_bake_lighting(args.bake_lighting);
+    // Unlit LOD terrain renders black, so the LOD implies baked lighting.
+    editor.set_bake_lighting(args.bake_lighting || args.voxy_lod);
+    // Voxy LOD cache, fed alongside the region files as they are written.
+    if args.voxy_lod && world_format == WorldFormat::JavaAnvil {
+        match crate::voxy::VoxyWriter::create(&output_path) {
+            Ok(Some(writer)) => editor.set_voxy(Some(std::sync::Arc::new(writer))),
+            Ok(None) => eprintln!(
+                "Skipping the Voxy LOD cache: could not read the world seed from level.dat."
+            ),
+            Err(e) => eprintln!("Skipping the Voxy LOD cache: {e}"),
+        }
+    }
     // Container choice lives on the main editor only: tile editors never touch disk,
     // they merge their regions back here before anything is written.
     editor.set_region_container(

@@ -512,6 +512,12 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub bake_lighting: bool,
 
+    /// Pre-generate the Voxy mod's LOD cache so the world renders to the horizon
+    /// on first join, instead of needing `/voxy import current`. Java only;
+    /// implies --bake-lighting, since unlit LOD terrain renders black.
+    #[arg(long, default_value_t = false)]
+    pub voxy_lod: bool,
+
     /// Download OSM data to --save-json-file and exit, skipping world generation.
     /// Lets an external scheduler (Meld) pre-fetch a whole region's OSM in ONE
     /// request and feed it to many cells via --file, instead of each parallel cell

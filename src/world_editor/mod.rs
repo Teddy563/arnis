@@ -10,7 +10,7 @@
 //! - `bedrock` - Bedrock Edition .mcworld format saving
 
 pub(crate) mod blinear;
-mod common;
+pub(crate) mod common;
 pub(crate) mod java;
 mod luanti;
 
@@ -518,6 +518,8 @@ pub struct WorldEditor<'a> {
     blinear_level: i32,
     /// Void world: no ground layer, and unfilled chunks are written empty.
     void_world: bool,
+    /// Voxy LOD pregeneration sink, when `--voxy-lod` asked for one (Java only).
+    voxy: Option<std::sync::Arc<crate::voxy::VoxyWriter>>,
 }
 
 impl<'a> WorldEditor<'a> {
@@ -551,6 +553,7 @@ impl<'a> WorldEditor<'a> {
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
             void_world: false,
+            voxy: None,
         }
     }
 
@@ -590,6 +593,7 @@ impl<'a> WorldEditor<'a> {
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
             void_world: false,
+            voxy: None,
         }
     }
 
@@ -629,6 +633,7 @@ impl<'a> WorldEditor<'a> {
             region_container: RegionContainer::Anvil,
             blinear_level: 6,
             void_world: false,
+            voxy: None,
         }
     }
 
@@ -682,6 +687,28 @@ impl<'a> WorldEditor<'a> {
                 z - self.ground_origin_z,
             ))
         })
+    }
+
+    /// Seals the Voxy LOD database. A failure here costs the user nothing but
+    /// distant terrain, so it is reported and swallowed rather than failing a
+    /// world that is already written.
+    fn finish_voxy(&mut self) {
+        let Some(voxy) = self.voxy.take() else {
+            return;
+        };
+        match voxy.finish() {
+            Ok((sections, bytes)) => println!(
+                "  Voxy LOD: {} sections, {:.1} MB",
+                sections,
+                bytes as f64 / (1024.0 * 1024.0)
+            ),
+            Err(e) => eprintln!("Failed to write the Voxy LOD cache: {e}"),
+        }
+    }
+
+    /// Attaches a Voxy LOD sink; every Java region written from here also feeds it.
+    pub fn set_voxy(&mut self, voxy: Option<std::sync::Arc<crate::voxy::VoxyWriter>>) {
+        self.voxy = voxy;
     }
 
     /// Enables baking per-chunk lighting into Java chunks.
@@ -743,6 +770,7 @@ impl<'a> WorldEditor<'a> {
             self.region_container,
             self.blinear_level,
             self.void_world,
+            self.voxy.clone(),
         )
     }
 
@@ -1871,6 +1899,7 @@ impl<'a> WorldEditor<'a> {
                     }
                     return Err(e);
                 }
+                self.finish_voxy();
             }
             WorldFormat::BedrockMcWorld => self.save_bedrock(),
             WorldFormat::LuantiWorld => {

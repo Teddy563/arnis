@@ -31,6 +31,13 @@ two halves.
   door), with Luanti and Bedrock mappings. Numbered from 450, above this fork's own ceiling
   of 449, so no id already written into a world or into Meld's region cache moves.
 - **Georgian localisation** (ka-GE), and a refreshed baked Wikidata 3D model index.
+- **Voxy LOD pregeneration**, `--voxy-lod`. Builds the Voxy mod's LOD cache while the world
+  is written, so it renders to the horizon on first join instead of needing
+  `/voxy import current`. Java only, and it implies `--bake-lighting` - unlit LOD terrain
+  renders black. The pyramid needs its chunks in Morton column order, so with the flag on
+  this fork's region writer walks the region that way; with it off the order is the one it
+  has always had. Chunks the generator never filled are fed the base plane too, so the LOD
+  has no holes where the world is bare.
 
 ### Fixed
 - Magma no longer appears on lake and sea floors.
@@ -52,9 +59,6 @@ two halves.
   its architectural-era and window-frame grammar on the old lattice, and its interiors, loot
   and signage anchors are written against that. The two are alternatives, not layers.
   Deferred to 3.3.0.
-- **Voxy LOD pregeneration.** Its feed is ordered per morton column by upstream's rewritten
-  region writer; this fork's writer is row-major and carries the B_Linear container and the
-  Meld biome origin. Deferred with the writer.
 - **The Overture vector-tile transport.** Upstream split `overture.rs` into a module
   directory; this fork has 1 028 lines of its own in that file, including the prewarm path
   Meld drives. A hand-merge, not a port. Deferred.

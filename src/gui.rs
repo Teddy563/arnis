@@ -1216,6 +1216,8 @@ fn gui_start_generation(
                 // ticked. Upstream wires it; this fork stopped. #[allow(unused_variables)] on
                 // this function is what kept the compiler quiet about it.
                 bake_lighting: bake_lighting_enabled,
+                // No LOD toggle in this fork's GUI; the CLI (and Meld) drive it.
+                voxy_lod: false,
                 download_only: false,
                 download_terrain_only: false,
                 offline: false,

@@ -32,10 +32,13 @@ independently green.
 | `52df05ce` | Four correctness fixes |
 | `9469891e` | Moon and Mars (`--body moon\|mars`) |
 | `0ad7495b` | Version bump to 3.2.0 + changelog |
+| (this commit) | Voxy LOD pregeneration (`--voxy-lod`) |
 
 ### Files touched
 
 **New:**
+- `src/voxy/` — the LOD pyramid, its RocksDB-shaped writer and block mapper
+- `assets/voxy/MANIFEST.golden` — the manifest prefix the database is sealed with
 - `src/celestial.rs` — the bodies, their fixed scales, their surface palettes
 - `src/elevation/providers/planetary.rs` — NASA PDS rasters (LRO LOLA, MGS MOLA MEGDR)
 - `src/gui/locales/ka-GE.json` — Georgian
@@ -51,7 +54,12 @@ independently green.
 - `src/element_processing/landuse.rs` — ore-roll overflow clamp
 - `src/water_depth.rs` — magma off water floors
 - `src/world_editor/bedrock.rs` — biome padding 0 → 0xFF
-- `src/world_editor/java.rs` — entity dedup keyed on UUID
+- `src/world_editor/java.rs` — entity dedup keyed on UUID; the Voxy feed (Morton chunk
+  order, shared span/lighting, filler chunks ingested too)
+- `src/biome.rs` — `chunk_biome_names` split out of `build_chunk_biome_nbt`, so the chunk
+  file and the LOD are written from one set of names
+- `src/world_editor/mod.rs`, `src/data_processing.rs`, `src/gui.rs` — the writer threaded
+  through and sealed after the Java save
 - `src/main.rs` — `mod celestial`, `apply_body_defaults` before the derived flags
 - `src/gui.rs` — `body: Earth` in the GUI's Args (no body picker in this fork's GUI)
 - `assets/wikidata_3d_models.json`, `Cargo.toml`, `tauri.conf.json`, `CHANGELOG.md`
@@ -105,7 +113,6 @@ readable by other processes. It is stripped from shared presets and from the
 | Upstream feature | Why not now |
 |---|---|
 | Mapillary + preset building facades | 45 634 lines, 63% of upstream's delta. Upstream rebuilt the wall renderer around a `FacadePlan`; this fork rebuilt the same renderer around its era/window-frame grammar. Alternatives, not layers. |
-| Voxy LOD pregeneration | Its feed is ordered per morton column by upstream's rewritten region writer. This fork's writer is row-major and carries B_Linear and the Meld biome origin. |
 | Overture vector-tile transport | Upstream split `overture.rs` into a module directory; this fork has 1 028 lines of its own in that file, including the prewarm path Meld drives. Hand-merge, not a port. |
 | Jet bridge prop | Needs a free-yaw schematic routine this fork does not have. |
 | `gui/js/logging.js` | Routes through a `gui_log` command this fork's GUI does not define. |

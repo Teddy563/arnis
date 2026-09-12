@@ -108,6 +108,28 @@ pub fn build_chunk_biome_nbt(
     ground: Option<&Ground>,
     center_lat_deg: f64,
 ) -> ChunkBiomeNbt {
+    biome_nbt_from_names(&chunk_biome_names(
+        chunk_x,
+        chunk_z,
+        origin_x,
+        origin_z,
+        ground,
+        center_lat_deg,
+    ))
+}
+
+/// The 16 biomes of one chunk, on the 4x4 horizontal grid the Anvil format uses.
+///
+/// Split out of the NBT builder because the Voxy LOD needs the same names the
+/// chunk is written with - deriving them twice would let the two drift apart.
+pub fn chunk_biome_names(
+    chunk_x: i32,
+    chunk_z: i32,
+    origin_x: i32,
+    origin_z: i32,
+    ground: Option<&Ground>,
+    center_lat_deg: f64,
+) -> [&'static str; 16] {
     let mut names: [&'static str; 16] = ["minecraft:plains"; 16];
 
     if let Some(g) = ground {
@@ -138,6 +160,11 @@ pub fn build_chunk_biome_nbt(
         }
     }
 
+    names
+}
+
+/// Packs 16 biome names into the Anvil 1.18+ palette+data layout.
+pub fn biome_nbt_from_names(names: &[&'static str; 16]) -> ChunkBiomeNbt {
     let mut palette: Vec<&'static str> = Vec::with_capacity(4);
     let mut indices: [u8; 16] = [0; 16];
     for (i, &name) in names.iter().enumerate() {

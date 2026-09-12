@@ -108,7 +108,7 @@ impl<'a> WorldEditor<'a> {
             other: FnvHashMap::default(),
         };
 
-        let chunk_nbt = create_chunk_nbt(&chunk_data, bake_lighting, biome_value);
+        let chunk_nbt = create_chunk_nbt(&chunk_data, bake_lighting, biome_value, None);
 
         let mut ser_buffer = Vec::with_capacity(8192);
         fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
@@ -289,6 +289,7 @@ impl<'a> WorldEditor<'a> {
             self.region_container,
             self.blinear_level,
             self.void_world,
+            self.voxy.as_deref(),
         )
     }
 }
@@ -401,6 +402,81 @@ fn create_region_file(
     Ok(Region::from_stream(region_file)?)
 }
 
+/// Morton (Z-order) index into a 16x16 grid of 2x2-chunk columns.
+fn morton_16(index: usize) -> (i32, i32) {
+    let mut x = 0i32;
+    let mut z = 0i32;
+    for bit in 0..4 {
+        x |= (((index >> (2 * bit)) & 1) as i32) << bit;
+        z |= (((index >> (2 * bit + 1)) & 1) as i32) << bit;
+    }
+    (x, z)
+}
+
+/// Which LOD sections of this region can hold a block.
+///
+/// Derived from chunk section keys alone, so it costs nothing next to the voxel
+/// work it saves: above the roofline every column is air, and without this the
+/// builder would allocate and zero a 256 KB buffer for each of those sections
+/// only to drop it again at flush.
+///
+/// A section that turns out to be all air anyway is still listed - the keys say
+/// a chunk section exists there, not that it holds a block - which costs one
+/// buffer that the flush then discards.
+///
+/// Note this marks LOD *sections*, not chunk sections: the air one section
+/// above the tallest roof is never marked here, yet it still gets ingested,
+/// because the level-1..4 sections it falls into are live from the content
+/// below it. That is what `region_content_span`'s `+ 1` relies on.
+fn live_lod_sections(
+    region: &super::common::RegionToModify,
+    region_x: i32,
+    region_z: i32,
+) -> crate::voxy::LiveSections {
+    let base_section_y = crate::world_editor::world_min_section_y() as i32;
+    let mut live: crate::voxy::LiveSections = Default::default();
+    for local_x in 0..32 {
+        for local_z in 0..32 {
+            let chunk_x = region_x * 32 + local_x;
+            let chunk_z = region_z * 32 + local_z;
+            match region.get_chunk(local_x, local_z) {
+                Some(chunk) => {
+                    for &section_y in chunk.sections.keys() {
+                        crate::voxy::mark_live(&mut live, chunk_x, section_y as i32, chunk_z);
+                    }
+                }
+                // Filler chunks are a flat plane at the terrain base.
+                None => crate::voxy::mark_live(&mut live, chunk_x, base_section_y, chunk_z),
+            }
+        }
+    }
+    live
+}
+
+/// The span of chunk sections the voxy builder has to walk for one region.
+///
+/// The upper bound is the highest section holding a block anywhere in the
+/// region: above it every column is air, so any LOD section up there would be
+/// dropped as empty. Sections that are present but all-air only widen the span,
+/// which costs a little work and never loses data.
+fn region_content_span(region: &super::common::RegionToModify) -> (i32, i32) {
+    let base_section_y = crate::world_editor::world_min_section_y() as i32;
+    let mut min_y = base_section_y.min(-4);
+    let mut max_y = base_section_y;
+    for chunk in region.chunks.values() {
+        for &section_y in chunk.sections.keys() {
+            min_y = min_y.min(section_y as i32);
+            max_y = max_y.max(section_y as i32);
+        }
+    }
+    // One section past the top. Every solid voxel sits at or below `max_y`, so
+    // this is exactly enough for each of them to have its lit neighbour above
+    // ingested - at level 4 that neighbour is a whole chunk section away.
+    // Dropping the +1 leaves dark air over the tallest roofs in the coarse
+    // levels; going further only fills sections that nothing samples.
+    (min_y, max_y + 1)
+}
+
 /// Serialize one region's chunks to its `.mca`. Shared by the synchronous save
 /// path and the background flush worker (hence free-standing, not `&self`).
 ///
@@ -424,6 +500,7 @@ fn write_region_to_disk(
     container: super::RegionContainer,
     blinear_level: i32,
     void_world: bool,
+    voxy: Option<&crate::voxy::VoxyWriter>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut region = RegionSink::create(world_dir, region_x, region_z, container, blinear_level)?;
     let mut ser_buffer = Vec::with_capacity(8192);
@@ -434,8 +511,74 @@ fn write_region_to_disk(
     let north_lat = llbbox.max().lat(); // +Z is south, so max lat is the north edge
     let south_lat = llbbox.min().lat();
 
+    let mut lod = voxy.map(|writer| {
+        let (min_y, max_y) = region_content_span(region_to_modify);
+        writer.region_lod(
+            min_y,
+            max_y,
+            live_lod_sections(region_to_modify, region_x, region_z),
+        )
+    });
+
+    // Chunk order. The LOD pyramid aggregates a 2x2 of chunks per Morton column and four
+    // columns per level, and `end_column` flushes level n every 4^n columns, so it is only
+    // correct if chunks arrive in Morton order. Feeding it is therefore the one thing that
+    // dictates the order here - and it costs nothing, because `chunks` is a hash map whose
+    // iteration order is arbitrary already and the region file is addressed by coordinate.
+    // Still gated on voxy: with it off the loop keeps the exact order it has always had, so
+    // a default render stays byte-comparable with the ones before it.
+    let order: Vec<(i32, i32)> = if lod.is_some() {
+        (0..256usize)
+            .flat_map(|column| {
+                let (sx, sz) = morton_16(column);
+                (0..2).flat_map(move |dz| (0..2).map(move |dx| (sx * 2 + dx, sz * 2 + dz)))
+            })
+            .collect()
+    } else {
+        region_to_modify.chunks.keys().copied().collect()
+    };
+
+    // Base-plane sections and their lighting, shared by every filler chunk in the
+    // region; identical for all of them, so computed at most once. Without this the
+    // pyramid has a hole everywhere the generator did not build, which in a rural
+    // region is most of it.
+    let filler: Option<(Vec<Section>, Option<Vec<(Vec<i8>, Vec<i8>)>>, (i32, i32))> =
+        match (lod.is_some(), void_world) {
+            (true, false) => {
+                let sections = get_base_chunk_sections().to_vec();
+                let span = chunk_section_span(&sections);
+                let light = bake_lighting.then(|| compute_lighting(&sections, span.0, span.1));
+                Some((sections, light, (span.0 as i32, span.1 as i32)))
+            }
+            _ => None,
+        };
+
     // First pass: write all chunks that have content
-    for (&(chunk_x, chunk_z), chunk_to_modify) in &region_to_modify.chunks {
+    for (i, (chunk_x, chunk_z)) in order.into_iter().enumerate() {
+        let chunk_to_modify = region_to_modify.get_chunk(chunk_x, chunk_z);
+        if chunk_to_modify.is_none() {
+            if let (Some(lod), Some((sections, light, span))) = (lod.as_mut(), filler.as_ref()) {
+                let abs_chunk_x = chunk_x + (region_x * 32);
+                let abs_chunk_z = chunk_z + (region_z * 32);
+                let biome_names = crate::biome::chunk_biome_names(
+                    abs_chunk_x,
+                    abs_chunk_z,
+                    ground_origin_x,
+                    ground_origin_z,
+                    ground,
+                    biome_lat_for_chunk(
+                        abs_chunk_z,
+                        center_lat,
+                        xz_min_z,
+                        xz_max_z,
+                        north_lat,
+                        south_lat,
+                    ),
+                );
+                lod.ingest_chunk(chunk_x, chunk_z, sections, *span, light.as_deref(), &biome_names);
+            }
+        }
+        if let Some(chunk_to_modify) = chunk_to_modify {
         if !chunk_to_modify.sections.is_empty() || !chunk_to_modify.other.is_empty() {
             let abs_chunk_x = chunk_x + (region_x * 32);
             let abs_chunk_z = chunk_z + (region_z * 32);
@@ -458,7 +601,7 @@ fn write_region_to_disk(
                 other,
             };
 
-            let biome_value = crate::biome::build_chunk_biome_nbt(
+            let biome_names = crate::biome::chunk_biome_names(
                 abs_chunk_x,
                 abs_chunk_z,
                 ground_origin_x,
@@ -473,11 +616,48 @@ fn write_region_to_disk(
                     south_lat,
                 ),
             );
-            let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value);
+            let biome_value = crate::biome::biome_nbt_from_names(&biome_names);
+
+            // With the LOD on, light and span are computed here so the same
+            // arrays feed the chunk file and the LOD - the LOD indexes lighting
+            // from the start of this span, so the two must agree exactly.
+            let span = chunk_section_span(&chunk.sections);
+            let lighting = match lod.as_mut() {
+                Some(_) if bake_lighting => Some(compute_lighting(
+                    &chunk.sections,
+                    span.0,
+                    span.1,
+                )),
+                _ => None,
+            };
+            if let Some(lod) = lod.as_mut() {
+                lod.ingest_chunk(
+                    chunk_x,
+                    chunk_z,
+                    &chunk.sections,
+                    (span.0 as i32, span.1 as i32),
+                    lighting.as_deref(),
+                    &biome_names,
+                );
+            }
+
+            let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value, lighting);
             ser_buffer.clear();
             fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
             region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
         }
+        }
+
+        // A Morton column is four chunks; the pyramid flushes on its boundary.
+        if i % 4 == 3 {
+            if let Some(lod) = lod.as_mut() {
+                lod.end_column(i / 4);
+            }
+        }
+    }
+
+    if let Some(lod) = lod.as_mut() {
+        lod.finish();
     }
 
     // Second pass: ensure all chunks exist (fill with base layer if not).
@@ -533,6 +713,7 @@ pub(crate) struct RegionWriteCtx {
     container: super::RegionContainer,
     blinear_level: i32,
     void_world: bool,
+    voxy: Option<std::sync::Arc<crate::voxy::VoxyWriter>>,
 }
 
 impl RegionWriteCtx {
@@ -549,6 +730,7 @@ impl RegionWriteCtx {
         container: super::RegionContainer,
         blinear_level: i32,
         void_world: bool,
+        voxy: Option<std::sync::Arc<crate::voxy::VoxyWriter>>,
     ) -> Self {
         Self {
             world_dir,
@@ -562,6 +744,7 @@ impl RegionWriteCtx {
             container,
             blinear_level,
             void_world,
+            voxy,
         }
     }
 
@@ -586,6 +769,7 @@ impl RegionWriteCtx {
             self.container,
             self.blinear_level,
             self.void_world,
+            self.voxy.as_deref(),
         )
     }
 }
@@ -818,7 +1002,7 @@ fn is_light_transparent(name: &str) -> bool {
 }
 
 // Light a block removes: 0 passes, 1 attenuates (water/leaves/ice), 15 blocks.
-fn light_opacity(name: &str) -> u8 {
+pub(crate) fn light_opacity(name: &str) -> u8 {
     let n = name.strip_prefix("minecraft:").unwrap_or(name);
     if n.ends_with("leaves")
         || matches!(
@@ -1092,10 +1276,30 @@ fn get_structures_value() -> &'static Value {
 /// DataVersion, Status, yPos, Heightmaps, biomes, structures, etc.
 /// Section range is determined dynamically: at minimum the vanilla range
 /// (Y=-4 to Y=19), extended upward/downward to cover any sections with content.
+/// Section range a chunk is written over: the vanilla span, widened to cover content.
+///
+/// Shared by the NBT writer and the Voxy LOD feed. They must agree exactly: the LOD
+/// indexes the lighting array from the start of this span.
+pub(crate) fn chunk_section_span(sections: &[Section]) -> (i8, i8) {
+    let mut min_section_y: i8 = -4; // vanilla min (Y=-64)
+    let mut max_section_y: i8 = 19; // vanilla max (Y=319)
+    for section in sections {
+        if section.y < min_section_y {
+            min_section_y = section.y;
+        }
+        if section.y > max_section_y {
+            max_section_y = section.y;
+        }
+    }
+    (min_section_y, max_section_y)
+}
 fn create_chunk_nbt(
     chunk: &Chunk,
     bake_lighting: bool,
     biome_value: &Value,
+    // Lighting already computed by the caller (the Voxy feed needs the same array).
+    // `None` means compute it here, which is what every non-Voxy caller does.
+    precomputed_lighting: Option<Vec<(Vec<i8>, Vec<i8>)>>,
 ) -> HashMap<String, Value> {
     // Index existing sections by Y for quick lookup
     let section_map: HashMap<i8, usize> = chunk
@@ -1105,23 +1309,13 @@ fn create_chunk_nbt(
         .map(|(i, s)| (s.y, i))
         .collect();
 
-    // Determine section range: start with vanilla range, expand to cover content
-    let mut min_section_y: i8 = -4; // vanilla min (Y=-64)
-    let mut max_section_y: i8 = 19; // vanilla max (Y=319)
-    for &y in section_map.keys() {
-        if y < min_section_y {
-            min_section_y = y;
-        }
-        if y > max_section_y {
-            max_section_y = y;
-        }
-    }
+    let (min_section_y, max_section_y) = chunk_section_span(&chunk.sections);
 
     // Bake lighting only when requested; otherwise leave it for the engine to relight on load.
-    let mut lighting = if bake_lighting {
-        compute_lighting(&chunk.sections, min_section_y, max_section_y)
-    } else {
-        Vec::new()
+    let mut lighting = match precomputed_lighting {
+        Some(l) => l,
+        None if bake_lighting => compute_lighting(&chunk.sections, min_section_y, max_section_y),
+        None => Vec::new(),
     };
 
     // Build all sections in the determined range
@@ -1437,6 +1631,40 @@ fn value_to_i32(value: &Value) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
+    /// The LOD pyramid only aggregates correctly if the four chunks of each Morton
+    /// column arrive together, in column order, and every chunk of the region arrives
+    /// exactly once. This is the traversal the writer builds when voxy is on.
+    #[test]
+    fn voxy_chunk_order_is_morton_columns_over_the_whole_region() {
+        let order: Vec<(i32, i32)> = (0..256usize)
+            .flat_map(|column| {
+                let (sx, sz) = super::morton_16(column);
+                (0..2).flat_map(move |dz| (0..2).map(move |dx| (sx * 2 + dx, sz * 2 + dz)))
+            })
+            .collect();
+
+        assert_eq!(order.len(), 1024);
+        let unique: std::collections::HashSet<_> = order.iter().copied().collect();
+        assert_eq!(unique.len(), 1024, "every chunk exactly once");
+        assert!(order.iter().all(|&(x, z)| (0..32).contains(&x) && (0..32).contains(&z)));
+
+        // Each group of four is one 2x2 column, so the writer's `i % 4 == 3` flush
+        // lands on a column boundary.
+        for (column, chunk) in order.chunks(4).enumerate() {
+            let (sx, sz) = super::morton_16(column);
+            let mut expected = [
+                (sx * 2, sz * 2),
+                (sx * 2 + 1, sz * 2),
+                (sx * 2, sz * 2 + 1),
+                (sx * 2 + 1, sz * 2 + 1),
+            ];
+            expected.sort_unstable();
+            let mut got: Vec<_> = chunk.to_vec();
+            got.sort_unstable();
+            assert_eq!(got, expected, "column {column}");
+        }
+    }
+
     use super::super::common::{Chunk, ChunkToModify};
     use super::create_chunk_nbt;
     use crate::block_definitions::GRASS_BLOCK;
@@ -1473,7 +1701,7 @@ mod tests {
 
     #[test]
     fn bake_lighting_writes_valid_light_arrays() {
-        let nbt = create_chunk_nbt(&grass_chunk(), true, &plains_biome());
+        let nbt = create_chunk_nbt(&grass_chunk(), true, &plains_biome(), None);
         assert_eq!(nbt["isLightOn"], Value::Byte(1));
         assert!(nbt.contains_key("Heightmaps"));
         let secs = sections(&nbt);
@@ -1516,7 +1744,7 @@ mod tests {
             is_light_on: 0,
             other: FnvHashMap::default(),
         };
-        let nbt = create_chunk_nbt(&chunk, true, &plains_biome());
+        let nbt = create_chunk_nbt(&chunk, true, &plains_biome(), None);
         let lit = sections(&nbt)
             .iter()
             .filter(|s| matches!(s, Value::Compound(m) if m.contains_key("BlockLight")))
@@ -1529,7 +1757,7 @@ mod tests {
 
     #[test]
     fn no_bake_lighting_omits_light_arrays() {
-        let nbt = create_chunk_nbt(&grass_chunk(), false, &plains_biome());
+        let nbt = create_chunk_nbt(&grass_chunk(), false, &plains_biome(), None);
         assert_eq!(nbt["isLightOn"], Value::Byte(0));
         for s in sections(&nbt) {
             let Value::Compound(m) = s else { panic!() };
@@ -1560,7 +1788,7 @@ mod tests {
             is_light_on: 0,
             other: FnvHashMap::default(),
         };
-        let nbt = create_chunk_nbt(&chunk, true, &plains_biome());
+        let nbt = create_chunk_nbt(&chunk, true, &plains_biome(), None);
 
         // Y -61 lives in section index 0 of a -64-based world, cell (0, 3, 0).
         let secs = sections(&nbt);
@@ -1584,7 +1812,7 @@ mod tests {
             is_light_on: 0,
             other: FnvHashMap::default(),
         };
-        let nbt = create_chunk_nbt(&chunk, true, &plains_biome());
+        let nbt = create_chunk_nbt(&chunk, true, &plains_biome(), None);
         for s in sections(&nbt) {
             let Value::Compound(m) = s else { panic!() };
             let Value::ByteArray(b) = &m["SkyLight"] else {
