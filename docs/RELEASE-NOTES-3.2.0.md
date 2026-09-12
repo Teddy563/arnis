@@ -63,6 +63,16 @@ cache, moves by one.
 
 ## Fixed
 
+- **Moon and Mars are built out of their own surface.** Found by the release build's lint
+  gate: the planetary palette, the body biome and the no-Earth-fallback rules had all been
+  ported but nothing called them, so a Moon render was mostly Earth grass under a plains
+  biome — including the filler plane written for chunks the generator never touched, which
+  at a body's coarse fixed scale is most of a region. A failed planetary elevation fetch now
+  fails the cell instead of quietly returning Earth topography, and the two repair passes
+  calibrated on Earth DSM defects (they read a real lunar central peak as an anomaly) are
+  skipped off Earth. Tycho crater now renders 1024/1024 chunks of end stone under
+  `stony_peaks`; Olympus Mons renders terracotta with granite and gravel.
+
 - **Magma no longer appears on lake and sea floors.**
 - **Bedrock biome padding uses 0xFF, not 0.** Zero is a valid biome id, so the old padding
   read back as real biome data and the game kept it instead of regenerating the column.

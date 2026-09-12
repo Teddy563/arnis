@@ -165,6 +165,11 @@ pub fn fetch_elevation_data(
     let provider = select_provider(bbox, source_mode);
     let provider_name = provider.name();
     let is_fallback = provider_name == "aws";
+    // AWS Terrain Tiles are Earth. Falling back to them for a Moon or Mars run would hand
+    // back Earth topography under a lunar sky and report success, so off Earth a failed
+    // fetch has to stay a failure - the orchestrator can retry the cell, and a wrong world
+    // cannot be retried because nothing says it is wrong.
+    let earth_fallback_ok = source_mode.allows_earth_fallback();
 
     // Strict regional mode: the user explicitly refused AWS data (its terrarium set
     // has broken no-data tiles in some regions). If no regional provider covers this
@@ -223,6 +228,13 @@ pub fn fetch_elevation_data(
                         provider_name
                     ),
                 );
+                if !earth_fallback_ok {
+                    return Err(format!(
+                        "elevation fetch failed: '{provider_name}' returned {:.0}% empty data                          and there is no Earth fallback off Earth",
+                        nan_ratio * 100.0
+                    )
+                    .into());
+                }
                 let fallback = providers::aws_terrain::AwsTerrain;
                 fallback.fetch_raw(bbox, grid_width, grid_height)?
             } else {
@@ -231,6 +243,12 @@ pub fn fetch_elevation_data(
         }
         Ok(raw) => raw,
         Err(e) if !is_fallback => {
+            if !earth_fallback_ok {
+                return Err(format!(
+                    "elevation fetch failed: planetary provider '{provider_name}' failed ({e}),                      and Earth terrain is not a substitute for another body"
+                )
+                .into());
+            }
             if regional_only {
                 return Err(format!(
                     "elevation fetch failed: regional provider '{provider_name}' failed ({e}) \
@@ -268,13 +286,20 @@ pub fn fetch_elevation_data(
     // a vertical step at the seam (worst on coastal bathymetry). The bounded MAD
     // repair below already removes local spikes, so single-world keeps the filter
     // (byte-identical) and tile mode doesn't need it.
-    if master_origin_lat.is_none() {
+    // Both passes target Earth DSM defects and actively damage altimetry: the outlier gate
+    // is calibrated on Earth's elevation range, and a lunar mare is flat to within metres,
+    // so a real central peak reads as an anomaly. PDS gaps are already NaN, and the fill
+    // below is all they need.
+    let earth_terrain = source_mode.allows_earth_fallback();
+    if master_origin_lat.is_none() && earth_terrain {
         filter_elevation_outliers(&mut height_grid);
     }
     // Fire the benchmark mark unconditionally (outside the tile gate) so the
     // benchmark label set stays stable across single-world and tile modes.
     bench.mark("elev_filter_outliers");
-    repair_terrain_anomalies(&mut height_grid);
+    if earth_terrain {
+        repair_terrain_anomalies(&mut height_grid);
+    }
     bench.mark("elev_repair_anomalies");
     emit_gui_progress_update(14.0, "Processing elevation...");
     // Safety net: fill any remaining NaN from tile gaps or partial provider coverage

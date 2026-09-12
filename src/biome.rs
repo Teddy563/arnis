@@ -133,6 +133,12 @@ pub fn chunk_biome_names(
     let mut names: [&'static str; 16] = ["minecraft:plains"; 16];
 
     if let Some(g) = ground {
+        if !g.body().is_earth() {
+            // One barren biome for the whole world: there is no land cover to classify off
+            // Earth, and the biome is what tints the grass, the water and the sky - left as
+            // plains, the Moon renders under an Earth-blue sky with green-tinted ground.
+            return [g.body().biome(); 16];
+        }
         for zi in 0..4i32 {
             for xi in 0..4i32 {
                 // cover_class / water_distance index a CELL-LOCAL land-cover

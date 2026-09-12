@@ -25,23 +25,6 @@ pub enum CelestialBody {
 }
 
 impl CelestialBody {
-    pub fn from_str_lossy(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "moon" | "luna" => Self::Moon,
-            "mars" => Self::Mars,
-            _ => Self::Earth,
-        }
-    }
-
-    /// Capitalised name, used in world titles.
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Earth => "Earth",
-            Self::Moon => "Moon",
-            Self::Mars => "Mars",
-        }
-    }
-
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Earth => "earth",
@@ -208,6 +191,9 @@ const MARS_POLAR_CAP_LAT: f64 = 74.0;
 #[cfg(test)]
 pub const PLANETARY_SURFACE_BLOCKS: &[Block] = &[
     BROWN_TERRACOTTA,
+    // The Moon's only surface material. Upstream's list covers Mars alone; here the list is
+    // asserted against what the palettes actually paint, so it has to carry this too.
+    END_STONE,
     GRANITE,
     GRAVEL,
     ORANGE_TERRACOTTA,
@@ -290,5 +276,58 @@ mod tests {
         }
         assert_eq!(CelestialBody::Earth.vertical_exaggeration(), 1.0);
         assert_eq!(CelestialBody::Earth.terrain_gain(), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod planetary_block_tests {
+    use super::*;
+
+    /// Every block a planetary surface can be made of has to exist on all three backends.
+    /// The Java name is what the chunk carries; one with no Luanti or Bedrock mapping comes
+    /// out as air there, and on a body that is a hole in the ground rather than a
+    /// wrong-looking wall - nothing else in the run would report it.
+    #[test]
+    fn every_planetary_surface_block_maps_on_every_backend() {
+        for &block in PLANETARY_SURFACE_BLOCKS {
+            let java = block.name().to_string();
+            assert!(!java.is_empty(), "a planetary block has no Java name");
+
+            let luanti = crate::luanti_block_map::to_luanti_node(
+                block,
+                crate::luanti_block_map::LuantiGame::Mineclonia,
+                None,
+            );
+            assert_ne!(luanti.name, "air", "{java} maps to air on Luanti");
+
+            let bedrock = crate::bedrock_block_map::to_bedrock_block(block);
+            assert_ne!(
+                bedrock.name, "minecraft:air",
+                "{java} maps to air on Bedrock"
+            );
+        }
+    }
+
+    /// The blocks a body actually paints with must be inside the declared set, or the test
+    /// above is checking a list nothing uses.
+    #[test]
+    fn the_painted_blocks_are_the_declared_ones() {
+        for body in [CelestialBody::Moon, CelestialBody::Mars] {
+            for slope in [0, 5, 7, 9] {
+                for lat in [0.0, 80.0] {
+                    for x in 0..8 {
+                        let (surface, under) = surface_palette(body, slope, lat, 64, x, x * 7);
+                        assert!(
+                            PLANETARY_SURFACE_BLOCKS.contains(&surface),
+                            "{body:?} paints a block outside PLANETARY_SURFACE_BLOCKS"
+                        );
+                        assert!(
+                            PLANETARY_SURFACE_BLOCKS.contains(&under),
+                            "{body:?} fills with a block outside PLANETARY_SURFACE_BLOCKS"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

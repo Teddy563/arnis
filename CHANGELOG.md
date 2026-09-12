@@ -40,6 +40,16 @@ two halves.
   has no holes where the world is bare.
 
 ### Fixed
+- **Moon and Mars are actually built out of their own surface.** The port carried upstream's
+  planetary palette, biome and no-Earth-fallback rules but never called them, and nothing
+  failed: a Tycho crater render came out as 1015 chunks of grass to 24 of end stone, under a
+  plains biome and an Earth-blue sky. Now the ground painter uses the body's palette instead
+  of the ESA cascade, the chunk biome is the body's, the filler plane the save path writes
+  for untouched chunks is the body's surface rather than Earth grass, a failed planetary
+  elevation fetch is an error instead of a silent fall back to Earth topography, and the two
+  Earth-calibrated repair passes (which flatten a real lunar central peak) are skipped off
+  Earth. Verified end to end: Tycho is 1024/1024 chunks of end stone under stony_peaks,
+  Olympus Mons is terracotta with granite and gravel, and Earth renders are unchanged.
 - Magma no longer appears on lake and sea floors.
 - Bedrock biome padding uses 0xFF, not 0. Zero is a valid biome id, so the old pad read back
   as real biome data and the game kept it instead of regenerating the column.

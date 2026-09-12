@@ -46,6 +46,13 @@ pub struct Ground {
     /// back into lat/lng, so climate can be sampled per-position in tile mode (no per-cell seam).
     /// `None` off-Meld (no master origin) -> `climate_at` returns the cached `climate`.
     koppen_affine: Option<(f64, f64, f64)>,
+    /// Which world this is. Off Earth there is no land cover and no climate to speak of,
+    /// so the ground is painted from the body's own surface palette instead of the ESA
+    /// cascade - without this the Moon comes out covered in grass.
+    body: crate::celestial::CelestialBody,
+    /// Latitude of the bbox centre, kept for the same reason: the planetary palettes put
+    /// ice at the Martian poles, and off Earth every cell is one small patch of one body.
+    center_lat: f64,
 }
 
 /// Climatic snow line in metres by absolute latitude, piecewise-linear through
@@ -182,9 +189,22 @@ impl WaterCarveClearance {
 }
 
 impl Ground {
+    /// The world being generated. Earth unless `--body` said otherwise.
+    pub fn body(&self) -> crate::celestial::CelestialBody {
+        self.body
+    }
+
+    /// Latitude of the bbox centre, in degrees. Off Earth this is the latitude on THAT
+    /// body, which is what its surface palette wants.
+    pub fn center_lat(&self) -> f64 {
+        self.center_lat
+    }
+
     pub fn new_flat(ground_level: i32) -> Self {
         Self {
             climate: crate::climate::Climate::Temperate,
+            body: crate::celestial::CelestialBody::Earth,
+            center_lat: 0.0,
             koppen_affine: None,
             elevation_enabled: false,
             ground_level,
@@ -216,6 +236,13 @@ impl Ground {
         // --river-bed v1 only: raises the Measured reservation to the river depth cap.
         river_bed_v1: bool,
     ) -> Self {
+        // The caller already says which world this is, through the elevation source; taking
+        // the body from there keeps one source of truth instead of a second parameter that
+        // could disagree with it.
+        let body = match source_mode {
+            crate::elevation::SourceMode::Planetary(b) => b,
+            _ => crate::celestial::CelestialBody::Earth,
+        };
         let mut bench = crate::bench::Bench::new(benchmark);
         // Fetch land cover FIRST so we can feed it into the elevation
         // post-processing pipeline for land-cover-aware artifact repair.
@@ -303,6 +330,8 @@ impl Ground {
                     koppen_affine: master_origin_lat
                         .zip(master_origin_lng)
                         .map(|(la, ln)| (la, ln, scale)),
+                    body,
+                    center_lat: lat,
                     elevation_enabled: true,
                     ground_level: water_floor,
                     elevation_data: Some(elevation_data),
@@ -335,6 +364,8 @@ impl Ground {
                     koppen_affine: master_origin_lat
                         .zip(master_origin_lng)
                         .map(|(la, ln)| (la, ln, scale)),
+                    body,
+                    center_lat: (bbox.min().lat() + bbox.max().lat()) / 2.0,
                     elevation_enabled: false,
                     ground_level,
                     elevation_data: None,
@@ -991,6 +1022,8 @@ mod tests {
         let w = heights[0].len();
         Ground {
             climate: crate::climate::Climate::Temperate,
+            body: crate::celestial::CelestialBody::Earth,
+            center_lat: 0.0,
             koppen_affine: None,
             elevation_enabled: true,
             ground_level: 0,
@@ -1017,6 +1050,8 @@ mod tests {
         let w = heights[0].len();
         Ground {
             climate: crate::climate::Climate::Temperate,
+            body: crate::celestial::CelestialBody::Earth,
+            center_lat: 0.0,
             koppen_affine: None,
             elevation_enabled: true,
             ground_level: 0,

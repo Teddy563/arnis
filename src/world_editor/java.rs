@@ -65,12 +65,26 @@ pub fn data_version() -> i32 {
 static BASE_CHUNK_SECTIONS: OnceLock<Vec<Section>> = OnceLock::new();
 
 /// Get or create the cached base chunk sections
+/// The block the filler plane is made of. Per-process, like the data version above: the
+/// base chunk is built once and shared, and a run generates one world.
+///
+/// Off Earth this is the body's own surface. Without it a Moon run comes out as a grass
+/// plane everywhere the terrain does not reach - which, at a body's fixed coarse scale, is
+/// most of every region: a Tycho crater render was 1015 chunks of grass to 24 of end stone.
+static BASE_SURFACE: OnceLock<crate::block_definitions::Block> = OnceLock::new();
+
+/// Sets the filler-plane block for this process. Call before the first chunk is written.
+pub fn set_base_surface(block: crate::block_definitions::Block) {
+    let _ = BASE_SURFACE.set(block);
+}
+
 fn get_base_chunk_sections() -> &'static [Section] {
     BASE_CHUNK_SECTIONS.get_or_init(|| {
+        let surface = *BASE_SURFACE.get().unwrap_or(&GRASS_BLOCK);
         let mut chunk = ChunkToModify::default();
         for x in 0..16 {
             for z in 0..16 {
-                chunk.set_block(x, -62, z, GRASS_BLOCK);
+                chunk.set_block(x, -62, z, surface);
             }
         }
         chunk.sections().collect()

@@ -162,6 +162,11 @@ pub fn generate_ground_region(
     show_progress: bool,
 ) {
     let has_land_cover = ground.has_land_cover();
+    // Off Earth there is no land cover to classify and no climate to read, so the whole ESA
+    // cascade below is replaced by the body's own surface palette. Without this the Moon is
+    // painted with grass and dirt, which is what the Earth path falls back to.
+    let planetary_body = (!ground.body().is_earth()).then(|| ground.body());
+    let planetary_lat = ground.center_lat();
     let terrain_enabled = ground.elevation_enabled;
     // Profiles for texturing UNTAGGED land (--land-texture): ESA cropland gets the land
     // mix (its own shares; falls back to the farmland mix when --land-mix is omitted),
@@ -442,7 +447,18 @@ pub fn generate_ground_region(
                             }
                         } else {
                             // Determine surface and sub-surface blocks based on available data
-                            let (surface_block, under_block) = if has_land_cover {
+                            let (surface_block, under_block) = if let Some(body) = planetary_body {
+                                // No land cover off Earth: this replaces the whole ESA
+                                // cascade below, slope tiers and all.
+                                crate::celestial::surface_palette(
+                                    body,
+                                    slope,
+                                    planetary_lat,
+                                    ground_y,
+                                    x,
+                                    z,
+                                )
+                            } else if has_land_cover {
                                 // ESA WorldCover + slope-based material selection
                                 let cover = ground.cover_class(coord);
                                 // Class used ONLY to choose the field texture: blended

@@ -343,6 +343,12 @@ pub fn generate_world_with_options(
         crate::world_editor::set_world_bounds(height.profile.min_y, height.profile.max_y());
     }
     crate::world_editor::set_data_version(height.data_version);
+    // The filler plane the save path writes for chunks the generator never touched. On Moon
+    // and Mars that is most of a region, and Earth grass there is the difference between a
+    // lunar surface and a golf course.
+    crate::world_editor::set_base_surface(
+        crate::celestial::surface_palette(args.body, 0, 0.0, 0, 0, 0).0,
+    );
     if options.format == WorldFormat::JavaAnvil {
         match crate::world_utils::install_height_datapack(
             &output_path,
