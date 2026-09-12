@@ -126,8 +126,11 @@ pub fn generate_leisure(
                 };
 
                 // Add decorative elements for parks and gardens
+                // A pitch or path inside the park is drawn after it, so its columns
+                // still read as grass here and only the mask tells them apart.
                 if matches!(leisure_type.as_str(), "park" | "garden" | "nature_reserve")
                     && editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK]))
+                    && !editor.surface_is_sealed(x, z)
                 {
                     let random_choice: i32 = rng.random_range(0..1000);
 

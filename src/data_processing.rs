@@ -548,7 +548,20 @@ pub fn generate_world_with_options(
     // road or path surface. Uses the same Bresenham + block_range geometry as
     // generate_highways_internal, so the bitmap is a 1:1 match of what gets placed.
     // Amenity processors use this for O(1) nearest-road-block lookups.
-    let road_mask = highways::collect_road_surface_coords(&elements, &xzbbox, args.scale, &ground);
+    let road_mask = Arc::new(highways::collect_road_surface_coords(
+        &elements, &xzbbox, args.scale, &ground,
+    ));
+
+    // Roads plus every paved area footprint, resolved before anything is placed so
+    // the vegetation passes can tell a man-made surface from natural ground. With no
+    // paved area in the bbox the road mask already is the answer, so it is shared
+    // instead of copied: one bitmap is a bit per world column and that adds up on a
+    // several-hundred-square-kilometre run.
+    let sealed_surface = match flood_fill_cache.collect_sealed_surfaces(&elements, &road_mask) {
+        Some(mask) => Arc::new(mask),
+        None => Arc::clone(&road_mask),
+    };
+    editor.set_sealed_surface(Arc::clone(&sealed_surface));
     // At-grade electrified rails, for catenary mast placement + spacing.
     let rail_mask = railways::collect_at_grade_rail_mask(&elements, &xzbbox);
     // Highway tunnels: bore footprint (keeps water/veg out) + shared endpoints
@@ -734,6 +747,7 @@ pub fn generate_world_with_options(
                     tile_editor.set_ground(Arc::clone(&ground));
                     tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
                     tile_editor.set_props(prop_set);
+                    tile_editor.set_sealed_surface(Arc::clone(&sealed_surface));
 
                     let mut tile_rail_tunnel_points: Vec<(i32, i32)> = Vec::new();
                     let mut tile_tunnel_cells: Vec<highways::HighwayTunnelCell> = Vec::new();

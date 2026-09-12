@@ -472,6 +472,11 @@ pub struct WorldEditor<'a> {
     xzbbox: &'a XZBBox,
     llbbox: LLBBox,
     ground: Option<Arc<Ground>>,
+    /// Columns owned by a man-made ground cover (roads, paths, pitches, courts,
+    /// parking); scattered vegetation stays off them. Shared via Arc with the
+    /// tile editors, which is the only way a tile can know about an area whose
+    /// footprint was resolved against the whole world.
+    sealed_surface: Option<Arc<crate::floodfill_cache::SealedSurfaceBitmap>>,
     /// Which bundled schematic-prop families to place (default all; `--props`).
     props: crate::structures::PropSet,
     format: WorldFormat,
@@ -534,6 +539,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            sealed_surface: None,
             props: crate::structures::PropSet::ALL,
             format: WorldFormat::JavaAnvil,
             road_surface_overrides: FnvHashMap::default(),
@@ -574,6 +580,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            sealed_surface: None,
             props: crate::structures::PropSet::ALL,
             format,
             road_surface_overrides: FnvHashMap::default(),
@@ -614,6 +621,7 @@ impl<'a> WorldEditor<'a> {
             xzbbox,
             llbbox,
             ground: None,
+            sealed_surface: None,
             props: crate::structures::PropSet::ALL,
             format: WorldFormat::LuantiWorld,
             road_surface_overrides: FnvHashMap::default(),
@@ -656,6 +664,20 @@ impl<'a> WorldEditor<'a> {
     /// Sets the ground reference for elevation-based block placement
     pub fn set_ground(&mut self, ground: Arc<Ground>) {
         self.ground = Some(ground);
+    }
+
+    /// Sets the sealed-surface mask (shared across the main and tile editors).
+    pub fn set_sealed_surface(&mut self, mask: Arc<crate::floodfill_cache::SealedSurfaceBitmap>) {
+        self.sealed_surface = Some(mask);
+    }
+
+    /// True if a man-made surface owns this column, so scattered vegetation
+    /// would land on a road, a pitch or a parking lot.
+    #[inline]
+    pub fn surface_is_sealed(&self, x: i32, z: i32) -> bool {
+        self.sealed_surface
+            .as_ref()
+            .is_some_and(|m| m.contains(x, z))
     }
 
     /// Sets which schematic-prop families are placed (see `--props`).

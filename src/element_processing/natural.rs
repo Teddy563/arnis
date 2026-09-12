@@ -163,22 +163,25 @@ pub fn generate_natural(
                     let bresenham_points: Vec<(i32, i32, i32)> =
                         bresenham_line(prev.0, 0, prev.1, x, 0, z);
                     for (bx, _, bz) in bresenham_points {
-                        // Don't overwrite road blocks with natural ground
-                        if !editor.check_for_block(
-                            bx,
-                            0,
-                            bz,
-                            Some(&[
-                                BLACK_CONCRETE,
-                                GRAY_CONCRETE_POWDER,
-                                CYAN_TERRACOTTA,
-                                GRAY_CONCRETE,
-                                LIGHT_GRAY_CONCRETE,
-                                WHITE_CONCRETE,
-                                DIRT_PATH,
-                                SMOOTH_STONE,
-                            ]),
-                        ) {
+                        // Don't overwrite road blocks with natural ground. The mask
+                        // also covers paved areas whose own block reads as natural.
+                        if !editor.surface_is_sealed(bx, bz)
+                            && !editor.check_for_block(
+                                bx,
+                                0,
+                                bz,
+                                Some(&[
+                                    BLACK_CONCRETE,
+                                    GRAY_CONCRETE_POWDER,
+                                    CYAN_TERRACOTTA,
+                                    GRAY_CONCRETE,
+                                    LIGHT_GRAY_CONCRETE,
+                                    WHITE_CONCRETE,
+                                    DIRT_PATH,
+                                    SMOOTH_STONE,
+                                ]),
+                            )
+                        {
                             let b = if rock_variation {
                                 vary_rock_block(block_type, bx, bz)
                             } else {

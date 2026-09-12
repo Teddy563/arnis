@@ -598,6 +598,13 @@ impl Tree {
             return;
         }
 
+        // Roads, pitches and other paved areas own their columns. The block check
+        // below cannot see this: a surface=dirt track is dirt like any field, and a
+        // pitch drawn after the park around it has not been painted yet.
+        if !allow_on_paved && editor.surface_is_sealed(x, z) {
+            return;
+        }
+
         // Water is always off-limits; road/path/paved surfaces are allowed only for deliberately
         // mapped street trees (allow_on_paved), which are tagged on top of plazas and sidewalks.
         // Scattered trees (forests, parks, land cover) keep skipping paving.
@@ -661,6 +668,7 @@ impl Tree {
                     || bridge_surface.is_some_and(|b| b.contains(sx, sz))
                     || building_footprints.is_some_and(|f| f.contains(sx, sz))
                     || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
+                    || (!allow_on_paved && editor.surface_is_sealed(sx, sz))
                 {
                     return;
                 }
@@ -714,6 +722,7 @@ impl Tree {
                 || bridge_surface.is_some_and(|b| b.contains(sx, sz))
                 || building_footprints.is_some_and(|f| f.contains(sx, sz))
                 || editor.check_for_block(sx, 0, sz, Some(forbidden_ground))
+                || (!allow_on_paved && editor.surface_is_sealed(sx, sz))
             {
                 return;
             }

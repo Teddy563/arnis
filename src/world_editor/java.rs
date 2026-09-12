@@ -546,16 +546,15 @@ fn write_region_to_disk(
     // region; identical for all of them, so computed at most once. Without this the
     // pyramid has a hole everywhere the generator did not build, which in a rural
     // region is most of it.
-    let filler: Option<FillerPlane> =
-        match (lod.is_some(), void_world) {
-            (true, false) => {
-                let sections = get_base_chunk_sections().to_vec();
-                let span = chunk_section_span(&sections);
-                let light = bake_lighting.then(|| compute_lighting(&sections, span.0, span.1));
-                Some((sections, light, (span.0 as i32, span.1 as i32)))
-            }
-            _ => None,
-        };
+    let filler: Option<FillerPlane> = match (lod.is_some(), void_world) {
+        (true, false) => {
+            let sections = get_base_chunk_sections().to_vec();
+            let span = chunk_section_span(&sections);
+            let light = bake_lighting.then(|| compute_lighting(&sections, span.0, span.1));
+            Some((sections, light, (span.0 as i32, span.1 as i32)))
+        }
+        _ => None,
+    };
 
     // First pass: write all chunks that have content
     for (i, (chunk_x, chunk_z)) in order.into_iter().enumerate() {
@@ -579,77 +578,82 @@ fn write_region_to_disk(
                         south_lat,
                     ),
                 );
-                lod.ingest_chunk(chunk_x, chunk_z, sections, *span, light.as_deref(), &biome_names);
-            }
-        }
-        if let Some(chunk_to_modify) = chunk_to_modify {
-        if !chunk_to_modify.sections.is_empty() || !chunk_to_modify.other.is_empty() {
-            let abs_chunk_x = chunk_x + (region_x * 32);
-            let abs_chunk_z = chunk_z + (region_z * 32);
-            // Correctness fix H2: dedup block-entity / entity compound lists by
-            // coordinate before serializing. Tile halos cause the same boundary
-            // banner/sign/chest to be merged into `other` 2+ times (common.rs
-            // does an `extend` with no dedup); writing them verbatim would
-            // duplicate the block entity in-game.
-            let mut other = chunk_to_modify.other.clone();
-            for key in ["block_entities", "entities"] {
-                if let Some(Value::List(list)) = other.get_mut(key) {
-                    *list = dedup_compound_list(list);
-                }
-            }
-            let chunk = Chunk {
-                sections: chunk_to_modify.sections().collect(),
-                x_pos: abs_chunk_x,
-                z_pos: abs_chunk_z,
-                is_light_on: 0,
-                other,
-            };
-
-            let biome_names = crate::biome::chunk_biome_names(
-                abs_chunk_x,
-                abs_chunk_z,
-                ground_origin_x,
-                ground_origin_z,
-                ground,
-                biome_lat_for_chunk(
-                    abs_chunk_z,
-                    center_lat,
-                    xz_min_z,
-                    xz_max_z,
-                    north_lat,
-                    south_lat,
-                ),
-            );
-            let biome_value = crate::biome::biome_nbt_from_names(&biome_names);
-
-            // With the LOD on, light and span are computed here so the same
-            // arrays feed the chunk file and the LOD - the LOD indexes lighting
-            // from the start of this span, so the two must agree exactly.
-            let span = chunk_section_span(&chunk.sections);
-            let lighting = match lod.as_mut() {
-                Some(_) if bake_lighting => Some(compute_lighting(
-                    &chunk.sections,
-                    span.0,
-                    span.1,
-                )),
-                _ => None,
-            };
-            if let Some(lod) = lod.as_mut() {
                 lod.ingest_chunk(
                     chunk_x,
                     chunk_z,
-                    &chunk.sections,
-                    (span.0 as i32, span.1 as i32),
-                    lighting.as_deref(),
+                    sections,
+                    *span,
+                    light.as_deref(),
                     &biome_names,
                 );
             }
-
-            let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value, lighting);
-            ser_buffer.clear();
-            fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
-            region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
         }
+        if let Some(chunk_to_modify) = chunk_to_modify {
+            if !chunk_to_modify.sections.is_empty() || !chunk_to_modify.other.is_empty() {
+                let abs_chunk_x = chunk_x + (region_x * 32);
+                let abs_chunk_z = chunk_z + (region_z * 32);
+                // Correctness fix H2: dedup block-entity / entity compound lists by
+                // coordinate before serializing. Tile halos cause the same boundary
+                // banner/sign/chest to be merged into `other` 2+ times (common.rs
+                // does an `extend` with no dedup); writing them verbatim would
+                // duplicate the block entity in-game.
+                let mut other = chunk_to_modify.other.clone();
+                for key in ["block_entities", "entities"] {
+                    if let Some(Value::List(list)) = other.get_mut(key) {
+                        *list = dedup_compound_list(list);
+                    }
+                }
+                let chunk = Chunk {
+                    sections: chunk_to_modify.sections().collect(),
+                    x_pos: abs_chunk_x,
+                    z_pos: abs_chunk_z,
+                    is_light_on: 0,
+                    other,
+                };
+
+                let biome_names = crate::biome::chunk_biome_names(
+                    abs_chunk_x,
+                    abs_chunk_z,
+                    ground_origin_x,
+                    ground_origin_z,
+                    ground,
+                    biome_lat_for_chunk(
+                        abs_chunk_z,
+                        center_lat,
+                        xz_min_z,
+                        xz_max_z,
+                        north_lat,
+                        south_lat,
+                    ),
+                );
+                let biome_value = crate::biome::biome_nbt_from_names(&biome_names);
+
+                // With the LOD on, light and span are computed here so the same
+                // arrays feed the chunk file and the LOD - the LOD indexes lighting
+                // from the start of this span, so the two must agree exactly.
+                let span = chunk_section_span(&chunk.sections);
+                let lighting = match lod.as_mut() {
+                    Some(_) if bake_lighting => {
+                        Some(compute_lighting(&chunk.sections, span.0, span.1))
+                    }
+                    _ => None,
+                };
+                if let Some(lod) = lod.as_mut() {
+                    lod.ingest_chunk(
+                        chunk_x,
+                        chunk_z,
+                        &chunk.sections,
+                        (span.0 as i32, span.1 as i32),
+                        lighting.as_deref(),
+                        &biome_names,
+                    );
+                }
+
+                let chunk_nbt = create_chunk_nbt(&chunk, bake_lighting, &biome_value, lighting);
+                ser_buffer.clear();
+                fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
+                region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
+            }
         }
 
         // A Morton column is four chunks; the pyramid flushes on its boundary.
@@ -800,9 +804,7 @@ fn entity_identity(entity: &HashMap<String, Value>) -> EntityIdentity {
 /// same cell. Block entities store absolute x/y/z ints; entities use a `Pos` list.
 #[inline]
 #[allow(dead_code)]
-fn get_entity_coords(
-    entity: &HashMap<String, Value>,
-) -> Option<(i32, i32, i32, EntityIdentity)> {
+fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32, EntityIdentity)> {
     let identity = entity_identity(entity);
     if let Some(Value::List(pos)) = entity.get("Pos") {
         if pos.len() == 3 {
@@ -1650,7 +1652,9 @@ mod tests {
         assert_eq!(order.len(), 1024);
         let unique: std::collections::HashSet<_> = order.iter().copied().collect();
         assert_eq!(unique.len(), 1024, "every chunk exactly once");
-        assert!(order.iter().all(|&(x, z)| (0..32).contains(&x) && (0..32).contains(&z)));
+        assert!(order
+            .iter()
+            .all(|&(x, z)| (0..32).contains(&x) && (0..32).contains(&z)));
 
         // Each group of four is one 2x2 column, so the writer's `i % 4 == 3` flush
         // lands on a column boundary.

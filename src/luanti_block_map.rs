@@ -403,20 +403,20 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
         448 => "mcl_flowers:tulip_pink",               // PINK_TULIP
         449 => "mcl_flowers:lily_of_the_valley",       // LILY_OF_THE_VALLEY
         // Upstream 3.2.0 additions, at the ids block_definitions.rs gives them.
-        450 => "mcl_end:end_stone",                    // END_STONE
-        451 => "mcl_end:purpur_block",                 // PURPUR_BLOCK
-        452 => "mcl_stairs:slab_purpur_block",         // PURPUR_SLAB
+        450 => "mcl_end:end_stone",            // END_STONE
+        451 => "mcl_end:purpur_block",         // PURPUR_BLOCK
+        452 => "mcl_stairs:slab_purpur_block", // PURPUR_SLAB
         453 => return conv_stair(props, "mcl_stairs:stair_purpur_block"), // PURPUR_STAIRS
-        454 => "mcl_trees:wood_crimson",               // CRIMSON_PLANKS
-        455 => "mcl_stairs:slab_crimson",              // CRIMSON_SLAB
+        454 => "mcl_trees:wood_crimson",       // CRIMSON_PLANKS
+        455 => "mcl_stairs:slab_crimson",      // CRIMSON_SLAB
         456 => return conv_stair(props, "mcl_stairs:stair_crimson"), // CRIMSON_STAIRS
-        457 => "mcl_trees:wood_cherry_blossom",        // CHERRY_PLANKS
-        458 => "mcl_stairs:slab_cherry_blossom",       // CHERRY_SLAB
+        457 => "mcl_trees:wood_cherry_blossom", // CHERRY_PLANKS
+        458 => "mcl_stairs:slab_cherry_blossom", // CHERRY_SLAB
         459 => return conv_stair(props, "mcl_stairs:stair_cherry_blossom"), // CHERRY_STAIRS
-        460 => "mcl_ocean:prismarine_dark",            // DARK_PRISMARINE
-        461 => "mcl_stairs:slab_prismarine_dark",      // DARK_PRISMARINE_SLAB
+        460 => "mcl_ocean:prismarine_dark",    // DARK_PRISMARINE
+        461 => "mcl_stairs:slab_prismarine_dark", // DARK_PRISMARINE_SLAB
         462 => return conv_stair(props, "mcl_stairs:stair_prismarine_dark"), // DARK_PRISMARINE_STAIRS
-        463 => "mcl_stairs:slab_copper_exposed_cut",   // WAXED_EXPOSED_CUT_COPPER_SLAB
+        463 => "mcl_stairs:slab_copper_exposed_cut", // WAXED_EXPOSED_CUT_COPPER_SLAB
         464 => {
             return conv_trapdoor(
                 props,
@@ -424,9 +424,9 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
                 "mcl_doors:trapdoor_pale_oak_open",
             )
         } // PALE_OAK_TRAPDOOR
-        465 => "mcl_core:coalblock",                   // COAL_BLOCK
-        466 => "mcl_stairs:slab_blackstone",           // BLACKSTONE_SLAB
-        467 => "mcl_doors:door_iron_b_1",              // IRON_DOOR
+        465 => "mcl_core:coalblock",                 // COAL_BLOCK
+        466 => "mcl_stairs:slab_blackstone",         // BLACKSTONE_SLAB
+        467 => "mcl_doors:door_iron_b_1",            // IRON_DOOR
         _ => "mcl_core:stone",
     };
     LuantiNode { name, param2: 0 }
