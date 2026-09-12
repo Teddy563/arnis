@@ -590,11 +590,32 @@ impl RegionWriteCtx {
     }
 }
 
-/// Helper function to get entity coordinates
-/// Note: Currently unused since we write directly without merging, but kept for potential future use
+/// Identity of an entity within one cell, so two that share it are not confused.
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+enum EntityIdentity {
+    Uuid([i32; 4]),
+    /// Block entities carry no UUID; `Facing` separates the ones that share a cell,
+    /// and -1 stands for an entity that has neither.
+    Facing(i32),
+}
+
+fn entity_identity(entity: &HashMap<String, Value>) -> EntityIdentity {
+    match entity.get("UUID") {
+        Some(Value::IntArray(uuid)) if uuid.len() == 4 => {
+            EntityIdentity::Uuid([uuid[0], uuid[1], uuid[2], uuid[3]])
+        }
+        _ => EntityIdentity::Facing(entity.get("Facing").and_then(value_to_i32).unwrap_or(-1)),
+    }
+}
+
+/// Cell an entity or block entity occupies, plus what tells it apart from another in the
+/// same cell. Block entities store absolute x/y/z ints; entities use a `Pos` list.
 #[inline]
 #[allow(dead_code)]
-fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32)> {
+fn get_entity_coords(
+    entity: &HashMap<String, Value>,
+) -> Option<(i32, i32, i32, EntityIdentity)> {
+    let identity = entity_identity(entity);
     if let Some(Value::List(pos)) = entity.get("Pos") {
         if pos.len() == 3 {
             if let (Some(x), Some(y), Some(z)) = (
@@ -602,7 +623,7 @@ fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32)>
                 value_to_i32(&pos[1]),
                 value_to_i32(&pos[2]),
             ) {
-                return Some((x, y, z));
+                return Some((x, y, z, identity));
             }
         }
     }
@@ -615,7 +636,7 @@ fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32)>
         return None;
     };
 
-    Some((x, y, z))
+    Some((x, y, z, identity))
 }
 
 /// Correctness fix H2: dedup a block-entity / entity compound list by coordinate.
@@ -634,7 +655,8 @@ fn get_entity_coords(entity: &HashMap<String, Value>) -> Option<(i32, i32, i32)>
 /// for the same coordinate carry identical content. Non-compound values and
 /// compounds without coordinates are passed through untouched.
 fn dedup_compound_list(values: &[Value]) -> Vec<Value> {
-    let mut seen: std::collections::HashSet<(i32, i32, i32)> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(i32, i32, i32, EntityIdentity)> =
+        std::collections::HashSet::new();
     let mut deduped: Vec<Value> = Vec::with_capacity(values.len());
 
     for value in values {
@@ -1378,10 +1400,10 @@ fn merge_compound_list(chunk: &mut Chunk, chunk_to_modify: &ChunkToModify, key: 
             if let (Value::List(existing), Value::List(new)) = (existing_entities, new_entities) {
                 existing.retain(|e| {
                     if let Value::Compound(map) = e {
-                        if let Some((x, y, z)) = get_entity_coords(map) {
+                        if let Some(key) = get_entity_coords(map) {
                             return !new.iter().any(|new_e| {
                                 if let Value::Compound(new_map) = new_e {
-                                    get_entity_coords(new_map) == Some((x, y, z))
+                                    get_entity_coords(new_map) == Some(key)
                                 } else {
                                     false
                                 }

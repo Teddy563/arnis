@@ -522,8 +522,14 @@ pub fn generate_landuse(
                             "clay" | "kaolinite" => CLAY,
                             _ => STONE,
                         };
-                        let random_choice: i32 =
-                            rng.random_range(0..100 + editor.get_absolute_y(x, 0, z)); // The deeper it is the more resources are there
+                        // The deeper it is the more resources there are. Clamped so the
+                        // range stays valid when the terrain floor goes below -100, which
+                        // this fork reaches by design with --min-y / --disable-height-limit;
+                        // unclamped it is an empty or inverted range, and that panics the cell.
+                        let ore_roll_span = 100_i32
+                            .saturating_add(editor.get_absolute_y(x, 0, z))
+                            .max(1);
+                        let random_choice: i32 = rng.random_range(0..ore_roll_span);
                         if random_choice < 5 {
                             editor.set_block(ore_block, x, 0, z, Some(&[STONE]), None);
                         }

@@ -621,8 +621,6 @@ pub fn carve_water_column_with_flags(
                 } else {
                     GRAVEL
                 }
-            } else if !is_river && d >= 5 && n_magma > 0.96 {
-                MAGMA_BLOCK
             } else if !is_river && d >= 5 && n_soul > 0.96 {
                 SOUL_SAND
             } else if n_clay > 0.74 {
