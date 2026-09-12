@@ -560,6 +560,25 @@ impl Block {
             447 => "orange_tulip",
             448 => "pink_tulip",
             449 => "lily_of_the_valley",
+            // Upstream 3.2.0 additions, numbered above this fork's own ceiling.
+            450 => "end_stone",
+            451 => "purpur_block",
+            452 => "purpur_slab",
+            453 => "purpur_stairs",
+            454 => "crimson_planks",
+            455 => "crimson_slab",
+            456 => "crimson_stairs",
+            457 => "cherry_planks",
+            458 => "cherry_slab",
+            459 => "cherry_stairs",
+            460 => "dark_prismarine",
+            461 => "dark_prismarine_slab",
+            462 => "dark_prismarine_stairs",
+            463 => "waxed_exposed_cut_copper_slab",
+            464 => "pale_oak_trapdoor",
+            465 => "coal_block",
+            466 => "blackstone_slab",
+            467 => "iron_door",
             _ => panic!("Invalid id"),
         }
         // Note: block IDs are stored as u16, and the Meld fork already uses ids 256-265 for its
@@ -1522,6 +1541,26 @@ pub const ALLIUM: Block = Block::new(446);
 pub const ORANGE_TULIP: Block = Block::new(447);
 pub const PINK_TULIP: Block = Block::new(448);
 pub const LILY_OF_THE_VALLEY: Block = Block::new(449);
+
+// Upstream 3.2.0 block additions. See the id map above for why they start at 450.
+pub const END_STONE: Block = Block::new(450);
+pub const PURPUR_BLOCK: Block = Block::new(451);
+pub const PURPUR_SLAB: Block = Block::new(452);
+pub const PURPUR_STAIRS: Block = Block::new(453);
+pub const CRIMSON_PLANKS: Block = Block::new(454);
+pub const CRIMSON_SLAB: Block = Block::new(455);
+pub const CRIMSON_STAIRS: Block = Block::new(456);
+pub const CHERRY_PLANKS: Block = Block::new(457);
+pub const CHERRY_SLAB: Block = Block::new(458);
+pub const CHERRY_STAIRS: Block = Block::new(459);
+pub const DARK_PRISMARINE: Block = Block::new(460);
+pub const DARK_PRISMARINE_SLAB: Block = Block::new(461);
+pub const DARK_PRISMARINE_STAIRS: Block = Block::new(462);
+pub const WAXED_EXPOSED_CUT_COPPER_SLAB: Block = Block::new(463);
+pub const PALE_OAK_TRAPDOOR: Block = Block::new(464);
+pub const COAL_BLOCK: Block = Block::new(465);
+pub const BLACKSTONE_SLAB: Block = Block::new(466);
+pub const IRON_DOOR: Block = Block::new(467);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

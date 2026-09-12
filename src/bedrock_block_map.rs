@@ -781,6 +781,28 @@ pub fn to_bedrock_block(block: Block) -> BedrockBlock {
         "dark_oak_door" => BedrockBlock::simple("dark_oak_door"),
         "oak_trapdoor" => BedrockBlock::simple("trapdoor"),
 
+        // These two still carry legacy states on Bedrock.
+        "purpur_block" => BedrockBlock::with_states(
+            "purpur_block",
+            vec![
+                (
+                    "chisel_type",
+                    BedrockBlockStateValue::String("default".to_string()),
+                ),
+                (
+                    "pillar_axis",
+                    BedrockBlockStateValue::String("y".to_string()),
+                ),
+            ],
+        ),
+        "dark_prismarine" => BedrockBlock::with_states(
+            "prismarine",
+            vec![(
+                "prismarine_block_type",
+                BedrockBlockStateValue::String("dark".to_string()),
+            )],
+        ),
+
         // Vegetation with different Bedrock names
         "fern" => BedrockBlock::with_states(
             "tallgrass",
@@ -864,7 +886,7 @@ pub fn to_bedrock_block_with_properties(
     }
 
     // Handle doors with half property (upper/lower → upper_block_bit)
-    if java_name.ends_with("_door") && java_name != "iron_door" {
+    if java_name.ends_with("_door") {
         return convert_door(java_name, props_map);
     }
 
