@@ -40,7 +40,14 @@ pub fn render(args: &Args) -> Result<(), String> {
 
     // Fetch real provider heights (row 0 = north / max lat, col 0 = west) — north-up, west-left,
     // exactly the orientation a geographic overlay wants.
-    let provider = select_provider(&args.bbox, args.aws_only_elevation);
+    let provider = select_provider(
+        &args.bbox,
+        if args.body.is_earth() {
+            crate::elevation::SourceMode::earth(args.aws_only_elevation)
+        } else {
+            crate::elevation::SourceMode::Planetary(args.body)
+        },
+    );
     let name = provider.name();
     let raw = provider
         .fetch_raw(&args.bbox, w, h)

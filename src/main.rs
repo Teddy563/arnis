@@ -7,6 +7,7 @@ mod biome;
 mod block_definitions;
 mod bresenham;
 mod caves;
+mod celestial;
 mod climate;
 mod climate_map;
 mod clipping;
@@ -124,6 +125,10 @@ fn run_cli() {
 
     // Parse input arguments
     let mut args: Args = Args::parse();
+
+    // Moon and Mars drive their own scale and force terrain-only. Runs before every
+    // derived flag below, or --caves would still imply --fillground on an airless body.
+    args::apply_body_defaults(&mut args);
 
     // --caves needs solid host rock to carve into.
     if args.caves {

@@ -27,8 +27,40 @@ pub fn bboxes_overlap(a: &LLBBox, b: &LLBBox) -> bool {
 /// When `force_aws` is true every high-res / global provider is skipped and legacy
 /// AWS Terrain Tiles is used regardless of coverage. Surfaced as the
 /// `--aws-only-elevation` CLI flag / "Legacy elevation (AWS only)" GUI toggle.
-pub fn select_provider(bbox: &LLBBox, force_aws: bool) -> Box<dyn ElevationProvider> {
-    if force_aws {
+/// How the caller wants the elevation source chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceMode {
+    /// Regional high-res providers first, then Mapterhorn. What generation uses.
+    Auto,
+    /// Legacy AWS tiles only (--aws-only-elevation).
+    AwsOnly,
+    /// NASA PDS raster for a non-Earth body. No fallback: an Earth provider asked for
+    /// lunar coordinates answers sea-level noise rather than failing.
+    Planetary(crate::celestial::CelestialBody),
+}
+
+impl SourceMode {
+    /// Whether the Earth fallback chain may be used after this selection.
+    pub fn allows_earth_fallback(self) -> bool {
+        !matches!(self, SourceMode::Planetary(_))
+    }
+
+    /// The mode an Earth run implies from its legacy flag.
+    pub fn earth(force_aws: bool) -> Self {
+        if force_aws {
+            SourceMode::AwsOnly
+        } else {
+            SourceMode::Auto
+        }
+    }
+}
+
+pub fn select_provider(bbox: &LLBBox, mode: SourceMode) -> Box<dyn ElevationProvider> {
+    if let SourceMode::Planetary(body) = mode {
+        println!("Using NASA PDS elevation for {body:?}");
+        return Box::new(crate::elevation::providers::planetary::PlanetaryDem { body });
+    }
+    if mode == SourceMode::AwsOnly {
         println!(
             "Using AWS Terrain Tiles only (legacy mode, high-res + Mapterhorn disabled, ~30m)"
         );
@@ -95,7 +127,7 @@ mod tests {
         // Bbox outside all regional coverage (Sydney) gets the global Mapterhorn
         // provider, not AWS (AWS is only the fetch-time fallback / --aws-only escape).
         let bbox = LLBBox::new(-33.86, 151.20, -33.85, 151.22).unwrap();
-        let provider = select_provider(&bbox, false);
+        let provider = select_provider(&bbox, SourceMode::Auto);
         assert_eq!(provider.name(), "mapterhorn");
     }
 
@@ -103,7 +135,7 @@ mod tests {
     fn test_select_provider_force_aws() {
         // Even bboxes inside regional coverage must come back as AWS when forced
         let bbox = LLBBox::new(40.0, -100.0, 40.01, -99.99).unwrap();
-        let provider = select_provider(&bbox, true);
+        let provider = select_provider(&bbox, SourceMode::AwsOnly);
         assert_eq!(provider.name(), "aws");
     }
 }

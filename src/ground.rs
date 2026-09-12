@@ -205,7 +205,7 @@ impl Ground {
         extended_max_y: i32,
         elevation_min: Option<f64>,
         elevation_max: Option<f64>,
-        aws_only: bool,
+        source_mode: crate::elevation::SourceMode,
         regional_only: bool,
         master_origin_lat: Option<f64>,
         master_origin_lng: Option<f64>,
@@ -287,7 +287,7 @@ impl Ground {
             land_cover.as_mut(),
             elevation_min,
             elevation_max,
-            aws_only,
+            source_mode,
             regional_only,
             master_origin_lat,
             master_origin_lng,
@@ -941,7 +941,11 @@ pub fn generate_ground_data(args: &Args) -> Ground {
             extended_max_y_for(args),
             args.elevation_min,
             args.elevation_max,
-            args.aws_only_elevation,
+            if args.body.is_earth() {
+                crate::elevation::SourceMode::earth(args.aws_only_elevation)
+            } else {
+                crate::elevation::SourceMode::Planetary(args.body)
+            },
             args.regional_elevation_only,
             args.master_origin_lat,
             args.master_origin_lng,

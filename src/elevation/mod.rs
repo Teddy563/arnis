@@ -15,6 +15,7 @@ use postprocess::{
 };
 use provider::ElevationProvider;
 use selector::select_provider;
+pub use selector::SourceMode;
 
 /// Holds processed elevation data and metadata
 #[derive(Clone)]
@@ -147,7 +148,7 @@ pub fn fetch_elevation_data(
     land_cover: Option<&mut LandCoverData>,
     elevation_min: Option<f64>,
     elevation_max: Option<f64>,
-    aws_only: bool,
+    source_mode: SourceMode,
     regional_only: bool,
     master_origin_lat: Option<f64>,
     master_origin_lng: Option<f64>,
@@ -161,7 +162,7 @@ pub fn fetch_elevation_data(
     // Select the best provider for this region. When `aws_only` is set the
     // user opted out of the regional high-res providers in favor of a faster
     // run, so we skip straight to AWS Terrain Tiles.
-    let provider = select_provider(bbox, aws_only);
+    let provider = select_provider(bbox, source_mode);
     let provider_name = provider.name();
     let is_fallback = provider_name == "aws";
 
@@ -391,7 +392,7 @@ pub fn prefetch_regional(
     bbox: &LLBBox,
     scale: f64,
 ) -> Result<Option<&'static str>, Box<dyn std::error::Error>> {
-    let provider = select_provider(bbox, false);
+    let provider = select_provider(bbox, SourceMode::Auto);
     if provider.name() == "aws" {
         return Ok(None);
     }
@@ -411,7 +412,7 @@ pub fn prefetch_elevation(
     scale: f64,
     aws_only: bool,
 ) -> Result<(&'static str, usize, usize, usize), Box<dyn std::error::Error>> {
-    let provider = select_provider(bbox, aws_only);
+    let provider = select_provider(bbox, SourceMode::earth(aws_only));
     let (_, _, grid_width, grid_height) = compute_grid_dims(bbox, scale, None, None);
     match provider.name() {
         "mapterhorn" => {

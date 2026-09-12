@@ -1144,6 +1144,8 @@ fn gui_start_generation(
                 blinear_level: 6,
                 downloader: "requests".to_string(),
                 scale: world_scale,
+                // No body picker in this fork's GUI; Moon and Mars are CLI-only (--body).
+                body: crate::celestial::CelestialBody::Earth,
                 projection: crate::projection::ProjectionKind::Local,
                 ground_level,
                 mode: Some(if skip_osm_objects {
