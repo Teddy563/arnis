@@ -54,7 +54,11 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       shell: bash
       run: |
-        tag="${GITHUB_REF_NAME#v}"
+        # A fork qualifier is stripped before the comparison. Upstream released its own
+        # v3.2.0, so this fork's 3.2.0 is tagged v3.2.0-meld to keep both reachable in one
+        # clone - the crate still says 3.2.0 and the binary still prints 3.2.0, which is
+        # what the promise above is about.
+        tag="${GITHUB_REF_NAME#v}"; tag="${tag%-meld}"
         crate=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
         if [ "$tag" != "$crate" ]; then
           echo "::error::tag $GITHUB_REF_NAME says $tag but Cargo.toml says $crate"
