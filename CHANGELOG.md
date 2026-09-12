@@ -10,6 +10,59 @@ seamless world. Every flag is additive — omit it and upstream behaviour is pre
 
 Starting with 2.9.0 the fork tracks the upstream Arnis version number; earlier entries used an internal 1.8.x sequence.
 
+## [3.2.0] - 2026-09-12
+
+Tracks upstream arnis 3.2.0. Scoped deliberately: the upstream commits that are fixes,
+data or self-contained features are in; the facade subsystem is not, and the reason is
+recorded below so the next person does not have to rediscover it.
+
+With no new flags passed, output is unchanged except where a fix changes it on purpose -
+magma no longer appears on water floors, and an iron door's two halves are now written as
+two halves.
+
+### Added
+- **Moon and Mars worlds**, `--body moon|mars`. NASA PDS elevation (LRO LOLA, MGS MOLA
+  MEGDR) at each body's own fixed scale. They carry no OSM data, so the body forces
+  terrain-only and switches off everything that decorates an Earth surface - including this
+  fork's own caves, snow, scatter, field textures, tree packs and props, none of which
+  upstream has to think about. CLI only; the desktop GUI has no body picker.
+- **18 upstream block additions** (end stone, purpur, crimson and cherry wood, dark
+  prismarine, waxed cut copper slab, pale oak trapdoor, coal block, blackstone slab, iron
+  door), with Luanti and Bedrock mappings. Numbered from 450, above this fork's own ceiling
+  of 449, so no id already written into a world or into Meld's region cache moves.
+- **Georgian localisation** (ka-GE), and a refreshed baked Wikidata 3D model index.
+
+### Fixed
+- Magma no longer appears on lake and sea floors.
+- Bedrock biome padding uses 0xFF, not 0. Zero is a valid biome id, so the old pad read back
+  as real biome data and the game kept it instead of regenerating the column.
+- The quarry ore roll no longer panics on deep terrain. `0..100 + absolute_y` is an empty or
+  inverted range once the floor drops below -100, which this fork reaches by design through
+  `--min-y` and `--disable-height-limit`.
+- Two entities that share a block cell no longer take each other's place at the tile-halo
+  merge - two signs on opposite faces of one post, say. The dedup key now carries the
+  entity's UUID where it has one.
+- An iron door's upper half is written as an upper half on Bedrock.
+
+### Not taken from upstream, and why
+- **The Mapillary and preset building facades.** 45 634 lines, 63% of upstream's whole
+  delta. Upstream rebuilt its wall renderer around a FacadePlan - the window lattice moves
+  from `bx + bz` to an ordinate measured along each wall, walls are classified as
+  party/street/corner, buildings take a category. This fork rebuilt the same renderer around
+  its architectural-era and window-frame grammar on the old lattice, and its interiors, loot
+  and signage anchors are written against that. The two are alternatives, not layers.
+  Deferred to 3.3.0.
+- **Voxy LOD pregeneration.** Its feed is ordered per morton column by upstream's rewritten
+  region writer; this fork's writer is row-major and carries the B_Linear container and the
+  Meld biome origin. Deferred with the writer.
+- **The Overture vector-tile transport.** Upstream split `overture.rs` into a module
+  directory; this fork has 1 028 lines of its own in that file, including the prewarm path
+  Meld drives. A hand-merge, not a port. Deferred.
+- **The jet bridge prop**, which needs a free-yaw schematic routine this fork does not have,
+  and **gui/js/logging.js**, which routes through a `gui_log` command this fork's GUI does
+  not define.
+- **Upstream's custom world name** (`e8a5a795`): this fork already has `--level-name`.
+
 ## [3.1.8] - 2026-08-27
 
 Faster generation, caves that work at any world height, and two opt-in
