@@ -4,7 +4,7 @@ use crate::block_definitions::{
     Block, AIR, BLACK_CONCRETE, BLUE_FLOWER, BROWN_CANDLE, BROWN_CANDLE_2, BROWN_CANDLE_3,
     BROWN_CANDLE_4, CLAY, COARSE_DIRT, CYAN_TERRACOTTA, DEAD_BUSH, DIRT, FERN, GRASS, GRAVEL,
     GRAY_CONCRETE, GRAY_CONCRETE_POWDER, KELP, KELP_PLANT, LARGE_FERN_LOWER, LARGE_FERN_UPPER,
-    LIGHT_GRAY_CONCRETE, MAGMA_BLOCK, RED_FLOWER, SAND, SEAGRASS, SEA_PICKLE, SOUL_SAND, STONE,
+    LIGHT_GRAY_CONCRETE, RED_FLOWER, SAND, SEAGRASS, SEA_PICKLE, SOUL_SAND, STONE,
     SUGAR_CANE, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, TALL_SEAGRASS_BOTTOM, TALL_SEAGRASS_TOP, WATER,
     WHITE_CONCRETE, WHITE_FLOWER, YELLOW_FLOWER,
 };
@@ -608,7 +608,7 @@ pub fn carve_water_column_with_flags(
             let n_coarse = crate::ground_generation::value_noise_01(wx + 311, wz + 17, 50);
             // 5-13 cell clusters: scale 8 → cluster radius ~3-6 cells.
             // Very tight threshold 0.96 → very few sites pass → spread apart.
-            let n_magma = crate::ground_generation::value_noise_01(wx + 401, wz + 503, 8);
+            // (The magma site roll went with the magma: upstream took it off water floors.)
             let n_soul = crate::ground_generation::value_noise_01(wx + 727, wz + 911, 8);
 
             let top = if d <= 1 {

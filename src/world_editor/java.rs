@@ -453,6 +453,10 @@ fn live_lod_sections(
     live
 }
 
+/// The base plane every unfilled chunk is written as, with its lighting and span:
+/// what the Voxy feed needs to cover the parts of a region the generator left bare.
+type FillerPlane = (Vec<Section>, Option<Vec<(Vec<i8>, Vec<i8>)>>, (i32, i32));
+
 /// The span of chunk sections the voxy builder has to walk for one region.
 ///
 /// The upper bound is the highest section holding a block anywhere in the
@@ -542,7 +546,7 @@ fn write_region_to_disk(
     // region; identical for all of them, so computed at most once. Without this the
     // pyramid has a hole everywhere the generator did not build, which in a rural
     // region is most of it.
-    let filler: Option<(Vec<Section>, Option<Vec<(Vec<i8>, Vec<i8>)>>, (i32, i32))> =
+    let filler: Option<FillerPlane> =
         match (lod.is_some(), void_world) {
             (true, false) => {
                 let sections = get_base_chunk_sections().to_vec();
