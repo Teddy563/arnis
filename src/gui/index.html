@@ -1921,6 +1921,24 @@
               </header>
 
               <div class="setting-grid">
+                <!-- Shown with a selection, offline or with a local extract or file -->
+                <div class="settings-row setting-tile is-wide data-plan" id="data-plan-row" style="display: none;">
+                  <label for="data-plan-button" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-hard-drive"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="data_plan">Download Plan</span>
+                        <span class="tooltip-icon" data-tooltip="Read from the caches on disk only, so it costs no download. Sizes are estimates from the files already cached. The button runs Download Area For Offline Use with these settings, then checks again.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="data_plan_desc">What the selected area needs, and what is cached already.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="data-plan-button" class="clear-cache-button" data-localize="data_plan_button">Download &amp; Bake What&#x27;s Missing</button>
+                  </div>
+                  <ul id="data-plan-list" class="data-plan-list"></ul>
+                  <p id="data-plan-extract" class="data-plan-extract" style="display: none;"></p>
+                </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="osm-source-select" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-database"></use></svg>

@@ -497,6 +497,46 @@ label[for].setting-label {
   accent-color: var(--ui-accent);
 }
 
+/* The Download Plan list sits under the row, lined up with its text
+   (22px icon + 12px gap). */
+.settings-page .setting-tile.data-plan {
+  flex-wrap: wrap;
+}
+
+.settings-page .data-plan-list {
+  flex: 1 0 calc(100% - 34px);
+  margin: 0 0 0 34px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.settings-page .data-plan-list li {
+  display: grid;
+  grid-template-columns: 1fr auto 84px;
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--ui-text);
+}
+
+.settings-page .data-plan-list .is-cached {
+  color: #4caf50;
+}
+
+.settings-page .data-plan-list .data-plan-size {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+}
+
+.settings-page .data-plan-extract {
+  flex: 1 0 calc(100% - 34px);
+  margin: 0 0 0 34px;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
 .settings-page .climate-preview img {
   display: block;
   max-width: 100%;

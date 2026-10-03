@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Override per run with `--osm-tiles-url`. The version prefix is part of it: a re-bake is
@@ -109,7 +109,12 @@ impl ArchiveEntry {
 }
 
 pub fn cache_root() -> Option<PathBuf> {
-    crate::elevation::cache::user_cache_dir().map(|d| d.join("arnis").join("osm-tiles"))
+    crate::elevation::cache::user_cache_dir().map(|d| cache_root_in(&d))
+}
+
+/// The archive cache under the cache root `root`.
+fn cache_root_in(root: &Path) -> PathBuf {
+    root.join("arnis").join("osm-tiles")
 }
 
 /// Frees the whole archive cache, including dirs left by older cache layouts.
@@ -122,12 +127,59 @@ pub fn clear_osm_tiles_cache() -> crate::elevation::cache::CacheClearStats {
 
 /// Cached ranges are offsets into one specific file, so each base URL gets its own dir.
 fn cache_root_for(base_url: &str) -> Option<PathBuf> {
+    cache_root().map(|d| d.join(url_dir(base_url)))
+}
+
+fn url_dir(base_url: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in base_url.trim_end_matches('/').as_bytes() {
         h ^= u64::from(*b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    cache_root().map(|d| d.join(format!("{h:016x}")))
+    format!("{h:016x}")
+}
+
+/// The tiles under the cache root `root` that a read of `bbox` takes, from
+/// the archive index cached there; `None` with no index on disk or past the
+/// tile cap. A tile cached by any archive that covers it counts. Tiles the
+/// archive holds nothing for (open sea) are never cached, so they count as
+/// missing.
+pub(crate) fn cache_files(root: &Path, base_url: &str, bbox: &LLBBox) -> Option<Vec<PathBuf>> {
+    let dir = cache_root_in(root).join(url_dir(base_url));
+    let manifest: Manifest =
+        serde_json::from_slice(&std::fs::read(dir.join("archives.json")).ok()?).ok()?;
+    if manifest.zoom != ZOOM || manifest.cell_zoom > ZOOM {
+        return None;
+    }
+    let (min_x, min_y) = pmtiles::lonlat_to_tile(bbox.min().lng(), bbox.max().lat(), ZOOM);
+    let (max_x, max_y) = pmtiles::lonlat_to_tile(bbox.max().lng(), bbox.min().lat(), ZOOM);
+    let (xs, xe, ys, ye) = (
+        min_x.min(max_x),
+        min_x.max(max_x),
+        min_y.min(max_y),
+        min_y.max(max_y),
+    );
+    if ((xe - xs) as usize + 1).saturating_mul((ye - ys) as usize + 1) > MAX_TILES {
+        return None;
+    }
+    let shift = ZOOM - manifest.cell_zoom;
+    let side = 1u32 << manifest.cell_zoom;
+    let mut out = Vec::new();
+    for x in xs..=xe {
+        for y in ys..=ye {
+            let cell = HashSet::from([(y >> shift) * side + (x >> shift)]);
+            let paths: Vec<PathBuf> = manifest
+                .archives
+                .iter()
+                .filter(|a| a.file_is_safe() && a.covers(&cell, bbox))
+                .map(|a| pmtiles::tile_cache_path(&dir.join(&a.file), ZOOM, x, y))
+                .collect();
+            if let Some(first) = paths.first() {
+                out.push(paths.iter().find(|p| p.exists()).unwrap_or(first).clone());
+            }
+        }
+    }
+    Some(out)
 }
 
 fn client() -> Result<Client> {

@@ -78,6 +78,7 @@ impl ElevationProvider for AwsTerrain {
             tiles
                 .par_iter()
                 .map(|(tile_x, tile_y)| {
+                    // Same name as cache_files gives it.
                     let tile_path = tile_cache_dir.join(format!("z{zoom}_x{tile_x}_y{tile_y}.png"));
                     let rgb_img = fetch_or_load_tile(&client, *tile_x, *tile_y, zoom, &tile_path)?;
                     Ok(((*tile_x, *tile_y), rgb_img))
@@ -200,6 +201,15 @@ fn sample_tile_pixel(
     let height =
         (pixel[0] as f64 * 256.0 + pixel[1] as f64 + pixel[2] as f64 / 256.0) - TERRARIUM_OFFSET;
     Some(height)
+}
+
+/// The tiles in `dir` a fetch of `bbox` reads.
+pub(crate) fn cache_files(dir: &Path, bbox: &LLBBox) -> Vec<std::path::PathBuf> {
+    let zoom = calculate_zoom_level(bbox);
+    get_tile_coordinates(bbox, zoom)
+        .into_iter()
+        .map(|(x, y)| dir.join(format!("z{zoom}_x{x}_y{y}.png")))
+        .collect()
 }
 
 fn calculate_zoom_level(bbox: &LLBBox) -> u8 {

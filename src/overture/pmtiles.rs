@@ -336,6 +336,14 @@ pub fn zxy_to_tile_id(z: u8, x: u32, y: u32) -> Result<u64> {
     Ok(id)
 }
 
+/// Where an archive cached in `dir` keeps tile `z/x/y`.
+pub fn tile_cache_path(dir: &std::path::Path, z: u8, x: u32, y: u32) -> PathBuf {
+    dir.join("t")
+        .join(z.to_string())
+        .join(x.to_string())
+        .join(format!("{y}.bin"))
+}
+
 /// Web-Mercator tile containing a coordinate at the given zoom.
 pub fn lonlat_to_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
     let n = f64::from(1u32 << z);
@@ -541,12 +549,7 @@ impl Archive {
                 location.length
             ));
         }
-        let path = self.cache_dir.as_ref().map(|d| {
-            d.join("t")
-                .join(z.to_string())
-                .join(x.to_string())
-                .join(format!("{y}.bin"))
-        });
+        let path = self.cache_dir.as_ref().map(|d| tile_cache_path(d, z, x, y));
         let raw = self.read_cached(client, location.offset, u64::from(location.length), path)?;
         decompress(self.header.tile_compression, raw, MAX_TILE_BYTES)
     }

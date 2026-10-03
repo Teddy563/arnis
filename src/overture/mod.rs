@@ -31,6 +31,7 @@ pub(crate) mod pmtiles;
 mod tiles;
 
 pub use cache::{cache_root, clear_overture_cache, write_atomic};
+pub(crate) use tiles::cache_files as tile_cache_files;
 
 /// What a fetch actually cost, so the two transports can be compared on
 /// measurement rather than on the docstrings above.

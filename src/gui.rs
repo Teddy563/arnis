@@ -135,6 +135,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_load_preset,
             gui_redraw_one_world_map,
             gui_snap_selection,
+            gui_data_plan,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -516,6 +517,41 @@ fn gui_snap_selection(
         origin: [frame.origin_lat, frame.origin_lon],
         new_world: snap.new_world,
     })
+}
+
+/// The Download Plan panel: what a run of the selection with these settings
+/// reads, and how much of it the caches already hold. Reads the disk only.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn gui_data_plan(
+    bbox_text: String,
+    world_scale: f64,
+    terrain_enabled: bool,
+    skip_osm_objects: bool,
+    canopy_height_enabled: bool,
+    overture_enabled: bool,
+    aws_only_elevation: bool,
+    flags: Vec<String>,
+) -> Result<crate::data_plan::DataPlan, String> {
+    use clap::Parser;
+    let mut args =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| e.to_string())?;
+    crate::args::validate_scale(world_scale)?;
+    args.scale = world_scale;
+    args.mode = if skip_osm_objects {
+        crate::args::GenerationMode::TerrainOnly
+    } else if terrain_enabled {
+        crate::args::GenerationMode::GeoTerrain
+    } else {
+        crate::args::GenerationMode::GeoOnly
+    };
+    args.canopy_height = canopy_height_enabled;
+    args.overture = overture_enabled;
+    args.aws_only_elevation = aws_only_elevation;
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
+    Ok(crate::data_plan::plan(&root, &args, bbox))
 }
 
 /// `--map-item-only`: redraws a One World's map item over every area. Holds

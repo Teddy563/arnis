@@ -16,6 +16,8 @@ mod climate_field;
 mod clipping;
 mod colors;
 mod coordinate_system;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod data_plan;
 mod data_processing;
 mod decals;
 mod deterministic_rng;

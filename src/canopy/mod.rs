@@ -404,6 +404,58 @@ fn axis_mapping(count: usize, lo: f64, step: f64, origin: f64, res: f64) -> (usi
     (start.unwrap_or(0), idx)
 }
 
+/// The source rows of a tile topped at `max_y` that the grid's rows sample,
+/// and the first grid row among them.
+fn sampled_rows(bbox: &LLBBox, grid_height: usize, max_y: f64, res: f64) -> (usize, Vec<usize>) {
+    let (lat_hi, lat_lo) = (bbox.max().lat(), bbox.min().lat());
+    let lat_step = if grid_height > 1 {
+        (lat_lo - lat_hi) / (grid_height - 1) as f64
+    } else {
+        0.0
+    };
+    let mut gz0 = None;
+    let mut rows: Vec<usize> = Vec::new();
+    for gz in 0..grid_height {
+        let p = (max_y - merc_y(lat_hi + lat_step * gz as f64)) / res;
+        if p < 0.0 || p >= TILE_PX as f64 {
+            if gz0.is_some() {
+                break;
+            }
+            continue;
+        }
+        gz0.get_or_insert(gz);
+        rows.push(p as usize);
+    }
+    (gz0.unwrap_or(0), rows)
+}
+
+/// The files under the cache root `root` that a fetch of this grid reads:
+/// each tile's strip table and the row blocks the grid samples.
+pub(crate) fn cache_files(root: &Path, bbox: &LLBBox, grid_height: usize) -> Vec<PathBuf> {
+    let dir = root.join(CACHE_DIR);
+    let (x0, y0) = tile_xy(bbox.max().lat(), bbox.min().lng());
+    let (x1, y1) = tile_xy(bbox.min().lat(), bbox.max().lng());
+    let mut out = Vec::new();
+    for yt in y0.min(y1)..=y0.max(y1) {
+        for xt in x0.min(x1)..=x0.max(x1) {
+            let key = quadkey_of(xt, yt);
+            let (_, max_y, res) = tile_geometry(xt, yt);
+            let mut blocks: Vec<usize> = sampled_rows(bbox, grid_height, max_y, res)
+                .1
+                .into_iter()
+                .map(|r| r / ROW_BLOCK)
+                .collect();
+            blocks.dedup();
+            if blocks.is_empty() {
+                continue;
+            }
+            out.push(dir.join(format!("{key}.idx")));
+            out.extend(blocks.into_iter().map(|b| row_block_in(&dir, &key, b)));
+        }
+    }
+    out
+}
+
 /// Read this tile's share of the area straight into `grid`. Only rows the grid
 /// samples are inflated, and only sampled columns kept, so neither cost scales
 /// past what the grid can represent.
@@ -430,26 +482,7 @@ fn fill_from_tile(
     };
     let (gx0, cols) = axis_mapping(grid_width, x_lo, x_step, min_x, res);
 
-    let (lat_hi, lat_lo) = (bbox.max().lat(), bbox.min().lat());
-    let lat_step = if grid_height > 1 {
-        (lat_lo - lat_hi) / (grid_height - 1) as f64
-    } else {
-        0.0
-    };
-    let mut gz0 = None;
-    let mut rows: Vec<usize> = Vec::new();
-    for gz in 0..grid_height {
-        let p = (max_y - merc_y(lat_hi + lat_step * gz as f64)) / res;
-        if p < 0.0 || p >= TILE_PX as f64 {
-            if gz0.is_some() {
-                break;
-            }
-            continue;
-        }
-        gz0.get_or_insert(gz);
-        rows.push(p as usize);
-    }
-    let gz0 = gz0.unwrap_or(0);
+    let (gz0, rows) = sampled_rows(bbox, grid_height, max_y, res);
     if cols.is_empty() || rows.is_empty() {
         return Err("tile covers none of the area".into());
     }
@@ -535,10 +568,11 @@ fn strip_span(index: &StripIndex, r0: usize, r1: usize) -> Result<(u64, u64), St
 }
 
 fn row_block_path(key: &str, b: usize) -> PathBuf {
-    cache_dir()
-        .join("rows")
-        .join(key)
-        .join(format!("{b}.strips"))
+    row_block_in(&cache_dir(), key, b)
+}
+
+fn row_block_in(dir: &Path, key: &str, b: usize) -> PathBuf {
+    dir.join("rows").join(key).join(format!("{b}.strips"))
 }
 
 /// Cached strips of row block `b` and the file offset they start at, when the cache holds

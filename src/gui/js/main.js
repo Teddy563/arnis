@@ -165,6 +165,7 @@ async function applyLocalization(localization) {
   window.localization = localization;
   renderOneWorldStatus();
   formatCpuUsage();
+  renderDataPlan();
   // The map hint lives in the map iframe, which cannot see this assignment.
   document.querySelectorAll('iframe').forEach((frame) => {
     try {
@@ -1053,6 +1054,8 @@ function setupProgressListener() {
       }
       // The facade pipeline reports its stages here whichever job is driving it.
       notePrecomputeStage(message);
+      // A finished download (or a failed one) changed what the caches hold.
+      if (message.startsWith("Done!") || message.startsWith("Error!")) refreshDataPlan(true);
     }
   });
 
@@ -1159,6 +1162,8 @@ function initSettings() {
     // has to be read when the panel opens; measuring it once at startup left
     // it stale for the whole session.
     refreshCacheSize();
+    // Same for the plan: a run since the last look may have filled the caches.
+    refreshDataPlan(true);
   }
 
   // Close the settings page
@@ -1725,6 +1730,112 @@ function initOsmSource() {
   document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
   // The bake is the OSM step of a prewarm: same settings, same threads, same progress.
   document.getElementById('osm-pbf-bake-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+  document.getElementById('data-plan-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+  // Any setting can change what a run reads; the check is debounced and skips
+  // a request it has already answered.
+  document.getElementById('settings-modal').addEventListener('change', () => refreshDataPlan());
+}
+
+/* Download Plan: what a run of the selection reads with these settings, and
+   how much of it the caches hold, from gui_data_plan (disk only). Shown where
+   a run depends on the caches: offline, or reading a local extract or file. */
+let dataPlanTimer = null;
+let dataPlanKey = null;
+let dataPlan = null;
+
+// `force` asks again even for the same request: the caches changed under it.
+function refreshDataPlan(force) {
+  if (force) dataPlanKey = null;
+  clearTimeout(dataPlanTimer);
+  dataPlanTimer = setTimeout(checkDataPlan, 300);
+}
+
+function dataPlanRequest() {
+  const source = document.getElementById('osm-source-select').value;
+  const offline = document.getElementById('offline-toggle').checked;
+  if (!selectedBBox || !(offline || source === 'pbf' || source === 'file')) return null;
+  const mode = document.getElementById('generation-mode-select').value;
+  return {
+    bboxText: selectedBBox,
+    worldScale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
+    terrainEnabled: mode === 'geo-terrain' || mode === 'terrain-only',
+    skipOsmObjects: mode === 'terrain-only',
+    canopyHeightEnabled: document.getElementById('canopy-height-toggle').checked,
+    overtureEnabled: document.getElementById('overture-toggle').checked,
+    awsOnlyElevation: document.getElementById('aws-only-elevation-toggle').checked,
+    flags: advancedFeatureArgs().flags,
+  };
+}
+
+async function checkDataPlan() {
+  const request = dataPlanRequest();
+  document.getElementById('data-plan-row').style.display = request ? '' : 'none';
+  const key = request ? JSON.stringify(request) : null;
+  if (!request || key === dataPlanKey) return;
+  dataPlanKey = key;
+  try {
+    const plan = await invoke('gui_data_plan', request);
+    // A newer request went out while this one was on disk.
+    if (key !== dataPlanKey) return;
+    dataPlan = plan;
+    renderDataPlan();
+  } catch (error) {
+    console.warn('Download plan failed:', error);
+  }
+}
+
+function formatPlanBytes(bytes) {
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+  if (bytes >= 1e6) return Math.round(bytes / 1e6) + ' MB';
+  return Math.max(1, Math.round(bytes / 1e3)) + ' KB';
+}
+
+function renderDataPlan() {
+  const list = document.getElementById('data-plan-list');
+  const extractLine = document.getElementById('data-plan-extract');
+  if (!list || !dataPlan) return;
+  const t = oneWorldText;
+  const names = {
+    osm: t('data_plan_osm', 'OpenStreetMap'),
+    elevation: t('data_plan_elevation', 'Elevation'),
+    land_cover: t('data_plan_land_cover', 'Land Cover'),
+    canopy: t('data_plan_canopy', 'Canopy Height'),
+    overture: t('data_plan_overture', 'Overture Buildings'),
+  };
+  list.replaceChildren(...dataPlan.items.map((item) => {
+    let status;
+    if (item.total === 0) {
+      status = t('data_plan_uncounted', 'Not counted');
+    } else if (item.cached === item.total) {
+      status = t('data_plan_cached', 'Cached ✓');
+    } else if (item.cached > 0) {
+      status = t('data_plan_partly', 'Partly cached ({n}/{m})', { n: item.cached, m: item.total });
+    } else {
+      status = t('data_plan_missing', 'Missing');
+    }
+    const cells = [names[item.source] || item.source, status,
+      item.cached < item.total && item.missing_bytes ? '~' + formatPlanBytes(item.missing_bytes) : ''];
+    const li = document.createElement('li');
+    cells.forEach((text, i) => {
+      const span = document.createElement('span');
+      span.textContent = text;
+      if (i === 1 && item.total > 0 && item.cached === item.total) span.className = 'is-cached';
+      if (i === 2) span.className = 'data-plan-size';
+      li.appendChild(span);
+    });
+    return li;
+  }));
+  const e = dataPlan.extract;
+  let line = '';
+  if (e && e.name) {
+    line = e.bytes != null
+      ? t('data_plan_extract', 'Extract: {name}, {size}', { name: e.name, size: formatPlanBytes(e.bytes) })
+      : t('data_plan_extract_unknown', 'Extract: {name}, size known once downloaded', { name: e.name });
+  } else if (e) {
+    line = t('data_plan_no_index', 'The Geofabrik index is not downloaded yet; the button fetches it.');
+  }
+  extractLine.textContent = line;
+  extractLine.style.display = line ? '' : 'none';
 }
 
 // Presets: the Extra Features and OSM Data Source settings as a JSON file.
@@ -2830,6 +2941,7 @@ function handleBboxInput() {
     // field is inside the same panel, so it has to follow every keystroke.
     refreshPrecomputeButton();
     refreshSnapPreview();
+    refreshDataPlan();
   });
 }
 
@@ -2960,6 +3072,7 @@ function displayBboxInfoText(bboxText) {
     }
     window.arnisPreview3D?.onBboxCleared();
     refreshPrecomputeButton();
+    refreshDataPlan();
     return;
   }
 
@@ -2990,6 +3103,7 @@ function displayBboxInfoText(bboxText) {
   window.arnisPreview3D?.onBboxChanged(selectedBBox);
   refreshPrecomputeButton();
   refreshSnapPreview();
+  refreshDataPlan();
 }
 
 /* Large worlds: with pieces in use the selection grows to whole regions of the

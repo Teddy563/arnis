@@ -97,6 +97,28 @@ impl ElevationProvider for Mapterhorn {
     }
 }
 
+/// The files in `dir` that a fetch of this grid reads first: one per tile at
+/// the chosen zoom, the 404 marker standing in for a tile known to be absent.
+pub(crate) fn cache_files(
+    dir: &Path,
+    bbox: &LLBBox,
+    grid_width: usize,
+    grid_height: usize,
+) -> Vec<PathBuf> {
+    let zoom = choose_zoom(bbox, grid_width, grid_height);
+    covering_tile_keys(bbox, zoom)
+        .into_iter()
+        .map(|k| {
+            let marker = k.marker_path(dir);
+            if marker.exists() {
+                marker
+            } else {
+                k.cache_path(dir)
+            }
+        })
+        .collect()
+}
+
 // ─── Zoom selection ────────────────────────────────────────────────────
 
 /// Smallest zoom whose pixels match the grid cell size, within budget.

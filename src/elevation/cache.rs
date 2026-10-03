@@ -27,12 +27,15 @@ pub fn user_cache_dir() -> Option<PathBuf> {
 /// Uses the OS-standard cache directory (e.g. AppData/Local on Windows, ~/.cache on Linux).
 /// Falls back to ./arnis-tile-cache if the OS cache directory is unavailable.
 pub fn get_cache_dir(provider_name: &str) -> PathBuf {
-    let base = if let Some(cache_dir) = user_cache_dir() {
-        cache_dir.join(TILE_CACHE_DIR_NAME)
-    } else {
-        PathBuf::from(format!("./{TILE_CACHE_DIR_NAME}"))
-    };
-    base.join(provider_name)
+    provider_cache_dir(
+        &user_cache_dir().unwrap_or_else(|| PathBuf::from(".")),
+        provider_name,
+    )
+}
+
+/// A provider's tile cache under the cache root `root`.
+pub fn provider_cache_dir(root: &std::path::Path, provider_name: &str) -> PathBuf {
+    root.join(TILE_CACHE_DIR_NAME).join(provider_name)
 }
 
 /// Returns the base tile cache directory path (without provider subdirectory).

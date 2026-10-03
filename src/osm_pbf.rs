@@ -64,8 +64,71 @@ pub fn bake_for_job(src: &Source, selection: LLBBox) -> Result<()> {
 
 fn cache_root() -> Result<PathBuf> {
     crate::elevation::cache::user_cache_dir()
-        .map(|d| d.join("arnis").join("osm-pbf"))
+        .map(|d| cache_root_in(&d))
         .ok_or_else(|| "no cache directory for the .pbf bake".to_string())
+}
+
+/// The extract cache under the cache root `root`.
+fn cache_root_in(root: &Path) -> PathBuf {
+    root.join("arnis").join("osm-pbf")
+}
+
+/// What `--osm-pbf` needs for a selection, as the caches hold it.
+#[derive(serde::Serialize, Debug, Default, PartialEq)]
+pub struct ExtractPlan {
+    /// The Geofabrik region, or the file's name; `None` when no cached index
+    /// names one.
+    pub name: Option<String>,
+    /// Size on disk, once downloaded.
+    pub bytes: Option<u64>,
+    pub downloaded: bool,
+    /// A bake holding the selection is on disk.
+    pub baked: bool,
+}
+
+/// [`ExtractPlan`] for `selection` from the caches under `root` alone: the
+/// Geofabrik index is read only from disk, and nothing is downloaded.
+pub fn plan(root: &Path, src: &Source, selection: LLBBox) -> ExtractPlan {
+    let cache = cache_root_in(root);
+    let want = E7Box::around(&selection, src.pad_m);
+    let (name, pbf) = if src.spec == GEOFABRIK {
+        let index = std::fs::read(cache.join("geofabrik-index.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+        let picked = match (&src.url, &index) {
+            (Some(url), _) => Some((None, url.clone())),
+            (None, Some(index)) => geofabrik_feature(index, &want).ok().map(|f| {
+                let name = f["properties"]["name"].as_str().map(str::to_string);
+                let url = f["properties"]["urls"]["pbf"].as_str().unwrap_or_default();
+                (name, url.to_string())
+            }),
+            (None, None) => None,
+        };
+        let Some((region, url)) = picked else {
+            return ExtractPlan::default();
+        };
+        let Some(file) = download_name(&url) else {
+            return ExtractPlan::default();
+        };
+        let region = region.or_else(|| Some(file.to_string()));
+        (region, cache.join("downloads").join(file))
+    } else {
+        let p = PathBuf::from(&src.spec);
+        (p.file_name().map(|n| n.to_string_lossy().into_owned()), p)
+    };
+    let bytes = std::fs::metadata(&pbf)
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| m.len());
+    let baked = bytes.is_some()
+        && pbf_key(&pbf)
+            .is_ok_and(|key| find_bake(&cache.join("bakes").join(key), &want).is_some());
+    ExtractPlan {
+        name,
+        bytes,
+        downloaded: bytes.is_some(),
+        baked,
+    }
 }
 
 /// The bake of `want`, read from disk when an earlier one covers it.
@@ -143,16 +206,20 @@ fn locate(src: &Source, want: &E7Box) -> Result<PathBuf> {
         Some(url) => url.clone(),
         None => geofabrik_url(&fetch_index()?, want)?,
     };
-    let name = url
-        .rsplit('/')
-        .next()
-        .filter(|n| n.ends_with(".pbf") && !n.contains(['\\', ':']) && !n.starts_with('.'))
-        .ok_or_else(|| format!("not a .pbf url: {url}"))?;
+    let name = download_name(&url).ok_or_else(|| format!("not a .pbf url: {url}"))?;
     let dest = cache_root()?.join("downloads").join(name);
     if !dest.is_file() {
         download(&url, &dest)?;
     }
     Ok(dest)
+}
+
+/// The file name a downloaded extract is kept under: the url's last part,
+/// when that is a plain `.pbf` name.
+fn download_name(url: &str) -> Option<&str> {
+    url.rsplit('/')
+        .next()
+        .filter(|n| n.ends_with(".pbf") && !n.contains(['\\', ':']) && !n.starts_with('.'))
 }
 
 fn client() -> Result<reqwest::blocking::Client> {
@@ -249,6 +316,19 @@ fn fetch_index() -> Result<serde_json::Value> {
 /// test would lie (a country's bbox spans its neighbours), so a 5x5 grid of points across
 /// the selection is tested against the border polygon, ranked by polygon area.
 fn geofabrik_url(index: &serde_json::Value, want: &E7Box) -> Result<String> {
+    geofabrik_feature(index, want).and_then(|f| {
+        f["properties"]["urls"]["pbf"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| "bad Geofabrik index".to_string())
+    })
+}
+
+/// The index entry of the smallest extract holding the selection.
+fn geofabrik_feature<'a>(
+    index: &'a serde_json::Value,
+    want: &E7Box,
+) -> Result<&'a serde_json::Value> {
     const N: i64 = 5;
     let points: Vec<(f64, f64)> = (0..N * N)
         .map(|k| {
@@ -262,13 +342,13 @@ fn geofabrik_url(index: &serde_json::Value, want: &E7Box) -> Result<String> {
     features
         .iter()
         .filter_map(|f| {
-            let url = f["properties"]["urls"]["pbf"].as_str()?;
+            f["properties"]["urls"]["pbf"].as_str()?;
             let rings = rings(&f["geometry"]);
             (!rings.is_empty() && points.iter().all(|&(x, y)| in_rings(x, y, &rings)))
-                .then(|| (rings_area(&rings), url))
+                .then(|| (rings_area(&rings), f))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, url)| url.to_string())
+        .map(|(_, f)| f)
         .ok_or_else(|| {
             "no single Geofabrik extract holds this selection; pass a .pbf file with --osm-pbf"
                 .to_string()

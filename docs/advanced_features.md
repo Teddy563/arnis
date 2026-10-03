@@ -102,6 +102,7 @@ the stock downloads.
 
 | Control | CLI flag | Default | Description |
 | --- | --- | --- | --- |
+| Download Plan: Download & Bake What's Missing | `--prewarm` | | Shown with a selection while Offline Mode is on or the source is Region Download or Local File. Per source (OpenStreetMap, elevation, land cover, canopy height, Overture): Cached, Partly cached (n/m) or Missing, with an estimated download; for Region Download, the Geofabrik extract the cached index picks and whether a bake holds the area. Read from disk only; the button runs the download and checks again. |
 | Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`), Local File (`--file`) or Region Download (Geofabrik) (`--osm-pbf`). |
 | Archive URL | `--osm-tiles-url` | Empty (Arnis's archive) | Shown for the tile archive. |
 | Overpass Servers | `--overpass-url` | Empty (Arnis's server) | Comma list, tried in order. Shown for Overpass. |
