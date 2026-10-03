@@ -270,6 +270,8 @@
   "preview_tree_tiers": "Small to giant trees, left to right",
   "preview_on": "On",
   "preview_off": "Off",
+  "preview_updating": "Updating…",
+  "preview_needs_data": "Preview needs data",
   "features_group_caves": "Caves & Water",
   "cave_seed": "Cave Seed",
   "cave_seed_desc": "A different cave layout per seed. Requires Caves.",

@@ -45,6 +45,8 @@ mod mapillary;
 mod models_3d;
 mod net;
 mod one_world;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod option_preview;
 mod ore_generation;
 mod osm_parser;
 mod osm_pbf;

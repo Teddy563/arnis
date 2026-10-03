@@ -119,6 +119,22 @@ The script that does all of this (`make_previews.py`, Python with Pillow and
 nbtlib) is kept with the Meld tooling, not in this repository; the table and
 the command above are enough to redo any card by hand.
 
+**Live previews.** When a group's other settings leave the stock defaults
+(Farm Crops or Parcel Size for the fields, a tree size weight, Snow Cap
+Share or Snow Line Y, a density, a Grass or Land Mix, Water Detail; any
+Rocks or Bushes setting), the window asks `gui_render_preview` for that
+group, 600 ms after the last change. It builds a card-sized piece of the
+group's sample area (the row's area above, at the card's zoom, centred where
+the shipped card was cut) with this executable as a CLI run, with only the
+group's flags (plus `--field-mix=pasture` for Rocks and Bushes) and stock
+defaults for everything else, and draws it the same way. The card shows the
+shipped picture until the render arrives, dimmed and captioned "Updating".
+Renders take about one to one and a half seconds once the sample's data is
+cached, and are kept under the cache root in `arnis/option-previews`, keyed
+by group, flags and Arnis version, so a combination seen before is instant.
+With Offline Mode on the render reads the caches only; if they lack the
+sample area the card keeps the shipped picture and says "Preview needs data".
+
 ## OSM Data Source
 
 Its own settings section, after Extra Features. It is not behind the

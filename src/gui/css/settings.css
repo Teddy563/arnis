@@ -518,6 +518,12 @@ label[for].setting-label {
   border: 1px solid var(--ui-tile-border);
   border-radius: 10px;
   background: var(--ui-field);
+  transition: opacity 0.2s ease;
+}
+
+/* A live render of the group's current settings is on its way. */
+.settings-page .option-preview.is-updating img {
+  opacity: 0.6;
 }
 
 .settings-page .option-preview figcaption {

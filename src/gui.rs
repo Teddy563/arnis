@@ -136,6 +136,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_redraw_one_world_map,
             gui_snap_selection,
             gui_data_plan,
+            gui_render_preview,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -552,6 +553,25 @@ fn gui_data_plan(
     let bbox = LLBBox::from_str(&bbox_text)?;
     let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
     Ok(crate::data_plan::plan(&root, &args, bbox))
+}
+
+/// A live option preview card for one settings group, as a PNG data URL:
+/// a tiny sample area built by this executable with the group's `flags`.
+/// Cached on disk per group, flags and version. Offline, a sample the caches
+/// cannot serve fails with `needs-data`.
+#[tauri::command(async)]
+fn gui_render_preview(group: String, flags: Vec<String>, offline: bool) -> Result<String, String> {
+    use crate::option_preview::{render, Failure};
+    let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
+    let exe = env::current_exe().map_err(|e| e.to_string())?;
+    match render(&root, &exe, &group, &flags, offline) {
+        Ok(png) => Ok(format!(
+            "data:image/png;base64,{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
+        )),
+        Err(Failure::NeedsData) => Err("needs-data".to_string()),
+        Err(Failure::Other(e)) => Err(e),
+    }
 }
 
 /// `--map-item-only`: redraws a One World's map item over every area. Holds

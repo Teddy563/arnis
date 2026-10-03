@@ -1692,6 +1692,8 @@ function initAdvancedFeatures() {
   initExperimentalButtons();
   // The cards follow their controls, restored and reset values included.
   groups.addEventListener('change', refreshOptionPreviews);
+  // Offline, a live render may only read the caches.
+  document.getElementById('offline-toggle').addEventListener('change', refreshLivePreviews);
   refreshOptionPreviews();
   initOsmSource();
   initPresets();
@@ -1877,27 +1879,110 @@ function initPresets() {
   });
 }
 
-// Option preview cards: the picture of the option a control holds, rendered
-// with Arnis itself (docs/advanced_features.md), captioned with its name.
+// Option preview cards. A shipped picture shows the option a control holds
+// (rendered with Arnis itself, docs/advanced_features.md); when the rest of
+// its group differs from the stock defaults, a live render of the group's
+// sample area with its current flags replaces it (gui_render_preview).
+const PREVIEW_GROUPS = {
+  fields: ['field-mix', 'farm-crops', 'field-scale'],
+  trees: ['tree-realm', 'tree-size-weights'],
+  snow: ['snow-mode', 'snow-percent', 'snow-y'],
+  scatter: ['rocks', 'rock-density', 'bushes', 'bush-density'],
+  roads: ['road-detail'],
+  water: ['river-bed', 'water-detail'],
+  grass: ['grass-texture', 'grass-mix'],
+  land: ['land-texture', 'land-mix'],
+};
+// Groups whose shipped pictures match no setting exactly (the scatter ones
+// were drawn at the densest setting), so any flag asks for a live render.
+const PREVIEW_NO_STATIC = ['scatter'];
+const livePreviews = {};
+
+function previewCaption(card) {
+  const control = document.getElementById(card.dataset.for);
+  let name = '';
+  if (control && control.type === 'checkbox') {
+    name = control.checked ? oneWorldText('preview_on', 'On') : oneWorldText('preview_off', 'Off');
+  } else if (control && control.selectedOptions[0]) {
+    name = control.selectedOptions[0].textContent;
+  }
+  const state = card.classList.contains('is-updating')
+    ? oneWorldText('preview_updating', 'Updating…')
+    : card.dataset.note || '';
+  card.querySelector('figcaption').textContent = state ? name + ' · ' + state : name;
+}
+
 function refreshOptionPreviews() {
   document.querySelectorAll('.option-preview[data-for]').forEach((card) => {
     const control = document.getElementById(card.dataset.for);
     const img = card.querySelector('img');
-    const caption = card.querySelector('figcaption');
-    if (!control || !img || !caption) return;
-    let value;
-    if (control.type === 'checkbox') {
-      value = control.checked ? 'on' : 'off';
-      caption.textContent = control.checked
-        ? oneWorldText('preview_on', 'On')
-        : oneWorldText('preview_off', 'Off');
-    } else {
-      value = control.value;
-      const option = control.selectedOptions[0];
-      caption.textContent = option ? option.textContent : '';
-    }
+    if (!control || !img) return;
+    const value = control.type === 'checkbox' ? (control.checked ? 'on' : 'off') : control.value;
     const src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
-    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    // A live render stands until its group changes; the group's own refresh
+    // puts the shipped picture back when that is exact again.
+    if (card.dataset.static !== src) {
+      card.dataset.static = src;
+      if (!card.dataset.live) img.setAttribute('src', src);
+    }
+    previewCaption(card);
+  });
+  refreshLivePreviews();
+}
+
+const flagName = (flag) => flag.slice(2).split('=')[0];
+
+// Per group: debounced, one request in flight that counts, and a sequence
+// number so an answer to an older combination is dropped.
+function refreshLivePreviews() {
+  const flags = advancedFeatureArgs().flags;
+  const offline = document.getElementById('offline-toggle').checked;
+  Object.entries(PREVIEW_GROUPS).forEach(([group, names]) => {
+    const mine = flags.filter((f) => names.includes(flagName(f)));
+    const state = livePreviews[group] || (livePreviews[group] = { key: null, seq: 0, timer: null });
+    const key = mine.join(' ') + (offline ? ' offline' : '');
+    if (key === state.key) return;
+    state.key = key;
+    const seq = ++state.seq;
+    clearTimeout(state.timer);
+    const cards = Array.from(document.querySelectorAll('.option-preview[data-group="' + group + '"]'));
+    const shown = cards.map((c) => c.dataset.preview);
+    const exact = !PREVIEW_NO_STATIC.includes(group) && mine.every((f) => shown.includes(flagName(f)));
+    if (mine.length === 0 || exact) {
+      cards.forEach((card) => {
+        delete card.dataset.live;
+        delete card.dataset.note;
+        card.classList.remove('is-updating');
+        card.querySelector('img').setAttribute('src', card.dataset.static);
+        previewCaption(card);
+      });
+      return;
+    }
+    cards.forEach((card) => { card.classList.add('is-updating'); previewCaption(card); });
+    state.timer = setTimeout(async () => {
+      let src = null;
+      let note = '';
+      try {
+        src = await invoke('gui_render_preview', { group, flags: mine, offline });
+      } catch (error) {
+        if (String(error).includes('needs-data')) {
+          note = oneWorldText('preview_needs_data', 'Preview needs data');
+        } else {
+          console.warn('Live preview failed:', error);
+        }
+      }
+      if (seq !== state.seq) return;
+      cards.forEach((card) => {
+        card.classList.remove('is-updating');
+        // A failed render shows the shipped picture, not an older combination's.
+        if (src) card.dataset.live = '1';
+        else delete card.dataset.live;
+        card.querySelector('img').setAttribute('src', src || card.dataset.static);
+        if (note) card.dataset.note = note;
+        else delete card.dataset.note;
+        previewCaption(card);
+      });
+    }, 600);
   });
 }
 
