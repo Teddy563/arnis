@@ -204,11 +204,20 @@ pub fn carve_region(
         min_z,
         max_z,
     };
-    let world = Rect {
-        min_x: world.min_x(),
-        max_x: world.max_x(),
-        min_z: world.min_z(),
-        max_z: world.max_z(),
+    // Pools, rivers and geodes stop at the run's bbox, unless --cave-datum-y says this run is
+    // one of several that must line up: then they are planned past it, so a feature crossing
+    // into a neighbouring area or piece is the same feature on both sides and each writes its
+    // part. The surface they plan against comes from the One World ground pad, which reaches
+    // past the planning extent.
+    let world = if args.cave_datum_y.is_some() {
+        Rect::EVERYWHERE
+    } else {
+        Rect {
+            min_x: world.min_x(),
+            max_x: world.max_x(),
+            min_z: world.min_z(),
+            max_z: world.max_z(),
+        }
     };
     let shape = CaveShape::new(&gen, seed, world, region, |x, z| {
         editor.get_ground_level(x, z)

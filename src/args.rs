@@ -157,8 +157,10 @@ pub struct Args {
     /// follow each run's bedrock plane, which in a One World sits under each area's (and each
     /// piece's) own lowest point, so neighbours with different floors do not line up
     /// underground. One value for every run makes caves, the lava sea and the deepslate line
-    /// continuous across them; nothing is carved below a run's own bedrock, so pick the lowest
-    /// bedrock of the region or below. A One World keeps the value its first area was built with.
+    /// continuous across them: bedrock drops to the datum where a run's own floor sits above it,
+    /// and pools, rivers and geodes are planned past the run's edge. A run whose lowest point
+    /// needs bedrock below the datum keeps its own, so pick the lowest bedrock of the region or
+    /// below. A One World keeps the value its first area was built with.
     #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
     pub cave_datum_y: Option<i32>,
 

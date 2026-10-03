@@ -269,7 +269,13 @@ The job folder is removed when the job completes.
 
 1. **Bedrock floor per piece**: like separate areas (limitation 9 below), each
    piece follows its own lowest point, so bedrock and the deepslate line can
-   step at a piece seam.
+   step at a piece seam. With `--caves --cave-datum-y` bedrock drops to the
+   datum wherever a piece's own floor sits above it, so pieces share one floor
+   and caves, pools, rivers and geodes continue across seams. On a hilly 640 x
+   672 block area at scale 1 (datum -64, four one-region pieces) the blocks
+   below the surface that differ from a single run fell from 16,761,846 to
+   about 40; what is left are stone-variant and ore blobs within a few blocks
+   of a seam, next to the surface baseline of limitation 2.
 2. **Seam-crossing geometry**: tunnels and polygons that cross a piece seam are
    clipped per piece; about 0.02% of blocks differ from one run over the same
    area.
@@ -307,8 +313,12 @@ The job folder is removed when the job completes.
    got different floors their caves and deepslate line do not line up at the
    seam. Within an area they match across tiles as usual. `--cave-datum-y`
    pins one depth frame for every area and piece (the manifest keeps the
-   first area's value, and its `--cave-seed`); nothing is carved below an
-   area's own bedrock, so pick the lowest bedrock of the region or below.
+   first area's value, and its `--cave-seed`), lowers bedrock to the datum
+   where an area's own floor sits above it, and plans pools, rivers and geodes
+   past the area's edge so a feature crossing it is whole once both sides are
+   built. An area whose lowest point needs bedrock below the datum keeps its
+   own, and its caves step at the seam, so pick the lowest bedrock of the
+   region or below.
 
 ## Where to look
 
