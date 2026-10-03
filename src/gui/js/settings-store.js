@@ -64,7 +64,7 @@ const SETTINGS = [
 
   { id: 'enable-luanti-toggle', kind: 'checkbox', store: EXTERNAL },
 
-  // Advanced Features
+  // Extra Features (ids keep the old name, so stored settings still load)
   { id: 'advanced-features-toggle', kind: 'checkbox', store: OWN },
   { id: 'cpu-usage-slider', kind: 'number', store: OWN },
   { id: 'threads-input', kind: 'number', store: OWN },

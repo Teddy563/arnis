@@ -1,6 +1,7 @@
-# Advanced Features
+# Extra Features
 
-Settings > **Advanced Features** in the GUI shows controls for performance
+Settings > **Extra Features** in the GUI (named Advanced Features before;
+the control ids and stored settings keep that name) shows controls for performance
 and large worlds, and the experimental Meld Generation options. With the
 switch off, or a field on Auto / its default, Arnis runs exactly as it does
 without them. Each control is a CLI flag, and the CLI has a few more for
@@ -16,13 +17,13 @@ generated; the Meld Generation ones do.
 | Memory Budget | `--ram-budget-mb` | 0 reads free memory as usual. |
 | Parallel Downloads | `--max-downloads` | Default 16. |
 | Parallel Workers | `--one-world-workers` | One World only. Auto or 1 to 6. |
-| Piece Size | `--unit-regions` | One World only. 2 to 8 regions per side, default 4. |
+| Cell Size | `--unit-regions` | One World only. 2x2, 4x4 or 8x8 regions per piece, default 4x4. A stored 3, 5, 6 or 7 from an older version falls back to 4x4. |
 
-With One World on, Parallel Workers and Piece Size always build the area in
+With One World on, Parallel Workers and Cell Size always build the area in
 pieces (see [Large areas](one_world.md#large-areas)).
 
 While pieces are in use, the map selection grows outward to whole cells
-(Piece Size x Piece Size regions) on the world's lattice, which is anchored at
+(one cell is Cell Size regions, one piece) on the world's lattice, which is anchored at
 block (0, 0): an existing One World's own, or for a new one the frame its
 first area will create, whose block (0, 0) (the corner of four regions and of
 four cells) is the centre of the selection, so the snap has the same number
@@ -91,8 +92,8 @@ format. The two buttons run in the window, not as a generation.
 
 ## OSM Data Source
 
-Its own settings section, after Advanced Features. It is not behind the
-Advanced Features switch: these flags go with every run, and the defaults are
+Its own settings section, after Extra Features. It is not behind the
+Extra Features switch: these flags go with every run, and the defaults are
 the stock downloads.
 
 | Control | CLI flag | Default | Description |
@@ -103,14 +104,14 @@ the stock downloads.
 | Local File | `--file` | Empty | An `.osm`, `.xml` or Arnis `.json` file; the area is still the map selection. Shown for Local File. |
 | Offline Mode | `--offline` | Off | Caches only. A run that misses something stops and lists what. |
 | Download Area For Offline Use: Download | `--prewarm` | | Downloads what a generation of the selected area would read, with the current settings, and builds nothing. Progress on the main bar. Runs as a child CLI process. |
-| Warm Caches Before Building Pieces | `--prewarm-first` | Off | Needs a One World built in pieces (Advanced Features on); greyed with Offline Mode. |
+| Warm Caches Before Building Pieces | `--prewarm-first` | Off | Needs a One World built in pieces (Extra Features on); greyed with Offline Mode. |
 
 All of them reach the pieces of a One World job too.
 
 ## Presets
 
-**Save Preset** and **Load Preset**, under the Advanced Features switch (and
-shown whether it is on or off), write and read every Advanced Features and OSM
+**Save Preset** and **Load Preset**, under the Extra Features switch (and
+shown whether it is on or off), write and read every Extra Features and OSM
 Data Source setting, the switch included, as a JSON file
 (`{"arnisPreset": 1, "settings": {...}}`, keyed by control id). Loading sets
 every setting it covers; one the file leaves out, or holds a value it cannot

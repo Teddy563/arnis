@@ -253,7 +253,7 @@
           <button type="button" class="settings-nav-item" data-target="settings-section-features">
             <svg class="icon" aria-hidden="true"><use href="#i-zap"></use></svg>
             <span class="settings-nav-text">
-              <span class="settings-nav-title" data-localize="settings_section_features">Advanced Features</span>
+              <span class="settings-nav-title" data-localize="settings_section_features">Extra Features</span>
               <span class="settings-nav-sub" data-localize="settings_nav_features">CPU, memory, large worlds</span>
             </span>
             <span class="settings-nav-dot" aria-hidden="true"></span>
@@ -1084,12 +1084,12 @@
               </div>
             </section>
 
-            <!-- Advanced Features -->
+            <!-- Extra Features (ids keep the old "advanced features" names) -->
             <section class="settings-section" id="settings-section-features">
               <header class="settings-section-head">
                 <span class="settings-section-icon" aria-hidden="true"><svg class="icon"><use href="#i-zap"></use></svg></span>
                 <div>
-                  <h3 data-localize="settings_section_features">Advanced Features</h3>
+                  <h3 data-localize="settings_section_features">Extra Features</h3>
                   <p data-localize="settings_section_features_desc">Extra controls for very large areas and experimental generation. Off by default.</p>
                 </div>
               </header>
@@ -1099,7 +1099,7 @@
                   <label for="advanced-features-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
                     <span class="setting-text">
-                      <span class="setting-heading"><span data-localize="advanced_features">Advanced Features</span></span>
+                      <span class="setting-heading"><span data-localize="advanced_features">Extra Features</span></span>
                       <span class="setting-desc" data-localize="advanced_features_desc">Shows the options below. When off, Arnis runs as usual.</span>
                     </span>
                   </label>
@@ -1113,7 +1113,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="presets">Presets</span>
-                        <span class="tooltip-icon" data-tooltip="A JSON file with every Advanced Features and OSM Data Source setting, the switch included. Loading one sets every setting it covers; one the file leaves out goes back to its default.">?</span>
+                        <span class="tooltip-icon" data-tooltip="A JSON file with every Extra Features and OSM Data Source setting, the switch included. Loading one sets every setting it covers; one the file leaves out goes back to its default.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="presets_desc">These settings and the OSM Data Source, as a file.</span>
                     </span>
@@ -1222,21 +1222,17 @@
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-puzzle"></use></svg>
                       <span class="setting-text">
                         <span class="setting-heading">
-                          <span data-localize="unit_regions">Piece Size</span>
-                          <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Smaller pieces lose less work to a failure, larger ones build fewer seams.">?</span>
+                          <span data-localize="unit_regions">Cell Size</span>
+                          <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Each cell is built as one piece, and the map selection grows to whole cells around the world&#x27;s centre. Smaller cells lose less work to a failure, larger ones build fewer seams.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="unit_regions_desc">Regions per side of each piece. Requires One World.</span>
+                        <span class="setting-desc" data-localize="unit_regions_desc">Regions in each piece; the selection grows to whole cells. Requires One World.</span>
                       </span>
                     </label>
                     <div class="settings-control">
                       <select id="unit-regions-select" name="unit-regions-select" class="settings-select">
-                        <option value="2">2</option>
-                        <option value="3">3</option>
-                        <option value="4" selected>4</option>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                        <option value="7">7</option>
-                        <option value="8">8</option>
+                        <option value="2">2x2</option>
+                        <option value="4" selected>4x4</option>
+                        <option value="8">8x8</option>
                       </select>
                     </div>
                   </div>
@@ -1914,7 +1910,7 @@
               </div>
             </section>
 
-            <!-- OSM Data Source: not behind the Advanced Features switch -->
+            <!-- OSM Data Source: not behind the Extra Features switch -->
             <section class="settings-section" id="settings-section-osm">
               <header class="settings-section-head">
                 <span class="settings-section-icon" aria-hidden="true"><svg class="icon"><use href="#i-database"></use></svg></span>
@@ -2025,7 +2021,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="prewarm_first">Warm Caches Before Building Pieces</span>
-                        <span class="tooltip-icon" data-tooltip="With a One World built in pieces (Advanced Features), every piece&#x27;s data is fetched one piece at a time before the pieces start, so parallel workers read from disk instead of all downloading at once. Not with Offline Mode.">?</span>
+                        <span class="tooltip-icon" data-tooltip="With a One World built in pieces (Extra Features), every piece&#x27;s data is fetched one piece at a time before the pieces start, so parallel workers read from disk instead of all downloading at once. Not with Offline Mode.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="prewarm_first_desc">Downloads each piece&#x27;s data first, one at a time. Requires parallel pieces.</span>
                     </span>

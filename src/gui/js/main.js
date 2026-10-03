@@ -1632,7 +1632,7 @@ function initVoxyLightingCoupling() {
   });
 }
 
-// The Advanced Features switch. Off, its groups are hidden and every control
+// The Extra Features switch (ids still say advanced-features). Off, its groups are hidden and every control
 // in them disabled: a hidden value then raises no revert arrow or nav dot, and
 // startGeneration sends nothing, so Arnis runs exactly as stock.
 function initAdvancedFeatures() {
@@ -1712,7 +1712,7 @@ function initOsmSource() {
   document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
 }
 
-// Presets: the Advanced Features and OSM Data Source settings as a JSON file.
+// Presets: the Extra Features and OSM Data Source settings as a JSON file.
 function initPresets() {
   const roots = ['settings-section-features', 'settings-section-osm'].map((id) => document.getElementById(id));
   const flash = (button, ok) => {
@@ -1914,7 +1914,7 @@ function refreshAdvancedFeatures() {
   refreshSettingsState();
 }
 
-// The Advanced Features as CLI flags for gui_start_generation, which parses
+// The Extra Features as CLI flags for gui_start_generation, which parses
 // them with the CLI's own parser. A control that is disabled or on its default
 // adds none, so the run is the stock one unless a control says otherwise.
 function advancedFeatureArgs() {
@@ -2000,7 +2000,7 @@ function advancedFeatureArgs() {
     // Custom with nothing ticked places none.
     'props': props === 'custom' ? (text('props-custom-input') || 'none') : props,
     'props-min-scale': text('props-min-scale-input'),
-    // OSM Data Source: sent whatever the Advanced Features switch says.
+    // OSM Data Source: sent whatever the Extra Features switch says.
     'no-tile-archive': source === 'overpass' ? true : null,
     'osm-tiles-url': text('osm-tiles-url-input'),
     'overpass-url': overpass || null,
@@ -2978,7 +2978,7 @@ function displayBboxInfoText(bboxText) {
    One World's grid, so every piece is whole regions. The Rust side does the
    frame maths, the same as the run's; the map draws the result. */
 
-// Pieces are built with Advanced Features on and One World on.
+// Pieces are built with Extra Features on and One World on.
 function snapActive() {
   const workers = document.getElementById('one-world-workers-select');
   return !!(workers && !workers.disabled) && isOneWorldEnabled();
