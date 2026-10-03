@@ -1862,6 +1862,8 @@ fn gui_start_generation(
                 },
                 legacy_terrain: false,
                 interior: interior_enabled,
+                loot_table: None,
+                dump_loot_table: None,
                 fillground: fillground_enabled,
                 caves: caves_enabled,
                 // The asset pack, biome mix and zone preview are CLI aids; the GUI toggle

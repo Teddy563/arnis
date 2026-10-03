@@ -73,6 +73,7 @@ mod world_utils;
 use args::Args;
 use clap::Parser;
 use colored::*;
+use element_processing::subprocessor::buildings_loot;
 use std::path::PathBuf;
 #[cfg(all(feature = "gui", target_os = "linux"))]
 use std::process::Command;
@@ -250,6 +251,28 @@ fn run_cli() {
         repository.bright_white().bold()
     );
 
+    if let Some(path) = &args.dump_loot_table {
+        let json = buildings_loot::built_in_loot_table_json();
+        if let Err(e) = fs::write(path, json) {
+            eprintln!(
+                "{} Cannot write {}: {e}",
+                "Error:".red().bold(),
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Some(path) = &args.loot_table {
+        match buildings_loot::load_loot_table(path) {
+            Ok(table) => buildings_loot::set_loot_table(Some(table)),
+            Err(e) => eprintln!(
+                "{} --loot-table {}: {e}; using the built-in loot table",
+                "Warning:".yellow().bold(),
+                path.display()
+            ),
+        }
+    }
     if args.process.progress == Some(args::ProgressFormat::Json) {
         progress_json::enable();
     }

@@ -96,6 +96,16 @@ pub struct Args {
     #[arg(long, default_value_t = false, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub interior: bool,
 
+    /// Chest loot table (JSON) for --interior, in place of the built-in one. A file that
+    /// cannot be read or fails validation is reported and the built-in table is used.
+    /// --dump-loot-table writes the built-in table in this format to start from.
+    #[arg(long = "loot-table", value_name = "FILE")]
+    pub loot_table: Option<PathBuf>,
+
+    /// Write the built-in chest loot table to FILE as JSON and exit.
+    #[arg(long = "dump-loot-table", value_name = "FILE")]
+    pub dump_loot_table: Option<PathBuf>,
+
     /// Enable filling ground (optional)
     #[arg(long, default_value_t = false)]
     pub fillground: bool,
