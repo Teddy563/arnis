@@ -1228,16 +1228,14 @@ pub fn generate_world_with_options(
                 g_max_z,
             );
 
-            // Under eviction the post-merge rail-tunnel carve can't run (regions get freed),
-            // so carve in-tile now, after ground/fill so the interior isn't refilled.
-            if eviction_active {
-                railways::carve_rail_tunnel_interior(&mut tile_editor, &tile_rail_tunnel_points);
-                highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
-            }
+            // Carve tunnels in-tile, after ground/fill so the interior isn't refilled. Always
+            // here, never post-merge: eviction frees regions before a post-merge pass could
+            // run, and carving in one place keeps streamed output identical to resident.
+            railways::carve_rail_tunnel_interior(&mut tile_editor, &tile_rail_tunnel_points);
+            highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
             // Seal floating water/lava last: the water-depth carve and the tunnel carves
-            // above can each undercut a water body over a cave. Under eviction this tile
-            // flushes soon, so it happens here; otherwise once after the merge.
-            if args.caves && eviction_active {
+            // above can each undercut a water body over a cave. In-tile for the same reason.
+            if args.caves {
                 crate::caves::seal_floating_fluid_region(
                     &mut tile_editor,
                     g_min_x,
@@ -1257,13 +1255,7 @@ pub fn generate_world_with_options(
                 emit_gui_progress_update_ex(pct, "Generating area...", eviction_active);
             }
 
-            (
-                tile_idx,
-                tile_editor.into_world(),
-                tile_rail_tunnel_points,
-                tile_tunnel_cells,
-                tile_road_overrides,
-            )
+            (tile_idx, tile_editor.into_world(), tile_road_overrides)
         };
 
         // Tiles merge in list order: outside its own bounds a tile only fills air, so the
@@ -1316,13 +1308,8 @@ pub fn generate_world_with_options(
             let merged = (|| -> Result<(), String> {
                 for (i, result) in &rx {
                     pending.insert(i, result);
-                    while let Some((
-                        tile_idx,
-                        tile_world,
-                        tile_rail_tunnel_points,
-                        tile_tunnel_cells,
-                        tile_road_overrides,
-                    )) = pending.remove(&next_merge)
+                    while let Some((tile_idx, tile_world, tile_road_overrides)) =
+                        pending.remove(&next_merge)
                     {
                         let merge_start = std::time::Instant::now();
                         editor.merge_world(
@@ -1384,13 +1371,6 @@ pub fn generate_world_with_options(
                                     }
                                 }
                             }
-                        }
-
-                        // Under eviction the in-tile carve already ran, and nothing reads
-                        // these afterwards, so don't retain the points or the cells.
-                        if !eviction_active {
-                            rail_tunnel_points.extend(tile_rail_tunnel_points);
-                            tunnel_cells.extend(tile_tunnel_cells);
                         }
 
                         // Step 20%->70% per merged tile, throttled to whole-percent steps.
@@ -1613,15 +1593,15 @@ pub fn generate_world_with_options(
     drop(rail_bridge_internal_endpoints);
 
     // Carve railway tunnel interiors now that underground is filled with stone.
-    // Under eviction this already ran in-tile (regions get freed before here).
-    if !eviction_active && !rail_tunnel_points.is_empty() {
+    // The tile path already did this in-tile (the lists stay empty there).
+    if !rail_tunnel_points.is_empty() {
         railways::carve_rail_tunnel_interior(&mut editor, &rail_tunnel_points);
     }
-    if !eviction_active && !tunnel_cells.is_empty() {
+    if !tunnel_cells.is_empty() {
         highways::carve_highway_tunnel_interior(&mut editor, &tunnel_cells);
     }
-    // Seal floating water/lava as the final underground pass; eviction tiles did it in-tile.
-    if args.caves && !eviction_active {
+    // Seal floating water/lava as the final underground pass; tiles did it in-tile.
+    if args.caves && ground_on_merged {
         crate::caves::seal_floating_fluid_region(
             &mut editor,
             xzbbox.min_x(),
