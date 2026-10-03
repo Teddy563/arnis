@@ -166,6 +166,7 @@ async function applyLocalization(localization) {
   renderOneWorldStatus();
   formatCpuUsage();
   renderDataPlan();
+  refreshOptionPreviews();
   // The map hint lives in the map iframe, which cannot see this assignment.
   document.querySelectorAll('iframe').forEach((frame) => {
     try {
@@ -1689,6 +1690,9 @@ function initAdvancedFeatures() {
   });
   initPropFamilies();
   initExperimentalButtons();
+  // The cards follow their controls, restored and reset values included.
+  groups.addEventListener('change', refreshOptionPreviews);
+  refreshOptionPreviews();
   initOsmSource();
   initPresets();
   ['unit-regions-select', 'scale-value-slider'].forEach((id) => {
@@ -1870,6 +1874,30 @@ function initPresets() {
       console.error('Loading the preset failed:', error);
       flash(load, false);
     }
+  });
+}
+
+// Option preview cards: the picture of the option a control holds, rendered
+// with Arnis itself (docs/advanced_features.md), captioned with its name.
+function refreshOptionPreviews() {
+  document.querySelectorAll('.option-preview[data-for]').forEach((card) => {
+    const control = document.getElementById(card.dataset.for);
+    const img = card.querySelector('img');
+    const caption = card.querySelector('figcaption');
+    if (!control || !img || !caption) return;
+    let value;
+    if (control.type === 'checkbox') {
+      value = control.checked ? 'on' : 'off';
+      caption.textContent = control.checked
+        ? oneWorldText('preview_on', 'On')
+        : oneWorldText('preview_off', 'Off');
+    } else {
+      value = control.value;
+      const option = control.selectedOptions[0];
+      caption.textContent = option ? option.textContent : '';
+    }
+    const src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
   });
 }
 

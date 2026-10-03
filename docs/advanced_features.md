@@ -94,6 +94,31 @@ The window applies what the CLI does for these: the seed, the tall
 datapack's floor and ceiling (checked as the CLI checks them) and the region
 format. The two buttons run in the window, not as a generation.
 
+### Option Previews
+
+Under Field Layout, Tree Realm, the tree size sliders, Snow, Rocks, Bushes,
+Road Detail, River Bed, Climate Sampling, Grass Texture and Land Texture a
+256x160 card shows the selected option, from
+`src/gui/images/previews/<setting>-<value>.png`. Each was built by the
+release CLI over a small sample area and cut from its `--map-preview` PNG
+(`arnis --bbox=AREA --output-dir=DIR --map-preview --no-3d FLAG`, where FLAG
+is the option, e.g. `--field-mix=prairie`), then quantized to 128 colours:
+
+| Cards | Sample area (`--bbox`) | Notes |
+| --- | --- | --- |
+| Field Layout, Rocks, Bushes | `44.55,26.00,44.555,26.008` | Rocks and Bushes on `--field-mix=pasture` (rocks avoid tilled farmland), density 0.2. |
+| Tree Realm, tree sizes | `44.2000,25.9000,44.2050,25.9080` | Tree sizes: one run per size with only it weighted, cut into five strips. |
+| Snow | `46.53,7.95,46.54,7.965` | Manual with `--snow-y=180`. |
+| Road Detail | `44.4450,26.0950,44.4470,26.0980` | |
+| River Bed | `44.4300,26.0850,44.4340,26.0950` | Water shaded by depth from the region files: the bed cannot be seen from above. |
+| Grass Texture | `46.6200,8.0400,46.6240,8.0460` | |
+| Land Texture | `44.6000,25.7000,44.6050,25.7080` | |
+| Climate Sampling | `25.0,-5.0,65.0,45.0` | The `--climate-map` PNG; Origin is the centre's climate everywhere. |
+
+The script that does all of this (`make_previews.py`, Python with Pillow and
+nbtlib) is kept with the Meld tooling, not in this repository; the table and
+the command above are enough to redo any card by hand.
+
 ## OSM Data Source
 
 Its own settings section, after Extra Features. It is not behind the

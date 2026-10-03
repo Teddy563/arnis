@@ -1250,7 +1250,7 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_terrain">Terrain</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="snow-mode-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-snowflake"></use></svg>
                       <span class="setting-text">
@@ -1269,6 +1269,10 @@
                         <option value="off" data-localize="snow_mode_off">Off</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="snow-mode-select" data-preview="snow-mode">
+                      <img src="images/previews/snow-mode-realistic.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide" id="snow-percent-row">
                     <label for="snow-percent-slider" class="setting-label">
@@ -1298,7 +1302,7 @@
                       <input type="number" id="snow-y-input" name="snow-y-input" min="-2048" max="2048" step="1" value="120">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile">
+                  <div class="settings-row setting-tile has-preview">
                     <label for="rocks-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
                       <span class="setting-text">
@@ -1312,8 +1316,12 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="rocks-toggle" name="rocks-toggle">
                     </div>
+                    <figure class="option-preview" data-for="rocks-toggle" data-preview="rocks">
+                      <img src="images/previews/rocks-off.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
-                  <div class="settings-row setting-tile">
+                  <div class="settings-row setting-tile has-preview">
                     <label for="bushes-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-shrub"></use></svg>
                       <span class="setting-text">
@@ -1327,6 +1335,10 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="bushes-toggle" name="bushes-toggle">
                     </div>
+                    <figure class="option-preview" data-for="bushes-toggle" data-preview="bushes">
+                      <img src="images/previews/bushes-off.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="rock-density-slider" class="setting-label">
@@ -1362,7 +1374,7 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_roads">Roads &amp; Buildings</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="road-detail-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-route"></use></svg>
                       <span class="setting-text">
@@ -1380,6 +1392,10 @@
                         <option value="compact" data-localize="road_detail_compact">Compact</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="road-detail-select" data-preview="road-detail">
+                      <img src="images/previews/road-detail-max.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="no-buildings-toggle" class="setting-label">
@@ -1419,7 +1435,7 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_fields">Fields &amp; Trees</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="field-mix-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
                       <span class="setting-text">
@@ -1439,6 +1455,10 @@
                         <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="field-mix-select" data-preview="field-mix">
+                      <img src="images/previews/field-mix-classic.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="farm-crops-input" class="setting-label">
@@ -1471,7 +1491,7 @@
                       <span id="field-scale-value" class="setting-value">100%</span>
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="tree-realm-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-earth"></use></svg>
                       <span class="setting-text">
@@ -1497,6 +1517,10 @@
                         <option value="vanilla-plus" data-localize="tree_realm_vanilla_plus">Vanilla Plus</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="tree-realm-select" data-preview="tree-realm">
+                      <img src="images/previews/tree-realm-auto.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="tree-weight-small-slider" class="setting-label">
@@ -1562,7 +1586,7 @@
                       <span id="tree-weight-tall-value" class="setting-value">100%</span>
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="tree-weight-giant-slider" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
                       <span class="setting-text">
@@ -1577,6 +1601,10 @@
                       <input type="range" id="tree-weight-giant-slider" name="tree-weight-giant-slider" min="0" max="200" step="10" value="100">
                       <span id="tree-weight-giant-value" class="setting-value">100%</span>
                     </div>
+                    <figure class="option-preview">
+                      <img src="images/previews/tree-size-tiers.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption data-localize="preview_tree_tiers">Small to giant trees, left to right</figcaption>
+                    </figure>
                   </div>
                 </div>
                 <div class="setting-choice setting-subgroup">
@@ -1613,7 +1641,7 @@
                       <input type="number" id="cave-datum-y-input" name="cave-datum-y-input" min="-2032" max="2016" step="16" placeholder="Default">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="river-bed-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-waves"></use></svg>
                       <span class="setting-text">
@@ -1630,6 +1658,10 @@
                         <option value="v1" data-localize="river_bed_v1">U-Shaped</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="river-bed-select" data-preview="river-bed">
+                      <img src="images/previews/river-bed-off.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="water-detail-select" class="setting-label">
@@ -1689,7 +1721,7 @@
                       <input type="number" id="blinear-level-input" name="blinear-level-input" min="1" max="22" step="1" value="6">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-preview">
                     <label for="climate-mode-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-thermometer"></use></svg>
                       <span class="setting-text">
@@ -1706,6 +1738,10 @@
                         <option value="per-position" data-localize="climate_mode_per_position">Per Position</option>
                       </select>
                     </div>
+                    <figure class="option-preview" data-for="climate-mode-select" data-preview="climate-mode">
+                      <img src="images/previews/climate-mode-origin.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="climate-preview-button" class="setting-label">
@@ -1723,7 +1759,7 @@
                     <span id="climate-preview-text"></span>
                     <img id="climate-preview-image" alt="">
                   </div>
-                  <div class="settings-row setting-tile">
+                  <div class="settings-row setting-tile has-preview">
                     <label for="grass-texture-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
                       <span class="setting-text">
@@ -1737,8 +1773,12 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="grass-texture-toggle" name="grass-texture-toggle">
                     </div>
+                    <figure class="option-preview" data-for="grass-texture-toggle" data-preview="grass-texture">
+                      <img src="images/previews/grass-texture-off.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
-                  <div class="settings-row setting-tile">
+                  <div class="settings-row setting-tile has-preview">
                     <label for="land-texture-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
                       <span class="setting-text">
@@ -1752,6 +1792,10 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="land-texture-toggle" name="land-texture-toggle">
                     </div>
+                    <figure class="option-preview" data-for="land-texture-toggle" data-preview="land-texture">
+                      <img src="images/previews/land-texture-off.png" alt="" width="256" height="160" loading="lazy">
+                      <figcaption></figcaption>
+                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="grass-mix-input" class="setting-label">
