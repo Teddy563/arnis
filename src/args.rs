@@ -166,6 +166,11 @@ pub struct Args {
     #[arg(long = "overture", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub overture: bool,
 
+    /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
+    /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
+    #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
+
     /// Which Overture transport to read. Both carry the same buildings.
     /// auto: vector tiles, falling back to the Parquet partitions (default)
     /// tiles: vector tiles only, so a fallback cannot hide a broken archive
@@ -1236,6 +1241,21 @@ mod tests {
         let mut cmd: Vec<&str> = base.to_vec();
         cmd.extend_from_slice(&["--mode", "objects"]);
         assert!(Args::try_parse_from(cmd.iter()).is_err());
+    }
+
+    #[test]
+    fn no_buildings_and_loot_table_default_off() {
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        let default = parse(&[]);
+        assert!(default.buildings);
+        assert!(default.loot_table.is_none() && default.dump_loot_table.is_none());
+        assert!(!parse(&["--no-buildings"]).buildings);
+        let custom = parse(&["--loot-table", "loot.json"]);
+        assert_eq!(custom.loot_table, Some(PathBuf::from("loot.json")));
     }
 
     #[test]

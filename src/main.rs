@@ -301,6 +301,8 @@ fn run_cli() {
     if args.caves {
         args.fillground = true;
     }
+    // Overture only adds buildings, so --no-buildings has nothing to fetch.
+    args.overture &= args.buildings;
 
     // Validate arguments (path requirements differ between Java and Bedrock)
     if let Err(e) = args::validate_args(&args) {
