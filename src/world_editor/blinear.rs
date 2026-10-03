@@ -44,6 +44,7 @@ const DATA_START: usize = HEADER_SIZE + BUCKET_COUNT * 8;
 pub(crate) struct BlinearRegionWriter {
     chunks: Vec<Option<Vec<u8>>>,
     level: i32,
+    void_world: bool,
     out_path: PathBuf,
 }
 
@@ -53,12 +54,14 @@ impl BlinearRegionWriter {
         region_x: i32,
         region_z: i32,
         level: i32,
+        void_world: bool,
     ) -> Result<Self, BoxError> {
         let region_dir = world_dir.join("region");
         std::fs::create_dir_all(&region_dir)?;
         Ok(Self {
             chunks: vec![None; CHUNKS_PER_REGION],
             level: level.clamp(1, 22),
+            void_world,
             out_path: region_dir.join(format!("r.{region_x}.{region_z}.b_linear")),
         })
     }
@@ -71,18 +74,19 @@ impl BlinearRegionWriter {
     /// Compress and publish via a sibling temp + rename, so a reader never sees a torn
     /// file. The temp (`r.X.Z.tmp<pid>`) does not match `r.*.b_linear`.
     pub(crate) fn finish(self) -> Result<(), BoxError> {
-        let bytes = encode(&self.chunks, self.level, now_millis())?;
+        let bytes = encode(&self.chunks, self.level, self.void_world)?;
         crate::world_utils::replace_file_atomically(&self.out_path, &bytes)?;
         Ok(())
     }
 }
 
-fn encode(chunks: &[Option<Vec<u8>>], level: i32, timestamp: i64) -> Result<Vec<u8>, BoxError> {
+fn encode(chunks: &[Option<Vec<u8>>], level: i32, void_world: bool) -> Result<Vec<u8>, BoxError> {
     // Buckets are independent: compress them in parallel (matters on the single
     // background flush thread, where one slow region stalls eviction).
     let frames = chunks
         .par_chunks(BUCKET_SIZE)
-        .map(|bucket| encode_bucket(bucket, level, timestamp))
+        .enumerate()
+        .map(|(b, bucket)| encode_bucket(b * BUCKET_SIZE, bucket, level, void_world))
         .collect::<Result<Vec<_>, BoxError>>()?;
 
     let mut out = Vec::with_capacity(
@@ -114,9 +118,10 @@ fn encode(chunks: &[Option<Vec<u8>>], level: i32, timestamp: i64) -> Result<Vec<
 
 /// `(raw length, zstd frame)` of one bucket, or `None` when it holds no chunk.
 fn encode_bucket(
+    first_index: usize,
     bucket: &[Option<Vec<u8>>],
     level: i32,
-    timestamp: i64,
+    void_world: bool,
 ) -> Result<Option<(usize, Vec<u8>)>, BoxError> {
     if bucket.iter().all(Option::is_none) {
         return Ok(None);
@@ -126,7 +131,7 @@ fn encode_bucket(
         .map(|c| 4 + c.as_ref().map_or(0, |nbt| 16 + nbt.len()))
         .sum();
     let mut raw = Vec::with_capacity(raw_len);
-    for chunk in bucket {
+    for (slot, chunk) in bucket.iter().enumerate() {
         let Some(nbt) = chunk else {
             raw.extend_from_slice(&0i32.to_be_bytes());
             continue;
@@ -137,19 +142,27 @@ fn encode_bucket(
             .ok_or("chunk NBT exceeds the b_linear section limit")?;
         raw.extend_from_slice(&(nbt_len + 16).to_be_bytes());
         raw.extend_from_slice(&nbt_len.to_be_bytes());
-        raw.extend_from_slice(&timestamp.to_be_bytes());
+        raw.extend_from_slice(
+            &anvil_timestamp_millis(first_index + slot, void_world).to_be_bytes(),
+        );
         raw.extend_from_slice(&xxh32(nbt, HASH_SEED).to_be_bytes());
         raw.extend_from_slice(nbt);
     }
     Ok(Some((raw_len, zstd::bulk::compress(&raw, level)?)))
 }
 
-/// Leaf ignores the timestamp; converters treat values below 10^10 as seconds, so
-/// write milliseconds.
-fn now_millis() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
+/// A chunk's timestamp: the one the Anvil writer leaves in the `.mca` header (fastanvil
+/// never sets it, so 0 in a void world and the flat template's otherwise), in
+/// milliseconds as Meld's `region-convert` scales it. Leaf ignores the field; this way
+/// the file is deterministic and byte-identical to `region-convert --to blinear-v3`
+/// run on the same world written as `.mca`.
+fn anvil_timestamp_millis(index: usize, void_world: bool) -> i64 {
+    if void_world {
+        return 0;
+    }
+    let at = 4096 + index * 4;
+    let template = &crate::world_utils::REGION_TEMPLATE[at..at + 4];
+    i64::from(u32::from_be_bytes(template.try_into().unwrap())) * 1000
 }
 
 /// XXH32 (one-shot), the chunk checksum Leaf verifies. Inline rather than a crate:
@@ -267,7 +280,7 @@ mod tests {
 
     #[test]
     fn header_matches_the_leaf_contract() {
-        let bytes = encode(&vec![None; CHUNKS_PER_REGION], 9, 0).unwrap();
+        let bytes = encode(&vec![None; CHUNKS_PER_REGION], 9, true).unwrap();
         assert_eq!(bytes.len(), 142, "empty region is header + zero table");
         assert_eq!(
             &bytes[0..8],
@@ -282,7 +295,7 @@ mod tests {
     #[test]
     fn chunks_round_trip_into_their_slots() {
         let dir = tempfile::tempdir().unwrap();
-        let mut w = BlinearRegionWriter::create(dir.path(), -3, 7, 6).unwrap();
+        let mut w = BlinearRegionWriter::create(dir.path(), -3, 7, 6, false).unwrap();
         let payloads = [
             (9, 0, vec![1u8; 3]),
             (0, 0, b"first".to_vec()),

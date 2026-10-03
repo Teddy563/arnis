@@ -208,7 +208,7 @@ pub fn create_new_world_with_name(
 }
 
 /// Flat template chunks the skeleton writes as `region/r.0.0.mca`.
-const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
+pub(crate) const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
 
 /// Deletes `region/r.0.0.mca` while it is still exactly the skeleton's template, so a void
 /// world keeps no flat chunks where its area never reaches. A file anything has written to

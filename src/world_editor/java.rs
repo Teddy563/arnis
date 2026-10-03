@@ -391,7 +391,7 @@ fn write_region_to_disk(
         // B_Linear has no reader here, so it cannot merge; the CLI refuses One World.
         Some(_) if merge => return Err("--region-format blinear cannot merge into a world".into()),
         Some(level) => RegionSink::Blinear(super::blinear::BlinearRegionWriter::create(
-            world_dir, region_x, region_z, level,
+            world_dir, region_x, region_z, level, void_world,
         )?),
         None if merge => {
             RegionSink::Anvil(open_region_file_for_merge(world_dir, region_x, region_z)?)
