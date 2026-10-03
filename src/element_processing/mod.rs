@@ -11,6 +11,7 @@ pub mod buildings;
 pub(crate) mod connected_blocks;
 pub mod doors;
 pub mod emergency;
+pub mod field_texture;
 pub mod highways;
 pub mod historic;
 pub mod landuse;

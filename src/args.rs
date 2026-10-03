@@ -390,6 +390,9 @@ pub struct Args {
     pub scatter: ScatterArgs,
 
     #[command(flatten)]
+    pub fields: crate::element_processing::field_texture::FieldArgs,
+
+    #[command(flatten)]
     pub process: ProcessArgs,
 
     #[command(flatten)]

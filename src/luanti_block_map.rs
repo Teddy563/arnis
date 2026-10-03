@@ -776,6 +776,9 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
         477 => "mcl_core:snow_5",
         478 => "mcl_core:snow_6",
         479 => "mcl_core:snow_7",
+        480 => "mcl_mud:packed_mud",
+        481 => "mcl_lush_caves:rooted_dirt",
+        482 => "mcl_farming:beetroot", // ripe; crop stages are not carried over
         _ => "mcl_core:stone",
     };
     LuantiNode { name, param2: 0 }

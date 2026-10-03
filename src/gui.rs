@@ -1945,6 +1945,7 @@ fn gui_start_generation(
                 body: celestial_body,
                 // Stock unless Advanced Features set a knob.
                 scatter: Default::default(),
+                fields: Default::default(),
                 process,
                 units,
                 snow: Default::default(),

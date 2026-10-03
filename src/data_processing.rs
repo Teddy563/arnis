@@ -875,6 +875,17 @@ pub fn generate_world_with_options(
     // Resolved once here: a body spanning many tiles must not be measured per tile.
     let still_surfaces = water_areas::prescan_still_surfaces(&elements, &ground, &xzbbox);
 
+    // Farmland parcels align to their access roads. One World areas and work units
+    // see roads only CLIP_PAD_BLOCKS past their edge, too little to agree on a
+    // domain's road at the seam, so parcels there keep their hashed angles.
+    let field_roads = !args.one_world
+        && crate::element_processing::field_texture::FieldProfile::from_args(
+            &args.fields,
+            args.scale,
+        )
+        .is_some();
+    crate::road_bearings::set_from_elements(if field_roads { &elements } else { &[] });
+
     println!("{} Processing data...", "[4/7]".bold());
     emit_gui_progress_update(19.5, "Processing data...");
 

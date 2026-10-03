@@ -3,6 +3,7 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
@@ -113,10 +114,18 @@ pub fn generate_landuse(
             Some("training_area" | "range" | "danger_area" | "trench")
         );
     let climate = editor.climate();
+    // Farmland parcels (--field-mix / --farm-crops). None keeps the uniform crop sheet.
+    let fields = (landuse_tag == "farmland")
+        .then(|| FieldProfile::from_args(&args.fields, args.scale))
+        .flatten();
 
     for &(x, z) in floor_area.iter() {
+        // One resolution per block, shared by the surface and the decoration below.
+        let field_cell = fields.as_ref().map(|f| f.cell_at(x, z));
         // Apply per-block randomness for certain landuse types
-        let actual_block = if landuse_tag == "industrial" {
+        let actual_block = if let Some(cell) = &field_cell {
+            cell.surface
+        } else if landuse_tag == "industrial" {
             // Industrial: primarily stone, with some stone bricks and smooth stone
             let random_value = rng.random_range(0..100);
             if random_value < 70 {
@@ -250,6 +259,11 @@ pub fn generate_landuse(
                         }
                     }
                 }
+            }
+            "farmland"
+                if field_cell.is_some() && !editor.check_for_block(x, 0, z, Some(&[WATER])) =>
+            {
+                field_texture::decorate(editor, field_cell.as_ref().unwrap(), x, z, &mut rng);
             }
             "farmland" if !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
                 // Irrigation dots, but only where boxed in so they can't flow downhill and wash out crops.

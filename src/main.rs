@@ -54,6 +54,7 @@ mod progress_json;
 mod projection;
 mod retrieve_data;
 mod river_bed;
+mod road_bearings;
 mod scale;
 mod snow_mode;
 mod structures;
