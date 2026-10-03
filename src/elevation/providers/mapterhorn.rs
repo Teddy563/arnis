@@ -438,6 +438,20 @@ fn fetch_tile_pyramid(
     }
 
     // Persist 404 markers only when this run saw at least one good download.
+    // When every tile it found came from disk, one live known-land request
+    // gives that proof, since --offline can only replay 404s that were stored.
+    if !state.pending_markers.is_empty()
+        && !state
+            .saw_network_success
+            .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let _ = download_tile(
+            &client,
+            &KNOWN_LAND_TILE,
+            &KNOWN_LAND_TILE.cache_path(cache_dir),
+            &state.saw_network_success,
+        );
+    }
     if state
         .saw_network_success
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -1086,5 +1100,32 @@ mod tests {
             max > 60.0,
             "Point Grey rises well above the shore, got {max}"
         );
+    }
+
+    // Run manually: cargo test test_live_absent_markers -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn test_live_absent_markers_kept_when_parents_are_cached() {
+        // Bucharest: no LiDAR, so z16 404s and the data comes from coarser parents.
+        let bbox = LLBBox::new(44.4450, 26.0950, 44.4480, 26.1030).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let markers = |dir: &Path| {
+            std::fs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "missing"))
+                .map(|e| e.path())
+                .collect::<Vec<_>>()
+        };
+        fetch_tile_pyramid(&bbox, 16, tmp.path()).unwrap();
+        let first = markers(tmp.path());
+        assert!(!first.is_empty());
+        // Parents stay cached; only the 404s are forgotten, as when the cache
+        // holds a neighbouring area. They must be stored again.
+        for m in &first {
+            std::fs::remove_file(m).unwrap();
+        }
+        fetch_tile_pyramid(&bbox, 16, tmp.path()).unwrap();
+        assert_eq!(markers(tmp.path()).len(), first.len());
     }
 }

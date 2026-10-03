@@ -594,10 +594,18 @@ fn read_esa_tile_into_raster(
 
     // Step 1: Read the TIFF/BigTIFF header to get IFD location
     // Read first 64KB which should contain the IFD for COG files
+    // Open ocean has no tile (404). That answer is kept too, so --offline can replay it.
+    let absent_path = header_cache_path.with_extension("missing");
     let header_bytes = if header_cache_path.exists() {
         std::fs::read(&header_cache_path)?
+    } else if absent_path.exists() {
+        return Err("no ESA tile here (HTTP 404, cached)".into());
     } else {
-        let bytes = fetch_range(client, url, 0, 65536)?;
+        let bytes = fetch_range(client, url, 0, 65536).inspect_err(|e| {
+            if e.to_string().starts_with("HTTP 404") {
+                crate::overture::write_atomic(&absent_path, b"");
+            }
+        })?;
         // Cache the header for future use
         crate::overture::write_atomic(&header_cache_path, &bytes);
         bytes
@@ -1628,5 +1636,32 @@ mod smoothing_scale_tests {
         let mut lc = lc_from_rows(&["bbbb", "gggg"], 1.0);
         mark_beaches(&mut lc);
         assert!(lc.grid[0].iter().all(|&c| c == LC_BARE));
+    }
+}
+
+#[cfg(test)]
+mod absent_tile_tests {
+    use super::*;
+
+    /// A stored 404 answers without a request, which is what lets --offline replay it.
+    #[test]
+    fn cached_absent_tile_is_replayed_without_a_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Nothing listens there: any request would fail with a connection error instead.
+        let url = "http://127.0.0.1:9/ESA_WorldCover_10m_2021_v200_N30W045_Map.tif";
+        std::fs::write(
+            tmp.path()
+                .join("ESA_WorldCover_10m_2021_v200_N30W045_Map_header.missing"),
+            b"",
+        )
+        .unwrap();
+        let client = reqwest::blocking::Client::new();
+        let bbox = LLBBox::new(31.0, -44.0, 31.01, -43.99).unwrap();
+        let mut raster = None;
+        let err =
+            read_esa_tile_into_raster(&client, url, tmp.path(), 30.0, -45.0, &bbox, &mut raster)
+                .unwrap_err();
+        assert!(err.to_string().contains("cached"), "{err}");
+        assert!(raster.is_none());
     }
 }

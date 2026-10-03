@@ -327,7 +327,16 @@ fn cached_strip_index(
         }
         let _ = std::fs::remove_file(&path);
     }
-    let index = read_strip_index(client, url)?;
+    // Open ocean has no tile (404). That answer is kept too, so --offline can replay it.
+    let absent = dir.join(format!("{key}.missing"));
+    if absent.exists() {
+        return Err("no tile here (HTTP 404, cached)".into());
+    }
+    let index = read_strip_index(client, url).inspect_err(|e| {
+        if e.starts_with("HTTP 404") {
+            crate::overture::write_atomic(&absent, b"");
+        }
+    })?;
     crate::overture::write_atomic(&path, &index.encode());
     Ok(index)
 }
