@@ -1901,6 +1901,8 @@ fn gui_start_generation(
                 map_preview: world_format != WorldFormat::LuantiWorld
                     && rotation_angle.abs() <= f64::EPSILON,
                 signage: crate::args::SignageLevel::from_str_lossy(&signage),
+                // No GUI field yet: every road and marking, as before.
+                road_detail: Default::default(),
                 // The settings toggle and the token together: the toggle is what
                 // the user turns off to keep a saved token without paying for the
                 // download, and without a token there is nothing to fetch.

@@ -11,6 +11,7 @@ use crate::element_processing::connected_blocks::{
     connected_iron_bars, place_connected, stair_steps,
 };
 use crate::element_processing::get_nearest_non_road_block;
+use crate::element_processing::road_detail;
 use crate::element_processing::surfaces::{
     cycleway_palette, get_blocks_for_surface, get_blocks_for_surface_way, semirandom_surface,
 };
@@ -1545,6 +1546,9 @@ fn generate_highways_internal(
             if way.tags.get("lane_markings").map(|s| s.as_str()) == Some("no") {
                 lanes = 1;
             }
+            let (lanes, twin_divider) =
+                args.road_detail
+                    .lane_plan(highway_type, &way.tags, lanes, 2 * block_range + 1);
 
             // Elevation based on layer (already normalised; `LAYER_HEIGHT_STEP`
             // is defined at the top of this function).
@@ -1689,8 +1693,8 @@ fn generate_highways_internal(
 
                     // Variables to manage dashed line pattern
                     let mut stripe_length: i32 = 0;
-                    let dash_length: i32 = (5.0 * scale_factor).ceil() as i32;
-                    let gap_length: i32 = (5.0 * scale_factor).ceil() as i32;
+                    let dash_length: i32 = args.road_detail.dash_length(scale_factor);
+                    let gap_length: i32 = dash_length;
 
                     // Segment-constants for multi-lane divider placement.
                     // Computed once here instead of at every bresenham point:
@@ -1896,11 +1900,11 @@ fn generate_highways_internal(
                                 // naturally against the road mix than the
                                 // footway's single grey.
                                 if is_zebra_crossing {
-                                    let on_stripe = if dir_horizontal {
-                                        set_x % 2 < 1
+                                    let on_stripe = args.road_detail.zebra_bar(if dir_horizontal {
+                                        set_x
                                     } else {
-                                        set_z % 2 < 1
-                                    };
+                                        set_z
+                                    });
                                     if on_stripe {
                                         // White bar. Whitelist the mix we
                                         // place for the non-bar cells so the
@@ -2176,7 +2180,12 @@ fn generate_highways_internal(
                                 for l in 1..lanes {
                                     // Signed perpendicular offset of this
                                     // divider from the centerline.
-                                    let perp_dist = l as f32 * lane_width - half_width;
+                                    let perp_dist = road_detail::divider_offset(
+                                        l,
+                                        lane_width,
+                                        half_width,
+                                        twin_divider,
+                                    );
                                     let stripe_x = (*x as f32 + perp_x * perp_dist).round() as i32;
                                     let stripe_z = (*z as f32 + perp_z * perp_dist).round() as i32;
 

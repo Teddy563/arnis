@@ -575,6 +575,10 @@ pub fn generate_world_with_options(
     if dropped > 0 {
         println!("  Skipped {dropped} building(s) on runways, taxiways and aprons");
     }
+    // Before the road mask and junction map, so they only see the roads drawn.
+    if args.road_detail != road_detail::RoadDetail::Max {
+        elements.retain(|element| !args.road_detail.drops_element(element));
+    }
 
     // Create editor with appropriate format
     let mut editor: WorldEditor = if options.format == WorldFormat::LuantiWorld {
