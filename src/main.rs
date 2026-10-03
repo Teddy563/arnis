@@ -45,6 +45,7 @@ mod net;
 mod one_world;
 mod ore_generation;
 mod osm_parser;
+mod osm_pbf;
 mod osm_tiles;
 mod overture;
 #[cfg(feature = "gui")]
@@ -711,6 +712,7 @@ fn run_cli() {
                 args.save_json_file.as_deref(),
                 &args.osm_tiles_url,
                 !args.no_tile_archive,
+                osm_pbf::Source::from_args(&args).as_ref(),
             )
             .unwrap_or_else(|e| {
                 // Offline, the other fetches finish first so the error lists all that is missing.

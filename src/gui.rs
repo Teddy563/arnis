@@ -2116,6 +2116,8 @@ fn gui_start_generation(
                 overture_source: crate::args::OvertureSource::Auto,
                 osm_tiles_url: meld.osm_tiles_url,
                 no_tile_archive: meld.no_tile_archive,
+                osm_pbf: meld.osm_pbf,
+                osm_pbf_url: meld.osm_pbf_url,
                 use_3d: use_3d_enabled,
                 props: meld.props,
                 props_min_scale: meld.props_min_scale,
@@ -2420,6 +2422,7 @@ fn gui_start_generation(
                         None,
                         &args.osm_tiles_url,
                         !args.no_tile_archive,
+                        crate::osm_pbf::Source::from_args(&args).as_ref(),
                     ),
                 };
                 // A panicked worker already reported itself through the panic hook.

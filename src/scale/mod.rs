@@ -186,6 +186,11 @@ pub fn run(
         "One World: building {} piece(s) of up to {n}x{n} regions",
         units.len()
     );
+    // The extract is read once, here, on this process's threads; each piece then cuts
+    // its own area from the bake.
+    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_objects()) {
+        crate::osm_pbf::bake_for_job(&src, *selection)?;
+    }
     let leases: Vec<UnitLease> = units
         .iter()
         .map(|u| UnitLease {

@@ -3,7 +3,7 @@ use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::coordinate_system::geographic::{LLBBox, LLPoint};
 use crate::progress::emit_gui_progress_update;
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -78,14 +78,14 @@ fn filter_tags(mut tags: HashMap<String, String>) -> HashMap<String, String> {
 
 // Raw data from OSM
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OsmMember {
     pub r#type: String,
     pub r#ref: u64,
     pub r#role: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OsmElement {
     pub r#type: String,
     pub id: u64,
@@ -97,7 +97,7 @@ pub struct OsmElement {
     pub members: Vec<OsmMember>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OsmData {
     elements: Vec<OsmElement>,
     #[serde(default)]

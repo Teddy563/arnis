@@ -278,6 +278,17 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub no_tile_archive: bool,
 
+    /// Read OpenStreetMap from an .osm.pbf extract instead of the tile archive: a
+    /// file path, or `geofabrik` for the smallest Geofabrik region holding the area,
+    /// downloaded once. The area is cut out and kept (baked), so repeat runs and the
+    /// pieces of a job read the bake.
+    #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
+    pub osm_pbf: Option<String>,
+
+    /// The extract to download for `--osm-pbf geofabrik`, instead of picking one.
+    #[arg(long, value_name = "URL", requires = "osm_pbf")]
+    pub osm_pbf_url: Option<String>,
+
     /// Spawn point latitude (optional, must be within bbox)
     #[arg(long, allow_hyphen_values = true)]
     pub spawn_lat: Option<f64>,
@@ -731,6 +742,7 @@ pub const CAPABILITIES: &[&str] = &[
     "map-item-only",
     "region-format",
     "origin",
+    "osm-pbf",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.

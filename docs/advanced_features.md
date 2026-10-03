@@ -189,6 +189,26 @@ changes), in `.mca` as well; two runs compare equal as NBT, not as bytes.
   N x N regions (1-64). An interrupted job resumes when run again.
 - `--one-world-workers auto|N`: build that many pieces at once, each in its own
   process (1-64, or `auto` for 1 to 6 from the cores and free memory).
+- `--osm-pbf PATH|geofabrik`: read OpenStreetMap from an `.osm.pbf` extract
+  instead of the tile archive, with no fallback. `geofabrik` picks the smallest
+  Geofabrik region whose border polygon holds the whole selection (a 5x5 grid
+  of points, ranked by polygon area; the index is cached for a week) and
+  downloads it once to `<cache>/arnis/osm-pbf/downloads`. The selection plus
+  the One World clip pad (64 blocks) is cut out the way the Overpass query
+  would (every way whose extent meets the area, wanted relations with all
+  their member ways, the ways' nodes and the wanted tagged nodes) and kept as
+  a bake under `<cache>/arnis/osm-pbf/bakes/<extract>/`, keyed by the
+  extract's name, size and time and by the area. Any bake holding the area is
+  reused, so a repeat run or a smaller area inside it does not read the
+  extract. The extract is decoded on the run's rayon pool, so `--threads`,
+  `--cpu-target` and a piece's thread share apply. Reading keeps every node
+  location in memory, 16 bytes a node (Romania, 330 MB and 41 million nodes,
+  peaks at 1.0 to 1.6 GB). With `--unit-regions` the coordinator bakes the
+  job once before the pieces start and each piece cuts its area from that
+  bake. Works with `--offline` once the extract is downloaded. Conflicts with
+  `--file`.
+- `--osm-pbf-url URL`: the extract `--osm-pbf geofabrik` downloads, instead of
+  the one it would pick.
 - `--capabilities`: print the feature names this build supports as one JSON
   array (`["progress-json","threads",...]`) and exit, so a program can probe
   the binary before using them. Names are only ever added.

@@ -292,7 +292,12 @@ pub fn fetch_osm_data(
     save_file: Option<&str>,
     tiles_url: &str,
     use_tile_archive: bool,
+    pbf: Option<&crate::osm_pbf::Source>,
 ) -> Result<OsmData, Box<dyn std::error::Error>> {
+    // Asked for by name, so no fallback: a missing extract is the user's to fix.
+    if let Some(src) = pbf {
+        return Ok(crate::osm_pbf::fetch_data_from_pbf(src, bbox)?);
+    }
     if use_tile_archive && !tiles_url.is_empty() {
         // A miss is a coverage gap or a network problem, and Overpass still has the data.
         match crate::osm_tiles::fetch_data_from_tiles(bbox, tiles_url) {
