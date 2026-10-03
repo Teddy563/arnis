@@ -14,7 +14,8 @@
 
 use super::decoration::{BiomeAmounts, Decor, Zone};
 use crate::args::Args;
-use crate::coordinate_system::transformation::CoordTransformer;
+use crate::coordinate_system::cartesian::XZBBox;
+use crate::projection::ProjectionSpec;
 use image::{Rgba, RgbaImage};
 
 /// (color, name) per zone; Normal stays transparent.
@@ -42,14 +43,22 @@ fn square_center(min: i32, max: i32, i: u32, step: i32) -> i32 {
     start + len / 2
 }
 
-pub fn render(args: &Args) -> Result<(), String> {
+/// `frame` is the block rectangle the run builds when it is not the bbox's own (a One World's).
+pub fn render(args: &Args, frame: Option<XZBBox>) -> Result<(), String> {
     let prefix = args
         .cave_zone_map
         .as_ref()
         .expect("render() is only called when --cave-zone-map is set");
     let bbox = args.bbox.as_ref().ok_or("--cave-zone-map needs --bbox")?;
-    let (_, xzbbox) = CoordTransformer::llbbox_to_xzbbox(bbox, args.scale)
-        .map_err(|e| format!("bbox transform failed: {e}"))?;
+    let xzbbox = match frame {
+        Some(rect) => rect,
+        None => {
+            ProjectionSpec::from_args(args)
+                .transformer(bbox)
+                .map_err(|e| format!("bbox transform failed: {e}"))?
+                .1
+        }
+    };
     let (min_x, max_x, min_z, max_z) = (
         xzbbox.min_x(),
         xzbbox.max_x(),

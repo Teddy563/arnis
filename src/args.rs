@@ -151,7 +151,8 @@ pub struct Args {
     /// Render the cave biome layout for --bbox and exit without generating a world: writes
     /// `<PREFIX>-upper.png` (upper caves) and `<PREFIX>-deep.png` (deep caves), transparent
     /// where the cave is plain rock, and prints a `ZONEMAP {json}` line with each theme's
-    /// share. Honours --scale and --cave-biomes, so it matches what --caves will carve.
+    /// share. Honours --scale, --cave-biomes, --cave-seed and a One World's frame (with
+    /// --one-world), so it matches what --caves will carve.
     #[arg(long = "cave-zone-map", value_name = "PREFIX")]
     pub cave_zone_map: Option<PathBuf>,
 

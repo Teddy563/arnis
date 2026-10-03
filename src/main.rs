@@ -313,7 +313,22 @@ fn run_cli() {
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world
     // exists. It uses the same zone picker, seed and --cave-biomes amounts as --caves.
     if args.cave_zone_map.is_some() {
-        if let Err(e) = caves::zone_map::render(&args) {
+        // A One World places the bbox in its own frame, which the preview has to match.
+        let frame = match (args.one_world, args.bbox) {
+            (true, Some(bbox)) => {
+                let world_dir = args.path.is_some().then(|| one_world_dir(&args));
+                Some(one_world::preview_rect(
+                    world_dir.as_deref(),
+                    &bbox,
+                    &mut args,
+                ))
+            }
+            _ => None,
+        };
+        if let Err(e) = frame
+            .transpose()
+            .and_then(|frame| caves::zone_map::render(&args, frame))
+        {
             eprintln!("{}: {}", "Error".red().bold(), e);
             std::process::exit(1);
         }

@@ -366,6 +366,33 @@ fn keep_cave_settings(manifest: &Manifest, args: &mut Args) {
     args.cave_datum_y = manifest.cave_datum_y;
 }
 
+/// The block rectangle a One World run over `requested` builds, for a preview that writes no
+/// world and so takes no lock: the manifest's frame, or the one a new world would get. Also
+/// applies the cave settings the world keeps.
+pub fn preview_rect(
+    world_dir: Option<&Path>,
+    requested: &LLBBox,
+    args: &mut Args,
+) -> Result<XZBBox, String> {
+    let manifest = match world_dir {
+        Some(dir) => Manifest::load(dir)?,
+        None => None,
+    };
+    let projection = match manifest {
+        Some(manifest) => {
+            keep_cave_settings(&manifest, args);
+            manifest.projection()
+        }
+        None => Manifest::new(
+            args,
+            (requested.min().lat() + requested.max().lat()) / 2.0,
+            (requested.min().lng() + requested.max().lng()) / 2.0,
+        )
+        .projection(),
+    };
+    Ok(snap_bbox_to_chunks(&projection, requested)?.0)
+}
+
 /// Why the world's lock is taken. Another run of this executable is named as
 /// such, since telling its user to close Minecraft would send them looking
 /// for a game that is not running.
@@ -1021,6 +1048,30 @@ mod tests {
         let mut args = args_for(MUNICH, &later);
         drop(prepare(&plain, &req, &mut args).unwrap());
         assert_eq!((args.cave_seed, args.cave_datum_y), (None, None));
+    }
+
+    #[test]
+    fn a_preview_uses_the_frame_the_run_builds_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let edges = |b: XZBBox| (b.min_x(), b.min_z(), b.max_x(), b.max_z());
+        let fresh = preview_rect(None, &req, &mut args_for(MUNICH, &[])).unwrap();
+        let mut args = args_for(MUNICH, &["--caves", "--cave-seed", "42"]);
+        let session = prepare(&world, &req, &mut args).unwrap();
+        assert_eq!(edges(fresh), edges(rect(&args, &session)));
+        drop(session);
+
+        let east = "48.130,11.585,48.145,11.610";
+        let req = LLBBox::from_str(east).unwrap();
+        let mut preview_args = args_for(east, &[]);
+        let preview = preview_rect(Some(&world), &req, &mut preview_args).unwrap();
+        assert_eq!(preview_args.cave_seed, Some(42));
+        let own = preview_rect(None, &req, &mut args_for(east, &[])).unwrap();
+        assert_ne!(edges(preview.clone()), edges(own));
+        let mut args = args_for(east, &[]);
+        let session = prepare(&world, &req, &mut args).unwrap();
+        assert_eq!(edges(preview), edges(rect(&args, &session)));
     }
 
     #[test]
