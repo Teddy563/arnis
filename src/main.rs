@@ -49,6 +49,7 @@ mod overture;
 mod preview_3d;
 #[cfg(feature = "gui")]
 mod progress;
+mod progress_json;
 mod projection;
 mod retrieve_data;
 mod structures;
@@ -87,9 +88,16 @@ mod progress {
     /// Mirrors the real module's constant so callers outside the GUI feature
     /// still compile; nothing here reads it, the emits below do nothing.
     pub const MESSAGE_ONLY: f64 = -1.0;
-    pub fn emit_gui_error(_message: &str) {}
-    pub fn emit_gui_progress_update(_progress: f64, _message: &str) {}
-    pub fn emit_gui_progress_update_ex(_progress: f64, _message: &str, _streaming: bool) {}
+    // `--progress json` is the one consumer left without a window.
+    pub fn emit_gui_error(message: &str) {
+        crate::progress_json::error(message);
+    }
+    pub fn emit_gui_progress_update(progress: f64, message: &str) {
+        crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
+        crate::progress_json::progress(progress, message);
+    }
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
     pub fn is_running_with_gui() -> bool {
@@ -175,11 +183,13 @@ fn release_one_world(failed: bool) {
 
 /// `process::exit` skips destructors, so failures go through here.
 fn exit_failed() -> ! {
+    progress_json::error("generation failed, see stderr");
     release_one_world(true);
     std::process::exit(1);
 }
 
 fn run_cli() {
+    let started = std::time::Instant::now();
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
     println!(
@@ -203,6 +213,9 @@ fn run_cli() {
 
     // Parse input arguments
     let mut args: Args = Args::parse();
+    if args.process.progress == Some(args::ProgressFormat::Json) {
+        progress_json::enable();
+    }
 
     // Configure thread pool with 90% CPU cap to keep system responsive, unless
     // --threads or --cpu-target asked for a count
@@ -811,6 +824,7 @@ fn run_cli() {
         }
     }
     release_one_world(false);
+    progress_json::done(started);
 }
 
 fn main() {

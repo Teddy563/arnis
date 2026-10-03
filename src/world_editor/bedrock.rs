@@ -602,6 +602,8 @@ impl BedrockWriter {
                         .map_err(|e| BedrockSaveError::Database(format!("{:?}", e)))?;
                 }
                 chunks_processed += 1;
+                crate::progress_json::CHUNKS_WRITTEN
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 progress_bar.inc(1);
                 // GUI progress spans 92%..97% for chunk writing.
                 if chunks_processed.is_multiple_of(10) || chunks_processed == total_chunks {

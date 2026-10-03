@@ -374,6 +374,19 @@ pub struct ProcessArgs {
     /// elevation, Mapillary, 3D models and the Overture fetch pool.
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub max_downloads: Option<u32>,
+
+    /// Also report progress as JSON lines on stdout for programs driving the
+    /// CLI: `{"v":1,"type":"phase"|"progress"|"error"|"done",...}`, the last
+    /// with wall_s, cpu_s, peak_rss_mb and chunks. Other output is unchanged.
+    #[arg(long, value_enum)]
+    pub progress: Option<ProgressFormat>,
+}
+
+/// Machine-readable progress formats for `--progress`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum ProgressFormat {
+    /// NDJSON, protocol version 1
+    Json,
 }
 
 impl ProcessArgs {

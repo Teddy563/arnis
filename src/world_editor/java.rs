@@ -497,6 +497,7 @@ fn write_region_to_disk(
                 ser_buffer.clear();
                 fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
                 region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
+                crate::progress_json::CHUNKS_WRITTEN.fetch_add(1, Ordering::Relaxed);
                 if merge {
                     written_chunks.push((chunk_x, chunk_z));
                 }
