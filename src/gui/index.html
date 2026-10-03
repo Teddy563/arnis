@@ -87,6 +87,8 @@
     <symbol id="i-sprout" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></symbol>
     <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></symbol>
     <symbol id="i-droplets" viewBox="0 0 24 24"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/></symbol>
+    <symbol id="i-dices" viewBox="0 0 24 24"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></symbol>
+    <symbol id="i-thermometer" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
   </svg>
 
   <main class="container">
@@ -1622,6 +1624,263 @@
                       </select>
                     </div>
                   </div>
+                </div>
+                <div class="setting-choice setting-subgroup">
+                  <span class="setting-label">
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="features_group_experimental">Experimental</span></span>
+                      <span class="setting-desc" data-localize="features_group_experimental_desc">Region files, climate, textures, build height, seed and props. Still being tested.</span>
+                    </span>
+                  </span>
+                </div>
+                <div class="setting-grid">
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="region-format-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-hard-drive"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="region_format">Region Format</span>
+                          <span class="tooltip-icon" data-tooltip="Anvil is what every server and the game itself read. B_Linear writes Leaf&#x27;s compressed region files, which only Leaf 1.21.11+ servers read: not Paper, older Leaf or single player. Java only.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="region_format_desc">How Java region files are stored. Not for One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="region-format-select" name="region-format-select" class="settings-select">
+                        <option value="mca" selected data-localize="region_format_mca">Anvil (.mca)</option>
+                        <option value="blinear" data-localize="region_format_blinear">B_Linear (.b_linear)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide" id="blinear-level-row">
+                    <label for="blinear-level-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading"><span data-localize="blinear_level">B_Linear Level</span></span>
+                        <span class="setting-desc" data-localize="blinear_level_desc">Compression from 1 to 22. Higher is smaller and slower.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="blinear-level-input" name="blinear-level-input" min="1" max="22" step="1" value="6">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="climate-mode-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-thermometer"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="climate_mode">Climate Sampling</span>
+                          <span class="tooltip-icon" data-tooltip="Origin reads one climate at the centre of the area, or at the One World origin. Per Position reads it at every block with organic borders, so a large world crosses climate zones.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="climate_mode_desc">Where the climate behind ground and biomes is read.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="climate-mode-select" name="climate-mode-select" class="settings-select">
+                        <option value="origin" selected data-localize="climate_mode_origin">Origin</option>
+                        <option value="per-position" data-localize="climate_mode_per_position">Per Position</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="climate-preview-button" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-image"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading"><span data-localize="climate_preview">Climate Map</span></span>
+                        <span class="setting-desc" data-localize="climate_preview_desc">Draws the climate zones of the selected area.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <button type="button" id="climate-preview-button" class="clear-cache-button" data-localize="climate_preview_button">Preview</button>
+                    </div>
+                  </div>
+                  <div id="climate-preview" class="settings-notice climate-preview" style="display: none;">
+                    <span id="climate-preview-text"></span>
+                    <img id="climate-preview-image" alt="">
+                  </div>
+                  <div class="settings-row setting-tile">
+                    <label for="grass-texture-toggle" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="grass_texture">Grass Texture</span>
+                          <span class="tooltip-icon" data-tooltip="Lays mapped grassland (meadow, grass, village green, orchard) out as parcels of sward, wildflowers, worn and mossy ground, like meadows cut at different times.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="grass_texture_desc">Mapped meadows as loose parcels of grass and flowers.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="checkbox" class="switch" id="grass-texture-toggle" name="grass-texture-toggle">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile">
+                    <label for="land-texture-toggle" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="land_texture">Land Texture</span>
+                          <span class="tooltip-icon" data-tooltip="Cropland the map leaves untagged becomes farm parcels (Land Mix), grassland becomes grass parcels (Grass Mix), so it reads like an aerial photo. Temperate, savanna and dry continental areas only.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="land_texture_desc">Untagged land textured from satellite land cover.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="checkbox" class="switch" id="land-texture-toggle" name="land-texture-toggle">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="grass-mix-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="grass_mix">Grass Mix</span>
+                          <span class="tooltip-icon" data-tooltip="A preset (smallholding, patchwork, prairie, pasture) or shares over coarse, plains, flower, farm and moss. Requires Grass Texture or Land Texture.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="grass_mix_desc">Parcel mix for grassland. Empty keeps the default.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="text" id="grass-mix-input" name="grass-mix-input" placeholder="plains=64,flower=22,moss=8,coarse=6" spellcheck="false">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="land-mix-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="land_mix">Land Mix</span>
+                          <span class="tooltip-icon" data-tooltip="A preset (smallholding, patchwork, prairie, pasture) or shares over coarse, plains, flower, farm and moss. Requires Land Texture.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="land_mix_desc">Parcel mix for textured cropland. Empty keeps patchwork.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="text" id="land-mix-input" name="land-mix-input" placeholder="patchwork" spellcheck="false">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="world-floor-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="world_floor">World Floor</span>
+                          <span class="tooltip-icon" data-tooltip="A multiple of 16 from -2032 to -64. Requires Extend Build Height, Java only, and not for One World, whose world fixes its own height.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="world_floor_desc">Lowest Y of the world. Empty is automatic.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="world-floor-input" name="world-floor-input" min="-2032" max="-64" step="16" placeholder="Auto">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="world-ceiling-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="world_ceiling">World Ceiling</span>
+                          <span class="tooltip-icon" data-tooltip="16n - 1 from 319 to 2031; taller terrain is compressed to fit. Requires Extend Build Height, Java only, and not for One World.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="world_ceiling_desc">Highest Y of the world. Empty is automatic.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="world-ceiling-input" name="world-ceiling-input" min="319" max="2031" step="16" placeholder="Auto">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="world-seed-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-dices"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="world_seed">World Seed</span>
+                          <span class="tooltip-icon" data-tooltip="Mixed into every random choice: building colours, trees, scatter, ground patches. Also seeds the caves when Cave Seed is empty. Empty or 0 keeps the default look. A One World keeps the seed its first area was built with.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="world_seed_desc">A different but repeatable look per seed.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="number" id="world-seed-input" name="world-seed-input" min="0" step="1" placeholder="Default">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="props-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-box"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="props">Props</span>
+                          <span class="tooltip-icon" data-tooltip="Auto places them while 3D Models is on. All and None decide whatever 3D Models says; Custom places the families picked below.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="props_desc">Which bundled props to place: cars, boats, cranes and more.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="props-select" name="props-select" class="settings-select">
+                        <option value="auto" selected data-localize="features_auto">Auto</option>
+                        <option value="all" data-localize="props_all">All</option>
+                        <option value="none" data-localize="props_none">None</option>
+                        <option value="custom" data-localize="props_custom">Custom</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide props-families" id="props-custom-row">
+                    <label for="props-custom-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading"><span data-localize="props_families">Prop Families</span></span>
+                        <span class="setting-desc" data-localize="props_families_desc">The families Custom places.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="text" style="display: none;" id="props-custom-input" name="props-custom-input" value="boat,car,crane,excavator,fountain,helicopter,jetbridge,landmark,lighthouse,plane,playground,starship,tombstone,tractor,windturbine">
+                      <label><input type="checkbox" data-prop="boat" checked><span data-localize="prop_boat">Boat</span></label>
+                      <label><input type="checkbox" data-prop="car" checked><span data-localize="prop_car">Car</span></label>
+                      <label><input type="checkbox" data-prop="crane" checked><span data-localize="prop_crane">Crane</span></label>
+                      <label><input type="checkbox" data-prop="excavator" checked><span data-localize="prop_excavator">Excavator</span></label>
+                      <label><input type="checkbox" data-prop="fountain" checked><span data-localize="prop_fountain">Fountain</span></label>
+                      <label><input type="checkbox" data-prop="helicopter" checked><span data-localize="prop_helicopter">Helicopter</span></label>
+                      <label><input type="checkbox" data-prop="jetbridge" checked><span data-localize="prop_jetbridge">Jet Bridge</span></label>
+                      <label><input type="checkbox" data-prop="landmark" checked><span data-localize="prop_landmark">Landmark</span></label>
+                      <label><input type="checkbox" data-prop="lighthouse" checked><span data-localize="prop_lighthouse">Lighthouse</span></label>
+                      <label><input type="checkbox" data-prop="plane" checked><span data-localize="prop_plane">Plane</span></label>
+                      <label><input type="checkbox" data-prop="playground" checked><span data-localize="prop_playground">Playground</span></label>
+                      <label><input type="checkbox" data-prop="starship" checked><span data-localize="prop_starship">Starship</span></label>
+                      <label><input type="checkbox" data-prop="tombstone" checked><span data-localize="prop_tombstone">Tombstone</span></label>
+                      <label><input type="checkbox" data-prop="tractor" checked><span data-localize="prop_tractor">Tractor</span></label>
+                      <label><input type="checkbox" data-prop="windturbine" checked><span data-localize="prop_windturbine">Wind Turbine</span></label>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="props-min-scale-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-scale"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="props_min_scale">Props Minimum Scale</span>
+                          <span class="tooltip-icon" data-tooltip="Props keep their block size at any scale, so on a small-scale world they tower over the buildings around them.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="props_min_scale_desc">No props below this world scale. Empty places them at any.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="props-min-scale-input" name="props-min-scale-input" min="0" max="10" step="0.05" placeholder="Off">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="redraw-map-button" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-map"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="redraw_map">Redraw One World Map</span>
+                          <span class="tooltip-icon" data-tooltip="The map item a One World hands out shows its first area. This redraws it from every area&#x27;s preview, in the player&#x27;s first hotbar slot. Close the world in Minecraft first.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="redraw_map_desc">Repaints the map item over every area. Requires One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <button type="button" id="redraw-map-button" class="clear-cache-button" data-localize="redraw_map_button">Redraw</button>
+                    </div>
+                  </div>
+                  <div id="redraw-map-status" class="settings-notice" style="display: none;"></div>
                 </div>
               </div>
             </section>

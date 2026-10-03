@@ -1648,7 +1648,8 @@ function initAdvancedFeatures() {
   document.getElementById('threads-input').addEventListener('input', refreshAdvancedFeatures);
   // Meld Generation rows that follow another control.
   ['snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'field-mix-select', 'farm-crops-input',
-    'interior-toggle', 'caves-toggle'].forEach((id) => {
+    'interior-toggle', 'caves-toggle', 'region-format-select', 'grass-texture-toggle',
+    'land-texture-toggle', 'disable-height-limit-toggle', 'props-select'].forEach((id) => {
     document.getElementById(id).addEventListener('input', refreshAdvancedFeatures);
     document.getElementById(id).addEventListener('change', refreshAdvancedFeatures);
   });
@@ -1678,8 +1679,74 @@ function initAdvancedFeatures() {
       console.error('Loot table picker failed:', error);
     }
   });
+  initPropFamilies();
+  initExperimentalButtons();
   formatCpuUsage();
   refreshAdvancedFeatures();
+}
+
+// The prop families live in one hidden field, the comma list --props takes,
+// so the store keeps them as one value; the checkboxes only edit it.
+function initPropFamilies() {
+  const field = document.getElementById('props-custom-input');
+  const boxes = Array.from(document.querySelectorAll('#props-custom-row input[data-prop]'));
+  const show = () => {
+    const picked = field.value.split(',');
+    boxes.forEach((box) => { box.checked = picked.includes(box.dataset.prop); });
+  };
+  boxes.forEach((box) => box.addEventListener('change', () => {
+    field.value = boxes.filter((b) => b.checked).map((b) => b.dataset.prop).join(',');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }));
+  field.addEventListener('change', show);
+  show();
+}
+
+// A notice under a button: what the click did, green when it worked.
+function setFeatureNotice(id, text, ok) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = text ? '' : 'none';
+  const slot = el.querySelector('span') || el;
+  slot.textContent = text || '';
+  el.classList.toggle('is-success', ok === true);
+  el.classList.toggle('is-error', ok === false);
+}
+
+function initExperimentalButtons() {
+  const preview = document.getElementById('climate-preview-button');
+  const image = document.getElementById('climate-preview-image');
+  preview.addEventListener('click', async () => {
+    if (!selectedBBox) {
+      image.removeAttribute('src');
+      setFeatureNotice('climate-preview', oneWorldText('select_location_first', 'Select an area on the map first.'), false);
+      return;
+    }
+    preview.disabled = true;
+    try {
+      image.src = await invoke('gui_climate_preview', { bboxText: selectedBBox });
+      setFeatureNotice('climate-preview', oneWorldText('climate_preview_done', 'Climate zones of the selected area.'), true);
+    } catch (error) {
+      image.removeAttribute('src');
+      setFeatureNotice('climate-preview', String(error), false);
+    } finally {
+      preview.disabled = false;
+    }
+  });
+
+  const redraw = document.getElementById('redraw-map-button');
+  redraw.addEventListener('click', async () => {
+    redraw.disabled = true;
+    try {
+      const id = await invoke('gui_redraw_one_world_map', { savePath: savePath, worldName: oneWorldFolderName() });
+      setFeatureNotice('redraw-map-status', oneWorldText('redraw_map_done', 'Map #{id} now shows every area.', { id }), true);
+    } catch (error) {
+      setFeatureNotice('redraw-map-status', String(error), false);
+    } finally {
+      refreshAdvancedFeatures();
+    }
+  });
 }
 
 const formatPercent = (v) => Math.round(v) + '%';
@@ -1696,6 +1763,8 @@ const MELD_ALWAYS = [
   'snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'road-detail-select', 'no-buildings-toggle',
   'field-mix-select', 'farm-crops-input', 'tree-realm-select', 'river-bed-select', 'water-detail-select',
   ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => 'tree-weight-' + size + '-slider'),
+  'climate-mode-select', 'climate-preview-button', 'grass-texture-toggle', 'land-texture-toggle',
+  'world-seed-input', 'props-select',
 ];
 
 function formatCpuUsage() {
@@ -1750,6 +1819,25 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('field-scale-slider', on && parcels);
   setSettingsRowAvailable('cave-seed-input', on && checked('caves-toggle'));
   setSettingsRowAvailable('cave-datum-y-input', on && checked('caves-toggle'));
+
+  // Experimental. A One World merges into Anvil files and fixes its own build
+  // height, so the region format and the floor and ceiling are a single
+  // Java world's.
+  const single = on && selectedWorldFormat === 'java' && !isOneWorldEnabled();
+  setSettingsRowAvailable('region-format-select', single);
+  const blinear = single && document.getElementById('region-format-select').value === 'blinear';
+  shown('blinear-level-row', blinear);
+  setSettingsRowAvailable('blinear-level-input', blinear);
+  setSettingsRowAvailable('grass-mix-input', on && (checked('grass-texture-toggle') || checked('land-texture-toggle')));
+  setSettingsRowAvailable('land-mix-input', on && checked('land-texture-toggle'));
+  const tall = single && checked('disable-height-limit-toggle');
+  setSettingsRowAvailable('world-floor-input', tall);
+  setSettingsRowAvailable('world-ceiling-input', tall);
+  const props = document.getElementById('props-select').value;
+  shown('props-custom-row', props === 'custom');
+  setSettingsRowAvailable('props-custom-input', on && props === 'custom');
+  setSettingsRowAvailable('props-min-scale-input', on && props !== 'none');
+  setSettingsRowAvailable('redraw-map-button', on && isOneWorldEnabled());
   refreshSettingsState();
 }
 
@@ -1789,6 +1877,9 @@ function advancedFeatureArgs() {
   const weights = sizes.map((size) => enabled('tree-weight-' + size + '-slider'));
   const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
   const workers = enabled('one-world-workers-select');
+  const propsSelect = enabled('props-select');
+  // Auto leaves the props to the 3D Models switch, as stock.
+  const props = propsSelect && propsSelect.value !== 'auto' ? propsSelect.value : null;
   const values = {
     'cpu-target': positive('cpu-usage-slider'),
     'threads': positive('threads-input'),
@@ -1821,6 +1912,19 @@ function advancedFeatureArgs() {
     'cave-datum-y': int('cave-datum-y-input'),
     'river-bed': changed('river-bed-select'),
     'water-detail': changed('water-detail-select'),
+    'region-format': changed('region-format-select'),
+    'blinear-level': changed('blinear-level-input'),
+    'climate-mode': changed('climate-mode-select'),
+    'grass-texture': on('grass-texture-toggle'),
+    'grass-mix': text('grass-mix-input'),
+    'land-texture': on('land-texture-toggle'),
+    'land-mix': text('land-mix-input'),
+    'min-y': int('world-floor-input'),
+    'max-y': int('world-ceiling-input'),
+    'seed': text('world-seed-input'),
+    // Custom with nothing ticked places none.
+    'props': props === 'custom' ? (text('props-custom-input') || 'none') : props,
+    'props-min-scale': text('props-min-scale-input'),
   };
   const flags = Object.entries(values)
     .filter(([, v]) => v !== null)

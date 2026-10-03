@@ -50,6 +50,31 @@ A control on its default, or greyed out, sends no flag.
 The window checks these with the CLI's own parser and its snow and cave-datum
 rules, and passes them on to every piece of a One World job.
 
+### Experimental (Phase 3)
+
+The last group under Meld Generation. As above, a control on its default, or
+greyed out or hidden, sends no flag.
+
+| Control | CLI flag | Default | Description |
+| --- | --- | --- | --- |
+| Region Format | `--region-format` | Anvil | Anvil (`.mca`) or B_Linear (`.b_linear`, Leaf 1.21.11+ servers only). Java only, greyed with One World. |
+| B_Linear Level | `--blinear-level` | 6 | zstd level 1 to 22. Shown for B_Linear only. |
+| Climate Sampling | `--climate-mode` | Origin | Origin or Per Position. |
+| Climate Map: Preview | `--climate-map` | | Draws the climate zones of the selected area in the window. |
+| Grass Texture | `--grass-texture` | Off | Mapped meadows as loose parcels. |
+| Land Texture | `--land-texture` | Off | Untagged land textured from satellite land cover. |
+| Grass Mix | `--grass-mix` | Empty | Preset or share list. Needs Grass or Land Texture. |
+| Land Mix | `--land-mix` | Empty (patchwork) | Preset or share list. Needs Land Texture. |
+| World Floor / World Ceiling | `--min-y` / `--max-y` | Empty (auto) | Needs Extend Build Height on a Java world; greyed with One World. |
+| World Seed | `--seed` | Empty | Another, repeatable look per seed. |
+| Props | `--props` | Auto | Auto follows 3D Models (no flag); All, None, or Custom with a family checklist. |
+| Props Minimum Scale | `--props-min-scale` | Empty | No props below this world scale. |
+| Redraw One World Map: Redraw | `--map-item-only` | | Repaints the One World's map item over every area. Needs One World. |
+
+The window applies what the CLI does for these: the seed, the tall
+datapack's floor and ceiling (checked as the CLI checks them) and the region
+format. The two buttons run in the window, not as a generation.
+
 ## Flags
 
 - `--threads N`: worker threads for generation. Default 90% of the cores, or

@@ -96,6 +96,21 @@ const SETTINGS = [
   { id: 'cave-datum-y-input', kind: 'text', store: OWN },
   { id: 'river-bed-select', kind: 'select', store: OWN },
   { id: 'water-detail-select', kind: 'select', store: OWN },
+  // Experimental. The fields that default to empty are text, as above; the
+  // prop families are one comma list in a hidden field the checkboxes write.
+  { id: 'region-format-select', kind: 'select', store: OWN },
+  { id: 'blinear-level-input', kind: 'number', store: OWN },
+  { id: 'climate-mode-select', kind: 'select', store: OWN },
+  { id: 'grass-texture-toggle', kind: 'checkbox', store: OWN },
+  { id: 'land-texture-toggle', kind: 'checkbox', store: OWN },
+  { id: 'grass-mix-input', kind: 'text', store: OWN },
+  { id: 'land-mix-input', kind: 'text', store: OWN },
+  { id: 'world-floor-input', kind: 'text', store: OWN },
+  { id: 'world-ceiling-input', kind: 'text', store: OWN },
+  { id: 'world-seed-input', kind: 'text', store: OWN },
+  { id: 'props-select', kind: 'select', store: OWN },
+  { id: 'props-custom-input', kind: 'text', store: OWN },
+  { id: 'props-min-scale-input', kind: 'text', store: OWN },
 
   // Map & Input. #bbox-coords is the area selection, not a preference, so it
   // is intentionally absent.

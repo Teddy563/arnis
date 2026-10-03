@@ -472,6 +472,38 @@ label[for].setting-label {
   margin: 18px 0 10px;
 }
 
+/* A checkbox list under its heading, wrapping to the tile's width */
+.settings-page .props-families {
+  flex-wrap: wrap;
+}
+
+.settings-page .props-families .settings-control {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 6px 12px;
+  width: 100%;
+}
+
+.settings-page .props-families .settings-control label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+.settings-page .props-families input[type="checkbox"] {
+  accent-color: var(--ui-accent);
+}
+
+.settings-page .climate-preview img {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
 /* A row that does not apply to the current world or format */
 .settings-row-unavailable {
   opacity: 0.4;

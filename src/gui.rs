@@ -128,6 +128,8 @@ pub fn run_gui() -> Result<(), String> {
             gui_set_save_path,
             gui_pick_save_directory,
             gui_pick_loot_table,
+            gui_climate_preview,
+            gui_redraw_one_world_map,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -370,6 +372,34 @@ fn gui_pick_loot_table(current: String) -> Result<String, String> {
     Ok(dialog
         .pick_file()
         .map_or(current, |file| file.display().to_string()))
+}
+
+/// `--climate-map` for the selected area, as a PNG data URL for the window.
+#[tauri::command(async)]
+fn gui_climate_preview(bbox_text: String) -> Result<String, String> {
+    use clap::Parser;
+    let prefix = env::temp_dir().join("arnis-climate-preview");
+    let args = Args::try_parse_from([
+        "arnis".into(),
+        format!("--bbox={bbox_text}").into(),
+        std::ffi::OsString::from("--climate-map"),
+        prefix.clone().into(),
+    ])
+    .map_err(|e| e.to_string())?;
+    crate::climate_field::render(&args)?;
+    let png = std::fs::read(format!("{}.png", prefix.display())).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
+    ))
+}
+
+/// `--map-item-only`: redraws a One World's map item over every area. Holds
+/// the generation slot, so it never runs beside a build of the same world.
+#[tauri::command(async)]
+fn gui_redraw_one_world_map(save_path: String, world_name: String) -> Result<i32, String> {
+    let _slot = BusySlot::acquire(BUSY_GENERATION)?;
+    crate::map_item::redraw_one_world_map(&one_world_dir(&save_path, &world_name))
 }
 
 /// Creates a new Java Edition world in the given base save directory.
@@ -1855,6 +1885,8 @@ fn gui_start_generation(
 
             // Create an Args instance with the chosen bounding box
             // Note: path is used for Java-specific features like spawn point update
+            let single_tall_java =
+                world_format == WorldFormat::JavaAnvil && !one_world && disable_height_limit;
             let mut args: Args = Args {
                 bbox: Some(bbox),
                 file: None,
@@ -1896,7 +1928,7 @@ fn gui_start_generation(
                 cave_zone_map_step: None,
                 cave_seed: meld.cave_seed,
                 cave_datum_y: meld.cave_datum_y,
-                seed: None,
+                seed: meld.seed,
                 legacy_trees: legacy_trees_enabled,
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
                 tree_realm: meld.tree_realm,
@@ -1914,16 +1946,18 @@ fn gui_start_generation(
                 osm_tiles_url: crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string(),
                 no_tile_archive: false,
                 use_3d: use_3d_enabled,
-                props: None,
-                props_min_scale: None,
+                props: meld.props,
+                props_min_scale: meld.props_min_scale,
                 debug: false,
                 timeout: Some(std::time::Duration::from_secs(40)),
                 spawn_lat: None,
                 spawn_lng: None,
                 rotation: rotation_angle.clamp(-90.0, 90.0),
                 disable_height_limit,
-                min_y: None,
-                max_y: None,
+                // A One World fixes its own build height, and the pair only
+                // means something for a tall Java world.
+                min_y: meld.min_y.filter(|_| single_tall_java),
+                max_y: meld.max_y.filter(|_| single_tall_java),
                 aws_only_elevation,
                 benchmark: false,
                 bake_lighting: bake_lighting_enabled,
@@ -1931,8 +1965,13 @@ fn gui_start_generation(
                 gamemode: crate::args::GameMode::from_str_lossy(&gamemode),
                 world_time: world_time.clamp(0, 23999),
                 world_type: crate::args::WorldType::from_str_lossy(&world_type),
-                region_format: crate::args::RegionFormat::Mca,
-                blinear_level: 6,
+                // One World merges into Anvil files, and only Java has them.
+                region_format: if world_format == WorldFormat::JavaAnvil && !one_world {
+                    meld.region_format
+                } else {
+                    crate::args::RegionFormat::Mca
+                },
+                blinear_level: meld.blinear_level,
                 map_item,
                 // Frontend refuses previews for rotated worlds, skip the work there.
                 map_preview: world_format != WorldFormat::LuantiWorld
@@ -1989,6 +2028,18 @@ fn gui_start_generation(
             // Same as run_cli: caves carve into the filled ground, so they bring it with them.
             if args.caves {
                 args.fillground = true;
+            }
+            // The window never runs validate_args, so the floor and ceiling
+            // are checked here, then written into the pack the world got above.
+            if let Err(e) = crate::y_bounds::check(&args).and_then(|()| {
+                if is_new_world {
+                    crate::y_bounds::patch_datapack(&world_path, &args)
+                } else {
+                    Ok(())
+                }
+            }) {
+                emit_gui_error(&e);
+                return Err(e);
             }
 
             let mut one_world_extending = false;
@@ -2053,6 +2104,9 @@ fn gui_start_generation(
                 }
             }
             let args = args;
+            // Same as run_cli: after a One World has applied the seed it
+            // keeps, before anything rolls a die. Process-wide, so set every run.
+            crate::deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
 
             // Calculate MC spawn coordinates from lat/lng if spawn point was provided
             // Otherwise, default to X=1, Z=1 (relative to xzbbox min coordinates).
@@ -2391,6 +2445,9 @@ mod piece_tests {
             "--river-bed=v1",
             "--water-detail=scaled",
             "--climate-mode=per-position",
+            "--seed=42",
+            "--props=car,windturbine",
+            "--props-min-scale=0.5",
             "--threads=6",
             "--ram-budget-mb=4000",
             "--max-downloads=8",
@@ -2411,6 +2468,9 @@ mod piece_tests {
         args.cave_datum_y = meld.cave_datum_y;
         args.water = meld.water;
         args.climate_mode = meld.climate_mode;
+        args.seed = meld.seed;
+        args.props = meld.props;
+        args.props_min_scale = meld.props_min_scale;
         args.process = meld.process;
         args.units = meld.units;
         let back = base(&piece_argv(&args, &dir.path().join("My World"), &flags));
