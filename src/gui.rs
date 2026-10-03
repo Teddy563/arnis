@@ -2037,6 +2037,8 @@ fn gui_start_generation(
                 gamemode: crate::args::GameMode::from_str_lossy(&gamemode),
                 world_time: world_time.clamp(0, 23999),
                 world_type: crate::args::WorldType::from_str_lossy(&world_type),
+                region_format: crate::args::RegionFormat::Mca,
+                blinear_level: 6,
                 map_item,
                 // Frontend refuses previews for rotated worlds, skip the work there.
                 map_preview: world_format != WorldFormat::LuantiWorld

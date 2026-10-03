@@ -635,9 +635,15 @@ pub fn generate_world_with_options(
     let void_world =
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
-    if void_world && !extending {
+    let blinear_level = args
+        .blinear_level()
+        .filter(|_| world_format == WorldFormat::JavaAnvil);
+    editor.set_blinear_level(blinear_level);
+    if (void_world || blinear_level.is_some()) && !extending {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
+        // Under B_Linear nothing rewrites the .mca, so it would linger as a stray Anvil
+        // region in a b_linear world.
         crate::world_utils::remove_untouched_template_region(&output_path);
     }
     editor.set_place_schematics(args.use_3d);

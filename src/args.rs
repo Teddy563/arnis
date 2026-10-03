@@ -287,6 +287,16 @@ pub struct Args {
     #[arg(long = "world-type", value_enum, default_value_t = WorldType::Void)]
     pub world_type: WorldType,
 
+    /// EXPERIMENTAL. Java region container. blinear writes Leaf's B_Linear v3
+    /// (r.X.Z.b_linear), which only Leaf 1.21.11+ / 26.x servers read: not Paper,
+    /// not older Leaf, not the vanilla client. Not with --one-world.
+    #[arg(long = "region-format", value_enum, default_value_t = RegionFormat::Mca)]
+    pub region_format: RegionFormat,
+
+    /// zstd level for --region-format blinear (Leaf's own default is 6).
+    #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
+    pub blinear_level: i32,
+
     /// Readable image signs, Java only. `basic` covers public signage: street names,
     /// traffic signs, transit stops, information boards and billboards. `full` adds
     /// building signage: shop name plates, house numbers and crossing signs.
@@ -803,6 +813,11 @@ fn parse_scale(arg: &str) -> Result<f64, String> {
 }
 
 impl Args {
+    /// `Some(zstd level)` when regions are written as B_Linear.
+    pub fn blinear_level(&self) -> Option<i32> {
+        (self.region_format == RegionFormat::Blinear).then_some(self.blinear_level)
+    }
+
     /// Whether this run uses real elevation terrain rather than flat ground.
     pub fn terrain(&self) -> bool {
         self.mode.terrain()
@@ -897,6 +912,15 @@ impl FacadeMode {
     pub fn places_displays(self) -> bool {
         matches!(self, FacadeMode::Photos)
     }
+}
+
+/// Java region container; the chunk NBT is the same in both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum RegionFormat {
+    /// Anvil r.X.Z.mca, read by every server and the client.
+    Mca,
+    /// Leaf B_Linear v3 r.X.Z.b_linear (experimental, Leaf servers only).
+    Blinear,
 }
 
 /// What a Java world generates past the area Arnis wrote.
@@ -1010,6 +1034,23 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
 
     if args.map_preview && args.luanti {
         return Err("--map-preview is not supported for Luanti worlds.".to_string());
+    }
+
+    if args.region_format == RegionFormat::Blinear {
+        if args.bedrock || args.luanti {
+            return Err(
+                "--region-format blinear applies to Java worlds only; drop --bedrock/--luanti."
+                    .to_string(),
+            );
+        }
+        // One World (and its pieces) merges into existing .mca files, and nothing
+        // here reads B_Linear back.
+        if args.one_world || args.units.coordinates() || args.units.one_world_unit.is_some() {
+            return Err(
+                "--region-format blinear does not combine with --one-world, --unit-regions or --one-world-workers."
+                    .to_string(),
+            );
+        }
     }
 
     if args.one_world {
@@ -1388,6 +1429,38 @@ mod tests {
                 parse(&["--height-multiplier", bad]).is_err(),
                 "accepted {bad}"
             );
+        }
+    }
+
+    #[test]
+    fn region_format_defaults_to_mca_and_blinear_refuses_what_it_cannot_do() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::try_parse_from(cmd.iter())
+        };
+
+        let default = parse(&[]).unwrap();
+        assert_eq!(default.region_format, RegionFormat::Mca);
+        assert_eq!(default.blinear_level(), None, "mca unless asked");
+        let bl = parse(&["--region-format", "blinear", "--blinear-level", "19"]).unwrap();
+        assert_eq!(bl.blinear_level(), Some(19));
+        assert!(validate_args(&bl).is_ok());
+        for bad in ["0", "23"] {
+            assert!(parse(&["--region-format", "blinear", "--blinear-level", bad]).is_err());
+        }
+        for extra in [
+            &["--bedrock"][..],
+            &["--luanti"],
+            &["--one-world"],
+            &["--one-world", "--unit-regions", "4"],
+            &["--one-world", "--one-world-workers", "2"],
+        ] {
+            let mut cmd = vec!["--region-format", "blinear"];
+            cmd.extend_from_slice(extra);
+            assert!(validate_args(&parse(&cmd).unwrap()).is_err(), "{extra:?}");
         }
     }
 

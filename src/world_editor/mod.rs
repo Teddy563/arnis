@@ -9,6 +9,7 @@
 //! - `java` - Java Edition Anvil format saving
 //! - `bedrock` - Bedrock Edition .mcworld format saving
 
+pub(crate) mod blinear;
 pub(crate) mod common;
 pub(crate) mod java;
 mod luanti;
@@ -268,6 +269,8 @@ pub struct WorldEditor<'a> {
     merge_into_existing: bool,
     climate_anchor: Option<(f64, f64)>,
     metadata_extent: Option<(XZBBox, LLBBox)>,
+    /// Java: `Some(zstd level)` writes EXPERIMENTAL B_Linear regions instead of Anvil.
+    blinear_level: Option<i32>,
 }
 
 impl<'a> WorldEditor<'a> {
@@ -315,6 +318,7 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: false,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
@@ -368,6 +372,7 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: false,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
@@ -421,6 +426,7 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: false,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
@@ -619,6 +625,11 @@ impl<'a> WorldEditor<'a> {
     /// Enables baking per-chunk lighting into Java chunks.
     pub fn set_bake_lighting(&mut self, enabled: bool) {
         self.bake_lighting = enabled;
+    }
+
+    /// Java: write `r.X.Z.b_linear` at this zstd level instead of Anvil `.mca`.
+    pub fn set_blinear_level(&mut self, level: Option<i32>) {
+        self.blinear_level = level;
     }
 
     /// Java: write only the chunks the area touches and leave the rest to a void generator.
@@ -1049,6 +1060,7 @@ impl<'a> WorldEditor<'a> {
             self.region_write_mode(),
             self.climate_lat(),
             (self.ground_origin_x, self.ground_origin_z),
+            self.blinear_level,
         )
     }
 
@@ -2802,6 +2814,7 @@ mod eviction_guard_tests {
             java::RegionWriteMode::Fresh,
             None,
             (0, 0),
+            None,
         )
     }
 
@@ -2840,6 +2853,7 @@ mod eviction_guard_tests {
                 java::RegionWriteMode::Fresh,
                 None,
                 (0, 0),
+                None,
             )
             .write(0, 0, &flush_test_region())
             .unwrap();
