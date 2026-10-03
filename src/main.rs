@@ -291,6 +291,7 @@ fn run_cli() {
     if let Some(n) = args.process.max_downloads {
         net::set_max_requests(n as usize);
     }
+    retrieve_data::set_overpass_urls(args.process.overpass_url.clone());
 
     // Clean up old cached elevation tiles on startup
     if !args.process.no_cache_sweep {

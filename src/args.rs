@@ -611,6 +611,17 @@ pub struct ProcessArgs {
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub max_downloads: Option<u32>,
 
+    /// Self-hosted Overpass instance(s) to ask instead of Arnis's own, tried
+    /// in order. Repeat the flag or separate with commas. Only used when the
+    /// OSM tile archive cannot answer (or with --no-tile-archive).
+    #[arg(
+        long,
+        env = "ARNIS_OVERPASS_URL",
+        value_name = "URL",
+        value_delimiter = ','
+    )]
+    pub overpass_url: Vec<String>,
+
     /// Also report progress as JSON lines on stdout for programs driving the
     /// CLI: `{"v":1,"type":"phase"|"progress"|"error"|"done",...}`, the last
     /// with wall_s, cpu_s, peak_rss_mb and chunks. Other output is unchanged.
@@ -655,6 +666,7 @@ pub const CAPABILITIES: &[&str] = &[
     "max-y",
     "climate-mode",
     "climate-map",
+    "overpass-url",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -2186,6 +2198,17 @@ mod tests {
         ]);
         assert!(args.process.no_update_check);
         assert!(args.process.no_cache_sweep);
+    }
+
+    #[test]
+    fn cache_flags_parse_and_validate() {
+        let parse = |extra: &[&str]| {
+            Args::try_parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra))
+        };
+        let args = parse(&["--overpass-url", "http://a/api,http://b/api"]).unwrap();
+        assert_eq!(args.process.overpass_url, ["http://a/api", "http://b/api"]);
+        let args = parse(&["--overpass-url=http://a/api", "--overpass-url=http://c/api"]).unwrap();
+        assert_eq!(args.process.overpass_url, ["http://a/api", "http://c/api"]);
     }
 
     #[test]

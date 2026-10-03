@@ -125,7 +125,7 @@ impl Default for Endpoints {
             images: "https://graph.mapillary.com/images".to_string(),
             image: "https://graph.mapillary.com".to_string(),
             osm_tiles: Some(crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string()),
-            overpass: vec![crate::retrieve_data::ARNIS_OVERPASS_URL.to_string()],
+            overpass: crate::retrieve_data::overpass_urls(),
         }
     }
 }
