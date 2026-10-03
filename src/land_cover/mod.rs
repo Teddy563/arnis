@@ -339,7 +339,7 @@ pub fn fetch_land_cover_data(
 // ─── Cache helpers ────────────────────────────────────────────────────────
 
 fn get_cache_dir() -> PathBuf {
-    if let Some(cache_dir) = dirs::cache_dir() {
+    if let Some(cache_dir) = crate::elevation::cache::user_cache_dir() {
         cache_dir.join(LAND_COVER_CACHE_DIR)
     } else {
         PathBuf::from(format!("./{LAND_COVER_CACHE_DIR}"))
@@ -599,7 +599,7 @@ fn read_esa_tile_into_raster(
     } else {
         let bytes = fetch_range(client, url, 0, 65536)?;
         // Cache the header for future use
-        let _ = std::fs::write(&header_cache_path, &bytes);
+        crate::overture::write_atomic(&header_cache_path, &bytes);
         bytes
     };
 
@@ -710,7 +710,7 @@ fn read_esa_tile_into_raster(
                 std::fs::read(&tile_cache_file)?
             } else {
                 let data = fetch_range(client, url, offset, byte_count)?;
-                let _ = std::fs::write(&tile_cache_file, &data);
+                crate::overture::write_atomic(&tile_cache_file, &data);
                 data
             };
 

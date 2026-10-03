@@ -8,11 +8,26 @@ const TILE_CACHE_DIR_NAME: &str = "arnis-tile-cache";
 /// Also bounds the staleness of Mapterhorn's negative 404 markers.
 const TILE_CACHE_MAX_AGE_DAYS: u64 = 30;
 
+/// The directory every Arnis cache lives under: `ARNIS_CACHE_ROOT` when set,
+/// else the OS cache directory. Several processes generating at once can then
+/// share one warm cache on a drive of the caller's choosing. Read once, so a
+/// run never splits its caches across two roots.
+pub fn user_cache_dir() -> Option<PathBuf> {
+    static ROOT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        std::env::var_os("ARNIS_CACHE_ROOT")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(dirs::cache_dir)
+    })
+    .clone()
+}
+
 /// Returns the tile cache directory path for a specific provider.
 /// Uses the OS-standard cache directory (e.g. AppData/Local on Windows, ~/.cache on Linux).
 /// Falls back to ./arnis-tile-cache if the OS cache directory is unavailable.
 pub fn get_cache_dir(provider_name: &str) -> PathBuf {
-    let base = if let Some(cache_dir) = dirs::cache_dir() {
+    let base = if let Some(cache_dir) = user_cache_dir() {
         cache_dir.join(TILE_CACHE_DIR_NAME)
     } else {
         PathBuf::from(format!("./{TILE_CACHE_DIR_NAME}"))
@@ -22,7 +37,7 @@ pub fn get_cache_dir(provider_name: &str) -> PathBuf {
 
 /// Returns the base tile cache directory path (without provider subdirectory).
 pub fn get_base_cache_dir() -> PathBuf {
-    if let Some(cache_dir) = dirs::cache_dir() {
+    if let Some(cache_dir) = user_cache_dir() {
         cache_dir.join(TILE_CACHE_DIR_NAME)
     } else {
         PathBuf::from(format!("./{TILE_CACHE_DIR_NAME}"))

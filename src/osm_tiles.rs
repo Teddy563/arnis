@@ -109,7 +109,7 @@ impl ArchiveEntry {
 }
 
 pub fn cache_root() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("arnis").join("osm-tiles"))
+    crate::elevation::cache::user_cache_dir().map(|d| d.join("arnis").join("osm-tiles"))
 }
 
 /// Frees the whole archive cache, including dirs left by older cache layouts.
@@ -167,10 +167,7 @@ fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
     let parsed: Manifest =
         serde_json::from_slice(&body).map_err(|e| format!("bad archive index: {e}"))?;
     if let Some(p) = &cached {
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(p, &body);
+        crate::overture::write_atomic(p, &body);
     }
     Ok(parsed)
 }

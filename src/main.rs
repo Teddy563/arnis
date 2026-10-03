@@ -180,12 +180,6 @@ fn exit_failed() -> ! {
 }
 
 fn run_cli() {
-    // Configure thread pool with 90% CPU cap to keep system responsive
-    floodfill_cache::configure_rayon_thread_pool(0.9);
-
-    // Clean up old cached elevation tiles on startup
-    elevation_data::cleanup_old_cached_tiles();
-
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
     println!(
@@ -207,11 +201,21 @@ fn run_cli() {
         repository.bright_white().bold()
     );
 
-    // Fire-and-forget update check; prints a one-line notice on a background thread.
-    version_check::check_for_updates_async();
-
     // Parse input arguments
     let mut args: Args = Args::parse();
+
+    // Configure thread pool with 90% CPU cap to keep system responsive
+    floodfill_cache::configure_rayon_thread_pool(0.9);
+
+    // Clean up old cached elevation tiles on startup
+    if !args.process.no_cache_sweep {
+        elevation_data::cleanup_old_cached_tiles();
+    }
+
+    // Fire-and-forget update check; prints a one-line notice on a background thread.
+    if !args.process.no_update_check {
+        version_check::check_for_updates_async();
+    }
     args::apply_body_defaults(&mut args);
     // Caves carve into the filled ground, so they bring it with them.
     if args.caves {

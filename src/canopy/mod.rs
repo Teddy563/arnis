@@ -156,7 +156,7 @@ fn quadkey_of(xt: i64, yt: i64) -> String {
 }
 
 fn cache_dir() -> PathBuf {
-    match dirs::cache_dir() {
+    match crate::elevation::cache::user_cache_dir() {
         Some(d) => d.join(CACHE_DIR),
         None => PathBuf::from(format!("./{CACHE_DIR}")),
     }
@@ -327,9 +327,7 @@ fn cached_strip_index(
         let _ = std::fs::remove_file(&path);
     }
     let index = read_strip_index(client, url)?;
-    if std::fs::create_dir_all(&dir).is_ok() {
-        let _ = std::fs::write(&path, index.encode());
-    }
+    crate::overture::write_atomic(&path, &index.encode());
     Ok(index)
 }
 

@@ -33,7 +33,7 @@ const LAST_GOOD_RELEASE_FILE: &str = "last_good_release";
 /// Cache root. Falls back to a relative directory when the OS has no cache dir,
 /// matching every other Arnis cache.
 pub fn cache_root() -> PathBuf {
-    match dirs::cache_dir() {
+    match crate::elevation::cache::user_cache_dir() {
         Some(dir) => dir.join(OVERTURE_CACHE_DIR),
         None => PathBuf::from(format!("./{OVERTURE_CACHE_DIR}")),
     }

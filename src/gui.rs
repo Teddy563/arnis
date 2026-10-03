@@ -1783,6 +1783,8 @@ fn gui_start_generation(
                 // aid.
                 building_facades_dir: None,
                 body: celestial_body,
+                // Scripting and multi-process knobs; the GUI runs stock.
+                process: Default::default(),
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

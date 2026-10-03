@@ -1,4 +1,5 @@
 use crate::coordinate_system::geographic::LLBBox;
+use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -331,6 +332,27 @@ pub struct Args {
     /// replacement one.
     #[arg(long)]
     pub building_facades_dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub process: ProcessArgs,
+}
+
+/// Knobs for scripted and multi-process runs. None of them changes what is
+/// generated, and each default is the stock behaviour, so the GUI runs on
+/// `ProcessArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+#[command(next_help_heading = "Process")]
+pub struct ProcessArgs {
+    /// Skip the check for a newer release on GitHub. A script starting many
+    /// runs would otherwise make the request once per process.
+    #[arg(long, env = "ARNIS_NO_UPDATE_CHECK", value_parser = FalseyValueParser::new())]
+    pub no_update_check: bool,
+
+    /// Skip the startup sweep that deletes cached files older than 30 days,
+    /// for a cache managed or kept offline elsewhere. ARNIS_CACHE_ROOT moves
+    /// every cache to one folder.
+    #[arg(long, env = "ARNIS_NO_CACHE_SWEEP", value_parser = FalseyValueParser::new())]
+    pub no_cache_sweep: bool,
 }
 
 /// Accepts the panel resolutions the atlas budget logic can halve cleanly.
@@ -1681,5 +1703,18 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn process_switches_parse_as_plain_flags() {
+        let args = Args::parse_from([
+            "arnis",
+            "--bbox",
+            "1,2,3,4",
+            "--no-update-check",
+            "--no-cache-sweep",
+        ]);
+        assert!(args.process.no_update_check);
+        assert!(args.process.no_cache_sweep);
     }
 }
