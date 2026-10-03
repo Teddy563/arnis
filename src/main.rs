@@ -286,6 +286,17 @@ fn run_cli() {
         }
         return;
     }
+    if args.map_item_only {
+        let world_dir = one_world_dir(&args);
+        match map_item::redraw_one_world_map(&world_dir) {
+            Ok(id) => println!("World map item (map #{id}) redrawn over every area."),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(path) = &args.loot_table {
         match buildings_loot::load_loot_table(path) {
             Ok(table) => buildings_loot::set_loot_table(Some(table)),

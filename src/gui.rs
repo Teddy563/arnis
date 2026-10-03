@@ -2006,6 +2006,7 @@ fn gui_start_generation(
                 interior: interior_enabled,
                 loot_table: meld.loot_table,
                 dump_loot_table: None,
+                map_item_only: false,
                 fillground: fillground_enabled,
                 caves: caves_enabled,
                 // The asset pack, biome mix and zone preview are CLI aids; the GUI toggle

@@ -106,6 +106,12 @@ pub struct Args {
     #[arg(long = "dump-loot-table", value_name = "FILE")]
     pub dump_loot_table: Option<PathBuf>,
 
+    /// Redraw the map item of the One World at --output-dir (the saves folder)
+    /// and --world-name from its recorded area previews, so it shows every
+    /// area instead of the first, and exit. Nothing is regenerated.
+    #[arg(long)]
+    pub map_item_only: bool,
+
     /// Enable filling ground (optional)
     #[arg(long, default_value_t = false)]
     pub fillground: bool,
@@ -711,6 +717,7 @@ pub const CAPABILITIES: &[&str] = &[
     "prewarm",
     "props",
     "props-min-scale",
+    "map-item-only",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
