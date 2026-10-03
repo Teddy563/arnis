@@ -193,6 +193,11 @@ fn client() -> Result<Client> {
 /// The archive directory, refreshed daily. A stale copy still names archives that exist.
 fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
     let url = format!("{}/archives.json", base_url.trim_end_matches('/'));
+    if let Some(path) = pmtiles::local_path(&url) {
+        let body = std::fs::read(&path)
+            .map_err(|e| format!("tile archive index {}: {e}", path.display()))?;
+        return serde_json::from_slice(&body).map_err(|e| format!("bad archive index: {e}"));
+    }
     let cached = cache_root_for(base_url).map(|d| d.join("archives.json"));
     if let Some(p) = &cached {
         if let Ok(md) = std::fs::metadata(p) {
@@ -307,7 +312,10 @@ fn read_tiles(bbox: LLBBox, base_url: &str) -> Result<(OsmData, usize, u64)> {
             ));
         }
         let url = format!("{}/{}", base_url.trim_end_matches('/'), entry.file);
-        let cache = cache_root_for(base_url).map(|d| d.join(&entry.file));
+        // A local archive is read in place; copying it into the cache would only double it.
+        let cache = cache_root_for(base_url)
+            .filter(|_| pmtiles::local_path(base_url).is_none())
+            .map(|d| d.join(&entry.file));
         let mut archive = Archive::open_allowing(&client, &url, cache, &[TILE_TYPE_UNKNOWN])?;
 
         let mut located = Vec::new();
@@ -947,6 +955,18 @@ mod tests {
         let mut legacy = wide.clone();
         legacy.cells = Vec::new();
         assert!(legacy.covers(&wanted, &munich));
+    }
+
+    #[test]
+    fn a_local_index_is_read_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("archives.json"),
+            r#"{"zoom":13,"archives":[{"file":"ro.pmtiles","min_lat":43.6,"min_lon":20.2,"max_lat":48.3,"max_lon":29.7}]}"#,
+        )
+        .unwrap();
+        let m = manifest(&client().unwrap(), dir.path().to_str().unwrap()).unwrap();
+        assert_eq!((m.zoom, m.archives[0].file.as_str()), (13, "ro.pmtiles"));
     }
 
     #[test]

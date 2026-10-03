@@ -270,7 +270,8 @@ pub struct Args {
     #[arg(long, value_parser = parse_duration)]
     pub timeout: Option<Duration>,
 
-    /// Base URL of the Arnis OSM tile archive, read instead of Overpass.
+    /// Base URL of the Arnis OSM tile archive, read instead of Overpass. A local folder or
+    /// file:// URL holding archives.json is read in place, with no network.
     #[arg(long = "osm-tiles-url", default_value = crate::osm_tiles::DEFAULT_OSM_TILES_URL)]
     pub osm_tiles_url: String,
 
@@ -743,6 +744,7 @@ pub const CAPABILITIES: &[&str] = &[
     "region-format",
     "origin",
     "osm-pbf",
+    "local-tile-archive",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
