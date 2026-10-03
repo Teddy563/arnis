@@ -467,6 +467,11 @@ label[for].setting-label {
   margin-bottom: 8px;
 }
 
+/* A heading over a group of tiles inside one section */
+.settings-page .setting-subgroup {
+  margin: 18px 0 10px;
+}
+
 /* A row that does not apply to the current world or format */
 .settings-row-unavailable {
   opacity: 0.4;

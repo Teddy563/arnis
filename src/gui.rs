@@ -63,6 +63,15 @@ impl Drop for NewWorldCleanup {
     }
 }
 
+/// Runs `work` on `pool` when Advanced Features asked for a thread count,
+/// else on the global pool.
+fn in_pool<T: Send>(pool: Option<rayon::ThreadPool>, work: impl FnOnce() -> T + Send) -> T {
+    match pool {
+        Some(pool) => pool.install(work),
+        None => work(),
+    }
+}
+
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -1411,6 +1420,15 @@ fn gui_start_generation(
     celestial_body_name: String,
     one_world: bool,
     one_world_name: String,
+    // Advanced Features. None (the switch off, or the field on Auto) is the
+    // stock behaviour, the same as running the CLI without the flag.
+    cpu_target: Option<u32>,
+    threads: Option<u32>,
+    ram_budget_mb: Option<u64>,
+    max_downloads: Option<u32>,
+    // ponytail: the frontend also sends oneWorldWorkers / unitRegions; they
+    // become params here, and Args fields below, once --one-world-workers and
+    // --unit-regions exist.
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1430,6 +1448,28 @@ fn gui_start_generation(
     };
 
     progress::reset_progress_floor();
+
+    // Out-of-range values are dropped, as clap would refuse them on the CLI.
+    let process = crate::args::ProcessArgs {
+        threads: threads.filter(|&n| n >= 1),
+        cpu_target: cpu_target.filter(|p| (10..=100).contains(p)),
+        ram_budget_mb: ram_budget_mb.filter(|&mb| mb >= 1),
+        max_downloads: max_downloads.filter(|&n| n >= 1),
+        ..Default::default()
+    };
+    // The global pool was built once at startup, so a per-run count gets its
+    // own pool. ponytail: threads that are not rayon workers (std::thread
+    // spawns inside the run) still fan out on the global pool.
+    let pool = process
+        .thread_count()
+        .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().ok());
+    // Process-wide, so set every run: a run without the knob gets the stock
+    // ceiling back.
+    crate::net::set_max_requests(
+        process
+            .max_downloads
+            .map_or(crate::net::MAX_CONCURRENT_REQUESTS, |n| n as usize),
+    );
 
     // Resolved before validation: off Earth the slider value is ignored, so
     // validating it could reject a run over a scale that never gets used.
@@ -1518,7 +1558,7 @@ fn gui_start_generation(
     tauri::async_runtime::spawn(async move {
         // Held until the worker finishes, on every path, so the globals stay this run's.
         let _generation_slot = generation_slot;
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+        let work = move || {
             let world_path = if one_world {
                 one_world_dir(&selected_world, &one_world_name)
             } else {
@@ -1783,8 +1823,8 @@ fn gui_start_generation(
                 // aid.
                 building_facades_dir: None,
                 body: celestial_body,
-                // Scripting and multi-process knobs; the GUI runs stock.
-                process: Default::default(),
+                // Stock unless Advanced Features set a knob.
+                process,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -2072,9 +2112,8 @@ fn gui_start_generation(
                     Err(e.to_string())
                 }
             }
-        })
-        .await
-        {
+        };
+        if let Err(e) = tokio::task::spawn_blocking(move || in_pool(pool, work)).await {
             let error_msg = format!("Error in blocking task: {e}");
             eprintln!("{error_msg}");
             emit_gui_error(&error_msg);

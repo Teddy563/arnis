@@ -75,6 +75,11 @@
     <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
     <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+    <symbol id="i-memory-stick" viewBox="0 0 24 24"><path d="M12 12v-2"/><path d="M12 18v-2"/><path d="M16 12v-2"/><path d="M16 18v-2"/><path d="M2 11h1.5"/><path d="M20 18v-2"/><path d="M20.5 11H22"/><path d="M4 18v-2"/><path d="M8 12v-2"/><path d="M8 18v-2"/><rect x="2" y="6" width="20" height="10" rx="2"/></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></symbol>
   </svg>
 
   <main class="container">
@@ -228,6 +233,14 @@
             <span class="settings-nav-text">
               <span class="settings-nav-title" data-localize="settings_section_advanced">Advanced</span>
               <span class="settings-nav-sub" data-localize="settings_nav_advanced">Build height, lighting, mods</span>
+            </span>
+            <span class="settings-nav-dot" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="settings-nav-item" data-target="settings-section-features">
+            <svg class="icon" aria-hidden="true"><use href="#i-zap"></use></svg>
+            <span class="settings-nav-text">
+              <span class="settings-nav-title" data-localize="settings_section_features">Advanced Features</span>
+              <span class="settings-nav-sub" data-localize="settings_nav_features">CPU, memory, large worlds</span>
             </span>
             <span class="settings-nav-dot" aria-hidden="true"></span>
           </button>
@@ -1045,6 +1058,159 @@
                   <div class="settings-control">
                     <input type="checkbox" class="switch" id="enable-luanti-toggle" name="enable-luanti-toggle">
                   </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Advanced Features -->
+            <section class="settings-section" id="settings-section-features">
+              <header class="settings-section-head">
+                <span class="settings-section-icon" aria-hidden="true"><svg class="icon"><use href="#i-zap"></use></svg></span>
+                <div>
+                  <h3 data-localize="settings_section_features">Advanced Features</h3>
+                  <p data-localize="settings_section_features_desc">Extra controls for very large areas and experimental generation. Off by default.</p>
+                </div>
+              </header>
+
+              <div class="setting-grid">
+                <div class="settings-row setting-tile is-wide">
+                  <label for="advanced-features-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="advanced_features">Advanced Features</span></span>
+                      <span class="setting-desc" data-localize="advanced_features_desc">Shows the options below. When off, Arnis runs as usual.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="advanced-features-toggle" name="advanced-features-toggle">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Hidden, and every control in it disabled, while the switch
+                   above is off, so generation sends the stock defaults. -->
+              <div id="advanced-features-groups" style="display: none;">
+                <div class="setting-choice setting-subgroup">
+                  <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_performance">Performance &amp; Large Worlds</span></span></span>
+                </div>
+                <div class="setting-grid">
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="cpu-usage-slider" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-gauge"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="cpu_usage">CPU Usage</span>
+                          <span class="tooltip-icon" data-tooltip="Auto keeps the usual 90% of the cores. Lower values leave room for other programs, and generation gets slower. Unavailable while Threads is set.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="cpu_usage_desc">Share of the cores generation may use.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="range" id="cpu-usage-slider" name="cpu-usage-slider" min="0" max="100" step="10" value="0">
+                      <span id="cpu-usage-value" class="setting-value">Auto</span>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="threads-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-cpu"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="threads">Threads</span>
+                          <span class="tooltip-icon" data-tooltip="Sets the worker count directly instead of a share of the cores. Unavailable while CPU Usage is set.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="threads_desc">Exact number of worker threads. 0 is automatic.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="threads-input" name="threads-input" min="0" max="1024" step="1" value="0">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="ram-budget-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-memory-stick"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="ram_budget">Memory Budget</span>
+                          <span class="tooltip-icon" data-tooltip="Used in place of the free-memory reading when Arnis decides whether to stream regions to disk. Lower it to keep memory free for other programs.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="ram_budget_desc">Memory a run may assume, in MB. 0 is automatic.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="ram-budget-input" name="ram-budget-input" min="0" max="1048576" step="1" value="0">
+                      <span class="rotation-unit">MB</span>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="max-downloads-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="max_downloads">Parallel Downloads</span>
+                          <span class="tooltip-icon" data-tooltip="Covers elevation, Mapillary, 3D models and Overture. Lower it on a slow or metered connection.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="max_downloads_desc">Downloads kept in flight at once.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control rotation-control">
+                      <input type="number" id="max-downloads-input" name="max-downloads-input" min="1" max="32" step="1" value="16">
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="one-world-workers-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="one_world_workers">Parallel Workers</span>
+                          <span class="tooltip-icon" data-tooltip="Splits a large One World area into pieces and builds several side by side. Auto picks a count from free memory and cores.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="one_world_workers_desc">Pieces of a large world built at once. Requires One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="one-world-workers-select" name="one-world-workers-select" class="settings-select">
+                        <option value="auto" selected data-localize="features_auto">Auto</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="unit-regions-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-puzzle"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="unit_regions">Piece Size</span>
+                          <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Smaller pieces lose less work to a failure, larger ones build fewer seams.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="unit_regions_desc">Regions per side of each piece. Requires One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="unit-regions-select" name="unit-regions-select" class="settings-select">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4" selected>4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-choice setting-subgroup">
+                  <span class="setting-label">
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="features_group_meld">Meld Generation (Experimental)</span></span>
+                      <span class="setting-desc" data-localize="features_group_meld_desc">More generation controls arrive in later updates.</span>
+                    </span>
+                  </span>
                 </div>
               </div>
             </section>

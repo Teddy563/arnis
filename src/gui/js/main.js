@@ -54,6 +54,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initVoxyLightingCoupling();
   initCavesFillCoupling();
   refreshHeightLimitRow();
+  initAdvancedFeatures();
   // After initSettings(), so the slider label and rotation handlers exist
   // before restored values are applied. Labels get localized a few lines below.
   initSettingsStore({ resetWorldFormat: () => setWorldFormat('java') });
@@ -161,6 +162,7 @@ async function applyLocalization(localization) {
   // Update error messages
   window.localization = localization;
   renderOneWorldStatus();
+  formatCpuUsage();
   // The map hint lives in the map iframe, which cannot see this assignment.
   document.querySelectorAll('iframe').forEach((frame) => {
     try {
@@ -1628,6 +1630,82 @@ function initVoxyLightingCoupling() {
   });
 }
 
+// The Advanced Features switch. Off, its groups are hidden and every control
+// in them disabled: a hidden value then raises no revert arrow or nav dot, and
+// startGeneration sends nothing, so Arnis runs exactly as stock.
+function initAdvancedFeatures() {
+  const master = document.getElementById('advanced-features-toggle');
+  const groups = document.getElementById('advanced-features-groups');
+  const cpu = document.getElementById('cpu-usage-slider');
+  if (!master || !groups || !cpu) return;
+  master.addEventListener('change', refreshAdvancedFeatures);
+  cpu.addEventListener('input', () => { formatCpuUsage(); refreshAdvancedFeatures(); });
+  cpu.addEventListener('dblclick', () => {
+    cpu.value = 0;
+    cpu.dispatchEvent(new Event('input', { bubbles: true }));
+    cpu.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  document.getElementById('threads-input').addEventListener('input', refreshAdvancedFeatures);
+  formatCpuUsage();
+  refreshAdvancedFeatures();
+}
+
+function formatCpuUsage() {
+  const cpu = document.getElementById('cpu-usage-slider');
+  const out = document.getElementById('cpu-usage-value');
+  if (!cpu || !out) return;
+  const pct = parseInt(cpu.value, 10) || 0;
+  out.textContent = pct > 0 ? pct + '%' : ((window.localization && window.localization.features_auto) || 'Auto');
+}
+
+// One place decides every row, so the master switch, the CPU Usage / Threads
+// exclusion and the One World gate never fight over `disabled`.
+function refreshAdvancedFeatures() {
+  const master = document.getElementById('advanced-features-toggle');
+  const groups = document.getElementById('advanced-features-groups');
+  if (!master || !groups) return;
+  const on = master.checked;
+  groups.style.display = on ? '' : 'none';
+  const cpuSet = (parseInt(document.getElementById('cpu-usage-slider').value, 10) || 0) > 0;
+  const threadsSet = (parseInt(document.getElementById('threads-input').value, 10) || 0) > 0;
+  // Threads wins when both hold a value (only reachable from stored state),
+  // so one of the two always stays editable.
+  setSettingsRowAvailable('cpu-usage-slider', on && !threadsSet);
+  setSettingsRowAvailable('threads-input', on && (threadsSet || !cpuSet));
+  setSettingsRowAvailable('ram-budget-input', on);
+  setSettingsRowAvailable('max-downloads-input', on);
+  const pieces = on && isOneWorldEnabled();
+  setSettingsRowAvailable('one-world-workers-select', pieces);
+  setSettingsRowAvailable('unit-regions-select', pieces);
+  refreshSettingsState();
+}
+
+// Keys for gui_start_generation. A disabled control sends null, which the
+// Rust side reads as "no flag", the same as the CLI without it.
+function advancedFeatureArgs() {
+  const enabled = (id) => {
+    const el = document.getElementById(id);
+    return el && !el.disabled ? el : null;
+  };
+  const positive = (id) => {
+    const el = enabled(id);
+    const n = el ? parseInt(el.value, 10) : NaN;
+    return n > 0 ? n : null;
+  };
+  const workers = enabled('one-world-workers-select');
+  return {
+    cpuTarget: positive('cpu-usage-slider'),
+    threads: positive('threads-input'),
+    ramBudgetMb: positive('ram-budget-input'),
+    maxDownloads: positive('max-downloads-input'),
+    // ponytail: sent ahead of --one-world-workers / --unit-regions; Tauri
+    // drops keys gui_start_generation does not declare, so these are inert
+    // until those Args fields land.
+    oneWorldWorkers: workers ? workers.value : null,
+    unitRegions: positive('unit-regions-select'),
+  };
+}
+
 // Caves are carved into the filled ground, so turning them on turns Fill Ground
 // on, and turning Fill Ground off takes the caves with it.
 function initCavesFillCoupling() {
@@ -3041,6 +3119,7 @@ let oneWorldRefreshSeq = 0;
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
   refreshLuantiAvailability();
+  refreshAdvancedFeatures();
   setSettingsRowAvailable('one-world-toggle', isOneWorldAvailable());
   if (!isOneWorldEnabled()) {
     const wasOn = oneWorldInfo !== null;
@@ -3408,7 +3487,8 @@ async function startGeneration() {
         facadeDetail: getFacadeDetail(),
         celestialBodyName: selectedCelestialBody,
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : ""
+        oneWorldName: oneWorld ? oneWorldFolderName() : "",
+        ...advancedFeatureArgs()
     });
 
     console.log("Generation process started.");

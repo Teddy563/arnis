@@ -64,6 +64,15 @@ const SETTINGS = [
 
   { id: 'enable-luanti-toggle', kind: 'checkbox', store: EXTERNAL },
 
+  // Advanced Features
+  { id: 'advanced-features-toggle', kind: 'checkbox', store: OWN },
+  { id: 'cpu-usage-slider', kind: 'number', store: OWN },
+  { id: 'threads-input', kind: 'number', store: OWN },
+  { id: 'ram-budget-input', kind: 'number', store: OWN },
+  { id: 'max-downloads-input', kind: 'number', store: OWN },
+  { id: 'one-world-workers-select', kind: 'select', store: OWN },
+  { id: 'unit-regions-select', kind: 'select', store: OWN },
+
   // Map & Input. #bbox-coords is the area selection, not a preference, so it
   // is intentionally absent.
   { id: 'tile-theme-select', kind: 'select', store: EXTERNAL },

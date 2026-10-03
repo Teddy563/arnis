@@ -7,7 +7,7 @@ use std::sync::{Condvar, Mutex};
 /// fetching never waits on it. It only bounds unrelated fan-outs stacking on
 /// top of each other, which is what exhausts the Windows I/O resource limits
 /// the tokio driver panics on.
-const MAX_CONCURRENT_REQUESTS: usize = 16;
+pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 16;
 
 /// The ceiling in force: `MAX_CONCURRENT_REQUESTS` unless `--max-downloads`
 /// set another.
