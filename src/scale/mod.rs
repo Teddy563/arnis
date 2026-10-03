@@ -639,8 +639,8 @@ fn child_args(
 }
 
 /// Why a piece failed, and whether running it again may help.
-struct PieceFailure {
-    message: String,
+pub(crate) struct PieceFailure {
+    pub(crate) message: String,
     transient: bool,
 }
 
@@ -671,7 +671,7 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 }
 
 /// Runs one piece to the end. `progress` gets the piece's own fraction done.
-fn run_piece(
+pub(crate) fn run_piece(
     argv: &[OsString],
     env: &[(&str, String)],
     mut progress: impl FnMut(f64),

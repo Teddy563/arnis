@@ -112,6 +112,14 @@ const SETTINGS = [
   { id: 'props-custom-input', kind: 'text', store: OWN },
   { id: 'props-min-scale-input', kind: 'text', store: OWN },
 
+  // OSM Data Source
+  { id: 'osm-source-select', kind: 'select', store: OWN },
+  { id: 'osm-tiles-url-input', kind: 'text', store: OWN },
+  { id: 'overpass-url-input', kind: 'text', store: OWN },
+  { id: 'osm-file-input', kind: 'text', store: OWN },
+  { id: 'offline-toggle', kind: 'checkbox', store: OWN },
+  { id: 'prewarm-first-toggle', kind: 'checkbox', store: OWN },
+
   // Map & Input. #bbox-coords is the area selection, not a preference, so it
   // is intentionally absent.
   { id: 'tile-theme-select', kind: 'select', store: EXTERNAL },

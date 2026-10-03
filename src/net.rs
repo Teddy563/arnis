@@ -29,7 +29,15 @@ static OFFLINE: AtomicBool = AtomicBool::new(false);
 /// the refused requests.
 static OFFLINE_MISSES: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
 
+/// Turning it on forgets the misses of an earlier run in this process (the
+/// window runs many).
 pub fn set_offline(on: bool) {
+    if on {
+        OFFLINE_MISSES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
     OFFLINE.store(on, Ordering::Relaxed);
 }
 

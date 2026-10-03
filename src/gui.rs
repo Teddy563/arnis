@@ -129,6 +129,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_save_directory,
             gui_pick_loot_table,
             gui_climate_preview,
+            gui_pick_osm_file,
             gui_redraw_one_world_map,
             gui_start_generation,
             gui_get_version,
@@ -365,13 +366,23 @@ fn gui_pick_save_directory(start_path: String) -> Result<String, String> {
 /// chosen path, or `current` when the user cancels.
 #[tauri::command]
 fn gui_pick_loot_table(current: String) -> Result<String, String> {
-    let mut dialog = FileDialog::new().add_filter("JSON", &["json"]);
+    Ok(pick_file(current, "JSON", &["json"]))
+}
+
+/// The same for a local OSM file (`--file`).
+#[tauri::command]
+fn gui_pick_osm_file(current: String) -> Result<String, String> {
+    Ok(pick_file(current, "OSM", &["osm", "xml", "json"]))
+}
+
+fn pick_file(current: String, kind: &str, extensions: &[&str]) -> String {
+    let mut dialog = FileDialog::new().add_filter(kind, extensions);
     if let Some(dir) = Path::new(&current).parent().filter(|d| d.is_dir()) {
         dialog = dialog.set_directory(dir);
     }
-    Ok(dialog
+    dialog
         .pick_file()
-        .map_or(current, |file| file.display().to_string()))
+        .map_or(current, |file| file.display().to_string())
 }
 
 /// `--climate-map` for the selected area, as a PNG data URL for the window.
@@ -1421,18 +1432,22 @@ impl Drop for BusySlot {
 /// was started without one, so the job's own is rebuilt from the settings:
 /// the window's own fields, then `flags`, the Advanced Features flags `args`
 /// was parsed from. `--bbox`, the spawn and the per-process knobs are the
-/// coordinator's to set per piece. `world_path` is the One World folder.
-fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi::OsString> {
+/// coordinator's to set per piece. `world_path` is the One World folder;
+/// without one the line asks for a single run's inputs (a prewarm).
+fn piece_argv(args: &Args, world_path: Option<&Path>, flags: &[String]) -> Vec<std::ffi::OsString> {
     use clap::ValueEnum;
     fn name<T: ValueEnum>(v: &T) -> String {
         v.to_possible_value()
             .map(|p| p.get_name().to_string())
             .unwrap_or_default()
     }
-    let mut out: Vec<std::ffi::OsString> = vec!["--one-world".into()];
-    if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
-        out.extend(["--output-dir".into(), dir.into(), "--world-name".into()]);
-        out.push(world.into());
+    let mut out: Vec<std::ffi::OsString> = Vec::new();
+    if let Some(world_path) = world_path {
+        out.push("--one-world".into());
+        if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
+            out.extend(["--output-dir".into(), dir.into(), "--world-name".into()]);
+            out.push(world.into());
+        }
     }
     let mut values = vec![
         format!("--downloader={}", args.downloader),
@@ -1447,7 +1462,6 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
         format!("--canopy-height={}", args.canopy_height),
         format!("--overture={}", args.overture),
         format!("--overture-source={}", name(&args.overture_source)),
-        format!("--osm-tiles-url={}", args.osm_tiles_url),
         format!("--rotation={}", args.rotation),
         format!("--map-item={}", args.map_item),
         format!("--gamemode={}", name(&args.gamemode)),
@@ -1466,7 +1480,6 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
         ("--caves", args.caves),
         ("--legacy-trees", args.legacy_trees),
         ("--no-3d", !args.use_3d),
-        ("--no-tile-archive", args.no_tile_archive),
         ("--debug", args.debug),
         ("--disable-height-limit", args.disable_height_limit),
         ("--aws-only-elevation", args.aws_only_elevation),
@@ -1514,6 +1527,48 @@ fn meld_args(flags: &[String], one_world: bool) -> Result<Args, String> {
         crate::args::check_cave_datum_y(y)?;
     }
     Ok(args)
+}
+
+/// Offline Mode stops a run the caches could not serve, naming what they
+/// lacked, rather than build flat or empty ground there.
+fn offline_complete() -> Result<(), String> {
+    let missing = crate::net::offline_misses();
+    if !crate::net::offline() || missing.is_empty() {
+        return Ok(());
+    }
+    let what: Vec<String> = missing.into_iter().map(|(what, _)| what).collect();
+    let msg = format!(
+        "Offline Mode: not downloaded yet: {}. Download the area for offline use first.",
+        what.join(", ")
+    );
+    // In full, where emit_gui_error would cut the list short.
+    emit_gui_progress_update(0.0, &format!("Error! {msg}"));
+    Err(msg)
+}
+
+/// `--prewarm` lives in the CLI, so the window runs it there, on the same
+/// command line a piece gets, with its progress on the window's bar.
+fn prewarm_in_child(argv: &[std::ffi::OsString], bbox_text: &str) -> Result<(), String> {
+    emit_gui_progress_update(0.0, "Downloading for offline use...");
+    match crate::scale::run_piece(argv, &[], |p| emit_gui_progress_update(p * 100.0, "")) {
+        Ok(_) => {
+            emit_gui_progress_update(100.0, &format!("Done! Cached for offline use: {bbox_text}"));
+            Ok(())
+        }
+        Err(failure) => {
+            // The child's own error line, not its whole output tail.
+            let lines = failure.message.lines();
+            let line = lines
+                .clone()
+                .rev()
+                .find(|l| l.contains("Error"))
+                .or(lines.last())
+                .unwrap_or_default()
+                .to_string();
+            emit_gui_progress_update(0.0, &format!("Error! {line}"));
+            Err(failure.message)
+        }
+    }
 }
 
 // Everything before the `spawn` below - the spawn point written into level.dat,
@@ -1613,6 +1668,13 @@ fn gui_start_generation(
     crate::element_processing::subprocessor::buildings_loot::set_loot_table(loot);
 
     let process = std::mem::take(&mut meld.process);
+    // Process-wide, so set every run: a run without them gets the network
+    // and Arnis's own Overpass back.
+    crate::net::set_offline(process.offline);
+    crate::retrieve_data::set_overpass_urls(process.overpass_url.clone());
+    // A prewarm only downloads, so no world is made, locked or named for it.
+    let prewarm = process.prewarm;
+    let is_new_world = is_new_world && !prewarm;
     // Pieces are a One World feature; anywhere else the fields are inert.
     let units = if one_world {
         std::mem::take(&mut meld.units)
@@ -1809,7 +1871,7 @@ fn gui_start_generation(
             // Bedrock worlds are generated as .mcworld files and don't need this lock.
             // A One World is locked by `prepare` below.
             let mut _session_lock: Option<SessionLock> =
-                if world_format == WorldFormat::JavaAnvil && !one_world {
+                if world_format == WorldFormat::JavaAnvil && !one_world && !prewarm {
                     match SessionLock::acquire(&world_path) {
                         Ok(lock) => Some(lock),
                         Err(e) => {
@@ -1836,6 +1898,7 @@ fn gui_start_generation(
 
             // Determine output path and level name based on format
             let (generation_path, level_name) = match world_format {
+                _ if prewarm => (world_path.clone(), None),
                 WorldFormat::JavaAnvil => {
                     // Java: use the selected world path, add localized name if new
                     let updated_path = if is_new_world {
@@ -1889,7 +1952,7 @@ fn gui_start_generation(
                 world_format == WorldFormat::JavaAnvil && !one_world && disable_height_limit;
             let mut args: Args = Args {
                 bbox: Some(bbox),
-                file: None,
+                file: meld.file,
                 save_json_file: None,
                 path: Some(if world_format == WorldFormat::JavaAnvil {
                     generation_path.clone()
@@ -1943,8 +2006,8 @@ fn gui_start_generation(
                 // Parquet reader drops entirely - but both differences are far
                 // below a block, so the choice is not worth a GUI setting.
                 overture_source: crate::args::OvertureSource::Auto,
-                osm_tiles_url: crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string(),
-                no_tile_archive: false,
+                osm_tiles_url: meld.osm_tiles_url,
+                no_tile_archive: meld.no_tile_archive,
                 use_3d: use_3d_enabled,
                 props: meld.props,
                 props_min_scale: meld.props_min_scale,
@@ -2041,6 +2104,14 @@ fn gui_start_generation(
                 emit_gui_error(&e);
                 return Err(e);
             }
+            if args.process.prewarm {
+                let mut argv = piece_argv(&args, one_world.then_some(world_path.as_path()), &flags);
+                argv.extend([
+                    format!("--bbox={bbox_text}").into(),
+                    "--progress=json".into(),
+                ]);
+                return prewarm_in_child(&argv, &bbox_text);
+            }
 
             let mut one_world_extending = false;
             if one_world {
@@ -2049,7 +2120,7 @@ fn gui_start_generation(
                 let pieces_argv = args
                     .units
                     .coordinates()
-                    .then(|| piece_argv(&args, &world_path, &flags));
+                    .then(|| piece_argv(&args, Some(&world_path), &flags));
                 let session = match crate::one_world::prepare(&world_path, &bbox, &mut args) {
                     Ok(session) => session,
                     Err(e) => {
@@ -2165,6 +2236,7 @@ fn gui_start_generation(
             if args.skip_objects() {
                 // Generate ground data (terrain) for terrain-only mode
                 let mut ground = ground::generate_ground_data(&args, bbox);
+                offline_complete()?;
                 // Matches run_cli.
                 ground.mark_beaches();
 
@@ -2229,14 +2301,19 @@ fn gui_start_generation(
                     }
                 });
                 let ground_handle = s.spawn(|| ground::generate_ground_data(&args, bbox));
-                let fetch_result = retrieve_data::fetch_osm_data(
-                    bbox,
-                    args.debug,
-                    "requests",
-                    None,
-                    &args.osm_tiles_url,
-                    !args.no_tile_archive,
-                );
+                // A local file stands in for the download; the area is still
+                // the selection, as with the CLI's --bbox.
+                let fetch_result = match args.file.as_deref() {
+                    Some(file) => retrieve_data::fetch_data_from_file(file).map(|(data, _)| data),
+                    None => retrieve_data::fetch_osm_data(
+                        bbox,
+                        args.debug,
+                        "requests",
+                        None,
+                        &args.osm_tiles_url,
+                        !args.no_tile_archive,
+                    ),
+                };
                 // A panicked worker already reported itself through the panic hook.
                 // Overture is supplementary, so drop it and keep going; terrain is
                 // not, so hand the failure back instead of taking the app down.
@@ -2246,6 +2323,7 @@ fn gui_start_generation(
                 });
                 (fetch_result, overture_data, ground_handle.join().ok())
             });
+            offline_complete()?;
 
             let Some(ground) = ground else {
                 let error_msg = "Terrain fetch failed unexpectedly".to_string();
@@ -2446,6 +2524,11 @@ mod piece_tests {
             "--water-detail=scaled",
             "--climate-mode=per-position",
             "--seed=42",
+            "--osm-tiles-url=https://tiles.example/v1",
+            "--no-tile-archive",
+            "--overpass-url=http://a/api,http://b/api",
+            "--offline",
+            "--file=area.osm",
             "--props=car,windturbine",
             "--props-min-scale=0.5",
             "--threads=6",
@@ -2469,12 +2552,33 @@ mod piece_tests {
         args.water = meld.water;
         args.climate_mode = meld.climate_mode;
         args.seed = meld.seed;
+        args.osm_tiles_url = meld.osm_tiles_url;
+        args.no_tile_archive = meld.no_tile_archive;
+        args.file = meld.file;
         args.props = meld.props;
         args.props_min_scale = meld.props_min_scale;
         args.process = meld.process;
         args.units = meld.units;
-        let back = base(&piece_argv(&args, &dir.path().join("My World"), &flags));
+        let back = base(&piece_argv(
+            &args,
+            Some(&dir.path().join("My World")),
+            &flags,
+        ));
         assert_eq!(format!("{back:?}"), format!("{args:?}"));
+    }
+
+    /// The window's offline download runs the CLI on this line, so it must
+    /// pass the CLI's own checks, without a world to write.
+    #[test]
+    fn a_prewarm_line_passes_the_cli_checks() {
+        let args = Args::try_parse_from(["arnis", "--bbox", "44.43,26.08,44.45,26.11"]).unwrap();
+        let flags = ["--no-tile-archive", "--prewarm"].map(String::from);
+        let mut argv: Vec<std::ffi::OsString> = vec!["arnis".into()];
+        argv.extend(piece_argv(&args, None, &flags));
+        argv.push("--bbox=44.43 26.08 44.45 26.11".into());
+        let back = Args::try_parse_from(argv).unwrap();
+        assert!(back.process.prewarm && back.no_tile_archive && !back.one_world);
+        crate::args::validate_args(&back).unwrap();
     }
 
     /// No Meld flag is the stock run, and the window refuses what the CLI does.

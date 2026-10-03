@@ -88,6 +88,9 @@
     <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></symbol>
     <symbol id="i-droplets" viewBox="0 0 24 24"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/></symbol>
     <symbol id="i-dices" viewBox="0 0 24 24"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></symbol>
     <symbol id="i-thermometer" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
   </svg>
 
@@ -250,6 +253,14 @@
             <span class="settings-nav-text">
               <span class="settings-nav-title" data-localize="settings_section_features">Advanced Features</span>
               <span class="settings-nav-sub" data-localize="settings_nav_features">CPU, memory, large worlds</span>
+            </span>
+            <span class="settings-nav-dot" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="settings-nav-item" data-target="settings-section-osm">
+            <svg class="icon" aria-hidden="true"><use href="#i-database"></use></svg>
+            <span class="settings-nav-text">
+              <span class="settings-nav-title" data-localize="settings_section_osm">OSM Data Source</span>
+              <span class="settings-nav-sub" data-localize="settings_nav_osm">Tile archive, Overpass, offline</span>
             </span>
             <span class="settings-nav-dot" aria-hidden="true"></span>
           </button>
@@ -1881,6 +1892,129 @@
                     </div>
                   </div>
                   <div id="redraw-map-status" class="settings-notice" style="display: none;"></div>
+                </div>
+              </div>
+            </section>
+
+            <!-- OSM Data Source: not behind the Advanced Features switch -->
+            <section class="settings-section" id="settings-section-osm">
+              <header class="settings-section-head">
+                <span class="settings-section-icon" aria-hidden="true"><svg class="icon"><use href="#i-database"></use></svg></span>
+                <div>
+                  <h3 data-localize="settings_section_osm">OSM Data Source</h3>
+                  <p data-localize="settings_section_osm_desc">Where map data comes from, and building offline. The defaults are the usual downloads.</p>
+                </div>
+              </header>
+
+              <div class="setting-grid">
+                <div class="settings-row setting-tile is-wide">
+                  <label for="osm-source-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-database"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="osm_source">Source</span>
+                        <span class="tooltip-icon" data-tooltip="The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Local File reads an .osm, .xml or Arnis .json file; the area is still the one selected on the map.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="osm_source_desc">Where the OpenStreetMap data comes from.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="osm-source-select" name="osm-source-select" class="settings-select">
+                      <option value="archive" selected data-localize="osm_source_archive">Arnis Tile Archive</option>
+                      <option value="overpass" data-localize="osm_source_overpass">Overpass</option>
+                      <option value="file" data-localize="osm_source_file">Local File</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="osm-tiles-url-row">
+                  <label for="osm-tiles-url-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-link"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="osm_tiles_url">Archive URL</span></span>
+                      <span class="setting-desc" data-localize="osm_tiles_url_desc">Address of a tile archive. Empty uses Arnis&#x27;s own.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="osm-tiles-url-input" name="osm-tiles-url-input" placeholder="https://tiles.arnisproject.com/v1" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="overpass-url-row">
+                  <label for="overpass-url-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-server"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="overpass_url">Overpass Servers</span>
+                        <span class="tooltip-icon" data-tooltip="Tried in order, for example a self-hosted Overpass instance. ARNIS_OVERPASS_URL sets the same list.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="overpass_url_desc">Servers to ask, comma separated. Empty uses Arnis&#x27;s own.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="overpass-url-input" name="overpass-url-input" placeholder="https://api.arnismc.com/overpass/api/interpreter" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="osm-file-row">
+                  <label for="osm-file-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="osm_file">Local File</span>
+                        <span class="tooltip-icon" data-tooltip="Only the selected area is built from the file. Empty falls back to the tile archive.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="osm_file_desc">An .osm, .xml or Arnis .json file covering the area.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control save-path-control">
+                    <input type="text" id="osm-file-input" name="osm-file-input" class="save-path-input" placeholder="No file" spellcheck="false">
+                    <button type="button" id="osm-file-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                      <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="offline-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wifi-off"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="offline_mode">Offline Mode</span>
+                        <span class="tooltip-icon" data-tooltip="Never uses the network: OpenStreetMap, Overture, elevation, land cover, canopy and 3D models come from the caches only. A run that needs anything they lack stops and names it instead of building flat or empty ground.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="offline_mode_desc">Uses only data downloaded before. Fails and lists what is missing.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="offline-toggle" name="offline-toggle">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="prewarm-button" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="prewarm">Download Area For Offline Use</span>
+                        <span class="tooltip-icon" data-tooltip="Downloads and caches every input a generation of the selected area would read with the current settings, then stops without building a world. Mapillary imagery is not included. Progress shows in the main window.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="prewarm_desc">Fetches what the selected area needs, with these settings.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="prewarm-button" class="clear-cache-button" data-localize="prewarm_button">Download</button>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="prewarm-first-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="prewarm_first">Warm Caches Before Building Pieces</span>
+                        <span class="tooltip-icon" data-tooltip="With a One World built in pieces (Advanced Features), every piece&#x27;s data is fetched one piece at a time before the pieces start, so parallel workers read from disk instead of all downloading at once. Not with Offline Mode.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="prewarm_first_desc">Downloads each piece&#x27;s data first, one at a time. Requires parallel pieces.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="prewarm-first-toggle" name="prewarm-first-toggle">
+                  </div>
                 </div>
               </div>
             </section>

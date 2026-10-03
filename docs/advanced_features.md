@@ -75,6 +75,24 @@ The window applies what the CLI does for these: the seed, the tall
 datapack's floor and ceiling (checked as the CLI checks them) and the region
 format. The two buttons run in the window, not as a generation.
 
+## OSM Data Source
+
+Its own settings section, after Advanced Features. It is not behind the
+Advanced Features switch: these flags go with every run, and the defaults are
+the stock downloads.
+
+| Control | CLI flag | Default | Description |
+| --- | --- | --- | --- |
+| Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`) or Local File (`--file`). |
+| Archive URL | `--osm-tiles-url` | Empty (Arnis's archive) | Shown for the tile archive. |
+| Overpass Servers | `--overpass-url` | Empty (Arnis's server) | Comma list, tried in order. Shown for Overpass. |
+| Local File | `--file` | Empty | An `.osm`, `.xml` or Arnis `.json` file; the area is still the map selection. Shown for Local File. |
+| Offline Mode | `--offline` | Off | Caches only. A run that misses something stops and lists what. |
+| Download Area For Offline Use: Download | `--prewarm` | | Downloads what a generation of the selected area would read, with the current settings, and builds nothing. Progress on the main bar. Runs as a child CLI process. |
+| Warm Caches Before Building Pieces | `--prewarm-first` | Off | Needs a One World built in pieces (Advanced Features on); greyed with Offline Mode. |
+
+All of them reach the pieces of a One World job too.
+
 ## Flags
 
 - `--threads N`: worker threads for generation. Default 90% of the cores, or

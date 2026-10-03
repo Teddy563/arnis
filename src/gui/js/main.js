@@ -1649,7 +1649,8 @@ function initAdvancedFeatures() {
   // Meld Generation rows that follow another control.
   ['snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'field-mix-select', 'farm-crops-input',
     'interior-toggle', 'caves-toggle', 'region-format-select', 'grass-texture-toggle',
-    'land-texture-toggle', 'disable-height-limit-toggle', 'props-select'].forEach((id) => {
+    'land-texture-toggle', 'disable-height-limit-toggle', 'props-select', 'osm-source-select',
+    'offline-toggle'].forEach((id) => {
     document.getElementById(id).addEventListener('input', refreshAdvancedFeatures);
     document.getElementById(id).addEventListener('change', refreshAdvancedFeatures);
   });
@@ -1681,8 +1682,28 @@ function initAdvancedFeatures() {
   });
   initPropFamilies();
   initExperimentalButtons();
+  initOsmSource();
   formatCpuUsage();
   refreshAdvancedFeatures();
+}
+
+// OSM Data Source: the local file picker and the offline download, which
+// runs the generation's own settings with --prewarm.
+function initOsmSource() {
+  const file = document.getElementById('osm-file-input');
+  document.getElementById('osm-file-browse').addEventListener('click', async () => {
+    try {
+      const picked = await invoke('gui_pick_osm_file', { current: file.value.trim() });
+      if (picked !== file.value) {
+        file.value = picked;
+        file.dispatchEvent(new Event('input', { bubbles: true }));
+        file.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      console.error('OSM file picker failed:', error);
+    }
+  });
+  document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
 }
 
 // The prop families live in one hidden field, the comma list --props takes,
@@ -1838,6 +1859,16 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('props-custom-input', on && props === 'custom');
   setSettingsRowAvailable('props-min-scale-input', on && props !== 'none');
   setSettingsRowAvailable('redraw-map-button', on && isOneWorldEnabled());
+
+  // OSM Data Source, not behind the switch: each source shows its own field.
+  const source = document.getElementById('osm-source-select').value;
+  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file']].forEach(([id, value]) => {
+    shown(id + '-row', source === value);
+    setSettingsRowAvailable(id + '-input', source === value);
+  });
+  // Pieces exist only with the switch and One World; offline has nothing to warm.
+  setSettingsRowAvailable('prewarm-first-toggle',
+    on && isOneWorldEnabled() && !checked('offline-toggle'));
   refreshSettingsState();
 }
 
@@ -1880,6 +1911,8 @@ function advancedFeatureArgs() {
   const propsSelect = enabled('props-select');
   // Auto leaves the props to the 3D Models switch, as stock.
   const props = propsSelect && propsSelect.value !== 'auto' ? propsSelect.value : null;
+  const source = document.getElementById('osm-source-select').value;
+  const overpass = (text('overpass-url-input') || '').split(',').map((u) => u.trim()).filter(Boolean).join(',');
   const values = {
     'cpu-target': positive('cpu-usage-slider'),
     'threads': positive('threads-input'),
@@ -1925,6 +1958,13 @@ function advancedFeatureArgs() {
     // Custom with nothing ticked places none.
     'props': props === 'custom' ? (text('props-custom-input') || 'none') : props,
     'props-min-scale': text('props-min-scale-input'),
+    // OSM Data Source: sent whatever the Advanced Features switch says.
+    'no-tile-archive': source === 'overpass' ? true : null,
+    'osm-tiles-url': text('osm-tiles-url-input'),
+    'overpass-url': overpass || null,
+    'file': text('osm-file-input'),
+    'offline': on('offline-toggle'),
+    'prewarm-first': on('prewarm-first-toggle'),
   };
   const flags = Object.entries(values)
     .filter(([, v]) => v !== null)
@@ -3542,7 +3582,10 @@ function setGenerationButtonEnabled(enabled) {
  * Validates required inputs and sends generation parameters to the backend
  * @returns {Promise<void>}
  */
-async function startGeneration() {
+// `prewarm` downloads what this run would read and builds nothing, so no
+// world is created, checked or renamed for it.
+async function startGeneration(options = {}) {
+  const prewarm = options.prewarm === true;
   if (generationButtonEnabled === false) {
     return;
   }
@@ -3574,7 +3617,7 @@ async function startGeneration() {
     resetProgressUi(STARTING_MESSAGE);
 
     const oneWorld = isOneWorldEnabled();
-    if (oneWorld && !(await prepareOneWorldRun())) {
+    if (oneWorld && !prewarm && !(await prepareOneWorldRun())) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
@@ -3582,7 +3625,7 @@ async function startGeneration() {
     lastRunOneWorld = oneWorld;
 
     // Auto-create world for Java format (a One World is resolved by the backend)
-    if (selectedWorldFormat === 'java' && !oneWorld) {
+    if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {
       if (!savePath) {
         console.warn("Cannot create world: save path not set");
         return;
@@ -3605,8 +3648,8 @@ async function startGeneration() {
 
     // Clear any existing world preview since we're generating a new one.
     // A One World keeps its areas on the map; the new one joins them at the end.
-    if (!oneWorld) notifyWorldChanged();
-    if (oneWorld) setWorldNameLabel(oneWorldFolderName());
+    if (!oneWorld && !prewarm) notifyWorldChanged();
+    if (oneWorld && !prewarm) setWorldNameLabel(oneWorldFolderName());
 
     // Get the map iframe reference
     const mapFrame = document.querySelector('.map-container');
@@ -3696,7 +3739,7 @@ async function startGeneration() {
         awsOnlyElevation: aws_only_elevation,
         bakeLightingEnabled: bake_lighting,
         voxyLodEnabled: voxy_lod,
-        isNewWorld: true,
+        isNewWorld: !prewarm,
         spawnPoint: spawnPoint,
         telemetryConsent: telemetryConsent || false,
         worldFormat: getEffectiveWorldFormat(),
@@ -3714,7 +3757,10 @@ async function startGeneration() {
         celestialBodyName: selectedCelestialBody,
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? oneWorldFolderName() : "",
-        ...advancedFeatureArgs()
+        // A download refuses --offline, which only reads what it fetches.
+        flags: prewarm
+          ? advancedFeatureArgs().flags.filter((f) => f !== '--offline').concat('--prewarm')
+          : advancedFeatureArgs().flags
     });
 
     console.log("Generation process started.");
