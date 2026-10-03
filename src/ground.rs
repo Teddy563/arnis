@@ -1467,6 +1467,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
         let floor = area_floor_for(&ground, args);
         crate::world_editor::set_base_chunk_y(floor);
         crate::world_editor::set_terrain_floor_y(floor);
+        pin_floor_to_cave_datum(args);
         // A grass plane around a lunar crater would be the most visible thing in it.
         crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
         if args.debug {
@@ -1487,8 +1488,25 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
     ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
     crate::world_editor::set_base_chunk_y(ground.base_level());
     crate::world_editor::set_terrain_floor_y(ground.base_level());
+    pin_floor_to_cave_datum(args);
     crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
     ground
+}
+
+/// With `--cave-datum-y`, bedrock drops to the datum wherever the run's own floor sits above it.
+/// Each area (and each piece of one) otherwise puts bedrock under its own lowest point, and the
+/// caves stop at bedrock, so neighbours with different floors carve different depths and the
+/// whole underground steps at their seam. A run whose lowest point needs a floor below the
+/// datum keeps its own.
+fn pin_floor_to_cave_datum(args: &Args) {
+    use crate::world_editor::{set_terrain_floor_y, terrain_floor_y, TERRAIN_FLOOR_DEPTH};
+    if let Some(datum) = args.cave_datum_y.filter(|_| args.caves) {
+        if datum < terrain_floor_y() {
+            // The floor sits TERRAIN_FLOOR_DEPTH under the base it is given; the datum is
+            // already on a section boundary, and the world floor still clamps it.
+            set_terrain_floor_y(datum + TERRAIN_FLOOR_DEPTH);
+        }
+    }
 }
 
 /// The terrain base, except in a One World with the extended floor: its base is the
@@ -1994,5 +2012,33 @@ mod frame_tests {
                 (rect.max_z() - rect.min_z() + 1) as usize
             ))
         );
+    }
+
+    /// --cave-datum-y lowers bedrock to the datum so pieces with different low points share
+    /// one floor, never raises it, and leaves runs without it alone.
+    #[test]
+    fn cave_datum_pins_the_floor_only_downwards() {
+        use crate::world_editor::{
+            set_terrain_floor_y, set_world_bounds, terrain_floor_y, DEFAULT_MAX_Y, DEFAULT_MIN_Y,
+            FLOOR_TEST_LOCK,
+        };
+        use clap::Parser;
+        let _g = FLOOR_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let args = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd)
+        };
+        set_world_bounds(-2032, 2031);
+        let floor_after = |base: i32, extra: &[&str]| {
+            set_terrain_floor_y(base);
+            pin_floor_to_cave_datum(&args(extra));
+            terrain_floor_y()
+        };
+        assert_eq!(floor_after(100, &[]), 32);
+        assert_eq!(floor_after(100, &["--cave-datum-y", "-64"]), -64);
+        assert_eq!(floor_after(-100, &["--cave-datum-y", "-64"]), -176);
+        set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
+        set_terrain_floor_y(crate::world_editor::DEFAULT_MIN_Y + 2);
     }
 }
