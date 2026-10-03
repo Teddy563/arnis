@@ -240,6 +240,12 @@ pub struct Args {
     #[arg(long, value_parser = crate::structures::PropSet::parse)]
     pub props: Option<crate::structures::PropSet>,
 
+    /// Leave out every schematic prop below this world scale. Props keep their
+    /// block size at any scale, so on a small-scale world they tower over the
+    /// buildings around them.
+    #[arg(long, value_parser = parse_props_min_scale)]
+    pub props_min_scale: Option<f64>,
+
     /// Enable debug mode (optional)
     #[arg(long)]
     pub debug: bool,
@@ -519,6 +525,13 @@ impl WaterArgs {
     }
 }
 
+fn parse_props_min_scale(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err(format!("{s}: expected a scale of 0 or more")),
+    }
+}
+
 fn parse_density(s: &str) -> Result<f64, String> {
     match s.trim().parse::<f64>() {
         Ok(v) if (0.0..=1.0).contains(&v) => Ok(v),
@@ -697,6 +710,7 @@ pub const CAPABILITIES: &[&str] = &[
     "offline",
     "prewarm",
     "props",
+    "props-min-scale",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -909,9 +923,13 @@ impl Args {
         self.mode.skip_objects() || self.scale < OBJECT_SKIP_SCALE
     }
 
-    /// The prop families this run places: `--props`, else all or none by `--no-3d`.
+    /// The prop families this run places: `--props`, else all or none by
+    /// `--no-3d`; none below `--props-min-scale`.
     pub fn props(&self) -> crate::structures::PropSet {
         use crate::structures::PropSet;
+        if self.props_min_scale.is_some_and(|min| self.scale < min) {
+            return PropSet::NONE;
+        }
         self.props.unwrap_or(if self.use_3d {
             PropSet::ALL
         } else {
@@ -1460,7 +1478,12 @@ mod tests {
         let car = parse(&["--no-3d", "--props", "car"]).props();
         assert!(car.has(Prop::Car) && !car.has(Prop::Landmark));
         assert_eq!(parse(&["--props", "none"]).props(), PropSet::NONE);
+        // Below the minimum scale nothing is placed, at or above it the set holds.
+        let at = |scale: &str| parse(&["--scale", scale, "--props-min-scale", "0.5"]).props();
+        assert_eq!(at("0.4"), PropSet::NONE);
+        assert_eq!(at("0.5"), PropSet::ALL);
         assert!(Args::try_parse_from(["arnis", "--props", "zeppelin"]).is_err());
+        assert!(Args::try_parse_from(["arnis", "--props-min-scale", "-1"]).is_err());
     }
 
     #[test]

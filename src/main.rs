@@ -633,6 +633,15 @@ fn run_cli() {
             "[1/7]".bold()
         );
     }
+    if let Some(min) = args
+        .props_min_scale
+        .filter(|m| !skip_objects && args.scale < *m)
+    {
+        println!(
+            "Scale {:.2} is below --props-min-scale {min:.2}: leaving out schematic props",
+            args.scale
+        );
+    }
 
     // The Mapillary facade pipeline needs only the bbox too, and its downloads
     // are the longest thing in a run that uses it, so it starts here and is
