@@ -1877,6 +1877,7 @@ fn gui_start_generation(
                 legacy_trees: legacy_trees_enabled,
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
                 tree_realm: None,
+                tree_size_weights: None,
                 canopy_height: canopy_height_enabled,
                 overture: overture_enabled,
                 buildings: true,

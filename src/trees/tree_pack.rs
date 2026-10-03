@@ -101,7 +101,10 @@ pub fn load(
     if args.legacy_trees {
         return None;
     }
-    let sizes = SizeFilter::up_to(args.max_tree_size);
+    let mut sizes = SizeFilter::up_to(args.max_tree_size);
+    if let Some(weights) = &args.tree_size_weights {
+        weights.restrict(&mut sizes);
+    }
     let lat = (bbox.min().lat() + bbox.max().lat()) / 2.0;
     let lon = (bbox.min().lng() + bbox.max().lng()) / 2.0;
     // A forced realm drops the ecoregion mixes, which would otherwise pick the communities.
@@ -139,6 +142,9 @@ pub fn load(
         exclude_palms,
     ) {
         Ok(mut lib) => {
+            if let Some(weights) = args.tree_size_weights {
+                lib.set_size_weights(weights);
+            }
             // Micro trees below this scale never stamp a model, so nothing to resolve.
             if forced.is_none() && scale >= crate::element_processing::tree::MICRO_TREE_MAX_SCALE {
                 lib.attach_ecoregions(&ids, abs_lat);

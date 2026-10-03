@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::ecoregion::{EcoBiome, Ecoregion};
 use crate::land_cover::coord_hash;
 use crate::trees::schematic::{load_schem, Schematic};
+use crate::trees::size_weights::SizeWeights;
 use crate::trees::tree_library::{size_for_height, SizeFilter, TreeSize};
 use crate::trees::tree_pack::TreePackSource;
 
@@ -282,6 +283,7 @@ pub struct RegionLibrary {
     ground_level: i32,
     blocks_per_meter: f64,
     sizes: SizeFilter,
+    size_weights: Option<SizeWeights>,
     total_realm: usize,
     total_vanilla: usize,
     /// Palms were left out at load, so mixes leave them out too.
@@ -538,6 +540,7 @@ impl RegionLibrary {
             ground_level,
             blocks_per_meter,
             sizes,
+            size_weights: None,
             total_realm,
             total_vanilla,
             palms_stripped: exclude_palms,
@@ -765,45 +768,12 @@ impl RegionLibrary {
     /// The size tier wanted at this cell, by the scale band. Tall rare, Giant only at 1:1.
     fn size_pick(&self, x: i32, z: i32) -> TreeSize {
         let roll = coord_hash(x + 101, z + 233) % 1000;
-        if self.scale < 0.3 {
-            if roll < 650 {
-                TreeSize::Small
-            } else if roll < 985 {
-                TreeSize::Medium
-            } else {
-                TreeSize::Big
-            }
-        } else if self.scale < 0.7 {
-            if roll < 380 {
-                TreeSize::Small
-            } else if roll < 820 {
-                TreeSize::Medium
-            } else if roll < 985 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall
-            }
-        } else if self.scale < 1.0 {
-            if roll < 260 {
-                TreeSize::Small
-            } else if roll < 700 {
-                TreeSize::Medium
-            } else if roll < 930 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall
-            }
-        } else if roll < 200 {
-            TreeSize::Small
-        } else if roll < 600 {
-            TreeSize::Medium
-        } else if roll < 880 {
-            TreeSize::Big
-        } else if roll < 975 {
-            TreeSize::Tall
-        } else {
-            TreeSize::Giant
-        }
+        crate::trees::size_weights::pick(roll, self.scale, self.size_weights.as_ref())
+    }
+
+    /// Reweight the size roll per tier (`--tree-size-weights`).
+    pub fn set_size_weights(&mut self, weights: SizeWeights) {
+        self.size_weights = Some(weights);
     }
 
     /// Whether a size may appear: the UI tier toggle AND a scale gate (Giant only at 1:1).

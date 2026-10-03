@@ -178,6 +178,13 @@ pub struct Args {
     #[arg(long, value_name = "REALM", value_parser = clap::builder::PossibleValuesParser::new(crate::trees::tree_pack::REALMS))]
     pub tree_realm: Option<String>,
 
+    /// Relative popularity of the schematic tree sizes, as name=percent pairs
+    /// (small, medium, big, tall, giant; 0-200, omitted ones stay 100). 0 turns a
+    /// size off. Measured canopy heights still pick their own size.
+    /// Example: --tree-size-weights big=150,tall=50,giant=0
+    #[arg(long, value_name = "LIST", value_parser = crate::trees::size_weights::SizeWeights::parse)]
+    pub tree_size_weights: Option<crate::trees::size_weights::SizeWeights>,
+
     /// Place trees from the Meta/WRI global canopy height map instead of assuming
     /// every tree-cover cell is forest. Land cover still decides the surface.
     #[arg(long = "canopy-height", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
