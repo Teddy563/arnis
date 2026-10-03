@@ -2069,6 +2069,7 @@ fn gui_start_generation(
                 projection: crate::projection::ProjectionKind::Local,
                 one_world: false,
                 world_name: None,
+                origin: if one_world { meld.origin } else { None },
                 one_world_run: None,
                 ground_level,
                 mode: if skip_osm_objects {

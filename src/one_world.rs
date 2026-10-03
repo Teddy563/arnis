@@ -516,13 +516,20 @@ pub fn frame_for(
 ) -> Result<WebMercatorProjection, String> {
     Ok(match Manifest::load(world_dir)? {
         Some(manifest) => manifest.projection(),
-        None => Manifest::new(
-            args,
-            (requested.min().lat() + requested.max().lat()) / 2.0,
-            (requested.min().lng() + requested.max().lng()) / 2.0,
-        )
-        .projection(),
+        None => {
+            let (lat, lon) = new_origin(requested, args);
+            Manifest::new(args, lat, lon).projection()
+        }
     })
+}
+
+/// Block (0, 0) of a world created for `requested`: `--origin`, or the
+/// request's centre.
+fn new_origin(requested: &LLBBox, args: &Args) -> (f64, f64) {
+    args.origin.unwrap_or((
+        (requested.min().lat() + requested.max().lat()) / 2.0,
+        (requested.min().lng() + requested.max().lng()) / 2.0,
+    ))
 }
 
 /// The part of `prepare` that runs under the world's lock.
@@ -568,6 +575,14 @@ fn resolve(
                 );
                 args.height_multiplier = manifest.height_multiplier;
             }
+            if let Some((lat, lon)) = args.origin {
+                if (stable(lat, 7), stable(lon, 7)) != (manifest.origin_lat, manifest.origin_lon) {
+                    println!(
+                        "Note: --origin {lat},{lon} is ignored; the One World keeps the origin it was created with ({},{}).",
+                        manifest.origin_lat, manifest.origin_lon
+                    );
+                }
+            }
             (manifest, false)
         }
         None => {
@@ -591,8 +606,7 @@ fn resolve(
                 );
                 args.disable_height_limit = true;
             }
-            let origin_lat = (requested.min().lat() + requested.max().lat()) / 2.0;
-            let origin_lon = (requested.min().lng() + requested.max().lng()) / 2.0;
+            let (origin_lat, origin_lon) = new_origin(requested, args);
             (Manifest::new(args, origin_lat, origin_lon), true)
         }
     };
@@ -957,6 +971,32 @@ mod tests {
         assert_eq!(run2.origin_lat, run.origin_lat);
         assert_eq!(run2.origin_lon, run.origin_lon);
         assert_eq!(run2.replaced_chunks, 0, "nothing was written yet");
+    }
+
+    /// `--origin` pins block (0, 0) of a new world; an existing world keeps its own.
+    #[test]
+    fn origin_pins_a_new_world_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let mut args = args_for(MUNICH, &["--origin", "48.1234567891,11.5432109876"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        let manifest = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(
+            (manifest.origin_lat, manifest.origin_lon),
+            (48.1234568, 11.543211)
+        );
+        let frame = manifest.projection();
+        assert_eq!(frame.x_for_lon(manifest.origin_lon), 0.0);
+        assert_eq!(frame.z_for_lat(manifest.origin_lat), 0.0);
+
+        let mut args = args_for(MUNICH, &["--origin", "-45,170"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        let run = args.one_world_run.unwrap();
+        assert_eq!(
+            (run.origin_lat, run.origin_lon),
+            (manifest.origin_lat, manifest.origin_lon)
+        );
     }
 
     #[test]

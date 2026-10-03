@@ -36,6 +36,10 @@ selection more than about 20 km tall cannot keep both its north and south
 edges on cell lines; one of them then stops a few chunks inside its line
 (never outside, so no sliver of a piece row) and the readout says so.
 
+`--origin LAT,LON` (CLI, `--one-world` only) sets block (0, 0) of the world a
+run creates, instead of the centre of its first bbox. A world that already
+exists keeps the origin it was created with; the run says so and goes on.
+
 ### Meld Generation (Experimental)
 
 A control on its default, or greyed out, sends no flag.

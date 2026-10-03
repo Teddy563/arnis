@@ -72,6 +72,12 @@ pub struct Args {
     #[arg(long)]
     pub world_name: Option<String>,
 
+    /// LAT,LON for block (0, 0) of a --one-world world this run creates,
+    /// instead of the centre of the first --bbox. A world that exists keeps
+    /// its own origin.
+    #[arg(long, value_name = "LAT,LON", value_parser = parse_origin, allow_hyphen_values = true)]
+    pub origin: Option<(f64, f64)>,
+
     /// Set by `one_world::prepare`.
     #[arg(skip)]
     pub one_world_run: Option<crate::one_world::RunContext>,
@@ -579,6 +585,21 @@ pub enum Workers {
     Count(u32),
 }
 
+/// `--origin`: a point a Web Mercator frame can be centred on.
+fn parse_origin(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("{s}: expected LAT,LON with |LAT| <= 85 and |LON| <= 180");
+    let (lat, lon) = s.split_once(',').ok_or_else(bad)?;
+    let (lat, lon): (f64, f64) = (
+        lat.trim().parse().map_err(|_| bad())?,
+        lon.trim().parse().map_err(|_| bad())?,
+    );
+    if lat.abs() <= 85.0 && lon.abs() <= 180.0 {
+        Ok((lat, lon))
+    } else {
+        Err(bad())
+    }
+}
+
 pub fn parse_workers(s: &str) -> Result<Workers, String> {
     match s {
         "auto" => Ok(Workers::Auto),
@@ -709,6 +730,7 @@ pub const CAPABILITIES: &[&str] = &[
     "props-min-scale",
     "map-item-only",
     "region-format",
+    "origin",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1178,6 +1200,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         }
     } else if args.world_name.is_some() {
         return Err("--world-name only applies to --one-world.".to_string());
+    } else if args.origin.is_some() {
+        return Err("--origin only applies to --one-world.".to_string());
     } else if args.units.plan_units.is_some()
         || args.units.coordinates()
         || args.units.one_world_unit.is_some()
