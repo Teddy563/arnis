@@ -97,6 +97,10 @@ Minecraft already moved out of the chunk do not linger over the new blocks.
   side) are seeded now, and the OSM tile archive emits nodes in id order instead
   of `HashMap` order, which changed which of two overlapping trees won a block
   from run to run. Identical runs now produce identical blocks.
+- **World seed** (experimental `--seed`): mixed into every element and
+  coordinate seeded choice, so it stays seam-safe. The manifest keeps the
+  first area's seed (none by default) and later areas and pieces build with it;
+  caves follow it when `--cave-seed` is not given.
 - **Map ids**: signage decal maps continue after the world's last map id; the
   world map item and branding map are placed for the first area only.
 
