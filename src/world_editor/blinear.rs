@@ -292,6 +292,29 @@ mod tests {
         assert!(bytes[14..].iter().all(|&b| b == 0));
     }
 
+    /// Five chunks (slots 0, 63, 64, 513, 1023: both ends of a bucket, empty buckets
+    /// between) as Meld's `region-convert --to blinear-v3 --compression-level 6` writes
+    /// them from a `.mca` holding the same NBT under the flat template's timestamps.
+    /// Pins every byte: header, offsets, bucket lengths, timestamps, hashes, zstd frames.
+    fn golden_chunks() -> Vec<Option<Vec<u8>>> {
+        let mut chunks = vec![None; CHUNKS_PER_REGION];
+        for i in [0usize, 63, 64, 513, 1023] {
+            let array: Vec<u8> = (0..300 * (i % 5 + 1)).map(|j| (i * 7 + j) as u8).collect();
+            let mut nbt = vec![0x0A, 0, 0, 0x07, 0, 1, b'a'];
+            nbt.extend_from_slice(&(array.len() as i32).to_be_bytes());
+            nbt.extend_from_slice(&array);
+            nbt.push(0);
+            chunks[i] = Some(nbt);
+        }
+        chunks
+    }
+
+    #[test]
+    fn region_convert_writes_the_same_bytes() {
+        let bytes = encode(&golden_chunks(), 6, false).unwrap();
+        assert_eq!((bytes.len(), xxh32(&bytes, 0)), (1448, 0xA2A9_8839));
+    }
+
     #[test]
     fn chunks_round_trip_into_their_slots() {
         let dir = tempfile::tempdir().unwrap();
