@@ -343,6 +343,9 @@ pub struct Args {
     pub building_facades_dir: Option<PathBuf>,
 
     #[command(flatten)]
+    pub scatter: ScatterArgs,
+
+    #[command(flatten)]
     pub process: ProcessArgs,
 
     #[command(flatten)]
@@ -350,6 +353,48 @@ pub struct Args {
 
     #[command(flatten)]
     pub snow: crate::snow_mode::SnowArgs,
+}
+
+/// Rocks and bushes on open land. Off unless asked for, so the GUI runs on
+/// `ScatterArgs::default()`.
+#[derive(clap::Args, Debug)]
+pub struct ScatterArgs {
+    /// Scatter small andesite and tuff rocks over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub rocks: bool,
+
+    /// Share of 16x16 chunks that get a rock with --rocks, from 0.0 to 1.0.
+    #[arg(long, default_value_t = 0.02, value_parser = parse_density)]
+    pub rock_density: f64,
+
+    /// Scatter small bushes of ten species over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub bushes: bool,
+
+    /// Share of 16x16 chunks that get a bush with --bushes, from 0.0 to 1.0.
+    /// Where a chunk rolls both, the rock wins.
+    #[arg(long, default_value_t = 0.05, value_parser = parse_density)]
+    pub bush_density: f64,
+}
+
+impl Default for ScatterArgs {
+    fn default() -> Self {
+        Self {
+            rocks: false,
+            rock_density: 0.02,
+            bushes: false,
+            bush_density: 0.05,
+        }
+    }
+}
+
+fn parse_density(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if (0.0..=1.0).contains(&v) => Ok(v),
+        _ => Err(format!("{s}: expected a share from 0.0 to 1.0")),
+    }
 }
 
 /// Large One World jobs cut into region-group pieces. Off unless asked for,

@@ -1937,6 +1937,7 @@ fn gui_start_generation(
                 building_facades_dir: None,
                 body: celestial_body,
                 // Stock unless Advanced Features set a knob.
+                scatter: Default::default(),
                 process,
                 units,
                 snow: Default::default(),
