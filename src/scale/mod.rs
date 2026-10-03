@@ -272,6 +272,28 @@ pub fn run(
             .map(|r| if r.is_some() { 1.0 } else { 0.0 })
             .collect(),
     );
+    let finished = AtomicUsize::new(of - lock(&queue).len());
+    // Piece `i` is `f` done: moves the job's bar and, in the window, the count.
+    let report = |i: usize, f: f64| {
+        let mut d = lock(&done);
+        d[i] = f;
+        let sum: f64 = d
+            .iter()
+            .zip(&units)
+            .map(|(f, u)| f * u.chunks() as f64)
+            .sum();
+        drop(d);
+        // `--progress json` has its piece records, so its stream stays as it was.
+        let message = if crate::progress::is_running_with_gui() {
+            format!(
+                "Building pieces... {}/{of} done",
+                finished.load(Ordering::Relaxed)
+            )
+        } else {
+            String::new()
+        };
+        crate::progress::emit_gui_progress_update(sum / total * 100.0, &message);
+    };
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
 
@@ -309,25 +331,7 @@ pub fn run(
                 );
                 let state = if attempt > 0 { "retry" } else { "start" };
                 progress_json::record("piece", json!({"piece": i, "of": of, "state": state}));
-                let result = run_piece(&argv, &sizing.child_env(), |f| {
-                    let mut d = lock(&done);
-                    d[i] = f;
-                    let sum: f64 = d
-                        .iter()
-                        .zip(&units)
-                        .map(|(f, u)| f * u.chunks() as f64)
-                        .sum();
-                    let finished = d.iter().filter(|&&f| f >= 1.0).count();
-                    drop(d);
-                    // The window names the pieces; `--progress json` has its
-                    // piece records, so its stream stays as it was.
-                    let message = if crate::progress::is_running_with_gui() {
-                        format!("Building pieces... {finished}/{of} done")
-                    } else {
-                        String::new()
-                    };
-                    crate::progress::emit_gui_progress_update(sum / total * 100.0, &message);
-                });
+                let result = run_piece(&argv, &sizing.child_env(), |f| report(i, f));
                 match result {
                     Ok(r) => break r,
                     // Never once the job is stopping: a piece killed with it
@@ -366,6 +370,8 @@ pub fn run(
                        "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s}),
             );
             progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, Ordering::Relaxed);
+            finished.fetch_add(1, Ordering::Relaxed);
+            report(i, 1.0);
             lock(&results)[i] = Some(r);
         }
         Ok(())
