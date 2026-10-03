@@ -117,6 +117,41 @@ Data Source setting, the switch included, as a JSON file
 every setting it covers; one the file leaves out, or holds a value it cannot
 take, goes back to its default.
 
+## B_Linear Container
+
+`--region-format blinear` writes the same file Meld's `region-convert`
+(`--to blinear-v3`) writes from the same world saved as `.mca`, byte for byte,
+at the same level. Checked on a Paris test area, void (399 chunks) and flat
+(1024 chunks), levels 6 and 19: our `.b_linear` taken to `.mca` and back with
+`region-convert` comes out identical, `region-convert --info` reports no
+warnings or discarded chunks, and both decoders read every chunk of the other's
+files. Pinned by `region_convert_writes_the_same_bytes`.
+
+Field by field (`RC` = `region-convert/src`, ours = `src/world_editor/blinear.rs`):
+
+| Field | Ours | region-convert | Value |
+| --- | --- | --- | --- |
+| Superblock | `blinear.rs:33` | `RC/formats/mod.rs:21` | i64 `-0x2008_1225_0269`, big-endian |
+| Version | `blinear.rs:34`, `:101` | `RC/formats/blinear_v3.rs:289` | u8 `3` |
+| Level byte | `blinear.rs:102` | `RC/formats/blinear_v3.rs:290` | u8, the zstd level used |
+| Level range | `blinear.rs:63`, `args.rs` (1..=22, default 6) | `RC/cli.rs:147`, `RC/formats/mod.rs:112` (1..=22, default 6) | same |
+| Hash seed | `blinear.rs:35`, `:103` | `RC/formats/mod.rs:23`, `RC/formats/blinear_v3.rs:291` | u32 `0x0721` |
+| Bucket table | `blinear.rs:111` | `RC/formats/blinear_v3.rs:345` | 16 x u64 absolute offsets from byte 14 |
+| Bucket layout | `blinear.rs:37`, `:87` | `RC/formats/blinear_v3.rs:18-20`, `:298` | 64 slots, index `x + z * 32`, ascending |
+| Empty bucket | `blinear.rs:107`, `:126` | `RC/formats/blinear_v3.rs:316` | no record, offset 0 |
+| Bucket record | `blinear.rs:112-113` | `RC/formats/blinear_v3.rs:334-336` | i32 raw length, i32 compressed length, frame |
+| Compression | `blinear.rs:151` | `RC/formats/blinear_v3.rs:321` | `zstd::bulk::compress`, zstd 0.13.3 / libzstd 1.5.7 |
+| Absent slot | `blinear.rs:136` | `RC/formats/blinear_v3.rs:312` | i32 `0` |
+| Slot length | `blinear.rs:143` | `RC/formats/blinear_v3.rs:306-308` | i32 `nbtLen + 16` |
+| Section | `blinear.rs:144-148` | `RC/formats/mod.rs:380-390` | i32 nbtLen, i64 timestamp, u32 xxh32(nbt, seed), nbt |
+| Timestamp | `blinear.rs:159-165` | `RC/formats/mca.rs:59`, `RC/formats/mod.rs:393` | `.mca` header seconds x 1000: 0 void, flat template otherwise |
+| Footer | none | none | none |
+| File name | `blinear.rs:65` | `RC/formats/mod.rs:102-106` | `r.X.Z.b_linear` |
+| Publish | `blinear.rs:78` (temp + rename) | `RC/writer.rs:89`, `:131` (temp + rename) | same |
+
+Arnis's chunk NBT itself is not byte-stable between runs (compound key order
+changes), in `.mca` as well; two runs compare equal as NBT, not as bytes.
+
 ## Flags
 
 - `--threads N`: worker threads for generation. Default 90% of the cores, or
