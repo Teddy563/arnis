@@ -52,6 +52,7 @@ mod progress;
 mod progress_json;
 mod projection;
 mod retrieve_data;
+mod scale;
 mod structures;
 #[cfg(feature = "gui")]
 mod telemetry;
@@ -179,6 +180,18 @@ fn release_one_world(failed: bool) {
         if let (true, Some(dir)) = (failed, created) {
             let _ = fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// From here on a failure keeps the world this run created: a job built in
+/// pieces resumes from the pieces it finished.
+fn keep_one_world() {
+    if let Some(run) = ONE_WORLD_RUN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        run.created = None;
     }
 }
 
@@ -367,7 +380,19 @@ fn run_cli() {
 
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
-    if args.one_world {
+    if let (true, Some(lease)) = (args.one_world, args.units.one_world_unit.clone()) {
+        let world_dir = one_world_dir(&args);
+        effective_bbox = one_world::prepare_unit(&world_dir, &effective_bbox, &mut args, &lease)
+            .unwrap_or_else(|e| {
+                eprintln!("{} {}", "Error:".red().bold(), e);
+                exit_failed();
+            });
+        world_editor::set_world_bounds(
+            ground::extended_min_y_for(&args),
+            ground::world_top_y_for(&args),
+        );
+        one_world_paths = Some(world_dir);
+    } else if args.one_world {
         let world_dir = one_world_dir(&args);
         let session =
             one_world::prepare(&world_dir, &effective_bbox, &mut args).unwrap_or_else(|e| {
@@ -395,6 +420,16 @@ fn run_cli() {
             }
         }
         one_world_paths = Some(world_dir);
+    }
+    if args.units.coordinates() {
+        let world_dir = one_world_paths.clone().unwrap_or_default();
+        if let Err(e) = scale::run(&args, &world_dir, &effective_bbox) {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            exit_failed();
+        }
+        release_one_world(false);
+        progress_json::done(started);
+        return;
     }
     let args = args;
 
@@ -742,6 +777,12 @@ fn run_cli() {
             )
         })
     });
+    // A piece of a job reports the height at the job's spawn, if it holds it.
+    let unit = args.one_world_run.as_ref().and_then(|r| r.unit.as_ref());
+    let java_spawn = match unit {
+        Some(u) => u.spawn.map(|[x, z]| (x, z)),
+        None => java_spawn,
+    };
     let spawn_y_for_java = java_spawn.map(|(sx, sz)| {
         use coordinate_system::cartesian::XZPoint;
         let rel = XZPoint::new(sx - xzbbox.min_x(), sz - xzbbox.min_z());
@@ -836,6 +877,12 @@ fn run_cli() {
             eprintln!("{} {}", "Error:".red().bold(), e);
             exit_failed();
         }
+    }
+    if let Some(u) = unit {
+        progress_json::record(
+            "result",
+            serde_json::json!({ "piece": u.piece, "spawn_y": spawn_y_for_java }),
+        );
     }
     release_one_world(false);
     progress_json::done(started);

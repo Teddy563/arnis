@@ -322,25 +322,34 @@ pub fn write_map_item(
     preview: &PreviewAccumulator,
     xzbbox: &XZBBox,
 ) -> Result<(), String> {
+    let img = preview.render_image();
+    write_map_item_image(
+        world_path,
+        &img,
+        (preview.min_x(), preview.min_z(), preview.step()),
+        xzbbox,
+    )
+}
+
+/// `write_map_item` from a finished preview image whose top-left pixel is
+/// block (`origin.0`, `origin.1`), `origin.2` blocks per pixel.
+pub fn write_map_item_image(
+    world_path: &Path,
+    img: &RgbImage,
+    origin: (i32, i32, u32),
+    xzbbox: &XZBBox,
+) -> Result<(), String> {
     let w = xzbbox.max_x() - xzbbox.min_x() + 1;
     let h = xzbbox.max_z() - xzbbox.min_z() + 1;
     let (bpp, scale, tracking) = map_geometry(w.max(h));
     let x_center = xzbbox.min_x() + w / 2;
     let z_center = xzbbox.min_z() + h / 2;
 
-    let img = preview.render_image();
     if img.width() == 0 || img.height() == 0 {
         return Err("empty preview image".to_string());
     }
     let colors = build_colors(
-        &img,
-        preview.min_x(),
-        preview.min_z(),
-        preview.step(),
-        xzbbox,
-        bpp,
-        x_center,
-        z_center,
+        img, origin.0, origin.1, origin.2, xzbbox, bpp, x_center, z_center,
     );
 
     let data_version = world_data_version(world_path);
@@ -380,11 +389,13 @@ pub fn write_branding_map_only(world_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Writes one locked map per decal tile and bumps the id counter past them.
+/// Writes one locked map per decal tile and, with `update_counter`, bumps the
+/// id counter past them.
 pub fn write_decal_maps(
     world_path: &Path,
     registry: &DecalRegistry,
     preview: Option<&PreviewAccumulator>,
+    update_counter: bool,
 ) -> Result<usize, String> {
     if registry.is_empty() {
         return Ok(0);
@@ -443,11 +454,39 @@ pub fn write_decal_maps(
         highest = highest.max(h);
         written += w;
     }
+    if !update_counter {
+        return Ok(written);
+    }
 
     let idcounts = build_idcounts(highest, data_version);
     write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
     write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)?;
     Ok(written)
+}
+
+/// Moves the map id counter past every `map_<id>.dat` in the world, for a job
+/// whose pieces wrote their maps without touching it.
+pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
+    let data_dir = world_path.join("data");
+    let highest = std::fs::read_dir(&data_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.ok()?.file_name().into_string().ok()?;
+            name.strip_prefix("map_")?
+                .strip_suffix(".dat")?
+                .parse::<i32>()
+                .ok()
+        })
+        .max();
+    match highest {
+        Some(h) if h >= next_map_id(&data_dir) => {
+            let idcounts = build_idcounts(h, world_data_version(world_path));
+            write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
+            write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)
+        }
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -585,6 +624,28 @@ mod tests {
     }
 
     #[test]
+    fn a_job_piece_leaves_the_counter_to_the_coordinator() {
+        use crate::decals::DecalKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let data = world.join("data");
+        let keys = [
+            DecalKey::Pictogram("bus_stop"),
+            DecalKey::Pictogram("recycling"),
+        ];
+        let registry = DecalRegistry::from_keys_starting_at(keys.into_iter().collect(), 70_000);
+        assert_eq!(write_decal_maps(&world, &registry, None, false).unwrap(), 2);
+        assert_eq!(next_map_id(&data), 0, "a piece must not move the counter");
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), 70_002);
+        // Never moved backwards.
+        std::fs::remove_file(data.join("map_70001.dat")).unwrap();
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), 70_002);
+    }
+
+    #[test]
     fn writes_decal_maps_with_registry_ids() {
         use crate::decals::{DecalKey, TextStyle};
         let tmp = tempfile::tempdir().unwrap();
@@ -595,7 +656,7 @@ mod tests {
         keys.insert(DecalKey::Pictogram("recycling"));
         keys.insert(DecalKey::text(TextStyle::Fascia, "Bakery", 2));
         let registry = DecalRegistry::from_keys(keys);
-        let written = write_decal_maps(&world, &registry, None).unwrap();
+        let written = write_decal_maps(&world, &registry, None, true).unwrap();
         // Two pictograms plus a two-tile fascia.
         assert_eq!(written, 4);
 

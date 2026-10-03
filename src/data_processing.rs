@@ -566,6 +566,8 @@ pub fn generate_world_with_options(
     // first area of a One World.
     let one_world = args.one_world_run.as_ref();
     let extending = one_world.is_some_and(|run| run.extending);
+    // A piece of a larger job: the coordinator owns everything world-wide.
+    let unit = one_world.and_then(|run| run.unit.as_ref());
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
 
     // Before anything reads a footprint: nothing is built on a runway.
@@ -719,7 +721,9 @@ pub fn generate_world_with_options(
     // A One World continues after its last map id.
     let wants_map_item = args.map_item && world_format == WorldFormat::JavaAnvil && !extending;
     let place_branding = world_format == WorldFormat::JavaAnvil && !extending;
-    let first_decal_id = if one_world.is_some() {
+    let first_decal_id = if let Some(u) = unit {
+        u.first_map_id
+    } else if one_world.is_some() {
         let next = crate::map_item::next_map_id(&output_path.join("data"));
         next + if wants_map_item {
             2
@@ -738,6 +742,14 @@ pub fn generate_world_with_options(
         .map(Arc::new);
     if let (Some(t), Some(_)) = (signage_start, signage_ctx.as_ref()) {
         eprintln!("[BENCHMARK] signage_prepass_ms={}", t.elapsed().as_millis());
+    }
+    if let (Some(u), Some(ctx)) = (unit, &signage_ctx) {
+        if ctx.registry.max_id() >= u.map_id_end {
+            return Err(format!(
+                "piece {} needs more signage map ids than its range {}..{}",
+                u.piece, u.first_map_id, u.map_id_end
+            ));
+        }
     }
     if let Some(ctx) = &signage_ctx {
         editor.set_signage(Arc::clone(ctx));
@@ -1684,6 +1696,14 @@ pub fn generate_world_with_options(
         } else {
             editor.place_branding_map_only(sx, sz, 0);
         }
+    } else if let Some((sx, sz, with_map_item)) = unit.and_then(|u| u.branding) {
+        // The frame is a block entity, so the piece holding it places it; the
+        // coordinator writes the maps it shows.
+        if with_map_item {
+            editor.place_map_item_frame(sx, sz, 0, 1);
+        } else {
+            editor.place_branding_map_only(sx, sz, 0);
+        }
     }
 
     // Facade panels: every candidate recorded while the walls went up is
@@ -1732,7 +1752,12 @@ pub fn generate_world_with_options(
 
     if let Some(ctx) = &signage_ctx {
         let t = args.benchmark.then(std::time::Instant::now);
-        match crate::map_item::write_decal_maps(&output_path, &ctx.registry, preview.as_deref()) {
+        match crate::map_item::write_decal_maps(
+            &output_path,
+            &ctx.registry,
+            preview.as_deref(),
+            unit.is_none(),
+        ) {
             Ok(n) => println!("Wrote {n} signage map tiles."),
             Err(e) => eprintln!("Warning: Failed to create signage maps: {e}"),
         }
@@ -1800,7 +1825,7 @@ pub fn generate_world_with_options(
     }
     bench.mark("map_preview");
 
-    if let Some(run) = one_world {
+    if let Some(run) = one_world.filter(|run| run.unit.is_none()) {
         let png = run.preview_path();
         let preview_path = png.is_file().then_some(png.as_path());
         crate::one_world::record_area(
@@ -1836,7 +1861,7 @@ pub fn generate_world_with_options(
     }
 
     // An extended One World moves the spawn only to a marker inside this area.
-    if extending {
+    if extending && unit.is_none() {
         if let Some((sx, sz)) = options.spawn_point.filter(|&(x, z)| {
             xzbbox.contains(&crate::coordinate_system::cartesian::XZPoint::new(x, z))
         }) {

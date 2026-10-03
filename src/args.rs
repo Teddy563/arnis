@@ -351,6 +351,23 @@ pub struct UnitArgs {
     /// regions (one JSON line on stdout) and exit without generating.
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
     pub plan_units: Option<i32>,
+
+    /// Build a --one-world selection piece by piece, each piece at most N x N
+    /// regions, so memory is bounded by the piece instead of the selection.
+    /// An interrupted job resumes where it stopped when run again.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub unit_regions: Option<i32>,
+
+    /// One piece of a job, run by the job's coordinator.
+    #[arg(long, hide = true)]
+    pub one_world_unit: Option<PathBuf>,
+}
+
+impl UnitArgs {
+    /// Whether this run coordinates a job of pieces.
+    pub fn coordinates(&self) -> bool {
+        self.unit_regions.is_some() && self.one_world_unit.is_none()
+    }
 }
 
 /// Knobs for scripted and multi-process runs. None of them changes what is
@@ -812,8 +829,14 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         }
     } else if args.world_name.is_some() {
         return Err("--world-name only applies to --one-world.".to_string());
-    } else if args.units.plan_units.is_some() {
-        return Err("--plan-units only applies to --one-world.".to_string());
+    } else if args.units.plan_units.is_some()
+        || args.units.unit_regions.is_some()
+        || args.units.one_world_unit.is_some()
+    {
+        return Err("--plan-units and --unit-regions only apply to --one-world.".to_string());
+    }
+    if args.units.coordinates() && args.save_json_file.is_some() {
+        return Err("--save-json-file does not combine with --unit-regions.".to_string());
     }
     if args.projection == crate::projection::ProjectionKind::WebMercator && !args.one_world {
         println!(
@@ -1158,6 +1181,8 @@ mod tests {
         assert!(validate_args(&parse(&["--world-name", "Home"])).is_err());
         assert!(validate_args(&parse(&["--one-world", "--plan-units", "4"])).is_ok());
         assert!(validate_args(&parse(&["--plan-units", "4"])).is_err());
+        assert!(validate_args(&parse(&["--unit-regions", "4"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--unit-regions", "4"])).is_ok());
         assert!(Args::try_parse_from(["arnis", "--plan-units", "0"]).is_err());
     }
 

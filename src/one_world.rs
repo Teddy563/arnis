@@ -264,14 +264,48 @@ pub struct RunContext {
     /// Chunks of this area that already exist and are replaced.
     pub replaced_chunks: u64,
     pub area_id: u32,
+    /// Set when this run is one piece of a larger job (`--one-world-unit`).
+    pub unit: Option<UnitLease>,
 }
 
 impl RunContext {
     pub fn preview_path(&self) -> PathBuf {
-        self.world_dir
-            .join(PREVIEW_DIR)
-            .join(format!("area-{}.png", self.area_id))
+        match &self.unit {
+            Some(unit) => unit.preview.clone(),
+            None => self
+                .world_dir
+                .join(PREVIEW_DIR)
+                .join(format!("area-{}.png", self.area_id)),
+        }
     }
+}
+
+/// Where a job coordinator keeps its jobs, inside the world folder.
+pub const JOBS_DIR: &str = "arnis_one_world/jobs";
+/// Written by the coordinator while it holds the world; a piece only runs
+/// while this still carries its lease's nonce.
+pub const COORDINATOR_FILE: &str = "arnis_one_world/jobs/coordinator";
+
+/// What a coordinator hands one piece of a job. The piece writes its own
+/// chunks and nothing that belongs to the world as a whole: the manifest,
+/// level.dat and the map id counter stay with the coordinator.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UnitLease {
+    pub nonce: String,
+    pub piece: usize,
+    pub area_id: u32,
+    /// min_x, min_z, max_x, max_z; the piece's bbox must snap to exactly this.
+    pub rect: [i32; 4],
+    /// Signage map ids of this piece: `first_map_id..map_id_end`.
+    pub first_map_id: i32,
+    pub map_id_end: i32,
+    /// The job's spawn, given to the piece that contains it, which reports
+    /// the ground height there.
+    pub spawn: Option<[i32; 2]>,
+    /// The world's branding frame, given to the piece that contains it:
+    /// x, z, and whether the map item sits beside it (map ids 0 and 1).
+    pub branding: Option<(i32, i32, bool)>,
+    pub preview: PathBuf,
 }
 
 /// A resolved run. Holds the world's session lock until dropped.
@@ -511,24 +545,9 @@ fn resolve(
         elevation: manifest.elevation,
         replaced_chunks: replaced,
         area_id,
+        unit: None,
     });
-    args.projection = crate::projection::ProjectionKind::WebMercator;
-    args.bbox = Some(llbbox);
-    // Voxy rebuilds the LOD database from the regions of one run, and both
-    // facade sources replace the world's resource pack on every run.
-    if args.voxy_lod {
-        println!("Note: the Voxy LOD cache is off in One World mode.");
-        args.voxy_lod = false;
-    }
-    if args.mapillary_facade_mode.places_displays() && args.mapillary_facades_wanted() {
-        println!("Note: One World builds Mapillary facades as blocks; photo panels are off.");
-        args.mapillary_facade_mode = crate::args::FacadeMode::Blocks;
-    }
-    if args.building_facades {
-        println!("Note: the preset building facades are off in One World mode.");
-        args.building_facades = false;
-    }
-    args.map_preview = true;
+    point_args_at_world(args, llbbox);
 
     println!(
         "One World: {} {} at {}",
@@ -576,6 +595,91 @@ fn resolve(
         llbbox,
         lock,
     })
+}
+
+/// Points `args` at a One World area: its frame, its bbox, and the options
+/// One World turns off.
+fn point_args_at_world(args: &mut Args, llbbox: LLBBox) {
+    args.projection = crate::projection::ProjectionKind::WebMercator;
+    args.bbox = Some(llbbox);
+    // Voxy rebuilds the LOD database from the regions of one run, and both
+    // facade sources replace the world's resource pack on every run.
+    if args.voxy_lod {
+        println!("Note: the Voxy LOD cache is off in One World mode.");
+        args.voxy_lod = false;
+    }
+    if args.mapillary_facade_mode.places_displays() && args.mapillary_facades_wanted() {
+        println!("Note: One World builds Mapillary facades as blocks; photo panels are off.");
+        args.mapillary_facade_mode = crate::args::FacadeMode::Blocks;
+    }
+    if args.building_facades {
+        println!("Note: the preset building facades are off in One World mode.");
+        args.building_facades = false;
+    }
+    args.map_preview = true;
+}
+
+/// Opens one piece of a coordinator's job (`--one-world-unit <lease>`). The
+/// coordinator holds the world's lock for the whole job, so this takes none:
+/// it runs only while that lock is held and the coordinator file still
+/// carries the lease's nonce, and it writes nothing that belongs to the world
+/// as a whole (no manifest, level.dat or map counter).
+pub fn prepare_unit(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &mut Args,
+    lease_path: &Path,
+) -> Result<LLBBox, String> {
+    let lease: UnitLease = std::fs::read_to_string(lease_path)
+        .map_err(|e| format!("Failed to read {}: {e}", lease_path.display()))
+        .and_then(|t| serde_json::from_str(&t).map_err(|e| format!("Bad unit lease: {e}")))?;
+    let owner = std::fs::read_to_string(world_dir.join(COORDINATOR_FILE)).unwrap_or_default();
+    if !world_is_locked(world_dir) || owner.trim() != lease.nonce {
+        return Err(format!(
+            "{} is no longer held by the job this piece belongs to.",
+            world_dir.display()
+        ));
+    }
+    let manifest = Manifest::load(world_dir)?
+        .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
+    let errors = compatibility_errors(&manifest, args);
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+    args.scale = manifest.scale;
+    args.disable_height_limit = manifest.disable_height_limit;
+    args.height_multiplier = manifest.height_multiplier;
+    args.aws_only_elevation = manifest.aws_only_elevation;
+    let (xzbbox, llbbox) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
+    let rect = [
+        xzbbox.min_x(),
+        xzbbox.min_z(),
+        xzbbox.max_x(),
+        xzbbox.max_z(),
+    ];
+    if rect != lease.rect {
+        return Err(format!(
+            "piece {} snaps to {rect:?}, not to its planned {:?}",
+            lease.piece, lease.rect
+        ));
+    }
+    println!(
+        "One World: piece {} of area #{}: blocks x {}..={} z {}..={}",
+        lease.piece, lease.area_id, rect[0], rect[2], rect[1], rect[3]
+    );
+    args.one_world_run = Some(RunContext {
+        world_dir: world_dir.to_path_buf(),
+        origin_lat: manifest.origin_lat,
+        origin_lon: manifest.origin_lon,
+        // The world-wide extras of a first area are the coordinator's.
+        extending: true,
+        elevation: manifest.elevation,
+        replaced_chunks: existing_chunks(world_dir, &xzbbox),
+        area_id: lease.area_id,
+        unit: Some(lease),
+    });
+    point_args_at_world(args, llbbox);
+    Ok(llbbox)
 }
 
 /// Records a finished area and drops the ones it fully covers.

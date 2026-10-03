@@ -14,6 +14,14 @@
 //! and the Java/Bedrock chunks written. The usual human-readable lines still
 //! go to stdout around these, so a reader keeps the lines starting `{"v":`.
 //!
+//! A job built in pieces (`--unit-regions`) adds `piece` records, state
+//! `start`, `done`, `skipped` or `failed`, and each piece's own run
+//! ends with a `result` record before its `done`:
+//!
+//! ```text
+//! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","peak_rss_mb":2310,"wall_s":40.1}
+//! ```
+//!
 //! Records come from the same emit points that drive the GUI progress bar, so
 //! nothing here is called unless `enable` was.
 
@@ -79,6 +87,13 @@ pub fn progress(progress: f64, message: &str) {
         );
     } else if advanced {
         emit("progress", json!({ "progress": shown }));
+    }
+}
+
+/// Any other record type, such as a job's `piece` and `result` records.
+pub fn record(kind: &str, body: Value) {
+    if enabled() {
+        emit(kind, body);
     }
 }
 
