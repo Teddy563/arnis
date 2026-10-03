@@ -72,6 +72,7 @@ mod water_detail;
 mod work_units;
 mod world_editor;
 mod world_utils;
+mod y_bounds;
 
 use args::Args;
 use clap::Parser;
@@ -563,7 +564,9 @@ fn run_cli() {
             world_path.display().to_string().bright_white().bold()
         );
         if args.disable_height_limit {
-            if let Err(e) = world_utils::install_tall_datapack(&world_path) {
+            if let Err(e) = world_utils::install_tall_datapack(&world_path)
+                .and_then(|()| y_bounds::patch_datapack(&world_path, &args))
+            {
                 eprintln!(
                     "{} Failed to install tall-world datapack: {}",
                     "Error:".red().bold(),

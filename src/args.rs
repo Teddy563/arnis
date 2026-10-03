@@ -247,6 +247,17 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub disable_height_limit: bool,
 
+    /// EXPERIMENTAL. World floor for --disable-height-limit (Java): a multiple
+    /// of 16 from -2032 to -64. Default -2032. Not with --one-world.
+    #[arg(long = "min-y", value_name = "Y", allow_hyphen_values = true)]
+    pub min_y: Option<i32>,
+
+    /// EXPERIMENTAL. World ceiling for --disable-height-limit (Java): 16n - 1
+    /// from 319 to 2031. Default 2031; taller terrain is compressed to fit.
+    /// Not with --one-world.
+    #[arg(long = "max-y", value_name = "Y", allow_hyphen_values = true)]
+    pub max_y: Option<i32>,
+
     /// Use only the legacy AWS Terrain Tiles source (~30m) instead of
     /// Mapterhorn.
     #[arg(long, default_value_t = false)]
@@ -616,6 +627,8 @@ pub const CAPABILITIES: &[&str] = &[
     "cave-datum-y",
     "river-bed",
     "water-detail",
+    "min-y",
+    "max-y",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1307,6 +1320,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     if !args.rotation.is_finite() || args.rotation < -90.0 || args.rotation > 90.0 {
         return Err("Rotation angle must be between -90 and 90 degrees.".to_string());
     }
+
+    crate::y_bounds::check(args)?;
 
     let (floor, ceiling) = ground_level_bounds(args);
     if args.ground_level < floor || args.ground_level > ceiling {

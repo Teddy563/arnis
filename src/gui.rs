@@ -2030,6 +2030,8 @@ fn gui_start_generation(
                 spawn_lng: None,
                 rotation: rotation_angle.clamp(-90.0, 90.0),
                 disable_height_limit,
+                min_y: None,
+                max_y: None,
                 aws_only_elevation,
                 benchmark: false,
                 bake_lighting: bake_lighting_enabled,

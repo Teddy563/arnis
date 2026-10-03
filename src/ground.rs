@@ -1480,7 +1480,7 @@ pub(crate) fn extended_max_y_for(args: &Args) -> i32 {
     } else if args.luanti {
         crate::world_editor::DEFAULT_MAX_Y
     } else {
-        2031
+        args.max_y.unwrap_or(2031)
     }
 }
 
@@ -1499,13 +1499,13 @@ pub(crate) fn world_top_y_for(args: &Args) -> i32 {
     } else if args.bedrock {
         511
     } else {
-        2031
+        args.max_y.unwrap_or(2031)
     }
 }
 
 pub(crate) fn extended_min_y_for(args: &Args) -> i32 {
     if args.disable_height_limit && !args.bedrock && !args.luanti {
-        -2032
+        args.min_y.unwrap_or(-2032)
     } else {
         crate::world_editor::DEFAULT_MIN_Y
     }
