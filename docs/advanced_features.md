@@ -1,10 +1,11 @@
 # Advanced Features
 
-Settings > **Advanced Features** in the GUI shows a few controls for
-performance and large worlds. With the switch off, or a field on Auto / 0,
-Arnis runs exactly as it does without them. Each control is a CLI flag, and
-the CLI has a few more for scripts and programs driving it. None of them
-changes what is generated.
+Settings > **Advanced Features** in the GUI shows controls for performance
+and large worlds, and the experimental Meld Generation options. With the
+switch off, or a field on Auto / its default, Arnis runs exactly as it does
+without them. Each control is a CLI flag, and the CLI has a few more for
+scripts and programs driving it. The performance controls never change what is
+generated; the Meld Generation ones do.
 
 ## GUI
 
@@ -19,6 +20,35 @@ changes what is generated.
 
 With One World on, Parallel Workers and Piece Size always build the area in
 pieces (see [Large areas](one_world.md#large-areas)).
+
+### Meld Generation (Experimental)
+
+A control on its default, or greyed out, sends no flag.
+
+| Group | Control | CLI flag | Default | Description |
+| --- | --- | --- | --- | --- |
+| Terrain | Snow | `--snow-mode` | Realistic | Realistic (climatic snow line), Peaks, Manual or Off. |
+| Terrain | Snow Cap Share | `--snow-percent` | 6% | Peaks only: top share of the height range under snow. Greyed with One World, which refuses Peaks. |
+| Terrain | Snow Line Y | `--snow-y` | 120 | Manual only: snow from this Y up. |
+| Terrain | Rocks | `--rocks` | Off | Small rocks on open grass and cropland. |
+| Terrain | Bushes | `--bushes` | Off | Small bushes on open grass and cropland. |
+| Terrain | Rock Density | `--rock-density` | 0.02 | Share of chunks that get a rock (0 to 0.20). Needs Rocks. |
+| Terrain | Bush Density | `--bush-density` | 0.05 | Share of chunks that get a bush (0 to 0.20). Needs Bushes. |
+| Roads & Buildings | Road Detail | `--road-detail` | Max | Max, Clean (from about 0.7 scale) or Compact (lower scales). |
+| Roads & Buildings | No Buildings | `--no-buildings` | Off | Roads, rail, water and land cover only. |
+| Roads & Buildings | Chest Loot Table | `--loot-table` | Built-in | JSON loot file for interior chests. Needs Interior Generation. A file that does not load stops the run. |
+| Fields & Trees | Field Layout | `--field-mix` | Classic | Classic, Smallholding, Patchwork, Prairie or Pasture parcels. |
+| Fields & Trees | Farm Crops | `--farm-crops` | Empty | Crop shares, e.g. `wheat=60,sunflower=20,fallow=20`. |
+| Fields & Trees | Parcel Size | `--field-scale` | 100% | 25 to 400% of the layout's parcel size. Needs a layout or farm crops. |
+| Fields & Trees | Tree Realm | `--tree-realm` | Auto | Force one region's trees (Africa, Asia, Europe, ...). |
+| Fields & Trees | Small / Medium / Big / Tall / Giant Trees | `--tree-size-weights` | 100% each | 0 to 200% per size; sent only when one differs from 100%. |
+| Caves & Water | Cave Seed | `--cave-seed` | Empty | Another cave layout per seed. Needs Caves. |
+| Caves & Water | Cave Datum Y | `--cave-datum-y` | Empty | Floor Y for the caves, a multiple of 16, so areas line up. Needs Caves. |
+| Caves & Water | River Bed | `--river-bed` | Off | U-Shaped (`v1`) beds for rivers, canals and streams. |
+| Caves & Water | Water Detail | `--water-detail` | Default | Scaled: finer water for small scales. |
+
+The window checks these with the CLI's own parser and its snow and cave-datum
+rules, and passes them on to every piece of a One World job.
 
 ## Flags
 

@@ -593,7 +593,28 @@ pub const CAPABILITIES: &[&str] = &[
     "plan-units",
     "unit-regions",
     "one-world-workers",
+    "snow-mode",
+    "road-detail",
+    "rocks",
+    "bushes",
+    "no-buildings",
+    "loot-table",
+    "field-mix",
+    "tree-realm",
+    "tree-size-weights",
+    "cave-seed",
+    "cave-datum-y",
+    "river-bed",
+    "water-detail",
 ];
+
+/// `--cave-datum-y` sits on a section boundary inside the tallest world.
+pub fn check_cave_datum_y(y: i32) -> Result<(), String> {
+    if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+        return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+    }
+    Ok(())
+}
 
 /// Machine-readable progress formats for `--progress`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
@@ -1140,9 +1161,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         if !args.caves {
             return Err("--cave-datum-y only applies to --caves.".to_string());
         }
-        if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
-            return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
-        }
+        check_cave_datum_y(y)?;
     }
     if args.cave_zone_map_step.is_some() && !cave_preview {
         return Err("--cave-zone-map-step only applies to --cave-zone-map.".to_string());

@@ -127,6 +127,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_get_default_luanti_save_path,
             gui_set_save_path,
             gui_pick_save_directory,
+            gui_pick_loot_table,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -356,6 +357,19 @@ fn gui_pick_save_directory(start_path: String) -> Result<String, String> {
         Some(folder) => Ok(folder.display().to_string()),
         None => Ok(start_path),
     }
+}
+
+/// Opens a native file picker for a chest loot table (JSON) and returns the
+/// chosen path, or `current` when the user cancels.
+#[tauri::command]
+fn gui_pick_loot_table(current: String) -> Result<String, String> {
+    let mut dialog = FileDialog::new().add_filter("JSON", &["json"]);
+    if let Some(dir) = Path::new(&current).parent().filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    Ok(dialog
+        .pick_file()
+        .map_or(current, |file| file.display().to_string()))
 }
 
 /// Creates a new Java Edition world in the given base save directory.
@@ -1442,6 +1456,13 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         ),
         format!("--facade-detail={}", name(&args.facade_detail)),
         format!("--facade-px={}", args.facade_px),
+        format!("--road-detail={}", name(&args.road_detail)),
+        format!("--rock-density={}", args.scatter.rock_density),
+        format!("--bush-density={}", args.scatter.bush_density),
+        format!("--field-scale={}", args.fields.field_scale),
+        format!("--snow-mode={}", name(&args.snow.snow_mode)),
+        format!("--river-bed={}", name(&args.water.river_bed)),
+        format!("--water-detail={}", name(&args.water.water_detail)),
     ];
     let flags = [
         ("--fillground", args.fillground),
@@ -1456,6 +1477,9 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         ("--voxy-lod", args.voxy_lod),
         ("--map-preview", args.map_preview),
         ("--building-facades", args.building_facades),
+        ("--no-buildings", !args.buildings),
+        ("--rocks", args.scatter.rocks),
+        ("--bushes", args.scatter.bushes),
     ];
     values.extend(flags.iter().filter(|f| f.1).map(|f| f.0.to_string()));
     if let Some(t) = args.timeout {
@@ -1464,13 +1488,52 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
     if let Some(on) = args.mapillary_facades {
         values.push(format!("--mapillary-facades={on}"));
     }
+    let optional = [
+        args.snow
+            .snow_percent
+            .map(|v| format!("--snow-percent={v}")),
+        args.snow.snow_y.map(|v| format!("--snow-y={v}")),
+        args.fields.field_mix.map(|v| format!("--field-mix={v}")),
+        args.fields.farm_crops.map(|v| format!("--farm-crops={v}")),
+        args.tree_realm
+            .as_ref()
+            .map(|v| format!("--tree-realm={v}")),
+        args.tree_size_weights
+            .map(|v| format!("--tree-size-weights={v}")),
+        args.cave_seed.map(|v| format!("--cave-seed={v}")),
+        args.cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
+    ];
+    values.extend(optional.into_iter().flatten());
     // ponytail: the token rides on the pieces' command lines, visible to this
     // user's other processes; pass it in their environment if that matters.
     if let Some(token) = &args.mapillary_token {
         values.push(format!("--mapillary-token={token}"));
     }
     out.extend(values.into_iter().map(Into::into));
+    if let Some(path) = &args.loot_table {
+        out.extend(["--loot-table".into(), path.into()]);
+    }
     out
+}
+
+/// The Meld Generation settings, parsed by the CLI's own parser so the window
+/// accepts exactly what the flags accept. `flags` are `--name=value` tokens;
+/// none is the stock run. The checks `validate_args` makes on these flags are
+/// repeated, as the window never runs it.
+fn meld_args(flags: &[String], one_world: bool) -> Result<Args, String> {
+    use clap::Parser;
+    let args =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| {
+                let text = e.to_string();
+                let line = text.lines().next().unwrap_or_default();
+                line.trim_start_matches("error: ").to_string()
+            })?;
+    args.snow.validate(one_world)?;
+    if let Some(y) = args.cave_datum_y {
+        crate::args::check_cave_datum_y(y)?;
+    }
+    Ok(args)
 }
 
 // Everything before the `spawn` below - the spawn point written into level.dat,
@@ -1531,6 +1594,27 @@ fn gui_start_generation(
     // a One World area in pieces, as --one-world-workers / --unit-regions do.
     one_world_workers: Option<String>,
     unit_regions: Option<u32>,
+    // Meld Generation, each the value of the CLI flag of the same name.
+    // The frontend sends null for a control on its default or disabled.
+    snow_mode: Option<String>,
+    snow_percent: Option<f64>,
+    snow_y: Option<i32>,
+    road_detail: Option<String>,
+    rocks: Option<bool>,
+    rock_density: Option<f64>,
+    bushes: Option<bool>,
+    bush_density: Option<f64>,
+    no_buildings: Option<bool>,
+    loot_table: Option<String>,
+    field_mix: Option<String>,
+    farm_crops: Option<String>,
+    field_scale: Option<u16>,
+    tree_realm: Option<String>,
+    tree_size_weights: Option<String>,
+    cave_seed: Option<String>,
+    cave_datum_y: Option<i32>,
+    river_bed: Option<String>,
+    water_detail: Option<String>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1559,6 +1643,55 @@ fn gui_start_generation(
             return Err(msg);
         }
     };
+
+    let switch = |on: Option<bool>, flag: &str| on.unwrap_or(false).then(|| flag.to_string());
+    let meld_flags: Vec<String> = [
+        snow_mode.map(|v| format!("--snow-mode={v}")),
+        snow_percent.map(|v| format!("--snow-percent={v}")),
+        snow_y.map(|v| format!("--snow-y={v}")),
+        road_detail.map(|v| format!("--road-detail={v}")),
+        switch(rocks, "--rocks"),
+        rock_density.map(|v| format!("--rock-density={v}")),
+        switch(bushes, "--bushes"),
+        bush_density.map(|v| format!("--bush-density={v}")),
+        switch(no_buildings, "--no-buildings"),
+        loot_table.map(|v| format!("--loot-table={v}")),
+        field_mix.map(|v| format!("--field-mix={v}")),
+        farm_crops.map(|v| format!("--farm-crops={v}")),
+        field_scale.map(|v| format!("--field-scale={v}")),
+        tree_realm.map(|v| format!("--tree-realm={v}")),
+        tree_size_weights.map(|v| format!("--tree-size-weights={v}")),
+        cave_seed.map(|v| format!("--cave-seed={v}")),
+        cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
+        river_bed.map(|v| format!("--river-bed={v}")),
+        water_detail.map(|v| format!("--water-detail={v}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let meld = match meld_args(&meld_flags, one_world) {
+        Ok(meld) => meld,
+        Err(msg) => {
+            emit_gui_error(&msg);
+            return Err(msg);
+        }
+    };
+    // Process-wide, so set every run: a run without a table gets the built-in
+    // one back. Unlike the CLI, which warns and goes on, a table that does not
+    // load stops the run, since the user picked it in this window.
+    let loot = match meld
+        .loot_table
+        .as_deref()
+        .map(crate::element_processing::subprocessor::buildings_loot::load_loot_table)
+    {
+        Some(Err(e)) => {
+            let msg = format!("Chest Loot Table: {e}");
+            emit_gui_error(&msg);
+            return Err(msg);
+        }
+        loaded => loaded.and_then(Result::ok),
+    };
+    crate::element_processing::subprocessor::buildings_loot::set_loot_table(loot);
 
     // Out-of-range values are dropped, as clap would refuse them on the CLI.
     let process = crate::args::ProcessArgs {
@@ -1862,7 +1995,7 @@ fn gui_start_generation(
                 },
                 legacy_terrain: false,
                 interior: interior_enabled,
-                loot_table: None,
+                loot_table: meld.loot_table,
                 dump_loot_table: None,
                 fillground: fillground_enabled,
                 caves: caves_enabled,
@@ -1872,15 +2005,16 @@ fn gui_start_generation(
                 cave_biomes: None,
                 cave_zone_map: None,
                 cave_zone_map_step: None,
-                cave_seed: None,
-                cave_datum_y: None,
+                cave_seed: meld.cave_seed,
+                cave_datum_y: meld.cave_datum_y,
                 legacy_trees: legacy_trees_enabled,
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
-                tree_realm: None,
-                tree_size_weights: None,
+                tree_realm: meld.tree_realm,
+                tree_size_weights: meld.tree_size_weights,
                 canopy_height: canopy_height_enabled,
-                overture: overture_enabled,
-                buildings: true,
+                // Overture only adds buildings, as in run_cli.
+                overture: overture_enabled && meld.buildings,
+                buildings: meld.buildings,
                 // Auto picks whichever transport is cheaper for the area. The
                 // two are not bit-identical - tiles quantise coordinates to a
                 // 0.4 m lattice and keep the largest ring of a multipolygon the
@@ -1908,8 +2042,7 @@ fn gui_start_generation(
                 map_preview: world_format != WorldFormat::LuantiWorld
                     && rotation_angle.abs() <= f64::EPSILON,
                 signage: crate::args::SignageLevel::from_str_lossy(&signage),
-                // No GUI field yet: every road and marking, as before.
-                road_detail: Default::default(),
+                road_detail: meld.road_detail,
                 // The settings toggle and the token together: the toggle is what
                 // the user turns off to keep a saved token without paying for the
                 // download, and without a token there is nothing to fetch.
@@ -1944,12 +2077,12 @@ fn gui_start_generation(
                 building_facades_dir: None,
                 body: celestial_body,
                 // Stock unless Advanced Features set a knob.
-                scatter: Default::default(),
-                fields: Default::default(),
+                scatter: meld.scatter,
+                fields: meld.fields,
                 process,
                 units,
-                snow: Default::default(),
-                water: Default::default(),
+                snow: meld.snow,
+                water: meld.water,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -2280,7 +2413,7 @@ fn gui_start_generation(
 
 #[cfg(test)]
 mod piece_tests {
-    use super::{piece_argv, piece_settings};
+    use super::{meld_args, piece_argv, piece_settings};
     use crate::args::{Args, Workers};
     use clap::Parser;
 
@@ -2334,8 +2467,80 @@ mod piece_tests {
         args.mapillary_facade_mode = crate::args::FacadeMode::from_str_lossy("blocks");
         args.building_facades = true;
         args.facade_detail = crate::args::FacadeDetail::from_str_lossy("high");
+        // The Meld Generation fields, set the way the window sets them.
+        let meld = meld_args(
+            &[
+                "--snow-mode=manual",
+                "--snow-y=150",
+                "--road-detail=compact",
+                "--rocks",
+                "--rock-density=0.07",
+                "--bushes",
+                "--bush-density=0.13",
+                "--no-buildings",
+                "--loot-table=my loot.json",
+                "--field-mix=prairie",
+                "--farm-crops=wheat=60,sunflower=20,fallow=20",
+                "--field-scale=175",
+                "--tree-realm=eur",
+                "--tree-size-weights=small=50,tall=150,giant=0",
+                "--cave-seed=12345",
+                "--cave-datum-y=-128",
+                "--river-bed=v1",
+                "--water-detail=scaled",
+            ]
+            .map(String::from),
+            true,
+        )
+        .unwrap();
+        args.snow = meld.snow;
+        args.road_detail = meld.road_detail;
+        args.scatter = meld.scatter;
+        args.buildings = meld.buildings;
+        args.loot_table = meld.loot_table;
+        args.fields = meld.fields;
+        args.tree_realm = meld.tree_realm;
+        args.tree_size_weights = meld.tree_size_weights;
+        args.cave_seed = meld.cave_seed;
+        args.cave_datum_y = meld.cave_datum_y;
+        args.water = meld.water;
         let back = base(&piece_argv(&args, &dir.path().join("My World")));
         assert_eq!(format!("{back:?}"), format!("{args:?}"));
+
+        // The other snow and field shapes: peaks with a share, a share list.
+        let args = base(&[
+            "--snow-mode=peaks".into(),
+            "--snow-percent=12.5".into(),
+            "--field-mix=farm=75,coarse=25".into(),
+        ]);
+        let back = base(&piece_argv(&args, &dir.path().join("My World")));
+        assert_eq!(format!("{:?}", back.snow), format!("{:?}", args.snow));
+        assert_eq!(format!("{:?}", back.fields), format!("{:?}", args.fields));
+    }
+
+    /// No Meld flag is the stock run, and the window refuses what the CLI does.
+    #[test]
+    fn meld_settings_follow_the_cli() {
+        use clap::Parser;
+        let stock = Args::parse_from(["arnis"]);
+        assert_eq!(
+            format!("{:?}", meld_args(&[], true).unwrap()),
+            format!("{stock:?}")
+        );
+        let refused = |flags: &[&str], one_world| {
+            meld_args(
+                &flags.iter().map(|f| f.to_string()).collect::<Vec<_>>(),
+                one_world,
+            )
+            .is_err()
+        };
+        assert!(refused(&["--snow-mode=peaks"], true));
+        assert!(!refused(&["--snow-mode=peaks", "--snow-percent=20"], false));
+        assert!(refused(&["--snow-mode=manual"], false));
+        assert!(refused(&["--cave-datum-y=100"], false));
+        assert!(refused(&["--farm-crops=wheat=x"], false));
+        assert!(refused(&["--tree-realm=mars"], false));
+        assert!(refused(&["--field-scale=500"], false));
     }
 
     #[test]

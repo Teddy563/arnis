@@ -24,6 +24,25 @@ impl Default for SizeWeights {
     }
 }
 
+/// The `--tree-size-weights` value that parses back to these weights.
+impl std::fmt::Display for SizeWeights {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for (i, (size, w)) in ORDER.iter().zip(self.0).enumerate() {
+            // Whole percents are written whole, so n / 100 parses back exactly.
+            // ponytail: a fractional percent may come back one ulp off.
+            let pct = w * 100.0;
+            let pct = if (pct - pct.round()).abs() < 1e-9 {
+                pct.round()
+            } else {
+                pct
+            };
+            let sep = if i == 0 { "" } else { "," };
+            write!(f, "{sep}{}={pct}", format!("{size:?}").to_lowercase())?;
+        }
+        Ok(())
+    }
+}
+
 impl SizeWeights {
     /// Parse `name=percent` pairs (small, medium, big, tall, giant), each 0-200.
     /// Omitted tiers stay at 100.

@@ -222,6 +222,39 @@ impl FieldMix {
     }
 }
 
+/// Writes `key=weight` pairs that `parse_weights` reads back to the same weights.
+fn write_weights(f: &mut std::fmt::Formatter, weights: &[u16], keys: &[&str]) -> std::fmt::Result {
+    for (i, (k, w)) in keys.iter().zip(weights).enumerate() {
+        write!(f, "{}{k}={w}", if i == 0 { "" } else { "," })?;
+    }
+    Ok(())
+}
+
+/// The `--farm-crops` value for these shares, as a piece's command line needs it.
+impl std::fmt::Display for FarmCrops {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write_weights(f, &self.0, &CROP_KEYS)
+    }
+}
+
+/// The `--field-mix` value that parses back to this mix: a preset's name, else
+/// the share list (a list always sits on patchwork's sizes and crops).
+impl std::fmt::Display for FieldMix {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let presets = [
+            (Self::CLASSIC, "classic"),
+            (Self::SMALLHOLDING, "smallholding"),
+            (Self::PATCHWORK, "patchwork"),
+            (Self::PRAIRIE, "prairie"),
+            (Self::PASTURE, "pasture"),
+        ];
+        match presets.iter().find(|(mix, _)| mix == self) {
+            Some((_, name)) => f.write_str(name),
+            None => write_weights(f, &self.shares, &CATEGORY_KEYS),
+        }
+    }
+}
+
 /// A resolved cell: style, surface block, per-plot crop, growth level, and track flag.
 /// Decoration keys off the surface (for example sunflower rows are the coarse-dirt rows).
 #[derive(Clone, Copy)]

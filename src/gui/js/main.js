@@ -1646,9 +1646,57 @@ function initAdvancedFeatures() {
     cpu.dispatchEvent(new Event('change', { bubbles: true }));
   });
   document.getElementById('threads-input').addEventListener('input', refreshAdvancedFeatures);
+  // Meld Generation rows that follow another control.
+  ['snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'field-mix-select', 'farm-crops-input',
+    'interior-toggle', 'caves-toggle'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', refreshAdvancedFeatures);
+    document.getElementById(id).addEventListener('change', refreshAdvancedFeatures);
+  });
+  MELD_SLIDERS.forEach(([id, format]) => {
+    const slider = document.getElementById(id);
+    const out = document.getElementById(id.replace('-slider', '-value'));
+    const show = () => { out.textContent = format(parseFloat(slider.value)); };
+    slider.addEventListener('input', show);
+    // Double-click resets, as on the other sliders.
+    slider.addEventListener('dblclick', () => {
+      slider.value = slider.defaultValue;
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    show();
+  });
+  const loot = document.getElementById('loot-table-input');
+  document.getElementById('loot-table-browse').addEventListener('click', async () => {
+    try {
+      const picked = await invoke('gui_pick_loot_table', { current: loot.value.trim() });
+      if (picked !== loot.value) {
+        loot.value = picked;
+        loot.dispatchEvent(new Event('input', { bubbles: true }));
+        loot.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      console.error('Loot table picker failed:', error);
+    }
+  });
   formatCpuUsage();
   refreshAdvancedFeatures();
 }
+
+const formatPercent = (v) => Math.round(v) + '%';
+const MELD_SLIDERS = [
+  ['snow-percent-slider', formatPercent],
+  ['rock-density-slider', (v) => v.toFixed(2)],
+  ['bush-density-slider', (v) => v.toFixed(2)],
+  ['field-scale-slider', formatPercent],
+  ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => ['tree-weight-' + size + '-slider', formatPercent]),
+];
+
+// Meld Generation rows that only depend on the master switch.
+const MELD_ALWAYS = [
+  'snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'road-detail-select', 'no-buildings-toggle',
+  'field-mix-select', 'farm-crops-input', 'tree-realm-select', 'river-bed-select', 'water-detail-select',
+  ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => 'tree-weight-' + size + '-slider'),
+];
 
 function formatCpuUsage() {
   const cpu = document.getElementById('cpu-usage-slider');
@@ -1677,6 +1725,31 @@ function refreshAdvancedFeatures() {
   const pieces = on && isOneWorldEnabled();
   setSettingsRowAvailable('one-world-workers-select', pieces);
   setSettingsRowAvailable('unit-regions-select', pieces);
+
+  MELD_ALWAYS.forEach((id) => setSettingsRowAvailable(id, on));
+  const checked = (id) => {
+    const el = document.getElementById(id);
+    return el.checked && !el.disabled;
+  };
+  // The snow rows mean nothing in the other modes, so they hide; the share
+  // is greyed under One World, which refuses peaks.
+  const snow = document.getElementById('snow-mode-select').value;
+  const shown = (id, show) => {
+    document.getElementById(id).style.display = show ? '' : 'none';
+  };
+  shown('snow-percent-row', snow === 'peaks');
+  shown('snow-y-row', snow === 'manual');
+  setSettingsRowAvailable('snow-percent-slider', on && snow === 'peaks' && !isOneWorldEnabled());
+  setSettingsRowAvailable('snow-y-input', on && snow === 'manual');
+  setSettingsRowAvailable('rock-density-slider', on && checked('rocks-toggle'));
+  setSettingsRowAvailable('bush-density-slider', on && checked('bushes-toggle'));
+  setSettingsRowAvailable('loot-table-input', on && checked('interior-toggle'));
+  // Parcels exist with a layout other than Classic, or with farm crops.
+  const parcels = document.getElementById('field-mix-select').value !== 'classic'
+    || document.getElementById('farm-crops-input').value.trim() !== '';
+  setSettingsRowAvailable('field-scale-slider', on && parcels);
+  setSettingsRowAvailable('cave-seed-input', on && checked('caves-toggle'));
+  setSettingsRowAvailable('cave-datum-y-input', on && checked('caves-toggle'));
   refreshSettingsState();
 }
 
@@ -1702,6 +1775,59 @@ function advancedFeatureArgs() {
     // --unit-regions); both rows are disabled, so null, without One World.
     oneWorldWorkers: workers ? workers.value : null,
     unitRegions: positive('unit-regions-select'),
+    ...meldArgs(enabled),
+  };
+}
+
+// The Meld Generation keys: null for a control that is disabled or on its
+// default, so the run is the stock one unless a control says otherwise.
+function meldArgs(enabled) {
+  const changed = (id) => {
+    const el = enabled(id);
+    if (!el) return null;
+    if (el.tagName === 'SELECT') {
+      const def = Array.from(el.options).find((o) => o.defaultSelected) || el.options[0];
+      return el.value !== def.value ? el.value : null;
+    }
+    const n = parseFloat(el.value);
+    return Number.isFinite(n) && n !== parseFloat(el.defaultValue) ? n : null;
+  };
+  const on = (id) => (enabled(id) && enabled(id).checked ? true : null);
+  const text = (id) => {
+    const el = enabled(id);
+    return el && el.value.trim() !== '' ? el.value.trim() : null;
+  };
+  const int = (id) => {
+    const t = text(id);
+    return t === null ? null : parseInt(t, 10);
+  };
+  const sizes = ['small', 'medium', 'big', 'tall', 'giant'];
+  const weights = sizes.map((size) => enabled('tree-weight-' + size + '-slider'));
+  const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
+  return {
+    snowMode: changed('snow-mode-select'),
+    snowPercent: changed('snow-percent-slider'),
+    // Manual needs a line, so it goes even on its default.
+    snowY: int('snow-y-input'),
+    roadDetail: changed('road-detail-select'),
+    rocks: on('rocks-toggle'),
+    rockDensity: changed('rock-density-slider'),
+    bushes: on('bushes-toggle'),
+    bushDensity: changed('bush-density-slider'),
+    noBuildings: on('no-buildings-toggle'),
+    lootTable: text('loot-table-input'),
+    fieldMix: changed('field-mix-select'),
+    farmCrops: text('farm-crops-input'),
+    fieldScale: changed('field-scale-slider'),
+    treeRealm: changed('tree-realm-select'),
+    treeSizeWeights: weighted
+      ? sizes.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
+      : null,
+    // A string, so a seed past 2^53 reaches the parser whole.
+    caveSeed: text('cave-seed-input'),
+    caveDatumY: int('cave-datum-y-input'),
+    riverBed: changed('river-bed-select'),
+    waterDetail: changed('water-detail-select'),
   };
 }
 
