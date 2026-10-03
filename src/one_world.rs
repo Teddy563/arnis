@@ -90,6 +90,9 @@ pub struct Manifest {
     /// Metre to Y mapping shared by every area. Set at creation; worlds from
     /// before version 3 take it from their first terrain area.
     pub elevation: Option<ElevationAffine>,
+    /// `--cave-seed` of the first area; later areas and pieces carve with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cave_seed: Option<u64>,
     pub next_area_id: u32,
     pub areas: Vec<GeneratedArea>,
 }
@@ -132,6 +135,7 @@ impl Manifest {
                 }
                 e
             }),
+            cave_seed: args.cave_seed,
             next_area_id: 1,
             areas: Vec::new(),
         }
@@ -336,6 +340,17 @@ fn compatibility_errors(manifest: &Manifest, args: &Args) -> Vec<String> {
         ));
     }
     errors
+}
+
+/// Caves are a pure function of the seed, so a world keeps its first area's: a later area
+/// or piece with another one would not line up with its neighbours underground.
+fn keep_cave_settings(manifest: &Manifest, args: &mut Args) {
+    if let Some(seed) = manifest.cave_seed {
+        if args.cave_seed.is_some_and(|s| s != seed) {
+            println!("Note: One World keeps the cave seed it was created with ({seed}).");
+        }
+        args.cave_seed = Some(seed);
+    }
 }
 
 /// Why the world's lock is taken. Another run of this executable is named as
@@ -572,6 +587,7 @@ fn resolve(
         );
         args.aws_only_elevation = manifest.aws_only_elevation;
     }
+    keep_cave_settings(&manifest, args);
 
     let replaced = if created {
         0
@@ -694,6 +710,7 @@ pub fn prepare_unit(
     args.disable_height_limit = manifest.disable_height_limit;
     args.height_multiplier = manifest.height_multiplier;
     args.aws_only_elevation = manifest.aws_only_elevation;
+    keep_cave_settings(&manifest, args);
     let (xzbbox, llbbox) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
     let rect = [
         xzbbox.min_x(),
@@ -963,6 +980,26 @@ mod tests {
         drop(prepare(&world, &req, &mut args).unwrap());
         assert_eq!(args.height_multiplier, 2.0);
         assert_eq!(args.one_world_run.unwrap().elevation, Some(e));
+    }
+
+    #[test]
+    fn the_cave_seed_is_fixed_by_the_first_area() {
+        let dir = tempfile::tempdir().unwrap();
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let plain = dir.path().join("plain");
+        drop(prepare(&plain, &req, &mut args_for(MUNICH, &["--caves"])).unwrap());
+        let text = std::fs::read_to_string(Manifest::path_in(&plain)).unwrap();
+        assert!(!text.contains("cave_seed"), "{text}");
+
+        let world = dir.path().join("w");
+        let mut args = args_for(MUNICH, &["--caves", "--cave-seed", "42"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        assert_eq!(Manifest::load(&world).unwrap().unwrap().cave_seed, Some(42));
+        for extra in [&["--caves"][..], &["--caves", "--cave-seed", "7"]] {
+            let mut args = args_for(MUNICH, extra);
+            drop(prepare(&world, &req, &mut args).unwrap());
+            assert_eq!(args.cave_seed, Some(42));
+        }
     }
 
     #[test]

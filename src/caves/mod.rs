@@ -76,7 +76,8 @@ use shape::{CaveShape, Rect};
 // every time.
 use fnv::FnvHashSet as HashSet;
 
-/// World seed for every cave pass. Fixed, so the same area always gets the same caves.
+/// Built-in seed for every cave pass, used unless `--cave-seed` is given. Fixed, so the same
+/// area always gets the same caves.
 const SEED: i64 = 0xCA7E_CA7E;
 /// Vanilla's world floor; every depth constant in the cave passes is written against it.
 pub(crate) const VANILLA_FLOOR: i32 = -64;
@@ -114,6 +115,12 @@ pub(crate) fn y_shift() -> i32 {
 #[inline]
 pub(crate) fn vy(y: i32) -> i32 {
     y + y_shift()
+}
+
+/// This run's cave seed: `--cave-seed` (its bits, so every u64 is a distinct layout), else
+/// the built-in one.
+pub(crate) fn seed(args: &Args) -> i64 {
+    args.cave_seed.map_or(SEED, |s| s as i64)
 }
 
 /// The `--cave-biomes` amounts for this run. `validate_args` has already rejected a bad list,
@@ -158,7 +165,7 @@ pub fn carve_region(
     // The ore variants and the lava rims match the host rock, so the deepslate line goes first.
     deepslate::apply_region(editor, min_x, max_x, min_z, max_z);
 
-    let seed = SEED;
+    let seed = seed(args);
     let floor = terrain_floor_y();
     let gen = CaveGen::new(seed);
     let decor = Decor::new(seed, biome_amounts(args));
@@ -729,6 +736,24 @@ mod tests {
         };
         set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
         set_terrain_floor_y(DEFAULT_MIN_Y + 2);
+    }
+
+    /// No `--cave-seed` is the built-in seed; another seed moves the caves.
+    #[test]
+    fn the_cave_seed_defaults_to_the_built_in_one() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd)
+        };
+        assert_eq!(seed(&parse(&[])), SEED);
+        assert_eq!(seed(&parse(&["--cave-seed", "3397307006"])), SEED);
+        let other = seed(&parse(&["--cave-seed", "7"]));
+        assert_eq!(other, 7);
+        let carve = |s| carver::carve_positions(s, -64, 63, -64, 63);
+        assert!(!carve(SEED).is_empty());
+        assert_ne!(carve(SEED), carve(other));
     }
 
     /// `CaveShape` must answer exactly what the carve does (noise caves plus carvers), or features

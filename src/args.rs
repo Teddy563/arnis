@@ -133,6 +133,12 @@ pub struct Args {
     #[arg(long = "cave-biomes", value_name = "LIST")]
     pub cave_biomes: Option<String>,
 
+    /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
+    /// layout. Omitted keeps the built-in seed, so an area always gets the same caves. A One
+    /// World keeps the seed its first area was built with.
+    #[arg(long = "cave-seed", value_name = "SEED")]
+    pub cave_seed: Option<u64>,
+
     /// Render the cave biome layout for --bbox and exit without generating a world: writes
     /// `<PREFIX>-upper.png` (upper caves) and `<PREFIX>-deep.png` (deep caves), transparent
     /// where the cave is plain rock, and prints a `ZONEMAP {json}` line with each theme's
@@ -1067,6 +1073,9 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 dir.display()
             ));
         }
+    }
+    if args.cave_seed.is_some() && !args.caves && !cave_preview {
+        return Err("--cave-seed only applies to --caves or --cave-zone-map.".to_string());
     }
     if args.cave_zone_map_step.is_some() && !cave_preview {
         return Err("--cave-zone-map-step only applies to --cave-zone-map.".to_string());
