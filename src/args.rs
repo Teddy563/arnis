@@ -171,7 +171,9 @@ pub struct Args {
     #[arg(long)]
     pub debug: bool,
 
-    /// Set floodfill timeout (seconds) (optional)
+    /// Set floodfill timeout (seconds) (optional). Counted as work, not wall
+    /// time (one second = 200 M point-in-polygon edge tests), so a fill is cut
+    /// at the same place however loaded the machine is.
     #[arg(long, value_parser = parse_duration)]
     pub timeout: Option<Duration>,
 
