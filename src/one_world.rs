@@ -365,6 +365,24 @@ pub fn prepare(world_dir: &Path, requested: &LLBBox, args: &mut Args) -> Result<
     resolved
 }
 
+/// The frame `requested` lands in: the world's own, or for a world that does
+/// not exist yet the one `prepare` would create. Reads only; takes no lock.
+pub fn frame_for(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &Args,
+) -> Result<WebMercatorProjection, String> {
+    Ok(match Manifest::load(world_dir)? {
+        Some(manifest) => manifest.projection(),
+        None => Manifest::new(
+            args,
+            (requested.min().lat() + requested.max().lat()) / 2.0,
+            (requested.min().lng() + requested.max().lng()) / 2.0,
+        )
+        .projection(),
+    })
+}
+
 /// The part of `prepare` that runs under the world's lock.
 /// `owned` is set once the folder is known to hold nothing but this run's files.
 fn resolve(

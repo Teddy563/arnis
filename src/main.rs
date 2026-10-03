@@ -63,6 +63,7 @@ mod trees;
 mod version_check;
 mod voxy;
 mod water_depth;
+mod work_units;
 mod world_editor;
 mod world_utils;
 
@@ -186,6 +187,23 @@ fn exit_failed() -> ! {
     progress_json::error("generation failed, see stderr");
     release_one_world(true);
     std::process::exit(1);
+}
+
+/// The One World folder: `--world-name` inside the saves folder.
+fn one_world_dir(args: &Args) -> PathBuf {
+    let base_dir = args.path.clone().unwrap_or_else(|| {
+        eprintln!(
+            "{} --one-world needs --output-dir (the saves folder).",
+            "Error:".red().bold()
+        );
+        std::process::exit(1);
+    });
+    let name = args
+        .world_name
+        .as_deref()
+        .and_then(world_utils::world_folder_name)
+        .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
+    base_dir.join(name)
 }
 
 fn run_cli() {
@@ -339,22 +357,18 @@ fn run_cli() {
         }
     };
 
+    if let Some(n) = args.units.plan_units {
+        if let Err(e) = work_units::print_plan(&one_world_dir(&args), &effective_bbox, &args, n) {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
     if args.one_world {
-        let base_dir = args.path.clone().unwrap_or_else(|| {
-            eprintln!(
-                "{} --one-world needs --output-dir (the saves folder).",
-                "Error:".red().bold()
-            );
-            std::process::exit(1);
-        });
-        let name = args
-            .world_name
-            .as_deref()
-            .and_then(world_utils::world_folder_name)
-            .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
-        let world_dir = base_dir.join(name);
+        let world_dir = one_world_dir(&args);
         let session =
             one_world::prepare(&world_dir, &effective_bbox, &mut args).unwrap_or_else(|e| {
                 eprintln!("{} {}", "Error:".red().bold(), e);

@@ -1825,6 +1825,7 @@ fn gui_start_generation(
                 body: celestial_body,
                 // Stock unless Advanced Features set a knob.
                 process,
+                units: Default::default(),
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

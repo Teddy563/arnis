@@ -337,6 +337,20 @@ pub struct Args {
 
     #[command(flatten)]
     pub process: ProcessArgs,
+
+    #[command(flatten)]
+    pub units: UnitArgs,
+}
+
+/// Large One World jobs cut into region-group pieces. Off unless asked for,
+/// so the GUI runs on `UnitArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+#[command(next_help_heading = "Large worlds")]
+pub struct UnitArgs {
+    /// Print how --one-world would cut --bbox into pieces of at most N x N
+    /// regions (one JSON line on stdout) and exit without generating.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub plan_units: Option<i32>,
 }
 
 /// Knobs for scripted and multi-process runs. None of them changes what is
@@ -798,6 +812,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         }
     } else if args.world_name.is_some() {
         return Err("--world-name only applies to --one-world.".to_string());
+    } else if args.units.plan_units.is_some() {
+        return Err("--plan-units only applies to --one-world.".to_string());
     }
     if args.projection == crate::projection::ProjectionKind::WebMercator && !args.one_world {
         println!(
@@ -1140,6 +1156,9 @@ mod tests {
         assert!(validate_args(&parse(&["--one-world", "--rotation", "15"])).is_err());
         assert!(validate_args(&parse(&["--one-world", "--body", "moon"])).is_err());
         assert!(validate_args(&parse(&["--world-name", "Home"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--plan-units", "4"])).is_ok());
+        assert!(validate_args(&parse(&["--plan-units", "4"])).is_err());
+        assert!(Args::try_parse_from(["arnis", "--plan-units", "0"]).is_err());
     }
 
     #[test]
