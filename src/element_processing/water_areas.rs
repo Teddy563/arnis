@@ -814,7 +814,8 @@ mod tests {
                 footprint.set(x, z);
             }
         }
-        let bwf = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+        let bwf =
+            crate::water_depth::compute_big_water_field(&ground, &xzbbox, Default::default(), 1.0);
         let road_mask = CoordinateBitmap::new_empty();
         let surface = 5;
         let mut surfaces = FnvHashMap::default();

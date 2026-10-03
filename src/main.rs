@@ -67,6 +67,7 @@ mod trees;
 mod version_check;
 mod voxy;
 mod water_depth;
+mod water_detail;
 mod work_units;
 mod world_editor;
 mod world_utils;
