@@ -582,6 +582,10 @@ const PER_PIECE: &[&str] = &[
     "--one-world-unit",
 ];
 
+/// Switches every piece gets anyway, so the user's are dropped: clap
+/// refuses one given twice. They take no value.
+const PER_PIECE_SWITCHES: &[&str] = &["--no-update-check", "--no-cache-sweep"];
+
 /// A piece's command line: the job's own, minus what is decided per piece,
 /// plus the piece's bbox at full precision and its lease.
 fn child_args(
@@ -597,6 +601,9 @@ fn child_args(
         }
         let text = arg.to_string_lossy();
         let name = text.split('=').next().unwrap_or_default();
+        if PER_PIECE_SWITCHES.contains(&name) {
+            continue;
+        }
         if PER_PIECE.contains(&name) {
             skip_value = !text.contains('=');
             continue;
@@ -756,6 +763,7 @@ mod tests {
             "out dir",
             "--progress",
             "json",
+            "--no-update-check",
             "--scale=1",
         ]
         .map(OsString::from);
