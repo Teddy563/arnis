@@ -399,5 +399,7 @@
   "one_world_confirm_title": "替换已有区块？",
   "one_world_confirm_text": "此区域的 {count} 个区块已存在于世界中。它们将重新生成，在 Minecraft 中建造的内容都会被替换。",
   "one_world_confirm_cancel": "取消",
-  "one_world_confirm_ok": "生成"
+  "one_world_confirm_ok": "生成",
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
+  "snap_inexact": "one edge a little short of its cell line"
 }

@@ -399,5 +399,7 @@
   "one_world_confirm_title": "Zastąpić istniejące chunki?",
   "one_world_confirm_text": "{count} chunków tego obszaru już istnieje w świecie. Zostaną wygenerowane ponownie, a wszystko, co tam zbudowano w Minecrafcie, zostanie zastąpione.",
   "one_world_confirm_cancel": "Anuluj",
-  "one_world_confirm_ok": "Generuj"
+  "one_world_confirm_ok": "Generuj",
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
+  "snap_inexact": "one edge a little short of its cell line"
 }

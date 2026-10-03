@@ -399,5 +399,7 @@
   "one_world_confirm_title": "استبدال القطع الموجودة؟",
   "one_world_confirm_text": "يوجد {count} من قطع هذه المنطقة في العالم بالفعل. ستُنشأ من جديد، وسيُستبدل كل ما بُني هناك في Minecraft.",
   "one_world_confirm_cancel": "إلغاء",
-  "one_world_confirm_ok": "إنشاء"
+  "one_world_confirm_ok": "إنشاء",
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
+  "snap_inexact": "one edge a little short of its cell line"
 }

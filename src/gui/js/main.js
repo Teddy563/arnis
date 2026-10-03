@@ -1686,6 +1686,9 @@ function initAdvancedFeatures() {
   initExperimentalButtons();
   initOsmSource();
   initPresets();
+  ['unit-regions-select', 'scale-value-slider'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', refreshSnapPreview);
+  });
   formatCpuUsage();
   refreshAdvancedFeatures();
 }
@@ -1897,6 +1900,7 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('props-custom-input', on && props === 'custom');
   setSettingsRowAvailable('props-min-scale-input', on && props !== 'none');
   setSettingsRowAvailable('redraw-map-button', on && isOneWorldEnabled());
+  refreshSnapPreview();
 
   // OSM Data Source, not behind the switch: each source shows its own field.
   const source = document.getElementById('osm-source-select').value;
@@ -2807,6 +2811,7 @@ function handleBboxInput() {
     // The Precompute button next to this field turns on the selection, and the
     // field is inside the same panel, so it has to follow every keystroke.
     refreshPrecomputeButton();
+    refreshSnapPreview();
   });
 }
 
@@ -2966,6 +2971,69 @@ function displayBboxInfoText(bboxText) {
   // Hide any rendered mini 3D preview if the selection actually changed
   window.arnisPreview3D?.onBboxChanged(selectedBBox);
   refreshPrecomputeButton();
+  refreshSnapPreview();
+}
+
+/* Large worlds: with pieces in use the selection grows to whole regions of the
+   One World's grid, so every piece is whole regions. The Rust side does the
+   frame maths, the same as the run's; the map draws the result. */
+
+// Pieces are built with Advanced Features on and One World on.
+function snapActive() {
+  const workers = document.getElementById('one-world-workers-select');
+  return !!(workers && !workers.disabled) && isOneWorldEnabled();
+}
+
+function snapSelection(bbox) {
+  return invoke('gui_snap_selection', {
+    bboxText: bbox,
+    savePath: savePath,
+    worldName: oneWorldFolderName(),
+    scale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
+    unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
+  });
+}
+
+// The bbox a run is given: the snapped one while snapping is on.
+async function runBBoxFor(bbox) {
+  return snapActive() ? (await snapSelection(bbox)).bbox : bbox;
+}
+
+let snapPreviewKey = null;
+let snapPreviewTimer = null;
+// Debounced: a dragged selection or a slider fires many events, and only the
+// last one needs a grid.
+function refreshSnapPreview() {
+  clearTimeout(snapPreviewTimer);
+  snapPreviewTimer = setTimeout(drawSnapPreview, 100);
+}
+
+async function drawSnapPreview() {
+  const on = snapActive() && !!selectedBBox;
+  const key = on ? [selectedBBox, savePath, oneWorldFolderName(),
+    document.getElementById('scale-value-slider').value,
+    document.getElementById('unit-regions-select').value].join('|') : 'off';
+  if (key === snapPreviewKey) return;
+  snapPreviewKey = key;
+  let snap = null;
+  if (on) {
+    try {
+      snap = await snapSelection(selectedBBox);
+    } catch (error) {
+      console.warn('Cell snap failed:', error);
+    }
+    if (key !== snapPreviewKey) return;
+  }
+  const text = snap
+    ? oneWorldText('snap_regions_info', '{x} x {z} regions, {pieces} pieces',
+      { x: snap.regions[0], z: snap.regions[1], pieces: snap.cells[0] * snap.cells[1] })
+      + (snap.exact ? '' : ' · ' + oneWorldText('snap_inexact', 'one edge a little short of its cell line'))
+    : '';
+  postToMap({ type: 'snapOverlay', snap, label: text });
+  const info = document.getElementById('bbox-snap-info');
+  if (!info) return;
+  info.style.display = snap ? '' : 'none';
+  info.textContent = text;
 }
 
 let worldPath = "";
@@ -3517,7 +3585,7 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun() {
+async function prepareOneWorldRun(bbox) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -3543,7 +3611,7 @@ async function prepareOneWorldRun() {
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
-      savePath: savePath, worldName: oneWorldFolderName(), bboxText: selectedBBox
+      savePath: savePath, worldName: oneWorldFolderName(), bboxText: bbox
     });
   } catch (error) {
     setOneWorldStatus(String(error), 'error');
@@ -3655,7 +3723,8 @@ async function startGeneration(options = {}) {
     resetProgressUi(STARTING_MESSAGE);
 
     const oneWorld = isOneWorldEnabled();
-    if (oneWorld && !prewarm && !(await prepareOneWorldRun())) {
+    const runBBox = await runBBoxFor(selectedBBox);
+    if (oneWorld && !prewarm && !(await prepareOneWorldRun(runBBox))) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
@@ -3756,7 +3825,7 @@ async function startGeneration(options = {}) {
 
     // Pass the selected options to the Rust backend
     await invoke("gui_start_generation", {
-        bboxText: selectedBBox,
+        bboxText: runBBox,
         selectedWorld: oneWorld ? savePath : worldPath,
         bedrockSavePath: bedrockSavePath,
         luantiSavePath: luantiSavePath,

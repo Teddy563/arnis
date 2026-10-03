@@ -133,6 +133,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_save_preset,
             gui_load_preset,
             gui_redraw_one_world_map,
+            gui_snap_selection,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -431,6 +432,79 @@ fn gui_climate_preview(bbox_text: String) -> Result<String, String> {
         "data:image/png;base64,{}",
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
     ))
+}
+
+/// The selection grown to whole cells of the One World it joins, for the
+/// map: the bbox to generate, the outline it builds and the cell grid.
+#[derive(serde::Serialize)]
+struct SelectionSnap {
+    /// `min_lat min_lon max_lat max_lon` at full precision.
+    bbox: String,
+    /// What the run builds: `[min_lat, min_lon, max_lat, max_lon]`.
+    outline: [f64; 4],
+    /// Cell lines inside it; empty past `MAX_DRAWN_CELLS`.
+    lon_lines: Vec<f64>,
+    lat_lines: Vec<f64>,
+    cells: [i32; 2],
+    regions: [i32; 2],
+    exact: bool,
+}
+
+/// Past this many cells the map shows the outline and the count only.
+const MAX_DRAWN_CELLS: i32 = 2000;
+
+#[tauri::command(async)]
+fn gui_snap_selection(
+    bbox_text: String,
+    save_path: String,
+    world_name: String,
+    scale: f64,
+    unit_regions: i32,
+) -> Result<SelectionSnap, String> {
+    use clap::Parser;
+    let args = Args::try_parse_from(["arnis".to_string(), format!("--scale={scale}")])
+        .map_err(|e| e.to_string())?;
+    let requested = LLBBox::from_str(&bbox_text)?;
+    let world = one_world_dir(&save_path, &world_name);
+    let snap = crate::work_units::snap_to_cells(&world, &requested, &args, unit_regions)?;
+    let (rect, frame) = (&snap.rect, &snap.frame);
+    let outline = crate::projection::llbbox_for_rect(frame, rect)?;
+    let cell = 512 * unit_regions;
+    let count = |lo: i32, hi: i32, side: i32| (hi + 1 - lo + side - 1) / side;
+    let cells = [
+        count(rect.min_x(), rect.max_x(), cell),
+        count(rect.min_z(), rect.max_z(), cell),
+    ];
+    let drawn = cells[0].saturating_mul(cells[1]) <= MAX_DRAWN_CELLS;
+    // The lattice lines strictly inside the outline.
+    let lines = |lo: i32, hi: i32, to: &dyn Fn(f64) -> f64| -> Vec<f64> {
+        if !drawn {
+            return Vec::new();
+        }
+        (lo.div_euclid(cell) + 1..=hi.div_euclid(cell))
+            .map(|i| i * cell)
+            .filter(|&v| v > lo && v <= hi)
+            .map(|v| to(f64::from(v)))
+            .collect()
+    };
+    let (lo, hi) = (snap.bbox.min(), snap.bbox.max());
+    Ok(SelectionSnap {
+        bbox: format!("{} {} {} {}", lo.lat(), lo.lng(), hi.lat(), hi.lng()),
+        outline: [
+            outline.min().lat(),
+            outline.min().lng(),
+            outline.max().lat(),
+            outline.max().lng(),
+        ],
+        lon_lines: lines(rect.min_x(), rect.max_x(), &|x| frame.lon_for_x(x)),
+        lat_lines: lines(rect.min_z(), rect.max_z(), &|z| frame.lat_for_z(z)),
+        cells,
+        regions: [
+            count(rect.min_x(), rect.max_x(), 512),
+            count(rect.min_z(), rect.max_z(), 512),
+        ],
+        exact: snap.exact,
+    })
 }
 
 /// `--map-item-only`: redraws a One World's map item over every area. Holds

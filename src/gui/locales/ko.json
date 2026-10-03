@@ -399,5 +399,7 @@
   "one_world_confirm_title": "기존 청크를 바꿀까요?",
   "one_world_confirm_text": "이 영역의 청크 {count}개가 이미 월드에 있습니다. 다시 생성되며 Minecraft에서 그곳에 지은 것은 모두 바뀝니다.",
   "one_world_confirm_cancel": "취소",
-  "one_world_confirm_ok": "생성"
+  "one_world_confirm_ok": "생성",
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
+  "snap_inexact": "one edge a little short of its cell line"
 }

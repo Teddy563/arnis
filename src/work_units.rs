@@ -8,7 +8,7 @@
 
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::coordinate_system::geographic::LLBBox;
-use crate::projection::{llbbox_for_rect, snap_bbox_to_chunks, WebMercatorProjection};
+use crate::projection::{llbbox_for_rect, snap_bbox_to_chunks, snap_edge, WebMercatorProjection};
 
 const REGION_BLOCKS: i32 = 512;
 
@@ -87,6 +87,113 @@ pub fn plan_units(
     Ok((sel, units))
 }
 
+/// A selection grown to whole cells of the One World it joins.
+pub struct RegionSnap {
+    /// The bbox to generate: the run's own chunk snap turns it into `rect`.
+    pub bbox: LLBBox,
+    /// What the run builds, in the frame it will use: whole cells, or for
+    /// a very tall new world one edge short of its line (see `exact`).
+    pub rect: XZBBox,
+    pub frame: WebMercatorProjection,
+    /// Whether `rect` is whole cells on every side. A tall new world, where
+    /// the Mercator stretch moves the bbox's middle latitude more than half
+    /// a chunk, keeps one north or south edge a little inside its line.
+    pub exact: bool,
+}
+
+/// Grows `requested` outward to whole cells of `n` x `n` regions, the
+/// pieces a job is cut into, on the lattice anchored at block 0 that
+/// `plan_units` cuts on. An existing world snaps to its own lattice. A new
+/// world puts block (0, 0), the corner of four regions and of four cells, at
+/// the centre of the request, so the snap is the same number of cells either
+/// side of it.
+///
+/// The bbox sits half a chunk inside each cell line, and the run's
+/// outward chunk snap puts the edges back on the lines. A new world takes
+/// the bbox's middle latitude for its origin, which is not the middle of a
+/// Mercator span, so the north and south edges are slid together until the
+/// middle latitude is the origin the edges were placed from. Half a chunk
+/// of slide is all the edges have; past it (a selection some 20 km tall),
+/// one edge stops a few chunks inside its line instead.
+pub fn snap_to_cells(
+    world_dir: &std::path::Path,
+    requested: &LLBBox,
+    args: &crate::args::Args,
+    n: i32,
+) -> Result<RegionSnap, String> {
+    const MARGIN: f64 = 8.0;
+    if n < 1 {
+        return Err("a cell is at least one region".to_string());
+    }
+    let r = f64::from(REGION_BLOCKS * n);
+    let existing = crate::one_world::Manifest::load(world_dir)?.is_some();
+    let proj = crate::one_world::frame_for(world_dir, requested, args)?;
+    let x_w = proj.x_for_lon(requested.min().lng());
+    let x_e = proj.x_for_lon(requested.max().lng());
+    let z_n = proj.z_for_lat(requested.max().lat());
+    let z_s = proj.z_for_lat(requested.min().lat());
+    let lo = |v: f64| (f64::from(snap_edge(v, false)) / r).floor();
+    let hi = |v: f64, from: f64| (f64::from(snap_edge(v, true)) / r).ceil().max(from + 1.0);
+    let half = |a: f64, b: f64, slack: f64| ((a.abs().max(b.abs()) + slack) / r).ceil().max(1.0);
+    // The north and south edges as z, shifted by (a, b) from half a chunk
+    // inside their region lines.
+    let edges = |z0: f64, z1: f64, a: f64, b: f64| {
+        (
+            proj.lat_for_z(z0 * r + MARGIN + a),
+            proj.lat_for_z(z1 * r - MARGIN + b),
+        )
+    };
+    // Newton on the middle latitude, moving the edges `step` picks, with the
+    // slope taken over one block.
+    let solve = |z0: f64, z1: f64, step: (f64, f64)| {
+        let mut t = 0.0;
+        for _ in 0..6 {
+            let (n, s) = edges(z0, z1, t * step.0, t * step.1);
+            let (n1, s1) = edges(z0, z1, (t + 1.0) * step.0, (t + 1.0) * step.1);
+            t -= ((n + s) / 2.0 - proj.origin_lat) / ((n1 + s1 - n - s) / 2.0);
+        }
+        (t * step.0, t * step.1)
+    };
+    let (x0, x1, mut z0, mut z1, mut shift) = if existing {
+        let (x0, z0) = (lo(x_w), lo(z_n));
+        (x0, hi(x_e, x0), z0, hi(z_s, z0), (0.0, 0.0))
+    } else {
+        let (kx, kz) = (half(x_w, x_e, 0.0), half(z_n, z_s, 0.0));
+        (-kx, kx, -kz, kz, solve(-kz, kz, (1.0, 1.0)))
+    };
+    if shift.0.abs() >= MARGIN - 0.5 {
+        // Past half a chunk the two edges cannot both stay on their lines:
+        // the one that would overshoot stays, the other moves inward (so no
+        // sliver of a piece row appears), with room left for the request.
+        let kz = half(z_n, z_s, 2.0 * shift.0.abs() + 16.0);
+        (z0, z1) = (-kz, kz);
+        let t = solve(z0, z1, (1.0, 1.0)).0;
+        shift = solve(z0, z1, if t > 0.0 { (1.0, 0.0) } else { (0.0, 1.0) });
+    }
+    let (lat_n, lat_s) = edges(z0, z1, shift.0, shift.1);
+    let bbox = LLBBox::new(
+        lat_s,
+        proj.lon_for_x(x0 * r + MARGIN),
+        lat_n,
+        proj.lon_for_x(x1 * r - MARGIN),
+    )?;
+    let frame = crate::one_world::frame_for(world_dir, &bbox, args)?;
+    let (rect, _) = snap_bbox_to_chunks(&frame, &bbox)?;
+    let exact = (rect.min_x(), rect.min_z(), rect.max_x(), rect.max_z())
+        == (
+            (x0 * r) as i32,
+            (z0 * r) as i32,
+            (x1 * r) as i32 - 1,
+            (z1 * r) as i32 - 1,
+        );
+    Ok(RegionSnap {
+        bbox,
+        rect,
+        frame,
+        exact,
+    })
+}
+
 /// `--plan-units N`: prints the plan as one JSON line and touches nothing.
 /// A world that does not exist yet is planned in the frame its first run
 /// would give it.
@@ -135,6 +242,39 @@ mod tests {
         let proj = WebMercatorProjection::new(44.4465, 26.099, 1.0);
         let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
         (proj, req)
+    }
+
+    /// A new world's snap is whole regions either side of the request's
+    /// centre, and the run's own frame and chunk snap give back exactly them.
+    #[test]
+    fn a_selection_snaps_to_whole_cells_around_a_junction() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().unwrap();
+        let (_, req) = bucharest();
+        for scale in [1.0, 0.5] {
+            let args = crate::args::Args::parse_from(["arnis", &format!("--scale={scale}")]);
+            let snap = snap_to_cells(dir.path(), &req, &args, 1).unwrap();
+            let (x0, z0, x1, z1) = r(&snap.rect);
+            assert!(snap.exact, "scale {scale}");
+            assert_eq!((x0, z0), (-(x1 + 1), -(z1 + 1)), "symmetric about (0, 0)");
+            assert_eq!(x0.rem_euclid(512), 0);
+            assert_eq!(z0.rem_euclid(512), 0);
+            // The frame the run will make is the one the edges were placed in.
+            let centre = (req.min().lat() + req.max().lat()) / 2.0;
+            assert!((snap.frame.origin_lat - centre).abs() < 1e-6);
+            let (_, units) = plan_units(&snap.frame, &snap.bbox, 1).unwrap();
+            assert!(units.iter().all(|u| u.chunks() == 32 * 32), "whole regions");
+            for n in [2, 4, 8] {
+                let snap = snap_to_cells(dir.path(), &req, &args, n).unwrap();
+                let (x0, z0, x1, z1) = r(&snap.rect);
+                assert!(snap.exact, "scale {scale} cells {n}");
+                assert_eq!((x0, z0), (-(x1 + 1), -(z1 + 1)));
+                let (_, units) = plan_units(&snap.frame, &snap.bbox, n).unwrap();
+                let whole = 32 * 32 * (n * n) as u64;
+                assert!(units.iter().all(|u| u.chunks() == whole), "whole cells");
+                assert_eq!(units.len() % 4, 0, "even cells per side");
+            }
+        }
     }
 
     #[test]

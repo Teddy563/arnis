@@ -1482,6 +1482,12 @@ $(document).ready(function () {
             oneWorldFittedPath = areas.length > 0 ? worldPath : null;
         }
 
+        // Large worlds: the selection grown to whole regions, with the region
+        // and piece lines inside it. null clears it.
+        if (event.data && event.data.type === 'snapOverlay') {
+            showSnapOverlay(event.data.snap, event.data.label);
+        }
+
         // One World keeps rotation at 0.
         if (event.data && event.data.type === 'setRotationLocked') {
             setRotationLocked(!!event.data.locked);
@@ -2424,6 +2430,33 @@ $(document).ready(function () {
     window._rotationAngle = 0;
 
 });
+
+var snapLayer = null;
+
+// One canvas-drawn polyline holds every cell line, so a grid of a couple of
+// thousand cells costs one layer; Leaflet reprojects it on zoom by itself.
+// Past that the Rust side sends no lines and the outline carries the count.
+// Dark, so the lines read over the yellow selection.
+function showSnapOverlay(snap, label) {
+    if (!snapLayer) snapLayer = L.layerGroup().addTo(map);
+    snapLayer.clearLayers();
+    if (!snap) return;
+    var s = snap.outline[0], w = snap.outline[1], n = snap.outline[2], e = snap.outline[3];
+    var segments = snap.lon_lines.map(function (lon) { return [[s, lon], [n, lon]]; })
+        .concat(snap.lat_lines.map(function (lat) { return [[lat, w], [lat, e]]; }));
+    var renderer = L.canvas({ padding: 0.2 });
+    if (segments.length > 0) {
+        L.polyline(segments, {
+            renderer: renderer, color: '#1c1c1c', weight: 1.5, opacity: 0.75, interactive: false
+        }).addTo(snapLayer);
+    }
+    var outline = L.rectangle([[s, w], [n, e]], {
+        renderer: renderer, color: '#1c1c1c', weight: 2.5, dashArray: '8 5', fill: false, interactive: false
+    }).addTo(snapLayer);
+    if (segments.length === 0 && label) {
+        outline.bindTooltip(label, { permanent: true, direction: 'center' });
+    }
+}
 
 function notifyBboxUpdate() {
     const bboxText = document.getElementById('boxbounds').textContent;

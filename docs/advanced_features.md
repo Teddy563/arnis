@@ -21,6 +21,20 @@ generated; the Meld Generation ones do.
 With One World on, Parallel Workers and Piece Size always build the area in
 pieces (see [Large areas](one_world.md#large-areas)).
 
+While pieces are in use, the map selection grows outward to whole cells
+(Piece Size x Piece Size regions) on the world's lattice, which is anchored at
+block (0, 0): an existing One World's own, or for a new one the frame its
+first area will create, whose block (0, 0) (the corner of four regions and of
+four cells) is the centre of the selection, so the snap has the same number
+of cells either side. The map draws the snapped outline and the cell lines
+(only the outline and the count past 2,000 cells), the readout under the
+selection gives its size in regions and pieces, and generation is given the
+snapped bbox. The frame maths is the run's own (`work_units::snap_to_cells`).
+A new world takes the middle latitude of its first bbox for its origin, so a
+selection more than about 20 km tall cannot keep both its north and south
+edges on cell lines; one of them then stops a few chunks inside its line
+(never outside, so no sliver of a piece row) and the readout says so.
+
 ### Meld Generation (Experimental)
 
 A control on its default, or greyed out, sends no flag.

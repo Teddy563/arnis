@@ -399,5 +399,7 @@
   "one_world_confirm_title": "¿Reemplazar chunks existentes?",
   "one_world_confirm_text": "{count} chunks de esta área ya existen en el mundo. Se generan de nuevo y se reemplaza todo lo construido allí en Minecraft.",
   "one_world_confirm_cancel": "Cancelar",
-  "one_world_confirm_ok": "Generar"
+  "one_world_confirm_ok": "Generar",
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
+  "snap_inexact": "one edge a little short of its cell line"
 }
