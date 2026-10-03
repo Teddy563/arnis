@@ -26,9 +26,10 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub mod budget;
 pub mod child;
 
 /// Signage map ids each piece may use. A piece needing more fails loudly.
@@ -40,67 +41,6 @@ const MAX_RETRIES: u32 = 2;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// How many pieces run at once and what each of them may use. The job's
-/// budget is what one run would take (`--threads`/`--cpu-target`, else 90%
-/// of the cores; `--ram-budget-mb`, else free memory; `--max-downloads`,
-/// else 16), split between the pieces running at the same time.
-#[derive(Debug, PartialEq)]
-struct Sizing {
-    workers: usize,
-    threads: usize,
-    ram_mb: Option<u64>,
-    downloads: u32,
-}
-
-impl Sizing {
-    fn child_args(&self, mut argv: Vec<OsString>) -> Vec<OsString> {
-        argv.extend([
-            "--threads".into(),
-            self.threads.to_string().into(),
-            "--max-downloads".into(),
-            self.downloads.to_string().into(),
-        ]);
-        if let Some(mb) = self.ram_mb {
-            argv.extend(["--ram-budget-mb".into(), mb.to_string().into()]);
-        }
-        argv
-    }
-
-    fn child_env(&self) -> [(&'static str, String); 2] {
-        [
-            ("RAYON_NUM_THREADS", self.threads.to_string()),
-            // The stock writer sizing, on this piece's share of the cores.
-            (
-                "ARNIS_FLUSH_THREADS",
-                self.threads.div_ceil(4).clamp(1, 6).to_string(),
-            ),
-        ]
-    }
-}
-
-fn sizing(args: &Args, pieces: usize) -> Sizing {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
-    let threads = args.process.thread_count().unwrap_or(cores * 9 / 10).max(1);
-    let workers = match args.units.one_world_workers {
-        None => 1,
-        Some(crate::args::Workers::Auto) => 4,
-        Some(crate::args::Workers::Count(n)) => n as usize,
-    }
-    .clamp(1, pieces.max(1));
-    let ram_mb = args
-        .process
-        .ram_budget_mb
-        .or_else(|| (workers > 1).then(crate::data_processing::available_memory_mb));
-    Sizing {
-        workers,
-        threads: (threads / workers).max(1),
-        ram_mb: ram_mb.map(|mb| (mb / workers as u64).max(1)),
-        downloads: (args.process.max_downloads.unwrap_or(16) / workers as u32).max(2),
-    }
 }
 
 /// What a finished piece reported.
@@ -284,13 +224,22 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
         })
         .collect();
 
-    let sizing = sizing(args, units.len());
+    let largest = units
+        .iter()
+        .map(|u| u.chunks().div_ceil(1024))
+        .max()
+        .unwrap_or(1);
+    let sizing = budget::sizing(args, units.len(), largest);
     if sizing.workers > 1 {
         println!(
             "  {} pieces at a time, {} threads each",
             sizing.workers, sizing.threads
         );
     }
+    // Pieces running, and how many may: `auto` lowers the cap once a
+    // finished piece shows pieces need more memory than estimated.
+    let running = Mutex::new(0usize);
+    let cap = AtomicUsize::new(sizing.workers);
     let total = units.iter().map(WorkUnit::chunks).sum::<u64>().max(1) as f64;
     let of = units.len();
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
@@ -321,7 +270,17 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
 
     let work = || -> Result<(), String> {
         while !aborting.load(Ordering::Relaxed) {
+            {
+                let mut r = lock(&running);
+                if *r >= cap.load(Ordering::Relaxed) {
+                    drop(r);
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    continue;
+                }
+                *r += 1;
+            }
             let Some(i) = lock(&queue).pop_front() else {
+                *lock(&running) -= 1;
                 break;
             };
             let unit = &units[i];
@@ -378,6 +337,13 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
                     }
                 }
             };
+            *lock(&running) -= 1;
+            if let Some(peak) = r.peak_rss_mb {
+                let allowed = sizing.cap_for(peak);
+                if cap.fetch_min(allowed, Ordering::Relaxed) > allowed {
+                    println!("  pieces peak at {peak} MB: {allowed} at a time from now on");
+                }
+            }
             write(&job.done_path(i), &r.to_json())?;
             crate::keep_one_world();
             progress_json::record(
@@ -812,48 +778,6 @@ mod tests {
         assert!(!is_transient(Some(101), &lines(&["thread panicked"])));
         assert!(!is_transient(Some(0xC000_013Au32 as i32), &[]));
         assert!(!is_transient(None, &[]));
-    }
-
-    #[test]
-    fn a_job_budget_is_split_between_the_pieces_running_together() {
-        let parse = |extra: &[&str]| {
-            let mut cmd = vec![
-                "arnis",
-                "--output-dir",
-                ".",
-                "--bbox",
-                "1,2,3,4",
-                "--one-world",
-            ];
-            cmd.extend_from_slice(extra);
-            <Args as clap::Parser>::parse_from(cmd)
-        };
-        let s = sizing(
-            &parse(&[
-                "--one-world-workers",
-                "4",
-                "--threads",
-                "20",
-                "--ram-budget-mb",
-                "8000",
-            ]),
-            16,
-        );
-        assert_eq!(
-            s,
-            Sizing {
-                workers: 4,
-                threads: 5,
-                ram_mb: Some(2000),
-                downloads: 4
-            }
-        );
-        // Never more workers than pieces, never less than a thread each.
-        let s = sizing(&parse(&["--one-world-workers", "8", "--threads", "3"]), 2);
-        assert_eq!((s.workers, s.threads), (2, 1));
-        // Sequential: the job's own knobs, nothing invented.
-        let s = sizing(&parse(&["--unit-regions", "2", "--threads", "6"]), 9);
-        assert_eq!((s.workers, s.threads, s.ram_mb), (1, 6, None));
     }
 
     #[test]

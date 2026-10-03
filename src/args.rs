@@ -359,8 +359,10 @@ pub struct UnitArgs {
     pub unit_regions: Option<i32>,
 
     /// Build that many pieces at once, each in its own process, sharing the
-    /// job's threads, memory and downloads. Pieces are 4 x 4 regions unless
-    /// --unit-regions says otherwise.
+    /// job's threads, memory and downloads. auto picks 1 to 6 from the cores
+    /// (75% of them unless --cpu-target or --threads says otherwise) and the
+    /// free memory. Pieces are 4 x 4 regions unless --unit-regions says
+    /// otherwise.
     #[arg(long, value_name = "auto|N", value_parser = parse_workers)]
     pub one_world_workers: Option<Workers>,
 
