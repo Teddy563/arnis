@@ -102,10 +102,12 @@ the stock downloads.
 
 | Control | CLI flag | Default | Description |
 | --- | --- | --- | --- |
-| Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`) or Local File (`--file`). |
+| Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`), Local File (`--file`) or Region Download (Geofabrik) (`--osm-pbf`). |
 | Archive URL | `--osm-tiles-url` | Empty (Arnis's archive) | Shown for the tile archive. |
 | Overpass Servers | `--overpass-url` | Empty (Arnis's server) | Comma list, tried in order. Shown for Overpass. |
 | Local File | `--file` | Empty | An `.osm`, `.xml` or Arnis `.json` file; the area is still the map selection. Shown for Local File. |
+| PBF File | `--osm-pbf` | Empty (`geofabrik`) | An `.osm.pbf` extract; empty sends `--osm-pbf=geofabrik`. Shown for Region Download. |
+| Bake Selection: Bake Now | `--prewarm` | | The download button's run, offered beside the extract: downloads it if needed and bakes the selection. Shown for Region Download. |
 | Offline Mode | `--offline` | Off | Caches only. A run that misses something stops and lists what. |
 | Download Area For Offline Use: Download | `--prewarm` | | Downloads what a generation of the selected area would read, with the current settings, and builds nothing. Progress on the main bar. Runs as a child CLI process. |
 | Warm Caches Before Building Pieces | `--prewarm-first` | Off | Needs a One World built in pieces (Extra Features on); greyed with Offline Mode. |

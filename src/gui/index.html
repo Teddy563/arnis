@@ -1927,7 +1927,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="osm_source">Source</span>
-                        <span class="tooltip-icon" data-tooltip="The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Local File reads an .osm, .xml or Arnis .json file; the area is still the one selected on the map.">?</span>
+                        <span class="tooltip-icon" data-tooltip="The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Local File reads an .osm, .xml or Arnis .json file; the area is still the one selected on the map. Region Download reads an .osm.pbf extract, by default the smallest Geofabrik region holding the selection, downloaded once; the area is cut out and kept, so later runs and parallel pieces reuse it.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="osm_source_desc">Where the OpenStreetMap data comes from.</span>
                     </span>
@@ -1937,6 +1937,7 @@
                       <option value="archive" selected data-localize="osm_source_archive">Arnis Tile Archive</option>
                       <option value="overpass" data-localize="osm_source_overpass">Overpass</option>
                       <option value="file" data-localize="osm_source_file">Local File</option>
+                      <option value="pbf" data-localize="osm_source_pbf">Region Download (Geofabrik)</option>
                     </select>
                   </div>
                 </div>
@@ -1983,6 +1984,39 @@
                     <button type="button" id="osm-file-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
                       <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
                     </button>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="osm-pbf-row">
+                  <label for="osm-pbf-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="osm_pbf">PBF File</span>
+                        <span class="tooltip-icon" data-tooltip="Empty picks the smallest Geofabrik region whose border holds the selection and downloads it once into the cache. Reading the extract uses the same worker threads as generation.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="osm_pbf_desc">An .osm.pbf extract covering the area. Empty downloads one from Geofabrik.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control save-path-control">
+                    <input type="text" id="osm-pbf-input" name="osm-pbf-input" class="save-path-input" placeholder="Geofabrik" spellcheck="false">
+                    <button type="button" id="osm-pbf-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                      <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="osm-pbf-bake-row">
+                  <label for="osm-pbf-bake-button" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="osm_pbf_bake">Bake Selection</span>
+                        <span class="tooltip-icon" data-tooltip="Downloads the extract if needed and cuts the selected area out of it now, with the other inputs of a generation, so the next run starts from the bake. Progress shows in the main window.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="osm_pbf_bake_desc">Cuts the selected area out of the extract ahead of a run.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="osm-pbf-bake-button" class="clear-cache-button" data-localize="osm_pbf_bake_button">Bake Now</button>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">

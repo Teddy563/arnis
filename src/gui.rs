@@ -130,6 +130,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_loot_table,
             gui_climate_preview,
             gui_pick_osm_file,
+            gui_pick_pbf_file,
             gui_save_preset,
             gui_load_preset,
             gui_redraw_one_world_map,
@@ -376,6 +377,11 @@ fn gui_pick_loot_table(current: String) -> Result<String, String> {
 #[tauri::command]
 fn gui_pick_osm_file(current: String) -> Result<String, String> {
     Ok(pick_file(current, "OSM", &["osm", "xml", "json"]))
+}
+
+#[tauri::command]
+fn gui_pick_pbf_file(current: String) -> Result<String, String> {
+    Ok(pick_file(current, "OSM PBF", &["pbf"]))
 }
 
 fn pick_file(current: String, kind: &str, extensions: &[&str]) -> String {

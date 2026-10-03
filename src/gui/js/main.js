@@ -1709,7 +1709,22 @@ function initOsmSource() {
       console.error('OSM file picker failed:', error);
     }
   });
+  const pbf = document.getElementById('osm-pbf-input');
+  document.getElementById('osm-pbf-browse').addEventListener('click', async () => {
+    try {
+      const picked = await invoke('gui_pick_pbf_file', { current: pbf.value.trim() });
+      if (picked !== pbf.value) {
+        pbf.value = picked;
+        pbf.dispatchEvent(new Event('input', { bubbles: true }));
+        pbf.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      console.error('PBF file picker failed:', error);
+    }
+  });
   document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+  // The bake is the OSM step of a prewarm: same settings, same threads, same progress.
+  document.getElementById('osm-pbf-bake-button').addEventListener('click', () => startGeneration({ prewarm: true }));
 }
 
 // Presets: the Extra Features and OSM Data Source settings as a JSON file.
@@ -1904,10 +1919,11 @@ function refreshAdvancedFeatures() {
 
   // OSM Data Source, not behind the switch: each source shows its own field.
   const source = document.getElementById('osm-source-select').value;
-  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file']].forEach(([id, value]) => {
+  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file'], ['osm-pbf', 'pbf']].forEach(([id, value]) => {
     shown(id + '-row', source === value);
     setSettingsRowAvailable(id + '-input', source === value);
   });
+  shown('osm-pbf-bake-row', source === 'pbf');
   // Pieces exist only with the switch and One World; offline has nothing to warm.
   setSettingsRowAvailable('prewarm-first-toggle',
     on && isOneWorldEnabled() && !checked('offline-toggle'));
@@ -2005,6 +2021,8 @@ function advancedFeatureArgs() {
     'osm-tiles-url': text('osm-tiles-url-input'),
     'overpass-url': overpass || null,
     'file': text('osm-file-input'),
+    // Region Download: an empty file field picks the Geofabrik extract.
+    'osm-pbf': source === 'pbf' ? (text('osm-pbf-input') || 'geofabrik') : null,
     'offline': on('offline-toggle'),
     'prewarm-first': on('prewarm-first-toggle'),
   };

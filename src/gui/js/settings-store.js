@@ -117,6 +117,7 @@ const SETTINGS = [
   { id: 'osm-tiles-url-input', kind: 'text', store: OWN },
   { id: 'overpass-url-input', kind: 'text', store: OWN },
   { id: 'osm-file-input', kind: 'text', store: OWN },
+  { id: 'osm-pbf-input', kind: 'text', store: OWN },
   { id: 'offline-toggle', kind: 'checkbox', store: OWN },
   { id: 'prewarm-first-toggle', kind: 'checkbox', store: OWN },
 
