@@ -354,18 +354,26 @@ fn open_in_minecraft(world_dir: &Path) -> String {
     }
 }
 
-/// Another process of this executable, other than this one and its own pieces.
+/// Another process of this executable, other than this one and its own
+/// pieces. A job's coordinator is named rather than one of its pieces.
 fn other_arnis_process() -> Option<u32> {
     let exe = std::env::current_exe().ok()?;
     let name = exe.file_name()?;
     let own = sysinfo::get_current_pid().ok()?;
     let mut sys = sysinfo::System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    sys.processes()
+    let others: Vec<_> = sys
+        .processes()
         .iter()
-        .find(|(pid, p)| {
+        .filter(|(pid, p)| {
             **pid != own && p.parent() != Some(own) && p.name().eq_ignore_ascii_case(name)
         })
+        .collect();
+    let is_piece = |p: &sysinfo::Process| others.iter().any(|(pid, _)| p.parent() == Some(**pid));
+    others
+        .iter()
+        .find(|(_, p)| !is_piece(p))
+        .or(others.first())
         .map(|(pid, _)| pid.as_u32())
 }
 
