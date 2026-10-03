@@ -231,6 +231,34 @@ pub fn run(
         })
         .collect();
 
+    // `--prewarm-first`: one piece at a time, each with the job's whole download
+    // allowance, so N workers then read the caches instead of all fetching at once.
+    if args.process.prewarm || args.process.prewarm_first {
+        for unit in units.iter().filter(|u| job.finished(u.index).is_none()) {
+            let i = unit.index;
+            let lease_path = job.dir.join(format!("piece-{i}.lease.json"));
+            write(
+                &lease_path,
+                &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
+            )?;
+            let mut argv = child_args(argv.iter().cloned(), unit, &lease_path);
+            let downloads = args.process.max_downloads.unwrap_or(16).to_string();
+            argv.extend([
+                "--prewarm".into(),
+                "--max-downloads".into(),
+                downloads.into(),
+            ]);
+            println!("  piece {}/{}: warming the caches", i + 1, units.len());
+            run_piece(&argv, &[], |_| {})
+                .map_err(|f| format!("warming piece {} failed: {}", i + 1, f.message))?;
+        }
+        // `--prewarm` alone stops here, before anything is built.
+        if args.process.prewarm {
+            close_job(&job, world_dir);
+            return Ok(());
+        }
+    }
+
     let largest = units
         .iter()
         .map(|u| u.chunks().div_ceil(1024))
@@ -411,11 +439,15 @@ pub fn run(
         fresh,
         spawn.zip(results.iter().find_map(|r| r.spawn_y)),
     )?;
+    close_job(&job, world_dir);
+    Ok(())
+}
+
+fn close_job(job: &Job, world_dir: &Path) {
     let _ = std::fs::remove_dir_all(&job.dir);
     let _ = std::fs::remove_file(world_dir.join(one_world::COORDINATOR_FILE));
     // Gone unless another job is still waiting to be resumed.
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
-    Ok(())
 }
 
 /// Whether a job in `world_dir` has finished a piece, which makes the world
@@ -589,8 +621,14 @@ const PER_PIECE: &[&str] = &[
 ];
 
 /// Switches every piece gets anyway, so the user's are dropped: clap
-/// refuses one given twice. They take no value.
-const PER_PIECE_SWITCHES: &[&str] = &["--no-update-check", "--no-cache-sweep"];
+/// refuses one given twice. They take no value. The prewarm switches are the
+/// coordinator's: it hands `--prewarm` to the pieces it warms.
+const PER_PIECE_SWITCHES: &[&str] = &[
+    "--no-update-check",
+    "--no-cache-sweep",
+    "--prewarm",
+    "--prewarm-first",
+];
 
 /// A piece's command line: the job's own, minus what is decided per piece,
 /// plus the piece's bbox at full precision and its lease.
@@ -770,6 +808,7 @@ mod tests {
             "--progress",
             "json",
             "--no-update-check",
+            "--prewarm-first",
             "--offline",
             "--scale=1",
         ]

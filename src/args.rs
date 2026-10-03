@@ -625,8 +625,22 @@ pub struct ProcessArgs {
     /// Never use the network: read OSM, Overture, elevation, land cover,
     /// canopy and 3D models from the caches only. A run that needs anything
     /// they lack stops and lists it instead of building flat or empty ground.
+    /// Fill the caches first with --prewarm.
     #[arg(long, env = "ARNIS_OFFLINE", value_parser = FalseyValueParser::new())]
     pub offline: bool,
+
+    /// Download and cache every input this command would read for --bbox
+    /// (OSM, Overture, elevation, land cover, canopy, 3D models), then exit
+    /// without writing a world. Run it with the same options as the run it
+    /// warms. Mapillary imagery is not included.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm: bool,
+
+    /// With --unit-regions: warm the caches for every piece, one piece at a
+    /// time, before the pieces start building, so parallel workers read from
+    /// disk instead of all fetching at once.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm_first: bool,
 
     /// Also report progress as JSON lines on stdout for programs driving the
     /// CLI: `{"v":1,"type":"phase"|"progress"|"error"|"done",...}`, the last
@@ -674,6 +688,7 @@ pub const CAPABILITIES: &[&str] = &[
     "climate-map",
     "overpass-url",
     "offline",
+    "prewarm",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1139,6 +1154,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     args.snow.validate(args.one_world)?;
+    if args.process.prewarm_first && !args.units.coordinates() {
+        return Err(
+            "--prewarm-first only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
     if args.process.offline && args.mapillary_probe {
         return Err("--mapillary-probe asks Mapillary, so it cannot run --offline.".to_string());
     }
@@ -1324,6 +1344,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         }
     } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
         // The probe and the cave preview write no world, so they need no output directory.
+    } else if args.mapillary_probe || cave_preview || args.process.prewarm {
+        // The probe, the cave preview and a prewarm write no world, so they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
@@ -2219,7 +2241,11 @@ mod tests {
         assert_eq!(args.process.overpass_url, ["http://a/api", "http://b/api"]);
         let args = parse(&["--overpass-url=http://a/api", "--overpass-url=http://c/api"]).unwrap();
         assert_eq!(args.process.overpass_url, ["http://a/api", "http://c/api"]);
-        let args = parse(&["--offline", "--mapillary-probe"]).unwrap();
+        // A prewarm writes no world, so it needs no --output-dir.
+        let args = parse(&["--prewarm"]).unwrap();
+        assert!(validate_args(&args).is_ok());
+        assert!(parse(&["--prewarm", "--offline"]).is_err());
+        let args = parse(&["--prewarm-first", "--output-dir", "."]).unwrap();
         assert!(validate_args(&args).is_err());
     }
 

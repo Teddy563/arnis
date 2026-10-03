@@ -224,7 +224,7 @@ fn exit_if_offline_misses() {
     for (what, refused) in missing {
         eprintln!("  - {what} ({refused} request(s) refused)");
     }
-    eprintln!("Run the same command once without --offline to fetch it.");
+    eprintln!("Run the same command once with --prewarm in place of --offline to fetch it.");
     exit_failed();
 }
 
@@ -508,7 +508,8 @@ fn run_cli() {
             eprintln!("{} {}", "Error:".red().bold(), e);
             exit_failed();
         }
-        release_one_world(false);
+        // A prewarm leaves no world it created behind.
+        release_one_world(args.process.prewarm);
         progress_json::done(started);
         return;
     }
@@ -545,9 +546,9 @@ fn run_cli() {
     };
 
     // Build the generation output path and level name
-    let (generation_path, level_name) = if args.mapillary_probe {
+    let (generation_path, level_name) = if args.mapillary_probe || args.process.prewarm {
         // The probe reports coverage and exits, so it must not allocate (and
-        // leave behind) an empty world directory on the way there.
+        // leave behind) an empty world directory on the way there. Nor must a prewarm.
         (PathBuf::new(), None)
     } else if args.bedrock {
         // Bedrock: generate .mcworld file in user-specified path or Desktop
@@ -636,7 +637,11 @@ fn run_cli() {
     // The Mapillary facade pipeline needs only the bbox too, and its downloads
     // are the longest thing in a run that uses it, so it starts here and is
     // collected inside `generate_world_with_options`, just before the buildings.
-    let facade_job = mapillary::FacadeJob::start(&args, effective_bbox);
+    let facade_job = if args.process.prewarm {
+        mapillary::FacadeJob::default()
+    } else {
+        mapillary::FacadeJob::start(&args, effective_bbox)
+    };
     if facade_job.is_running() {
         println!(
             "{} Fetching Mapillary street-level imagery...",
@@ -719,6 +724,25 @@ fn run_cli() {
     bench.report("fetch_total", fetch_start.elapsed());
     bench.reset();
 
+    if args.process.prewarm {
+        // 3D models download while they are placed, so their prescan runs here to fetch them.
+        if args.use_3d && !skip_objects {
+            let (elements, ..) = osm_parser::parse_osm_data(
+                raw_data,
+                effective_bbox,
+                args.debug,
+                &projection::ProjectionSpec::from_args(&args),
+            );
+            models_3d::Models3dPipeline::prescan(&elements, &args, &Default::default()).prewarm();
+        }
+        println!(
+            "{} Inputs for this area are cached; no world was written.",
+            "Done!".green().bold()
+        );
+        release_one_world(true);
+        progress_json::done(started);
+        return;
+    }
     exit_if_offline_misses();
 
     // Parse raw data
