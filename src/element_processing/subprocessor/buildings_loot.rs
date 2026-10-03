@@ -10,391 +10,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
-// Rarity weights applied per item within its theme.
-const COMMON: u32 = 9;
-const UNCOMMON: u32 = 3;
-const RARE: u32 = 1;
-
-// Some rolls place nothing so chests are not always full.
-const EMPTY_WEIGHT: u32 = 3;
-
 const CHEST_SLOTS: usize = 27;
 
-struct LootItem {
-    id: &'static str,
-    min: i32,
-    max: i32,
-    weight: u32,
-}
-
-struct Theme {
-    weight: u32,
-    items: &'static [LootItem],
-}
-
-// Stackable items use bigger counts; tools, armour and treasure stay single.
-const THEMES: &[Theme] = &[
-    // Food and kitchen.
-    Theme {
-        weight: 25,
-        items: &[
-            LootItem {
-                id: "minecraft:bread",
-                min: 2,
-                max: 6,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:potato",
-                min: 3,
-                max: 9,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:carrot",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:wheat",
-                min: 3,
-                max: 9,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:apple",
-                min: 2,
-                max: 6,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:baked_potato",
-                min: 2,
-                max: 6,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:cooked_chicken",
-                min: 1,
-                max: 4,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:sweet_berries",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:beetroot",
-                min: 2,
-                max: 6,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:pumpkin_pie",
-                min: 1,
-                max: 3,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:mushroom_stew",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:golden_carrot",
-                min: 1,
-                max: 3,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:cake",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-        ],
-    },
-    // Junk and flavour.
-    Theme {
-        weight: 20,
-        items: &[
-            LootItem {
-                id: "minecraft:paper",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:bone",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:string",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:rotten_flesh",
-                min: 2,
-                max: 6,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:book",
-                min: 1,
-                max: 4,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:dead_bush",
-                min: 1,
-                max: 3,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:gunpowder",
-                min: 1,
-                max: 4,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:flower_pot",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:cobweb",
-                min: 1,
-                max: 3,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:name_tag",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:map",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-        ],
-    },
-    // Building resources.
-    Theme {
-        weight: 18,
-        items: &[
-            LootItem {
-                id: "minecraft:oak_planks",
-                min: 4,
-                max: 16,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:cobblestone",
-                min: 6,
-                max: 20,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:coal",
-                min: 3,
-                max: 9,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:clay_ball",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:glass_pane",
-                min: 3,
-                max: 9,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:torch",
-                min: 2,
-                max: 8,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:iron_ingot",
-                min: 2,
-                max: 6,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:candle",
-                min: 1,
-                max: 4,
-                weight: UNCOMMON,
-            },
-        ],
-    },
-    // Tools and utility.
-    Theme {
-        weight: 15,
-        items: &[
-            LootItem {
-                id: "minecraft:stick",
-                min: 2,
-                max: 7,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:bucket",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:fishing_rod",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:shears",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:flint_and_steel",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:compass",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:iron_pickaxe",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:iron_axe",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:clock",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-        ],
-    },
-    // Valuables and treasure.
-    Theme {
-        weight: 12,
-        items: &[
-            LootItem {
-                id: "minecraft:iron_nugget",
-                min: 3,
-                max: 8,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:gold_nugget",
-                min: 2,
-                max: 7,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:lapis_lazuli",
-                min: 2,
-                max: 6,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:emerald",
-                min: 1,
-                max: 4,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:gold_ingot",
-                min: 1,
-                max: 3,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:amethyst_shard",
-                min: 1,
-                max: 4,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:diamond",
-                min: 1,
-                max: 2,
-                weight: RARE,
-            },
-        ],
-    },
-    // Adventure gear.
-    Theme {
-        weight: 10,
-        items: &[
-            LootItem {
-                id: "minecraft:arrow",
-                min: 3,
-                max: 12,
-                weight: COMMON,
-            },
-            LootItem {
-                id: "minecraft:leather_boots",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:leather_chestplate",
-                min: 1,
-                max: 1,
-                weight: UNCOMMON,
-            },
-            LootItem {
-                id: "minecraft:shield",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:golden_apple",
-                min: 1,
-                max: 1,
-                weight: RARE,
-            },
-            LootItem {
-                id: "minecraft:ender_pearl",
-                min: 1,
-                max: 3,
-                weight: RARE,
-            },
-        ],
-    },
-];
+/// The built-in table, in the format `--loot-table` reads. Items are weighted
+/// common 9, uncommon 3, rare 1; stackables come in bigger counts, tools,
+/// armour and treasure single.
+const BUILT_IN_JSON: &str = include_str!("buildings_loot.json");
 
 /// One weighted item of a theme, as read from a `--loot-table` file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -419,32 +40,6 @@ pub struct LootTable {
     pub rolls_min: u32,
     pub rolls_max: u32,
     pub themes: Vec<LootTheme>,
-}
-
-impl Default for LootTable {
-    fn default() -> Self {
-        LootTable {
-            empty_weight: EMPTY_WEIGHT,
-            rolls_min: 3,
-            rolls_max: 8,
-            themes: THEMES
-                .iter()
-                .map(|t| LootTheme {
-                    weight: t.weight,
-                    items: t
-                        .items
-                        .iter()
-                        .map(|i| LootEntry {
-                            id: i.id.to_string(),
-                            min: i.min,
-                            max: i.max,
-                            weight: i.weight,
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
-    }
 }
 
 impl LootTable {
@@ -483,7 +78,9 @@ impl LootTable {
     }
 }
 
-static BUILT_IN: LazyLock<Arc<LootTable>> = LazyLock::new(|| Arc::new(LootTable::default()));
+static BUILT_IN: LazyLock<Arc<LootTable>> = LazyLock::new(|| {
+    Arc::new(serde_json::from_str(BUILT_IN_JSON).expect("built-in loot table parses"))
+});
 
 // Replaceable rather than set-once: the GUI runs several generations in one process.
 static ACTIVE: RwLock<Option<Arc<LootTable>>> = RwLock::new(None);
@@ -501,9 +98,9 @@ pub fn set_loot_table(table: Option<LootTable>) {
     *ACTIVE.write().unwrap_or_else(PoisonError::into_inner) = table.map(Arc::new);
 }
 
-/// The built-in table as pretty JSON, in the format `--loot-table` reads.
-pub fn built_in_loot_table_json() -> String {
-    serde_json::to_string_pretty(&**BUILT_IN).expect("built-in loot table serializes")
+/// The built-in table as JSON, in the format `--loot-table` reads.
+pub fn built_in_loot_table_json() -> &'static str {
+    BUILT_IN_JSON
 }
 
 fn active_table() -> Arc<LootTable> {
@@ -585,38 +182,35 @@ mod tests {
 
     // FNV-1a over every (slot, id, count) a grid of chests rolls.
     fn fingerprint(table: &LootTable) -> u64 {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        use std::hash::Hasher;
+        let mut h = fnv::FnvHasher::default();
         for x in (-300..300).step_by(7) {
             for z in (-300..300).step_by(11) {
                 for salt in [0, 1, 0xBEEF] {
                     for item in roll_chest(table, x, z, salt) {
                         let line = format!("{:?}{:?}{:?}", item["Slot"], item["id"], item["count"]);
-                        for b in line.bytes() {
-                            h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
-                        }
+                        h.write(line.as_bytes());
                     }
                 }
             }
         }
-        h
+        h.finish()
     }
 
     #[test]
     fn built_in_table_rolls_what_the_hardcoded_themes_rolled() {
         // Captured from the const THEMES code before the table became data.
-        assert_eq!(fingerprint(&LootTable::default()), 0x44e0_ead9_45e0_1a04);
+        assert_eq!(fingerprint(&BUILT_IN), 0x44e0_ead9_45e0_1a04);
     }
 
     #[test]
-    fn dump_round_trips_and_validates() {
-        let back: LootTable = serde_json::from_str(&built_in_loot_table_json()).unwrap();
-        assert_eq!(back, LootTable::default());
-        back.validate().unwrap();
+    fn built_in_table_validates() {
+        BUILT_IN.validate().unwrap();
     }
 
     #[test]
     fn validate_rejects_tables_that_could_panic() {
-        let base = LootTable::default();
+        let base = (**BUILT_IN).clone();
         let mut t = base.clone();
         t.rolls_min = 9;
         t.rolls_max = 2;

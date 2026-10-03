@@ -142,14 +142,8 @@ pub fn divider_offset(l: i32, lane_width: f32, half_width: f32, twin: bool) -> f
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::element_processing::building_test_support::tag_map as tags;
     use crate::osm_parser::{ProcessedNode, ProcessedWay};
-
-    fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
-    }
 
     #[test]
     fn only_compact_skips_highways() {

@@ -1386,39 +1386,13 @@ impl Drop for BusySlot {
     }
 }
 
-/// Validates Parallel Workers and Piece Size. They only act on a One World;
-/// either one set builds it in pieces, the other taking its CLI default.
-fn piece_settings(
-    one_world: bool,
-    workers: Option<&str>,
-    regions: Option<u32>,
-) -> Result<crate::args::UnitArgs, String> {
-    if !one_world {
-        return Ok(Default::default());
-    }
-    let one_world_workers = workers
-        .map(crate::args::parse_workers)
-        .transpose()
-        .map_err(|_| "Invalid Parallel Workers.".to_string())?;
-    let unit_regions = regions
-        .map(|n| match n {
-            1..=64 => Ok(n as i32),
-            _ => Err("Invalid Piece Size.".to_string()),
-        })
-        .transpose()?;
-    Ok(crate::args::UnitArgs {
-        unit_regions,
-        one_world_workers,
-        ..Default::default()
-    })
-}
-
 /// The command line that asks the CLI for what `args` holds, without the
 /// executable. A job's pieces are runs of this executable, and the window
-/// was started without one, so the job's own is rebuilt from the settings.
-/// `--bbox`, the spawn and the per-process knobs are the coordinator's to
-/// set per piece. `world_path` is the One World folder.
-fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
+/// was started without one, so the job's own is rebuilt from the settings:
+/// the window's own fields, then `flags`, the Advanced Features flags `args`
+/// was parsed from. `--bbox`, the spawn and the per-process knobs are the
+/// coordinator's to set per piece. `world_path` is the One World folder.
+fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi::OsString> {
     use clap::ValueEnum;
     fn name<T: ValueEnum>(v: &T) -> String {
         v.to_possible_value()
@@ -1456,16 +1430,8 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         ),
         format!("--facade-detail={}", name(&args.facade_detail)),
         format!("--facade-px={}", args.facade_px),
-        format!("--road-detail={}", name(&args.road_detail)),
-        format!("--rock-density={}", args.scatter.rock_density),
-        format!("--bush-density={}", args.scatter.bush_density),
-        format!("--field-scale={}", args.fields.field_scale),
-        format!("--snow-mode={}", name(&args.snow.snow_mode)),
-        format!("--river-bed={}", name(&args.water.river_bed)),
-        format!("--water-detail={}", name(&args.water.water_detail)),
-        format!("--climate-mode={}", name(&args.climate_mode)),
     ];
-    let flags = [
+    let switches = [
         ("--fillground", args.fillground),
         ("--caves", args.caves),
         ("--legacy-trees", args.legacy_trees),
@@ -1478,56 +1444,31 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         ("--voxy-lod", args.voxy_lod),
         ("--map-preview", args.map_preview),
         ("--building-facades", args.building_facades),
-        ("--no-buildings", !args.buildings),
-        ("--rocks", args.scatter.rocks),
-        ("--bushes", args.scatter.bushes),
-        ("--grass-texture", args.fields.grass_texture),
-        ("--land-texture", args.fields.land_texture),
     ];
-    values.extend(flags.iter().filter(|f| f.1).map(|f| f.0.to_string()));
+    values.extend(switches.iter().filter(|f| f.1).map(|f| f.0.to_string()));
     if let Some(t) = args.timeout {
         values.push(format!("--timeout={}", t.as_secs()));
     }
     if let Some(on) = args.mapillary_facades {
         values.push(format!("--mapillary-facades={on}"));
     }
-    let optional = [
-        args.snow
-            .snow_percent
-            .map(|v| format!("--snow-percent={v}")),
-        args.snow.snow_y.map(|v| format!("--snow-y={v}")),
-        args.fields.field_mix.map(|v| format!("--field-mix={v}")),
-        args.fields.farm_crops.map(|v| format!("--farm-crops={v}")),
-        args.fields.grass_mix.map(|v| format!("--grass-mix={v}")),
-        args.fields.land_mix.map(|v| format!("--land-mix={v}")),
-        args.tree_realm
-            .as_ref()
-            .map(|v| format!("--tree-realm={v}")),
-        args.tree_size_weights
-            .map(|v| format!("--tree-size-weights={v}")),
-        args.cave_seed.map(|v| format!("--cave-seed={v}")),
-        args.cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
-        args.seed.map(|v| format!("--seed={v}")),
-        args.props.map(|v| format!("--props={v}")),
-        args.props_min_scale
-            .map(|v| format!("--props-min-scale={v}")),
-    ];
-    values.extend(optional.into_iter().flatten());
     // ponytail: the token rides on the pieces' command lines, visible to this
     // user's other processes; pass it in their environment if that matters.
     if let Some(token) = &args.mapillary_token {
         values.push(format!("--mapillary-token={token}"));
     }
-    out.extend(values.into_iter().map(Into::into));
-    if let Some(path) = &args.loot_table {
-        out.extend(["--loot-table".into(), path.into()]);
-    }
+    out.extend(
+        values
+            .into_iter()
+            .chain(flags.iter().cloned())
+            .map(Into::into),
+    );
     out
 }
 
-/// The Meld Generation settings, parsed by the CLI's own parser so the window
-/// accepts exactly what the flags accept. `flags` are `--name=value` tokens;
-/// none is the stock run. The checks `validate_args` makes on these flags are
+/// The Advanced Features settings, parsed by the CLI's own parser so the
+/// window accepts exactly what the flags accept. `flags` are `--name=value`
+/// tokens; none is the stock run. The checks `validate_args` makes on these flags are
 /// repeated, as the window never runs it.
 fn meld_args(flags: &[String], one_world: bool) -> Result<Args, String> {
     use clap::Parser;
@@ -1593,37 +1534,10 @@ fn gui_start_generation(
     celestial_body_name: String,
     one_world: bool,
     one_world_name: String,
-    // Advanced Features. None (the switch off, or the field on Auto) is the
-    // stock behaviour, the same as running the CLI without the flag.
-    cpu_target: Option<u32>,
-    threads: Option<u32>,
-    ram_budget_mb: Option<u64>,
-    max_downloads: Option<u32>,
-    // Parallel Workers ("auto" or a count) and Piece Size. Either one builds
-    // a One World area in pieces, as --one-world-workers / --unit-regions do.
-    one_world_workers: Option<String>,
-    unit_regions: Option<u32>,
-    // Meld Generation, each the value of the CLI flag of the same name.
-    // The frontend sends null for a control on its default or disabled.
-    snow_mode: Option<String>,
-    snow_percent: Option<f64>,
-    snow_y: Option<i32>,
-    road_detail: Option<String>,
-    rocks: Option<bool>,
-    rock_density: Option<f64>,
-    bushes: Option<bool>,
-    bush_density: Option<f64>,
-    no_buildings: Option<bool>,
-    loot_table: Option<String>,
-    field_mix: Option<String>,
-    farm_crops: Option<String>,
-    field_scale: Option<u16>,
-    tree_realm: Option<String>,
-    tree_size_weights: Option<String>,
-    cave_seed: Option<String>,
-    cave_datum_y: Option<i32>,
-    river_bed: Option<String>,
-    water_detail: Option<String>,
+    // Advanced Features, as CLI flags (`--name=value`, or a bare switch).
+    // None is the stock run; the per-process and piece flags among them
+    // (--threads, --unit-regions, ...) are read the same way.
+    flags: Vec<String>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1644,41 +1558,7 @@ fn gui_start_generation(
 
     progress::reset_progress_floor();
 
-    // Pieces are a One World feature; anywhere else the fields are inert.
-    let units = match piece_settings(one_world, one_world_workers.as_deref(), unit_regions) {
-        Ok(units) => units,
-        Err(msg) => {
-            emit_gui_error(&msg);
-            return Err(msg);
-        }
-    };
-
-    let switch = |on: Option<bool>, flag: &str| on.unwrap_or(false).then(|| flag.to_string());
-    let meld_flags: Vec<String> = [
-        snow_mode.map(|v| format!("--snow-mode={v}")),
-        snow_percent.map(|v| format!("--snow-percent={v}")),
-        snow_y.map(|v| format!("--snow-y={v}")),
-        road_detail.map(|v| format!("--road-detail={v}")),
-        switch(rocks, "--rocks"),
-        rock_density.map(|v| format!("--rock-density={v}")),
-        switch(bushes, "--bushes"),
-        bush_density.map(|v| format!("--bush-density={v}")),
-        switch(no_buildings, "--no-buildings"),
-        loot_table.map(|v| format!("--loot-table={v}")),
-        field_mix.map(|v| format!("--field-mix={v}")),
-        farm_crops.map(|v| format!("--farm-crops={v}")),
-        field_scale.map(|v| format!("--field-scale={v}")),
-        tree_realm.map(|v| format!("--tree-realm={v}")),
-        tree_size_weights.map(|v| format!("--tree-size-weights={v}")),
-        cave_seed.map(|v| format!("--cave-seed={v}")),
-        cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
-        river_bed.map(|v| format!("--river-bed={v}")),
-        water_detail.map(|v| format!("--water-detail={v}")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    let meld = match meld_args(&meld_flags, one_world) {
+    let mut meld = match meld_args(&flags, one_world) {
         Ok(meld) => meld,
         Err(msg) => {
             emit_gui_error(&msg);
@@ -1702,13 +1582,12 @@ fn gui_start_generation(
     };
     crate::element_processing::subprocessor::buildings_loot::set_loot_table(loot);
 
-    // Out-of-range values are dropped, as clap would refuse them on the CLI.
-    let process = crate::args::ProcessArgs {
-        threads: threads.filter(|&n| n >= 1),
-        cpu_target: cpu_target.filter(|p| (10..=100).contains(p)),
-        ram_budget_mb: ram_budget_mb.filter(|&mb| mb >= 1),
-        max_downloads: max_downloads.filter(|&n| n >= 1),
-        ..Default::default()
+    let process = std::mem::take(&mut meld.process);
+    // Pieces are a One World feature; anywhere else the fields are inert.
+    let units = if one_world {
+        std::mem::take(&mut meld.units)
+    } else {
+        Default::default()
     };
     // The global pool was built once at startup, so a per-run count gets its
     // own pool. ponytail: threads that are not rayon workers (std::thread
@@ -2119,7 +1998,7 @@ fn gui_start_generation(
                 let pieces_argv = args
                     .units
                     .coordinates()
-                    .then(|| piece_argv(&args, &world_path));
+                    .then(|| piece_argv(&args, &world_path, &flags));
                 let session = match crate::one_world::prepare(&world_path, &bbox, &mut args) {
                     Ok(session) => session,
                     Err(e) => {
@@ -2433,8 +2312,8 @@ fn gui_start_generation(
 
 #[cfg(test)]
 mod piece_tests {
-    use super::{meld_args, piece_argv, piece_settings};
-    use crate::args::{Args, Workers};
+    use super::{meld_args, piece_argv};
+    use crate::args::Args;
     use clap::Parser;
 
     /// A piece run from the window must ask for what the window asked for:
@@ -2487,39 +2366,39 @@ mod piece_tests {
         args.mapillary_facade_mode = crate::args::FacadeMode::from_str_lossy("blocks");
         args.building_facades = true;
         args.facade_detail = crate::args::FacadeDetail::from_str_lossy("high");
-        args.props = crate::structures::PropSet::parse("car,landmark").ok();
-        args.props_min_scale = Some(0.35);
-        // The Meld Generation fields, set the way the window sets them.
-        let meld = meld_args(
-            &[
-                "--snow-mode=manual",
-                "--snow-y=150",
-                "--road-detail=compact",
-                "--rocks",
-                "--rock-density=0.07",
-                "--bushes",
-                "--bush-density=0.13",
-                "--no-buildings",
-                "--loot-table=my loot.json",
-                "--field-mix=prairie",
-                "--farm-crops=wheat=60,sunflower=20,fallow=20",
-                "--field-scale=175",
-                "--grass-texture",
-                "--grass-mix=plains=3,flower=1",
-                "--land-texture",
-                "--land-mix=prairie",
-                "--tree-realm=eur",
-                "--tree-size-weights=small=50,tall=150,giant=0",
-                "--cave-seed=12345",
-                "--cave-datum-y=-128",
-                "--river-bed=v1",
-                "--water-detail=scaled",
-                "--climate-mode=per-position",
-            ]
-            .map(String::from),
-            true,
-        )
-        .unwrap();
+        // The Advanced Features fields, set the way the window sets them.
+        let flags = [
+            "--snow-mode=manual",
+            "--snow-y=150",
+            "--road-detail=compact",
+            "--rocks",
+            "--rock-density=0.07",
+            "--bushes",
+            "--bush-density=0.13",
+            "--no-buildings",
+            "--loot-table=my loot.json",
+            "--field-mix=prairie",
+            "--farm-crops=wheat=60,sunflower=20,fallow=20",
+            "--field-scale=175",
+            "--grass-texture",
+            "--grass-mix=plains=3,flower=1",
+            "--land-texture",
+            "--land-mix=prairie",
+            "--tree-realm=eur",
+            "--tree-size-weights=small=50,tall=150,giant=0",
+            "--cave-seed=12345",
+            "--cave-datum-y=-128",
+            "--river-bed=v1",
+            "--water-detail=scaled",
+            "--climate-mode=per-position",
+            "--threads=6",
+            "--ram-budget-mb=4000",
+            "--max-downloads=8",
+            "--one-world-workers=auto",
+            "--unit-regions=2",
+        ]
+        .map(String::from);
+        let meld = meld_args(&flags, true).unwrap();
         args.snow = meld.snow;
         args.road_detail = meld.road_detail;
         args.scatter = meld.scatter;
@@ -2531,20 +2410,11 @@ mod piece_tests {
         args.cave_seed = meld.cave_seed;
         args.cave_datum_y = meld.cave_datum_y;
         args.water = meld.water;
-        args.seed = Some(424242);
         args.climate_mode = meld.climate_mode;
-        let back = base(&piece_argv(&args, &dir.path().join("My World")));
+        args.process = meld.process;
+        args.units = meld.units;
+        let back = base(&piece_argv(&args, &dir.path().join("My World"), &flags));
         assert_eq!(format!("{back:?}"), format!("{args:?}"));
-
-        // The other snow and field shapes: peaks with a share, a share list.
-        let args = base(&[
-            "--snow-mode=peaks".into(),
-            "--snow-percent=12.5".into(),
-            "--field-mix=farm=75,coarse=25".into(),
-        ]);
-        let back = base(&piece_argv(&args, &dir.path().join("My World")));
-        assert_eq!(format!("{:?}", back.snow), format!("{:?}", args.snow));
-        assert_eq!(format!("{:?}", back.fields), format!("{:?}", args.fields));
     }
 
     /// No Meld flag is the stock run, and the window refuses what the CLI does.
@@ -2563,30 +2433,10 @@ mod piece_tests {
             )
             .is_err()
         };
-        assert!(refused(&["--snow-mode=peaks"], true));
-        assert!(!refused(&["--snow-mode=peaks", "--snow-percent=20"], false));
-        assert!(refused(&["--snow-mode=manual"], false));
         assert!(refused(&["--cave-datum-y=100"], false));
         assert!(refused(&["--farm-crops=wheat=x"], false));
         assert!(refused(&["--tree-realm=mars"], false));
         assert!(refused(&["--field-scale=500"], false));
-    }
-
-    #[test]
-    fn pieces_need_a_one_world_and_valid_settings() {
-        assert!(!piece_settings(false, Some("auto"), Some(4))
-            .unwrap()
-            .coordinates());
-        assert!(!piece_settings(true, None, None).unwrap().coordinates());
-        let units = piece_settings(true, Some("3"), None).unwrap();
-        assert_eq!(units.one_world_workers, Some(Workers::Count(3)));
-        assert_eq!(units.unit_regions, None);
-        let units = piece_settings(true, Some("auto"), Some(4)).unwrap();
-        assert_eq!(units.one_world_workers, Some(Workers::Auto));
-        assert_eq!(units.unit_regions, Some(4));
-        assert!(piece_settings(true, Some("lots"), None).is_err());
-        assert!(piece_settings(true, None, Some(0)).is_err());
-        assert!(piece_settings(true, None, Some(65)).is_err());
     }
 }
 

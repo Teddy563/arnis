@@ -466,8 +466,7 @@ pub struct Args {
     pub water: WaterArgs,
 }
 
-/// Rocks and bushes on open land. Off unless asked for, so the GUI runs on
-/// `ScatterArgs::default()`.
+/// Rocks and bushes on open land. Off unless asked for.
 #[derive(clap::Args, Debug)]
 pub struct ScatterArgs {
     /// Scatter small andesite and tuff rocks over open grassland and cropland.
@@ -488,17 +487,6 @@ pub struct ScatterArgs {
     /// Where a chunk rolls both, the rock wins.
     #[arg(long, default_value_t = 0.05, value_parser = parse_density)]
     pub bush_density: f64,
-}
-
-impl Default for ScatterArgs {
-    fn default() -> Self {
-        Self {
-            rocks: false,
-            rock_density: 0.02,
-            bushes: false,
-            bush_density: 0.05,
-        }
-    }
 }
 
 /// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
@@ -718,6 +706,7 @@ pub const CAPABILITIES: &[&str] = &[
     "props",
     "props-min-scale",
     "map-item-only",
+    "region-format",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1535,21 +1524,6 @@ mod tests {
     }
 
     #[test]
-    fn no_buildings_and_loot_table_default_off() {
-        let parse = |extra: &[&str]| {
-            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4"];
-            cmd.extend_from_slice(extra);
-            Args::parse_from(cmd.iter())
-        };
-        let default = parse(&[]);
-        assert!(default.buildings);
-        assert!(default.loot_table.is_none() && default.dump_loot_table.is_none());
-        assert!(!parse(&["--no-buildings"]).buildings);
-        let custom = parse(&["--loot-table", "loot.json"]);
-        assert_eq!(custom.loot_table, Some(PathBuf::from("loot.json")));
-    }
-
-    #[test]
     fn web_mercator_projection_is_accepted() {
         let tmpdir = tempfile::tempdir().unwrap();
         let tmp_path = tmpdir.path().to_str().unwrap();
@@ -2280,19 +2254,6 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
-    }
-
-    #[test]
-    fn process_switches_parse_as_plain_flags() {
-        let args = Args::parse_from([
-            "arnis",
-            "--bbox",
-            "1,2,3,4",
-            "--no-update-check",
-            "--no-cache-sweep",
-        ]);
-        assert!(args.process.no_update_check);
-        assert!(args.process.no_cache_sweep);
     }
 
     #[test]

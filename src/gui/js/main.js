@@ -1753,8 +1753,9 @@ function refreshAdvancedFeatures() {
   refreshSettingsState();
 }
 
-// Keys for gui_start_generation. A disabled control sends null, which the
-// Rust side reads as "no flag", the same as the CLI without it.
+// The Advanced Features as CLI flags for gui_start_generation, which parses
+// them with the CLI's own parser. A control that is disabled or on its default
+// adds none, so the run is the stock one unless a control says otherwise.
 function advancedFeatureArgs() {
   const enabled = (id) => {
     const el = document.getElementById(id);
@@ -1765,23 +1766,6 @@ function advancedFeatureArgs() {
     const n = el ? parseInt(el.value, 10) : NaN;
     return n > 0 ? n : null;
   };
-  const workers = enabled('one-world-workers-select');
-  return {
-    cpuTarget: positive('cpu-usage-slider'),
-    threads: positive('threads-input'),
-    ramBudgetMb: positive('ram-budget-input'),
-    maxDownloads: positive('max-downloads-input'),
-    // Either one builds a One World area in pieces (--one-world-workers /
-    // --unit-regions); both rows are disabled, so null, without One World.
-    oneWorldWorkers: workers ? workers.value : null,
-    unitRegions: positive('unit-regions-select'),
-    ...meldArgs(enabled),
-  };
-}
-
-// The Meld Generation keys: null for a control that is disabled or on its
-// default, so the run is the stock one unless a control says otherwise.
-function meldArgs(enabled) {
   const changed = (id) => {
     const el = enabled(id);
     if (!el) return null;
@@ -1804,31 +1788,44 @@ function meldArgs(enabled) {
   const sizes = ['small', 'medium', 'big', 'tall', 'giant'];
   const weights = sizes.map((size) => enabled('tree-weight-' + size + '-slider'));
   const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
-  return {
-    snowMode: changed('snow-mode-select'),
-    snowPercent: changed('snow-percent-slider'),
+  const workers = enabled('one-world-workers-select');
+  const values = {
+    'cpu-target': positive('cpu-usage-slider'),
+    'threads': positive('threads-input'),
+    'ram-budget-mb': positive('ram-budget-input'),
+    'max-downloads': positive('max-downloads-input'),
+    // Either one builds a One World area in pieces; both rows are disabled
+    // without One World.
+    'one-world-workers': workers ? workers.value : null,
+    'unit-regions': positive('unit-regions-select'),
+    'snow-mode': changed('snow-mode-select'),
+    'snow-percent': changed('snow-percent-slider'),
     // Manual needs a line, so it goes even on its default.
-    snowY: int('snow-y-input'),
-    roadDetail: changed('road-detail-select'),
-    rocks: on('rocks-toggle'),
-    rockDensity: changed('rock-density-slider'),
-    bushes: on('bushes-toggle'),
-    bushDensity: changed('bush-density-slider'),
-    noBuildings: on('no-buildings-toggle'),
-    lootTable: text('loot-table-input'),
-    fieldMix: changed('field-mix-select'),
-    farmCrops: text('farm-crops-input'),
-    fieldScale: changed('field-scale-slider'),
-    treeRealm: changed('tree-realm-select'),
-    treeSizeWeights: weighted
+    'snow-y': int('snow-y-input'),
+    'road-detail': changed('road-detail-select'),
+    'rocks': on('rocks-toggle'),
+    'rock-density': changed('rock-density-slider'),
+    'bushes': on('bushes-toggle'),
+    'bush-density': changed('bush-density-slider'),
+    'no-buildings': on('no-buildings-toggle'),
+    'loot-table': text('loot-table-input'),
+    'field-mix': changed('field-mix-select'),
+    'farm-crops': text('farm-crops-input'),
+    'field-scale': changed('field-scale-slider'),
+    'tree-realm': changed('tree-realm-select'),
+    'tree-size-weights': weighted
       ? sizes.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
       : null,
     // A string, so a seed past 2^53 reaches the parser whole.
-    caveSeed: text('cave-seed-input'),
-    caveDatumY: int('cave-datum-y-input'),
-    riverBed: changed('river-bed-select'),
-    waterDetail: changed('water-detail-select'),
+    'cave-seed': text('cave-seed-input'),
+    'cave-datum-y': int('cave-datum-y-input'),
+    'river-bed': changed('river-bed-select'),
+    'water-detail': changed('water-detail-select'),
   };
+  const flags = Object.entries(values)
+    .filter(([, v]) => v !== null)
+    .map(([name, v]) => (v === true ? '--' + name : '--' + name + '=' + v));
+  return { flags };
 }
 
 // Caves are carved into the filled ground, so turning them on turns Fill Ground

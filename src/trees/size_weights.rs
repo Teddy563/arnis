@@ -14,32 +14,13 @@ const ORDER: [TreeSize; 5] = [
     TreeSize::Giant,
 ];
 
-/// Multiplier per tier, smallest to largest: 1.0 keeps the default share, 0.0 turns the tier off.
+/// Percent per tier, smallest to largest: 100 keeps the default share, 0 turns the tier off.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SizeWeights([f64; 5]);
+pub struct SizeWeights([u16; 5]);
 
 impl Default for SizeWeights {
     fn default() -> Self {
-        SizeWeights([1.0; 5])
-    }
-}
-
-/// The `--tree-size-weights` value that parses back to these weights.
-impl std::fmt::Display for SizeWeights {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        for (i, (size, w)) in ORDER.iter().zip(self.0).enumerate() {
-            // Whole percents are written whole, so n / 100 parses back exactly.
-            // ponytail: a fractional percent may come back one ulp off.
-            let pct = w * 100.0;
-            let pct = if (pct - pct.round()).abs() < 1e-9 {
-                pct.round()
-            } else {
-                pct
-            };
-            let sep = if i == 0 { "" } else { "," };
-            write!(f, "{sep}{}={pct}", format!("{size:?}").to_lowercase())?;
-        }
-        Ok(())
+        SizeWeights([100; 5])
     }
 }
 
@@ -47,33 +28,20 @@ impl SizeWeights {
     /// Parse `name=percent` pairs (small, medium, big, tall, giant), each 0-200.
     /// Omitted tiers stay at 100.
     pub fn parse(spec: &str) -> Result<SizeWeights, String> {
-        let mut w = SizeWeights::default();
-        for part in spec.split(',').map(str::trim).filter(|p| !p.is_empty()) {
-            let (name, val) = part
-                .split_once('=')
-                .ok_or_else(|| format!("expected name=percent, got '{part}'"))?;
-            let pct: f64 = val
-                .trim()
-                .parse()
-                .map_err(|_| format!("bad percent '{}' for '{}'", val.trim(), name.trim()))?;
-            if !(0.0..=200.0).contains(&pct) {
-                return Err(format!("percent for '{}' must be 0-200", name.trim()));
-            }
-            let i = ORDER
-                .iter()
-                .position(|s| format!("{s:?}").eq_ignore_ascii_case(name.trim()))
-                .ok_or_else(|| format!("unknown tree size '{}'", name.trim()))?;
-            w.0[i] = pct / 100.0;
+        let w = crate::element_processing::field_texture::parse_weights(
+            spec,
+            &["small", "medium", "big", "tall", "giant"],
+            100,
+        )?;
+        if w.iter().any(|&pct| pct > 200) {
+            return Err(format!("{spec}: each percent must be 0-200"));
         }
-        if w.0.iter().all(|&f| f == 0.0) {
-            return Err("at least one tree size needs a weight above 0".to_string());
-        }
-        Ok(w)
+        Ok(SizeWeights(w))
     }
 
     /// A tier weighted 0 is off, so a canopy hint cannot bring it back either.
     pub fn restrict(&self, sizes: &mut SizeFilter) {
-        let [s, m, b, t, g] = self.0.map(|f| f > 0.0);
+        let [s, m, b, t, g] = self.0.map(|pct| pct > 0);
         sizes.small &= s;
         sizes.medium &= m;
         sizes.big &= b;
@@ -102,7 +70,7 @@ pub fn pick(roll: u64, scale: f64, weights: Option<&SizeWeights>) -> TreeSize {
     let shares: Vec<f64> = base_shares(scale)
         .iter()
         .zip(w.0)
-        .map(|(&s, f)| f64::from(s) * f)
+        .map(|(&s, pct)| f64::from(s) * (f64::from(pct) / 100.0))
         .collect();
     let sum: f64 = shares.iter().sum();
     // Exact for the defaults: every share is a whole number and the sum is 1000.
@@ -125,7 +93,7 @@ mod tests {
     #[test]
     fn parse_pairs() {
         let w = SizeWeights::parse("big=70, Tall=50,giant=0").unwrap();
-        assert_eq!(w.0, [1.0, 1.0, 0.7, 0.5, 0.0]);
+        assert_eq!(w.0, [100, 100, 70, 50, 0]);
         assert!(SizeWeights::parse("huge=10").is_err());
         assert!(SizeWeights::parse("big").is_err());
         assert!(SizeWeights::parse("big=250").is_err());

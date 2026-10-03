@@ -44,32 +44,13 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// What a finished piece reported.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct PieceResult {
     pub spawn_y: Option<i32>,
     pub peak_rss_mb: Option<u64>,
     pub wall_s: Option<f64>,
     pub chunks: u64,
-}
-
-impl PieceResult {
-    fn to_json(&self) -> Value {
-        json!({
-            "spawn_y": self.spawn_y,
-            "peak_rss_mb": self.peak_rss_mb,
-            "wall_s": self.wall_s,
-            "chunks": self.chunks,
-        })
-    }
-
-    fn from_json(v: &Value) -> Self {
-        Self {
-            spawn_y: v["spawn_y"].as_i64().map(|y| y as i32),
-            peak_rss_mb: v["peak_rss_mb"].as_u64(),
-            wall_s: v["wall_s"].as_f64(),
-            chunks: v["chunks"].as_u64().unwrap_or(0),
-        }
-    }
 }
 
 /// One job's folder and the decisions it keeps across a resume.
@@ -130,9 +111,7 @@ impl Job {
 
     fn finished(&self, piece: usize) -> Option<PieceResult> {
         let text = std::fs::read_to_string(self.done_path(piece)).ok()?;
-        serde_json::from_str(&text)
-            .ok()
-            .map(|v| PieceResult::from_json(&v))
+        serde_json::from_str(&text).ok()
     }
 }
 
@@ -390,7 +369,7 @@ pub fn run(
                     println!("  pieces peak at {peak} MB: {allowed} at a time from now on");
                 }
             }
-            write(&job.done_path(i), &r.to_json())?;
+            write(&job.done_path(i), &json!(r))?;
             crate::keep_one_world();
             progress_json::record(
                 "piece",
@@ -620,15 +599,9 @@ const PER_PIECE: &[&str] = &[
     "--one-world-unit",
 ];
 
-/// Switches every piece gets anyway, so the user's are dropped: clap
-/// refuses one given twice. They take no value. The prewarm switches are the
-/// coordinator's: it hands `--prewarm` to the pieces it warms.
-const PER_PIECE_SWITCHES: &[&str] = &[
-    "--no-update-check",
-    "--no-cache-sweep",
-    "--prewarm",
-    "--prewarm-first",
-];
+/// Switches the coordinator decides, so the user's are dropped: it hands
+/// `--prewarm` to the pieces it warms, and clap refuses one given twice.
+const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first"];
 
 /// A piece's command line: the job's own, minus what is decided per piece,
 /// plus the piece's bbox at full precision and its lease.
@@ -661,8 +634,6 @@ fn child_args(
         lease.as_os_str().to_owned(),
         "--progress".into(),
         "json".into(),
-        "--no-update-check".into(),
-        "--no-cache-sweep".into(),
     ]);
     out
 }
@@ -712,7 +683,11 @@ fn run_piece(
     let exe =
         std::env::current_exe().map_err(|e| fail(format!("Cannot find this executable: {e}")))?;
     let mut cmd = Command::new(exe);
+    // Every piece skips the update check and the cache sweep; through the
+    // environment, so a user's own switch for either does not clash.
     cmd.args(argv)
+        .env("ARNIS_NO_UPDATE_CHECK", "1")
+        .env("ARNIS_NO_CACHE_SWEEP", "1")
         .envs(env.iter().map(|(k, v)| (k, v)))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -824,6 +799,7 @@ mod tests {
                 "--one-world",
                 "--output-dir",
                 "out dir",
+                "--no-update-check",
                 "--offline",
                 "--scale=1",
                 "--bbox",
@@ -832,12 +808,10 @@ mod tests {
                 "l.json",
                 "--progress",
                 "json",
-                "--no-update-check",
-                "--no-cache-sweep",
             ]
         );
         // What the piece parses is the bbox that snaps to its rectangle.
-        let parsed = LLBBox::from_str(&got[6]).unwrap();
+        let parsed = LLBBox::from_str(&got[7]).unwrap();
         let (rect, _) = crate::projection::snap_bbox_to_chunks(&proj, &parsed).unwrap();
         assert_eq!(rect.min_x(), units[3].rect.min_x());
         assert_eq!(rect.max_z(), units[3].rect.max_z());
@@ -869,7 +843,7 @@ mod tests {
             wall_s: Some(1.5),
             chunks: 1024,
         };
-        let back = PieceResult::from_json(&r.to_json());
+        let back: PieceResult = serde_json::from_value(json!(r)).unwrap();
         assert_eq!(back.spawn_y, Some(-40));
         assert_eq!(back.peak_rss_mb, Some(900));
         assert_eq!(back.chunks, 1024);

@@ -104,16 +104,8 @@ pub fn sizing(args: &Args, pieces: usize, piece_regions: u64) -> Sizing {
         Some(Workers::Auto) => {
             let budget = args
                 .process
-                .threads
-                .map(|t| t as usize)
-                .unwrap_or_else(|| {
-                    cores
-                        * args
-                            .process
-                            .cpu_target
-                            .map_or(AUTO_CPU_TARGET, |p| p as usize)
-                        / 100
-                })
+                .thread_count()
+                .unwrap_or(cores * AUTO_CPU_TARGET / 100)
                 .max(1);
             let mut sys = sysinfo::System::new();
             sys.refresh_memory();

@@ -142,10 +142,15 @@ const CROP_KEYS: [&str; 7] = [
     "fallow",
 ];
 
-/// Parse a `key=weight` list into `N` weights in `keys` order. Unknown keys, bad
-/// numbers and an all-zero list are errors, so a typo cannot silently change a world.
-fn parse_weights<const N: usize>(s: &str, keys: &[&str; N]) -> Result<[u16; N], String> {
-    let mut w = [0u16; N];
+/// Parse a `key=weight` list into `N` weights in `keys` order, a key left out
+/// weighing `fill`. Unknown keys, bad numbers and an all-zero list are errors,
+/// so a typo cannot silently change a world.
+pub(crate) fn parse_weights<const N: usize>(
+    s: &str,
+    keys: &[&str; N],
+    fill: u16,
+) -> Result<[u16; N], String> {
+    let mut w = [fill; N];
     for tok in s.split(',').map(str::trim).filter(|t| !t.is_empty()) {
         let (k, v) = tok
             .split_once('=')
@@ -172,7 +177,7 @@ pub struct FarmCrops([u16; 7]);
 
 impl FarmCrops {
     pub fn parse(s: &str) -> Result<Self, String> {
-        parse_weights(s, &CROP_KEYS).map(FarmCrops)
+        parse_weights(s, &CROP_KEYS, 0).map(FarmCrops)
     }
 
     fn pick(&self, px: i32, pz: i32) -> FarmCrop {
@@ -263,42 +268,9 @@ impl FieldMix {
             "prairie" => Ok(Self::PRAIRIE),
             "pasture" => Ok(Self::PASTURE),
             _ => Ok(FieldMix {
-                shares: parse_weights(s, &CATEGORY_KEYS)?,
+                shares: parse_weights(s, &CATEGORY_KEYS, 0)?,
                 ..base
             }),
-        }
-    }
-}
-
-/// Writes `key=weight` pairs that `parse_weights` reads back to the same weights.
-fn write_weights(f: &mut std::fmt::Formatter, weights: &[u16], keys: &[&str]) -> std::fmt::Result {
-    for (i, (k, w)) in keys.iter().zip(weights).enumerate() {
-        write!(f, "{}{k}={w}", if i == 0 { "" } else { "," })?;
-    }
-    Ok(())
-}
-
-/// The `--farm-crops` value for these shares, as a piece's command line needs it.
-impl std::fmt::Display for FarmCrops {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write_weights(f, &self.0, &CROP_KEYS)
-    }
-}
-
-/// The `--field-mix` value that parses back to this mix: a preset's name, else
-/// the share list (a list sits on patchwork's sizes, or grassland's for `--grass-mix`).
-impl std::fmt::Display for FieldMix {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let presets = [
-            (Self::CLASSIC, "classic"),
-            (Self::SMALLHOLDING, "smallholding"),
-            (Self::PATCHWORK, "patchwork"),
-            (Self::PRAIRIE, "prairie"),
-            (Self::PASTURE, "pasture"),
-        ];
-        match presets.iter().find(|(mix, _)| mix == self) {
-            Some((_, name)) => f.write_str(name),
-            None => write_weights(f, &self.shares, &CATEGORY_KEYS),
         }
     }
 }
@@ -1179,12 +1151,11 @@ mod tests {
         }
     }
 
-    /// A --grass-mix list sits on grassland plot sizes and reads back from its text.
+    /// A --grass-mix list sits on grassland plot sizes.
     #[test]
-    fn grass_mix_lists_round_trip_on_grass_sizes() {
+    fn grass_mix_lists_sit_on_grass_sizes() {
         let m = FieldMix::parse_grass("plains=3,flower=1").unwrap();
         assert_eq!(m.sizes, FieldMix::GRASS.sizes);
-        assert_eq!(FieldMix::parse_grass(&m.to_string()).unwrap(), m);
         assert_eq!(FieldMix::parse_grass("pasture").unwrap(), FieldMix::PASTURE);
         assert!(FieldMix::parse_grass("grass=1").is_err());
     }

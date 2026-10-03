@@ -66,7 +66,7 @@ pub struct RiverBedField {
     w: usize,
     h: usize,
     depth: Vec<u8>,
-    mask: BitGrid,
+    mask: Vec<bool>,
 }
 
 impl RiverBedField {
@@ -77,7 +77,7 @@ impl RiverBedField {
             w: 0,
             h: 0,
             depth: Vec::new(),
-            mask: BitGrid::new(0),
+            mask: Vec::new(),
         }
     }
 
@@ -90,18 +90,18 @@ impl RiverBedField {
             return None;
         }
         let i = lz as usize * self.w + lx as usize;
-        self.mask.get(i).then(|| i32::from(self.depth[i]))
+        self.mask[i].then(|| i32::from(self.depth[i]))
     }
 
     #[cfg(test)]
     fn override_count(&self) -> usize {
-        (0..self.w * self.h).filter(|&i| self.mask.get(i)).count()
+        (0..self.w * self.h).filter(|&i| self.mask[i]).count()
     }
 
     #[cfg(test)]
     fn max_override_depth(&self) -> i32 {
         (0..self.w * self.h)
-            .filter(|&i| self.mask.get(i))
+            .filter(|&i| self.mask[i])
             .map(|i| i32::from(self.depth[i]))
             .max()
             .unwrap_or(0)
@@ -192,78 +192,76 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
     };
     let n = lat.w * lat.h;
 
-    let mut line_mask = BitGrid::new(n);
+    let mut line_mask = vec![false; n];
     let mut hw_line = vec![0u8; n];
     for lr in &lines {
         stamp_line(lr, &lat, &mut line_mask, &mut hw_line);
     }
-    let mut poly_mask = BitGrid::new(n);
+    let mut poly_mask = vec![false; n];
     for p in &river_polys {
         rasterize_poly(p, &lat, &mut poly_mask);
     }
-    let mut nonriver_mask = BitGrid::new(n);
+    let mut nonriver_mask = vec![false; n];
     for p in &nonriver_polys {
         rasterize_poly(p, &lat, &mut nonriver_mask);
     }
-    let mut lc_water = BitGrid::new(n);
+    let mut lc_water = vec![false; n];
     for j in 0..lat.h {
         for i in 0..lat.w {
             if (inp.is_lc_water)(lat.min_x + i as i32, lat.min_z + j as i32) {
-                lc_water.set(j * lat.w + i);
+                lc_water[j * lat.w + i] = true;
             }
         }
     }
 
     // A centreline drawn through a mapped lake must not override the lake bed.
-    let mut removed_stamp = BitGrid::new(n);
+    let mut removed_stamp = vec![false; n];
     for i in 0..n {
-        if line_mask.get(i) && nonriver_mask.get(i) {
-            line_mask.clear(i);
-            removed_stamp.set(i);
+        if line_mask[i] && nonriver_mask[i] {
+            line_mask[i] = false;
+            removed_stamp[i] = true;
         }
     }
 
     // A centreline deeper inside land-cover water than its tagged width explains is a wide
     // body the tags under-describe; a narrow ribbon there would leave a stripe.
-    if line_mask.any() {
+    if line_mask.contains(&true) {
         let mut land_dt: Vec<u8> = (0..n)
-            .map(|i| if lc_water.get(i) { DT_MAX } else { 0 })
+            .map(|i| if lc_water[i] { DT_MAX } else { 0 })
             .collect();
         chamfer_3_4_dt(&mut land_dt, lat.w, lat.h);
         for i in 0..n {
-            if !line_mask.get(i) || poly_mask.get(i) {
+            if !line_mask[i] || poly_mask[i] {
                 continue;
             }
             let land_d = f64::from(land_dt[i]) / DT_UNITS_PER_BLOCK;
             if land_d > f64::from(hw_line[i]) + EMBED_MARGIN {
-                line_mask.clear(i);
-                removed_stamp.set(i);
+                line_mask[i] = false;
+                removed_stamp[i] = true;
             }
         }
     }
 
-    let mut mask = BitGrid::new(n);
+    let mut mask = vec![false; n];
     for i in 0..n {
-        if line_mask.get(i) || poly_mask.get(i) {
-            mask.set(i);
+        if line_mask[i] || poly_mask[i] {
+            mask[i] = true;
         }
     }
-    if !mask.any() {
+    if !mask.contains(&true) {
         return RiverBedField::empty();
     }
 
     // Distance from the bank. The lattice ends where geometry is clipped, so a truncated
     // river end is the lattice edge, never a seeded bank that would pinch the bed shut.
-    let mut dt: Vec<u8> = (0..n)
-        .map(|i| if mask.get(i) { DT_MAX } else { 0 })
-        .collect();
+    let mut dt: Vec<u8> = (0..n).map(|i| if mask[i] { DT_MAX } else { 0 }).collect();
     chamfer_3_4_dt(&mut dt, lat.w, lat.h);
 
     // Local half-width: line rivers carry a tagged one; polygons use a windowed max of the
     // bank distance.
     let d_in_mask: Vec<u8> = (0..n)
         .map(|i| {
-            if mask.get(i) {
+            if mask[i] {
                 (f64::from(dt[i]) / DT_UNITS_PER_BLOCK).round() as u8
             } else {
                 0
@@ -271,7 +269,7 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
         })
         .collect();
     let win = ((16.0 * scale).round() as usize).max(1);
-    let poly_hw = if poly_mask.any() {
+    let poly_hw = if poly_mask.contains(&true) {
         windowed_max_2d(&d_in_mask, lat.w, lat.h, win)
     } else {
         Vec::new()
@@ -280,11 +278,11 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
     let mut hw_field = vec![0f32; n];
     let mut depth_f = vec![0f32; n];
     for i in 0..n {
-        if !mask.get(i) {
+        if !mask[i] {
             continue;
         }
         let mut hw = f64::from(hw_line[i]);
-        if poly_mask.get(i) {
+        if poly_mask[i] {
             hw = hw.max(f64::from(poly_hw[i].max(d_in_mask[i])));
         }
         let hw = hw.max(1.0);
@@ -302,10 +300,10 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
     for j in 0..lat.h {
         for i in 0..lat.w {
             let idx = j * lat.w + i;
-            if mask.get(idx) {
+            if mask[idx] {
                 continue;
             }
-            let foreign = nonriver_mask.get(idx) || removed_stamp.get(idx) || lc_water.get(idx);
+            let foreign = nonriver_mask[idx] || removed_stamp[idx] || lc_water[idx];
             if foreign && neighbours_mask(&mask, &lat, i, j) {
                 m_dt[idx] = 0;
             }
@@ -320,7 +318,7 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
     for j in 0..lat.h {
         for i in 0..lat.w {
             let idx = j * lat.w + i;
-            if !mask.get(idx) {
+            if !mask[idx] {
                 continue;
             }
             let river = f64::from(depth_f[idx]);
@@ -534,7 +532,7 @@ fn lattice_for(
 }
 
 /// The ribbon `create_water_channel` draws, geometry only.
-fn stamp_line(lr: &LineRiver, lat: &Lat, mask: &mut BitGrid, hw_line: &mut [u8]) {
+fn stamp_line(lr: &LineRiver, lat: &Lat, mask: &mut [bool], hw_line: &mut [u8]) {
     let r = lr.hw_stamp + 1;
     let hw = lr.hw_stamp.clamp(1, 255) as u8;
     for pair in lr.way.nodes.windows(2) {
@@ -543,7 +541,7 @@ fn stamp_line(lr: &LineRiver, lat: &Lat, mask: &mut BitGrid, hw_line: &mut [u8])
             for x in (bx - r)..=(bx + r) {
                 for z in (bz - r)..=(bz + r) {
                     if let Some(i) = lat.idx(x, z) {
-                        mask.set(i);
+                        mask[i] = true;
                         // Max, so overlapping ways give the same field in any order.
                         hw_line[i] = hw_line[i].max(hw);
                     }
@@ -553,7 +551,7 @@ fn stamp_line(lr: &LineRiver, lat: &Lat, mask: &mut BitGrid, hw_line: &mut [u8])
     }
 }
 
-fn rasterize_poly(p: &PolyRings, lat: &Lat, out: &mut BitGrid) {
+fn rasterize_poly(p: &PolyRings, lat: &Lat, out: &mut [bool]) {
     let (z0, z1) = p
         .outers
         .iter()
@@ -569,51 +567,23 @@ fn rasterize_poly(p: &PolyRings, lat: &Lat, out: &mut BitGrid) {
         for (s, e) in edges.row_spans(z, lo_x, hi_x) {
             for x in s..=e {
                 if let Some(i) = lat.idx(x, z) {
-                    out.set(i);
+                    out[i] = true;
                 }
             }
         }
     }
 }
 
-fn neighbours_mask(mask: &BitGrid, lat: &Lat, i: usize, j: usize) -> bool {
+fn neighbours_mask(mask: &[bool], lat: &Lat, i: usize, j: usize) -> bool {
     let (i, j) = (i as i32, j as i32);
     (-1..=1).any(|dj| {
         (-1..=1).any(|di| {
             (di, dj) != (0, 0)
                 && lat
                     .idx(lat.min_x + i + di, lat.min_z + j + dj)
-                    .is_some_and(|n| mask.get(n))
+                    .is_some_and(|n| mask[n])
         })
     })
-}
-
-/// A dense bitset over the lattice.
-struct BitGrid {
-    bits: Vec<u64>,
-}
-
-impl BitGrid {
-    fn new(n: usize) -> Self {
-        Self {
-            bits: vec![0u64; n.div_ceil(64)],
-        }
-    }
-    #[inline]
-    fn get(&self, i: usize) -> bool {
-        (self.bits[i >> 6] >> (i & 63)) & 1 == 1
-    }
-    #[inline]
-    fn set(&mut self, i: usize) {
-        self.bits[i >> 6] |= 1u64 << (i & 63);
-    }
-    #[inline]
-    fn clear(&mut self, i: usize) {
-        self.bits[i >> 6] &= !(1u64 << (i & 63));
-    }
-    fn any(&self) -> bool {
-        self.bits.iter().any(|&b| b != 0)
-    }
 }
 
 /// van Herk / Gil-Werman sliding maximum of radius `r`, O(n) in the window size.

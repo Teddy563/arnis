@@ -1,15 +1,9 @@
 use super::*;
+use crate::element_processing::building_test_support::tag_map as tags;
 use crate::osm_parser::ProcessedRelation;
 
 /// Region whose geometry is complete in every fixture.
 const BB: (i32, i32, i32, i32) = (0, 199, 0, 199);
-
-fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-        .collect()
-}
 
 fn way(id: u64, kv: &[(&str, &str)], pts: &[(i32, i32)]) -> ProcessedElement {
     ProcessedElement::Way(ProcessedWay {
