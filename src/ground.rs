@@ -73,6 +73,8 @@ pub struct GroundFrame {
     pub affine: AffinePolicy,
     /// Where climate is read; `None` is the bbox centre.
     pub climate_anchor: Option<(f64, f64)>,
+    /// Carve depth to reserve under the datum even where land cover predicts less.
+    pub carve_depth_floor: i32,
 }
 
 impl GroundFrame {
@@ -83,6 +85,7 @@ impl GroundFrame {
             pad_blocks: 0,
             affine: AffinePolicy::Fit,
             climate_anchor: None,
+            carve_depth_floor: 0,
         }
     }
 
@@ -109,6 +112,7 @@ impl GroundFrame {
                     None => AffinePolicy::FitWithHeadroom,
                 },
                 climate_anchor: Some((run.origin_lat, run.origin_lon)),
+                carve_depth_floor: 0,
             },
             None => Self {
                 world_dims: Some((world_w, world_h)),
@@ -116,6 +120,7 @@ impl GroundFrame {
                 pad_blocks: 0,
                 affine: AffinePolicy::Fit,
                 climate_anchor: None,
+                carve_depth_floor: 0,
             },
         }
     }
@@ -465,7 +470,8 @@ impl Ground {
             let carve_floor = match &land_cover {
                 Some(lc) => {
                     let max_depth =
-                        crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h);
+                        crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h)
+                            .max(frame.carve_depth_floor);
                     crate::world_editor::min_y() + max_depth + 2
                 }
                 None => crate::world_editor::min_y(),
@@ -1393,7 +1399,8 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
     // Cleared before the scaler publishes its own: in the GUI a previous run's terrain top
     // would misgrade this world's map preview.
     crate::world_editor::common::set_terrain_top_y(args.ground_level);
-    let frame = GroundFrame::from_args(args, &bbox);
+    let mut frame = GroundFrame::from_args(args, &bbox);
+    frame.carve_depth_floor = args.water.carve_depth_floor();
     if args.terrain() {
         println!("{} Fetching elevation...", "[3/7]".bold());
         let mut ground = Ground::new_enabled(
@@ -1852,6 +1859,7 @@ mod frame_tests {
             pad_blocks: pad,
             affine: AffinePolicy::Fit,
             climate_anchor: Some((48.1372, 11.5755)),
+            carve_depth_floor: 0,
         }
     }
 

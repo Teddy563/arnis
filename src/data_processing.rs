@@ -855,7 +855,17 @@ pub fn generate_world_with_options(
     bench.reset();
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
-    let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+    let mut big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+    big_water_field.set_river_bed(crate::river_bed::compute_river_bed_field(
+        args.water.river_bed,
+        &elements,
+        &ground,
+        &big_water_field,
+        &xzbbox,
+        &clip_bbox,
+        args.scale,
+        None,
+    ));
     // Resolved once here: a body spanning many tiles must not be measured per tile.
     let still_surfaces = water_areas::prescan_still_surfaces(&elements, &ground, &xzbbox);
 

@@ -1948,6 +1948,7 @@ fn gui_start_generation(
                 process,
                 units,
                 snow: Default::default(),
+                water: Default::default(),
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

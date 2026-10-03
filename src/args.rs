@@ -397,6 +397,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub snow: crate::snow_mode::SnowArgs,
+
+    #[command(flatten)]
+    pub water: WaterArgs,
 }
 
 /// Rocks and bushes on open land. Off unless asked for, so the GUI runs on
@@ -430,6 +433,26 @@ impl Default for ScatterArgs {
             rock_density: 0.02,
             bushes: false,
             bush_density: 0.05,
+        }
+    }
+}
+
+/// Water bed options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+pub struct WaterArgs {
+    /// River bed shape. `v1` gives mapped rivers, canals and streams a smooth U-shaped
+    /// bed that deepens with their width; lakes and the sea keep their bed.
+    #[arg(long, value_enum, default_value_t = crate::river_bed::RiverBed::Off)]
+    pub river_bed: crate::river_bed::RiverBed,
+}
+
+impl WaterArgs {
+    /// Deepest carve these options can ask for beyond the land-cover estimate.
+    pub fn carve_depth_floor(&self) -> i32 {
+        if self.river_bed == crate::river_bed::RiverBed::Off {
+            0
+        } else {
+            crate::water_depth::MAX_WATER_DEPTH
         }
     }
 }

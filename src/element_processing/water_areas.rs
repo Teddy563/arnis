@@ -459,13 +459,13 @@ fn subtract_spans(a: &[(i32, i32)], b: &[(i32, i32)]) -> Vec<(i32, i32)> {
 /// Polygon edges prepared for scanline filling: one edge list per outer ring
 /// (unioned per row, so overlapping outer rings still fill correctly) and the
 /// combined inner-ring edges (subtracted).
-struct PolygonEdges {
+pub(crate) struct PolygonEdges {
     outer_groups: Vec<Vec<ScanlineEdge>>,
     inner: Vec<ScanlineEdge>,
 }
 
 impl PolygonEdges {
-    fn new(outers: &[Vec<XZPoint>], inners: &[Vec<XZPoint>]) -> Self {
+    pub(crate) fn new(outers: &[Vec<XZPoint>], inners: &[Vec<XZPoint>]) -> Self {
         Self {
             outer_groups: outers.iter().map(|ring| collect_ring_edges(ring)).collect(),
             inner: collect_all_ring_edges(inners),
@@ -473,7 +473,7 @@ impl PolygonEdges {
     }
 
     /// Filled x-spans of row `z`, clamped to `[min_x, max_x]`.
-    fn row_spans(&self, z: i32, min_x: i32, max_x: i32) -> Vec<(i32, i32)> {
+    pub(crate) fn row_spans(&self, z: i32, min_x: i32, max_x: i32) -> Vec<(i32, i32)> {
         let z_f = z as f64;
         let mut outer_spans: Vec<(i32, i32)> = Vec::new();
         for ring_edges in &self.outer_groups {
