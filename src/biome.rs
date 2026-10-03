@@ -202,7 +202,6 @@ pub fn chunk_biome_names(
             // One barren biome for the whole world; no land cover to classify.
             names = [g.body().biome(); 16];
         } else {
-            let climate = g.climate();
             let snow_y = if g.elevation_enabled {
                 g.snow_threshold_y()
             } else {
@@ -213,6 +212,8 @@ pub fn chunk_biome_names(
                     let world_x = chunk_x * 16 + xi * 4 + 2;
                     let world_z = chunk_z * 16 + zi * 4 + 2;
                     let coord = XZPoint::new(world_x - ground_origin.0, world_z - ground_origin.1);
+                    let climate = g.climate_at(coord);
+                    let lat = g.local_lat(coord).unwrap_or(center_lat_deg);
                     let lc = g.cover_class(coord);
                     let wd = g.water_distance(coord);
                     let mountain = (snow_y != i32::MAX)
@@ -226,7 +227,7 @@ pub fn chunk_biome_names(
                         .flatten();
                     names[(zi * 4 + xi) as usize] = mountain
                         .or_else(|| ecoregion_biome(lc, climate, g.ecoregion(coord)))
-                        .unwrap_or_else(|| biome_for_class(lc, climate, center_lat_deg, wd));
+                        .unwrap_or_else(|| biome_for_class(lc, climate, lat, wd));
                 }
             }
         }

@@ -1463,6 +1463,7 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         format!("--snow-mode={}", name(&args.snow.snow_mode)),
         format!("--river-bed={}", name(&args.water.river_bed)),
         format!("--water-detail={}", name(&args.water.water_detail)),
+        format!("--climate-mode={}", name(&args.climate_mode)),
     ];
     let flags = [
         ("--fillground", args.fillground),
@@ -2089,6 +2090,9 @@ fn gui_start_generation(
                 units,
                 snow: meld.snow,
                 water: meld.water,
+                climate_mode: meld.climate_mode,
+                // A preview that exits; no window run asks for it.
+                climate_map: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -2494,6 +2498,7 @@ mod piece_tests {
                 "--cave-datum-y=-128",
                 "--river-bed=v1",
                 "--water-detail=scaled",
+                "--climate-mode=per-position",
             ]
             .map(String::from),
             true,
@@ -2511,6 +2516,7 @@ mod piece_tests {
         args.cave_datum_y = meld.cave_datum_y;
         args.water = meld.water;
         args.seed = Some(424242);
+        args.climate_mode = meld.climate_mode;
         let back = base(&piece_argv(&args, &dir.path().join("My World")));
         assert_eq!(format!("{back:?}"), format!("{args:?}"));
 

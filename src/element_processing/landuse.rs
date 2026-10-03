@@ -136,6 +136,7 @@ pub fn generate_landuse(
                 SMOOTH_STONE
             }
         } else if is_military {
+            let climate = editor.local_climate(x, z).unwrap_or(climate);
             match military_ground(editor, climate, x, z, military_rough) {
                 Some(block) => block,
                 None => continue,

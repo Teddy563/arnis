@@ -1122,6 +1122,12 @@ impl<'a> WorldEditor<'a> {
         }
     }
 
+    /// Climate at (x, z) under `--climate-mode per-position`; `None` keeps `climate()`.
+    #[inline]
+    pub fn local_climate(&self, x: i32, z: i32) -> Option<crate::climate::Climate> {
+        self.ground.as_ref()?.local_climate(self.ground_point(x, z))
+    }
+
     /// Get the effective ground level at a world coordinate.
     ///
     /// Checks the road-surface override map first so that a later

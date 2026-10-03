@@ -92,7 +92,10 @@ Minecraft already moved out of the chunk do not linger over the new blocks.
   the area plus 64 blocks, so a building on the edge is built whole on both
   sides; writes outside the area are dropped.
 - **Climate and biomes** are read at the world origin, so neighbouring areas
-  never land on different sides of a Köppen boundary or biome band.
+  never land on different sides of a Köppen boundary or biome band. The
+  experimental `--climate-mode per-position` reads them per block instead, from
+  the block's place in the world frame, so areas still agree where they meet;
+  pass it to every area of the world.
 - **Determinism**: the two unseeded RNG sites (recycling barrel loot, item frame
   side) are seeded now, and the OSM tile archive emits nodes in id order instead
   of `HashMap` order, which changed which of two overlapping trees won a block

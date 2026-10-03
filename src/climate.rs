@@ -21,11 +21,17 @@ static KOPPEN_TILES: LazyLock<Vec<KoppenTile>> = LazyLock::new(|| {
 });
 
 fn koppen_class(lat: f64, lon: f64) -> u8 {
+    koppen_class_where(|grid| {
+        let (col, row) = grid.position(lat, lon);
+        grid.cell(col, row)
+    })
+}
+
+fn koppen_class_where(cell_of: impl FnOnce(&TiledGrid) -> (usize, usize)) -> u8 {
     let Some(grid) = KOPPEN.as_ref() else {
         return 0;
     };
-    let (col, row) = grid.position(lat, lon);
-    let cell = grid.cell(col, row);
+    let cell = cell_of(grid);
     let Some(slot) = KOPPEN_TILES.get(grid.tile_of(cell)) else {
         return 0;
     };
@@ -74,6 +80,14 @@ impl Climate {
 
     pub fn classify_at(lat: f64, lon: f64) -> Climate {
         Climate::from_class(koppen_class(lat, lon))
+    }
+
+    /// Like `classify_at`, with borders wandering as the ecoregion borders do;
+    /// read per position by `--climate-mode per-position`.
+    pub fn classify_warped(lat: f64, lon: f64) -> Climate {
+        Climate::from_class(koppen_class_where(|grid| {
+            crate::ecoregion::warped_cell(grid, lat, lon)
+        }))
     }
 
     /// Surface palette (surface, under) for veg/bare cover, or None to keep the baseline.

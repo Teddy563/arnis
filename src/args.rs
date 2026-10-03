@@ -169,6 +169,19 @@ pub struct Args {
     #[arg(long = "cave-zone-map-step", value_name = "BLOCKS")]
     pub cave_zone_map_step: Option<u32>,
 
+    /// Experimental. Where the Köppen climate behind surfaces and biomes is read:
+    /// origin (once, at the bbox centre or the One World origin, default) or
+    /// per-position (at every block, with organic borders, so a large world
+    /// crosses climate zones; biome latitude follows each block too).
+    #[arg(long, value_enum, default_value_t = crate::climate_field::ClimateMode::Origin)]
+    pub climate_mode: crate::climate_field::ClimateMode,
+
+    /// Experimental. Render the per-position Köppen climate layout for --bbox to
+    /// `<PREFIX>.png` and exit without generating a world; prints a
+    /// `CLIMATEMAP {json}` line with each climate's share.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<PathBuf>,
+
     /// Use the legacy procedural trees instead of the bundled schematic tree pack.
     /// Schematic trees are on by default; this flag opts out.
     #[arg(long, default_value_t = false)]
@@ -638,6 +651,8 @@ pub const CAPABILITIES: &[&str] = &[
     "water-detail",
     "min-y",
     "max-y",
+    "climate-mode",
+    "climate-map",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1229,6 +1244,13 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     if args.cave_zone_map_step.is_some() && !cave_preview {
         return Err("--cave-zone-map-step only applies to --cave-zone-map.".to_string());
     }
+    if args.climate_map.is_some() && args.bbox.is_none() {
+        return Err("--climate-map needs --bbox.".to_string());
+    }
+    // Rotation resamples the ground grids, which the per-position climate does not follow.
+    if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
+        return Err("--climate-mode per-position does not support --rotation.".to_string());
+    }
     if cave_preview {
         if args.bbox.is_none() {
             return Err("--cave-zone-map needs --bbox.".to_string());
@@ -1276,7 +1298,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview {
+    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
         // The probe and the cave preview write no world, so they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
@@ -1486,6 +1508,21 @@ mod tests {
             cmd.extend_from_slice(extra);
             assert!(validate_args(&parse(&cmd).unwrap()).is_err(), "{extra:?}");
         }
+    }
+
+    #[test]
+    fn climate_options_validate() {
+        let parse =
+            |cmd: &[&str]| Args::parse_from(std::iter::once("arnis").chain(cmd.iter().copied()));
+        let bbox = ["--bbox", "44.0,25.5,46.5,26.5"];
+        let rotated = [&bbox[..], &["--output-dir", ".", "--rotation", "10"]].concat();
+        assert!(validate_args(&parse(&rotated)).is_ok());
+        let per_position = [&rotated[..], &["--climate-mode", "per-position"]].concat();
+        assert!(validate_args(&parse(&per_position)).is_err());
+        // The preview writes no world, so it needs a bbox and nothing else.
+        let map = [&bbox[..], &["--climate-map", "out/climate"]].concat();
+        assert!(validate_args(&parse(&map)).is_ok());
+        assert!(validate_args(&parse(&["--climate-map", "out/climate"])).is_err());
     }
 
     #[test]
