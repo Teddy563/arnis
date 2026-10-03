@@ -646,7 +646,7 @@ pub fn generate_world_with_options(
         // region in a b_linear world.
         crate::world_utils::remove_untouched_template_region(&output_path);
     }
-    editor.set_place_schematics(args.use_3d);
+    editor.set_props(args.props());
     editor.set_game_settings(args.gamemode, args.world_time);
     editor.set_start_with_map(args.map_item);
     editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
@@ -1187,7 +1187,7 @@ pub fn generate_world_with_options(
             tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
             // Ground generation runs on tile editors, so they need the real scale.
             tile_editor.set_projection_info(&args.projection.to_string(), args.scale);
-            tile_editor.set_place_schematics(args.use_3d);
+            tile_editor.set_props(args.props());
             tile_editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
             if let Some(ref tp) = tree_pack {
                 tile_editor.set_tree_pack(Arc::clone(tp));

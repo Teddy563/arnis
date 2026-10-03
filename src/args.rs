@@ -233,6 +233,13 @@ pub struct Args {
     #[arg(long = "no-3d", default_value_t = true, action = ArgAction::SetFalse)]
     pub use_3d: bool,
 
+    /// Bundled schematic prop families to place: all, none, or a comma list of
+    /// boat, car, crane, excavator, fountain, helicopter, jetbridge, landmark,
+    /// lighthouse, plane, playground, starship, tombstone, tractor, windturbine.
+    /// Given, it decides the props whatever --no-3d says; left out, they follow --no-3d.
+    #[arg(long, value_parser = crate::structures::PropSet::parse)]
+    pub props: Option<crate::structures::PropSet>,
+
     /// Enable debug mode (optional)
     #[arg(long)]
     pub debug: bool,
@@ -689,6 +696,7 @@ pub const CAPABILITIES: &[&str] = &[
     "overpass-url",
     "offline",
     "prewarm",
+    "props",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -899,6 +907,16 @@ impl Args {
     /// Whether this run skips OSM/Overture objects (terrain-only, or too small a scale).
     pub fn skip_objects(&self) -> bool {
         self.mode.skip_objects() || self.scale < OBJECT_SKIP_SCALE
+    }
+
+    /// The prop families this run places: `--props`, else all or none by `--no-3d`.
+    pub fn props(&self) -> crate::structures::PropSet {
+        use crate::structures::PropSet;
+        self.props.unwrap_or(if self.use_3d {
+            PropSet::ALL
+        } else {
+            PropSet::NONE
+        })
     }
 
     /// Whether objects are being skipped only because the scale is below `OBJECT_SKIP_SCALE`.
@@ -1429,6 +1447,21 @@ fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn props_follow_no_3d_unless_given() {
+        use crate::structures::{Prop, PropSet};
+        let parse = |extra: &[&str]| {
+            let base = ["arnis", "--output-dir", ".", "--bbox", "1,2,3,4"];
+            Args::parse_from(base.iter().chain(extra))
+        };
+        assert_eq!(parse(&[]).props(), PropSet::ALL);
+        assert_eq!(parse(&["--no-3d"]).props(), PropSet::NONE);
+        let car = parse(&["--no-3d", "--props", "car"]).props();
+        assert!(car.has(Prop::Car) && !car.has(Prop::Landmark));
+        assert_eq!(parse(&["--props", "none"]).props(), PropSet::NONE);
+        assert!(Args::try_parse_from(["arnis", "--props", "zeppelin"]).is_err());
+    }
 
     #[test]
     fn test_generation_mode() {

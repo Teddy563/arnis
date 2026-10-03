@@ -1508,6 +1508,7 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         args.cave_seed.map(|v| format!("--cave-seed={v}")),
         args.cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
         args.seed.map(|v| format!("--seed={v}")),
+        args.props.map(|v| format!("--props={v}")),
     ];
     values.extend(optional.into_iter().flatten());
     // ponytail: the token rides on the pieces' command lines, visible to this
@@ -2031,6 +2032,7 @@ fn gui_start_generation(
                 osm_tiles_url: crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string(),
                 no_tile_archive: false,
                 use_3d: use_3d_enabled,
+                props: None,
                 debug: false,
                 timeout: Some(std::time::Duration::from_secs(40)),
                 spawn_lat: None,
@@ -2481,6 +2483,7 @@ mod piece_tests {
         args.mapillary_facade_mode = crate::args::FacadeMode::from_str_lossy("blocks");
         args.building_facades = true;
         args.facade_detail = crate::args::FacadeDetail::from_str_lossy("high");
+        args.props = crate::structures::PropSet::parse("car,landmark").ok();
         // The Meld Generation fields, set the way the window sets them.
         let meld = meld_args(
             &[

@@ -28,7 +28,7 @@ fn crane() -> Option<&'static StructureSchematic> {
 
 /// Place one crane at the centroid of a large-enough site; mast on-site, jib overhangs (clipped at edge).
 pub fn maybe_place_crane(editor: &mut WorldEditor, cells: &[(i32, i32)]) {
-    if !editor.place_schematics() {
+    if !editor.place_prop(super::Prop::Crane) {
         return;
     }
     if cells.len() < CRANE_MIN_CELLS {
