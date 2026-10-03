@@ -342,7 +342,7 @@ fn compatibility_errors(manifest: &Manifest, args: &Args) -> Vec<String> {
 /// such, since telling its user to close Minecraft would send them looking
 /// for a game that is not running.
 fn open_in_minecraft(world_dir: &Path) -> String {
-    match other_arnis_process() {
+    match other_arnis_process(world_dir) {
         Some(pid) => format!(
             "The One World at {} is in use by another Arnis run (process {pid}). Wait for it to finish, or stop it, and try again.",
             world_dir.display()
@@ -354,27 +354,36 @@ fn open_in_minecraft(world_dir: &Path) -> String {
     }
 }
 
-/// Another process of this executable, other than this one and its own
-/// pieces. A job's coordinator is named rather than one of its pieces.
-fn other_arnis_process() -> Option<u32> {
-    let exe = std::env::current_exe().ok()?;
-    let name = exe.file_name()?;
-    let own = sysinfo::get_current_pid().ok()?;
+/// Written next to the lock by the Arnis run that holds it, so a refused run
+/// can tell another Arnis job from Minecraft. Never removed: a holder that is
+/// gone, or a pid now used by another program, simply reads as Minecraft.
+const OWNER_FILE: &str = "arnis_one_world/owner.pid";
+
+fn record_owner(world_dir: &Path) {
+    let path = world_dir.join(OWNER_FILE);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, std::process::id().to_string());
+}
+
+/// The live Arnis process recorded as the lock holder, unless it is this one.
+fn other_arnis_process(world_dir: &Path) -> Option<u32> {
+    let pid: u32 = std::fs::read_to_string(world_dir.join(OWNER_FILE))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    if pid == std::process::id() {
+        return None;
+    }
+    let name = std::env::current_exe().ok()?.file_name()?.to_owned();
     let mut sys = sysinfo::System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    let others: Vec<_> = sys
-        .processes()
-        .iter()
-        .filter(|(pid, p)| {
-            **pid != own && p.parent() != Some(own) && p.name().eq_ignore_ascii_case(name)
-        })
-        .collect();
-    let is_piece = |p: &sysinfo::Process| others.iter().any(|(pid, _)| p.parent() == Some(**pid));
-    others
-        .iter()
-        .find(|(_, p)| !is_piece(p))
-        .or(others.first())
-        .map(|(pid, _)| pid.as_u32())
+    let target = sysinfo::Pid::from_u32(pid);
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[target]), true);
+    sys.process(target)
+        .filter(|p| p.name().eq_ignore_ascii_case(&name))
+        .map(|_| pid)
 }
 
 /// Opens or creates the One World at `world_dir`, locks it, and points `args`
@@ -427,6 +436,9 @@ pub fn prepare(world_dir: &Path, requested: &LLBBox, args: &mut Args) -> Result<
         } else {
             std::fs::remove_dir(world_dir)
         };
+    }
+    if resolved.is_ok() {
+        record_owner(world_dir);
     }
     resolved
 }
