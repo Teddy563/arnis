@@ -386,7 +386,7 @@ pub enum Workers {
     Count(u32),
 }
 
-fn parse_workers(s: &str) -> Result<Workers, String> {
+pub fn parse_workers(s: &str) -> Result<Workers, String> {
     match s {
         "auto" => Ok(Workers::Auto),
         _ => match s.parse::<u32>() {

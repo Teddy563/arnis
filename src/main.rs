@@ -424,7 +424,8 @@ fn run_cli() {
     }
     if args.units.coordinates() {
         let world_dir = one_world_paths.clone().unwrap_or_default();
-        if let Err(e) = scale::run(&args, &world_dir, &effective_bbox) {
+        let argv: Vec<_> = env::args_os().skip(1).collect();
+        if let Err(e) = scale::run(&args, &world_dir, &effective_bbox, &argv) {
             eprintln!("{} {}", "Error:".red().bold(), e);
             exit_failed();
         }

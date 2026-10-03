@@ -1372,6 +1372,107 @@ impl Drop for BusySlot {
     }
 }
 
+/// Validates Parallel Workers and Piece Size. They only act on a One World;
+/// either one set builds it in pieces, the other taking its CLI default.
+fn piece_settings(
+    one_world: bool,
+    workers: Option<&str>,
+    regions: Option<u32>,
+) -> Result<crate::args::UnitArgs, String> {
+    if !one_world {
+        return Ok(Default::default());
+    }
+    let one_world_workers = workers
+        .map(crate::args::parse_workers)
+        .transpose()
+        .map_err(|_| "Invalid Parallel Workers.".to_string())?;
+    let unit_regions = regions
+        .map(|n| match n {
+            1..=64 => Ok(n as i32),
+            _ => Err("Invalid Piece Size.".to_string()),
+        })
+        .transpose()?;
+    Ok(crate::args::UnitArgs {
+        unit_regions,
+        one_world_workers,
+        ..Default::default()
+    })
+}
+
+/// The command line that asks the CLI for what `args` holds, without the
+/// executable. A job's pieces are runs of this executable, and the window
+/// was started without one, so the job's own is rebuilt from the settings.
+/// `--bbox`, the spawn and the per-process knobs are the coordinator's to
+/// set per piece. `world_path` is the One World folder.
+fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
+    use clap::ValueEnum;
+    fn name<T: ValueEnum>(v: &T) -> String {
+        v.to_possible_value()
+            .map(|p| p.get_name().to_string())
+            .unwrap_or_default()
+    }
+    let mut out: Vec<std::ffi::OsString> = vec!["--one-world".into()];
+    if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
+        out.extend(["--output-dir".into(), dir.into(), "--world-name".into()]);
+        out.push(world.into());
+    }
+    let mut values = vec![
+        format!("--downloader={}", args.downloader),
+        format!("--scale={}", args.scale),
+        format!("--height-multiplier={}", args.height_multiplier),
+        format!("--body={}", name(&args.body)),
+        format!("--projection={}", args.projection),
+        format!("--ground-level={}", args.ground_level),
+        format!("--mode={}", name(&args.mode)),
+        format!("--interior={}", args.interior),
+        format!("--max-tree-size={}", name(&args.max_tree_size)),
+        format!("--canopy-height={}", args.canopy_height),
+        format!("--overture={}", args.overture),
+        format!("--overture-source={}", name(&args.overture_source)),
+        format!("--osm-tiles-url={}", args.osm_tiles_url),
+        format!("--rotation={}", args.rotation),
+        format!("--map-item={}", args.map_item),
+        format!("--gamemode={}", name(&args.gamemode)),
+        format!("--world-time={}", args.world_time),
+        format!("--world-type={}", name(&args.world_type)),
+        format!("--signage={}", name(&args.signage)),
+        format!(
+            "--mapillary-facade-mode={}",
+            name(&args.mapillary_facade_mode)
+        ),
+        format!("--facade-detail={}", name(&args.facade_detail)),
+        format!("--facade-px={}", args.facade_px),
+    ];
+    let flags = [
+        ("--fillground", args.fillground),
+        ("--caves", args.caves),
+        ("--legacy-trees", args.legacy_trees),
+        ("--no-3d", !args.use_3d),
+        ("--no-tile-archive", args.no_tile_archive),
+        ("--debug", args.debug),
+        ("--disable-height-limit", args.disable_height_limit),
+        ("--aws-only-elevation", args.aws_only_elevation),
+        ("--bake-lighting", args.bake_lighting),
+        ("--voxy-lod", args.voxy_lod),
+        ("--map-preview", args.map_preview),
+        ("--building-facades", args.building_facades),
+    ];
+    values.extend(flags.iter().filter(|f| f.1).map(|f| f.0.to_string()));
+    if let Some(t) = args.timeout {
+        values.push(format!("--timeout={}", t.as_secs()));
+    }
+    if let Some(on) = args.mapillary_facades {
+        values.push(format!("--mapillary-facades={on}"));
+    }
+    // ponytail: the token rides on the pieces' command lines, visible to this
+    // user's other processes; pass it in their environment if that matters.
+    if let Some(token) = &args.mapillary_token {
+        values.push(format!("--mapillary-token={token}"));
+    }
+    out.extend(values.into_iter().map(Into::into));
+    out
+}
+
 // Everything before the `spawn` below - the spawn point written into level.dat,
 // the tall-world datapack install - runs synchronously in this call, and a plain
 // `#[tauri::command]` would run all of it on the main thread with the window
@@ -1426,9 +1527,10 @@ fn gui_start_generation(
     threads: Option<u32>,
     ram_budget_mb: Option<u64>,
     max_downloads: Option<u32>,
-    // ponytail: the frontend also sends oneWorldWorkers / unitRegions; they
-    // become params here, and Args fields below, once --one-world-workers and
-    // --unit-regions exist.
+    // Parallel Workers ("auto" or a count) and Piece Size. Either one builds
+    // a One World area in pieces, as --one-world-workers / --unit-regions do.
+    one_world_workers: Option<String>,
+    unit_regions: Option<u32>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1448,6 +1550,15 @@ fn gui_start_generation(
     };
 
     progress::reset_progress_floor();
+
+    // Pieces are a One World feature; anywhere else the fields are inert.
+    let units = match piece_settings(one_world, one_world_workers.as_deref(), unit_regions) {
+        Ok(units) => units,
+        Err(msg) => {
+            emit_gui_error(&msg);
+            return Err(msg);
+        }
+    };
 
     // Out-of-range values are dropped, as clap would refuse them on the CLI.
     let process = crate::args::ProcessArgs {
@@ -1825,7 +1936,7 @@ fn gui_start_generation(
                 body: celestial_body,
                 // Stock unless Advanced Features set a knob.
                 process,
-                units: Default::default(),
+                units,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -1837,6 +1948,12 @@ fn gui_start_generation(
 
             let mut one_world_extending = false;
             if one_world {
+                // Asked for before `prepare` settles the world's values, as
+                // the user's own command line would ask.
+                let pieces_argv = args
+                    .units
+                    .coordinates()
+                    .then(|| piece_argv(&args, &world_path));
                 let session = match crate::one_world::prepare(&world_path, &bbox, &mut args) {
                     Ok(session) => session,
                     Err(e) => {
@@ -1866,6 +1983,29 @@ fn gui_start_generation(
                         .and_then(|n| n.to_str())
                         .unwrap_or(crate::one_world::DEFAULT_WORLD_NAME),
                 );
+                if let Some(argv) = pieces_argv {
+                    // The coordinator places the spawn, as --spawn-lat/--spawn-lng.
+                    (args.spawn_lat, args.spawn_lng) = spawn_point.unzip();
+                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    if let Err(e) = crate::scale::run(&args, &world_path, &bbox, &argv) {
+                        eprintln!("{e}");
+                        if crate::scale::has_finished_pieces(&world_path) {
+                            // Kept: generating the same area again resumes it.
+                            if let Some(g) = cleanup_guard.as_mut() {
+                                g.disarm();
+                            }
+                        }
+                        emit_gui_error(&e);
+                        return Err(e);
+                    }
+                    if let Some(g) = cleanup_guard.as_mut() {
+                        g.disarm();
+                    }
+                    drop(_session_lock);
+                    emit_gui_progress_update(100.0, "Done! World generation completed.");
+                    println!("{}", "Done! World generation completed.".green().bold());
+                    return Ok(());
+                }
             }
             let args = args;
 
@@ -2123,6 +2263,84 @@ fn gui_start_generation(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod piece_tests {
+    use super::{piece_argv, piece_settings};
+    use crate::args::{Args, Workers};
+    use clap::Parser;
+
+    /// A piece run from the window must ask for what the window asked for:
+    /// every setting the GUI fills in comes back from the rebuilt command line.
+    #[test]
+    fn the_pieces_command_line_parses_back_to_the_same_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = |extra: &[std::ffi::OsString]| {
+            let mut argv: Vec<std::ffi::OsString> = vec![
+                "arnis".into(),
+                "--bbox".into(),
+                "44.43,26.08,44.45,26.11".into(),
+            ];
+            argv.extend_from_slice(extra);
+            Args::try_parse_from(argv).unwrap()
+        };
+        let mut args = base(&[
+            "--one-world".into(),
+            "--output-dir".into(),
+            dir.path().into(),
+            "--world-name".into(),
+            "My World".into(),
+        ]);
+        // Off their CLI defaults, so a dropped field shows.
+        args.scale = 0.37;
+        args.height_multiplier = 1.5;
+        args.ground_level = -40;
+        args.mode = crate::args::GenerationMode::GeoOnly;
+        args.interior = true;
+        args.fillground = true;
+        args.caves = true;
+        args.legacy_trees = true;
+        args.max_tree_size = crate::trees::tree_library::TreeSize::from_str_lossy("small");
+        args.canopy_height = false;
+        args.overture = false;
+        args.use_3d = false;
+        args.timeout = Some(std::time::Duration::from_secs(40));
+        args.disable_height_limit = true;
+        args.aws_only_elevation = true;
+        args.bake_lighting = true;
+        args.voxy_lod = true;
+        args.map_preview = true;
+        args.map_item = false;
+        args.gamemode = crate::args::GameMode::from_str_lossy("survival");
+        args.world_time = 18000;
+        args.world_type = crate::args::WorldType::from_str_lossy("flat");
+        args.signage = crate::args::SignageLevel::from_str_lossy("none");
+        args.mapillary_facades = Some(false);
+        args.mapillary_token = Some("MLY|1|x".into());
+        args.mapillary_facade_mode = crate::args::FacadeMode::from_str_lossy("blocks");
+        args.building_facades = true;
+        args.facade_detail = crate::args::FacadeDetail::from_str_lossy("high");
+        let back = base(&piece_argv(&args, &dir.path().join("My World")));
+        assert_eq!(format!("{back:?}"), format!("{args:?}"));
+    }
+
+    #[test]
+    fn pieces_need_a_one_world_and_valid_settings() {
+        assert!(!piece_settings(false, Some("auto"), Some(4))
+            .unwrap()
+            .coordinates());
+        assert!(!piece_settings(true, None, None).unwrap().coordinates());
+        let units = piece_settings(true, Some("3"), None).unwrap();
+        assert_eq!(units.one_world_workers, Some(Workers::Count(3)));
+        assert_eq!(units.unit_regions, None);
+        let units = piece_settings(true, Some("auto"), Some(4)).unwrap();
+        assert_eq!(units.one_world_workers, Some(Workers::Auto));
+        assert_eq!(units.unit_regions, Some(4));
+        assert!(piece_settings(true, Some("lots"), None).is_err());
+        assert!(piece_settings(true, None, Some(0)).is_err());
+        assert!(piece_settings(true, None, Some(65)).is_err());
+    }
 }
 
 #[cfg(test)]

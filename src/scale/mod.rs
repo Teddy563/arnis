@@ -141,8 +141,15 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
-/// Builds the selection `args` was opened on, piece by piece.
-pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), String> {
+/// Builds the selection `args` was opened on, piece by piece. `argv` is the
+/// command line that asks for `args`, without the executable: each piece
+/// runs it with its own bbox and lease.
+pub fn run(
+    args: &Args,
+    world_dir: &Path,
+    selection: &LLBBox,
+    argv: &[OsString],
+) -> Result<(), String> {
     let run = args
         .one_world_run
         .as_ref()
@@ -289,8 +296,7 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
                 &lease_path,
                 &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
             )?;
-            let argv =
-                sizing.child_args(child_args(std::env::args_os().skip(1), unit, &lease_path));
+            let argv = sizing.child_args(child_args(argv.iter().cloned(), unit, &lease_path));
             let mut attempt = 0;
             let r = loop {
                 println!(
@@ -311,8 +317,16 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
                         .zip(&units)
                         .map(|(f, u)| f * u.chunks() as f64)
                         .sum();
+                    let finished = d.iter().filter(|&&f| f >= 1.0).count();
                     drop(d);
-                    progress_json::progress(sum / total * 100.0, "");
+                    // The window names the pieces; `--progress json` has its
+                    // piece records, so its stream stays as it was.
+                    let message = if crate::progress::is_running_with_gui() {
+                        format!("Building pieces... {finished}/{of} done")
+                    } else {
+                        String::new()
+                    };
+                    crate::progress::emit_gui_progress_update(sum / total * 100.0, &message);
                 });
                 match result {
                     Ok(r) => break r,
@@ -396,6 +410,18 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
     // Gone unless another job is still waiting to be resumed.
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
     Ok(())
+}
+
+/// Whether a job in `world_dir` has finished a piece, which makes the world
+/// worth keeping after a failure: running the job again resumes it.
+pub fn has_finished_pieces(world_dir: &Path) -> bool {
+    let Ok(jobs) = std::fs::read_dir(world_dir.join(one_world::JOBS_DIR)) else {
+        return false;
+    };
+    jobs.flatten()
+        .filter_map(|job| std::fs::read_dir(job.path()).ok())
+        .flat_map(|files| files.flatten())
+        .any(|f| f.file_name().to_string_lossy().starts_with("done-"))
 }
 
 /// The world-wide writes of a finished job, in the order one run makes them.

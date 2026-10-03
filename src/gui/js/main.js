@@ -1698,9 +1698,8 @@ function advancedFeatureArgs() {
     threads: positive('threads-input'),
     ramBudgetMb: positive('ram-budget-input'),
     maxDownloads: positive('max-downloads-input'),
-    // ponytail: sent ahead of --one-world-workers / --unit-regions; Tauri
-    // drops keys gui_start_generation does not declare, so these are inert
-    // until those Args fields land.
+    // Either one builds a One World area in pieces (--one-world-workers /
+    // --unit-regions); both rows are disabled, so null, without One World.
     oneWorldWorkers: workers ? workers.value : null,
     unitRegions: positive('unit-regions-select'),
   };

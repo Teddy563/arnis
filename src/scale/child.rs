@@ -13,6 +13,13 @@ use std::process::{Child, Command};
 /// Set up `cmd` so the piece it starts can be tied to this process.
 pub fn prepare(cmd: &mut Command) {
     cmd.stdin(std::process::Stdio::piped());
+    // A piece of a job started from the window must not open a console of
+    // its own (a release build has none to open; a debug build would).
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
