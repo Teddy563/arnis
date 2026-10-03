@@ -983,19 +983,6 @@ fn fetch_overture_buildings_inner(
             if clipped.len() < 3 {
                 return None;
             }
-            if projection.clip_pad > 0 {
-                let min_x = clipped.iter().map(|n| n.x).min().unwrap_or(0);
-                let max_x = clipped.iter().map(|n| n.x).max().unwrap_or(0);
-                let min_z = clipped.iter().map(|n| n.z).min().unwrap_or(0);
-                let max_z = clipped.iter().map(|n| n.z).max().unwrap_or(0);
-                if max_x < xzbbox.min_x()
-                    || min_x > xzbbox.max_x()
-                    || max_z < xzbbox.min_z()
-                    || min_z > xzbbox.max_z()
-                {
-                    return None;
-                }
-            }
             way.nodes = clipped;
             Some(ProcessedElement::Way(way))
         })

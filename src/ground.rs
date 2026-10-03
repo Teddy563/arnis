@@ -165,6 +165,7 @@ impl GroundFrame {
         let Some((world_w, world_h)) = self.world_dims else {
             let (ww, wh, gw, gh) = compute_grid_dims(bbox, scale);
             return FetchPlan {
+                m_per_cell: None,
                 bbox: *bbox,
                 dims: (ww, wh, gw, gh),
                 pad: 0,
@@ -192,6 +193,7 @@ impl GroundFrame {
                 proj.lon_for_x(x1),
             ) {
                 return FetchPlan {
+                    m_per_cell: (pad > 0).then(|| 1.0 / scale),
                     bbox: centres,
                     dims: (pw, ph, gw, gh),
                     pad,
@@ -201,6 +203,7 @@ impl GroundFrame {
         }
         let (_, _, gw, gh) = compute_grid_dims_for_world(world_w, world_h);
         FetchPlan {
+            m_per_cell: None,
             bbox: *bbox,
             dims: (world_w, world_h, gw, gh),
             pad: 0,
@@ -210,6 +213,9 @@ impl GroundFrame {
 }
 
 struct FetchPlan {
+    /// Metres per cell when the frame fixes it (One World), so every area smooths
+    /// with the same sigma; None measures the bbox.
+    m_per_cell: Option<f64>,
     bbox: LLBBox,
     /// `(world_width, world_height, grid_width, grid_height)`
     dims: (usize, usize, usize, usize),
@@ -298,7 +304,8 @@ impl Ground {
         let (mut land_cover, mut canopy) = std::thread::scope(|s| {
             let job = canopy_height
                 .then(|| s.spawn(move || canopy::fetch_canopy_data(&fetch_bbox, grid_w, grid_h)));
-            let lc = land_cover::fetch_land_cover_data(&fetch_bbox, grid_w, grid_h);
+            let lc =
+                land_cover::fetch_land_cover_data(&fetch_bbox, grid_w, grid_h, plan.m_per_cell);
             (lc, job.and_then(|h| h.join().ok()).flatten())
         });
         if land_cover.is_none() {
@@ -396,6 +403,7 @@ impl Ground {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: None,
             canopy: None,
@@ -441,7 +449,7 @@ impl Ground {
             let canopy_job = canopy_height
                 .then(|| scope.spawn(|| canopy::fetch_canopy_data(bbox, grid_w, grid_h)));
             let mut land_cover = if body.is_earth() {
-                let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h);
+                let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h, plan.m_per_cell);
                 if lc.is_some() {
                     println!("Land cover data loaded successfully");
                 } else {
@@ -487,6 +495,7 @@ impl Ground {
                 benchmark,
                 (world_w, world_h, grid_w, grid_h),
                 frame.affine,
+                plan.m_per_cell,
             ) {
                 Ok(mut elevation_data) => {
                     let lat = frame.anchor_lat(&requested_bbox);
@@ -998,6 +1007,9 @@ impl Ground {
         }
 
         let data: &ElevationData = self.elevation_data.as_ref().unwrap();
+        if let Some(h) = data.halo_height(coord.x, coord.z) {
+            return h.round() as i32;
+        }
         let (x_ratio, z_ratio) = self.get_data_coordinates(coord, data);
         self.interpolate_height(x_ratio, z_ratio, data)
     }
@@ -1007,6 +1019,9 @@ impl Ground {
     pub fn level_exact(&self, coord: XZPoint) -> f64 {
         match &self.elevation_data {
             Some(data) if self.elevation_enabled => {
+                if let Some(h) = data.halo_height(coord.x, coord.z) {
+                    return h;
+                }
                 let (x_ratio, z_ratio) = self.get_data_coordinates(coord, data);
                 Self::interpolate_height_exact(x_ratio, z_ratio, data)
             }
@@ -1492,6 +1507,7 @@ mod tests {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: None,
             canopy: None,
@@ -1607,6 +1623,7 @@ mod tests {
             slope_correction: 1.0,
             ground_level: 0,
             soft_top: None,
+            halo: None,
         };
         // 46 deg snow line is 3000 m; at 0.1 block/m from min 0 m, ground 64 => Y 364.
         assert_eq!(snow_threshold_for(&ed(0.0, 0.1), 46.0, 64), 364);
@@ -1777,6 +1794,7 @@ pub(crate) mod test_support {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: Some(land_cover),
             canopy: None,

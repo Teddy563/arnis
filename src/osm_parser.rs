@@ -810,24 +810,6 @@ pub fn arch_era_from_hint(hint: StyleHint) -> ArchEra {
     }
 }
 
-fn way_touches_rect(nodes: &[ProcessedNode], rect: &XZBBox) -> bool {
-    let mut min_x = i32::MAX;
-    let mut max_x = i32::MIN;
-    let mut min_z = i32::MAX;
-    let mut max_z = i32::MIN;
-    for n in nodes {
-        min_x = min_x.min(n.x);
-        max_x = max_x.max(n.x);
-        min_z = min_z.min(n.z);
-        max_z = max_z.max(n.z);
-    }
-    !nodes.is_empty()
-        && max_x >= rect.min_x()
-        && min_x <= rect.max_x()
-        && max_z >= rect.min_z()
-        && min_z <= rect.max_z()
-}
-
 pub fn parse_osm_data(
     osm_data: OsmData,
     bbox: LLBBox,
@@ -852,11 +834,9 @@ pub fn parse_osm_data(
         .unwrap_or_else(|e| {
             panic!("Error in defining coordinate transformation:\n{e}");
         });
-    // Ways lying only in the clip margin cannot put a block into the world.
+    // Ways in the clip margin are kept: a wide road renders across the edge, and
+    // street/neighbour context must match the run on the other side of the seam.
     let clip_bbox = projection.clip_bbox(&xzbbox);
-    let touches_world = |nodes: &[ProcessedNode]| -> bool {
-        projection.clip_pad <= 0 || way_touches_rect(nodes, &xzbbox)
-    };
 
     if debug {
         println!("Total elements: {}", data.total_count());
@@ -983,7 +963,7 @@ pub fn parse_osm_data(
         let clipped_nodes = clip_way_to_bbox(&way.nodes, &clip_bbox);
 
         // Skip ways that are completely outside the bbox (empty after clipping)
-        if clipped_nodes.is_empty() || !touches_world(&clipped_nodes) {
+        if clipped_nodes.is_empty() {
             continue;
         }
 
