@@ -114,10 +114,15 @@ pub fn generate_landuse(
             Some("training_area" | "range" | "danger_area" | "trench")
         );
     let climate = editor.climate();
-    // Farmland parcels (--field-mix / --farm-crops). None keeps the uniform crop sheet.
-    let fields = (landuse_tag == "farmland")
-        .then(|| FieldProfile::from_args(&args.fields, args.scale))
-        .flatten();
+    // Farmland parcels (--field-mix / --farm-crops) and grassland parcels
+    // (--grass-texture). None keeps the stock surface.
+    let fields = match landuse_tag.as_str() {
+        "farmland" => FieldProfile::from_args(&args.fields, args.scale),
+        "meadow" | "grass" | "greenfield" | "orchard" | "village_green" => {
+            FieldProfile::grassland(&args.fields, args.scale)
+        }
+        _ => None,
+    };
 
     for &(x, z) in floor_area.iter() {
         // One resolution per block, shared by the surface and the decoration below.
@@ -261,10 +266,28 @@ pub fn generate_landuse(
                     }
                 }
             }
-            "farmland"
-                if field_cell.is_some() && !editor.check_for_block(x, 0, z, Some(&[WATER])) =>
-            {
-                field_texture::decorate(editor, field_cell.as_ref().unwrap(), x, z, &mut rng);
+            _ if field_cell.is_some() && !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
+                let cell = field_cell.as_ref().unwrap();
+                // Textured grassland keeps the tag's own trees: the orchard grid and
+                // the odd meadow tree.
+                let tree = !cell.is_track
+                    && match landuse_tag.as_str() {
+                        "orchard" => x % 18 == 0 && z % 10 == 0,
+                        "meadow" => {
+                            rng.random_range(0..200) == 0 && editor.land_cover_backs_trees(x, z)
+                        }
+                        _ => false,
+                    };
+                if tree {
+                    Tree::create(
+                        editor,
+                        (x, 1, z),
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                    );
+                } else {
+                    field_texture::decorate(editor, cell, x, z, &mut rng);
+                }
             }
             "farmland" if !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
                 // Irrigation dots, but only where boxed in so they can't flow downhill and wash out crops.

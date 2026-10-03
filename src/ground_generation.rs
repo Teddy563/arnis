@@ -260,6 +260,19 @@ pub fn generate_ground_region(
     let tree_spacing = editor.tree_slot_spacing();
     let schematic_trees = editor.tree_pack().is_some();
     let terrain_enabled = ground.elevation_enabled;
+    let climate = ground.climate();
+    // Untagged cropland and grassland parcels (--land-texture). Climates with their
+    // own vegetated palette keep it.
+    let land_texture = climate
+        .surface_palette(land_cover::LC_CROPLAND, 0, 0)
+        .is_none()
+        .then(|| {
+            crate::element_processing::field_texture::LandTexture::from_args(
+                &args.fields,
+                args.scale,
+            )
+        })
+        .flatten();
 
     let total_blocks: u64 =
         (iter_max_x - iter_min_x + 1).max(0) as u64 * (iter_max_z - iter_min_z + 1).max(0) as u64;
@@ -676,6 +689,10 @@ pub fn generate_ground_region(
                                     terrain_surface::GLACIER_ICE
                                 } else if let Some(p) = climate.surface_palette(cover, x, z) {
                                     p
+                                } else if let Some(cell) =
+                                    land_texture.as_ref().and_then(|t| t.cell_at(cover, x, z))
+                                {
+                                    (cell.surface, DIRT)
                                 } else {
                                     // Select surface block based on ESA land cover class
                                     match cover {
@@ -1092,8 +1109,31 @@ pub fn generate_ground_region(
                                 );
                                 let sward = climate_sward(ground.climate_at(coord))
                                     * if worn { 0.5 } else { 1.0 };
+                                // A textured cell is decorated as a parcel, unless a mapped
+                                // feature or the shore took the surface.
+                                let land_cell = land_texture
+                                    .as_ref()
+                                    .and_then(|t| t.cell_at(cover, x, z))
+                                    .filter(|c| {
+                                        editor.check_for_block_absolute(
+                                            x,
+                                            ground_y,
+                                            z,
+                                            Some(&[c.surface]),
+                                            None,
+                                        )
+                                    });
 
                                 match cover {
+                                    _ if land_cell.is_some() => {
+                                        crate::element_processing::field_texture::decorate(
+                                            editor,
+                                            land_cell.as_ref().unwrap(),
+                                            x,
+                                            z,
+                                            &mut rng,
+                                        );
+                                    }
                                     land_cover::LC_TREE_COVER
                                         if slope <= 4
                                             && ground_allows_trees

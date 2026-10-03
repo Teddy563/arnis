@@ -4,6 +4,7 @@ use crate::bresenham::bresenham_line;
 use crate::climate::Climate;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFillCache};
 use crate::osm_parser::{ProcessedElement, ProcessedMemberRole, ProcessedRelation, ProcessedWay};
@@ -203,13 +204,21 @@ pub fn generate_natural(
                             | Climate::ColdSteppe
                     );
 
+                // Grassland parcels (--grass-texture). None keeps the stock sward.
+                let grass = (natural_type == "grassland")
+                    .then(|| FieldProfile::grassland(&args.fields, args.scale))
+                    .flatten();
+
                 for &(x, z) in filled_area.iter() {
+                    let grass_cell = grass.as_ref().map(|g| g.cell_at(x, z));
                     // Roads, paths and paved areas keep their own surface. Checked
                     // by mask because a gravel or dirt road is not in the block list.
                     let sealed = editor.surface_is_sealed(x, z);
                     if !sealed && !editor.check_for_block(x, 0, z, Some(protected_blocks)) {
                         let b = if rock_variation {
                             vary_rock_block(block_type, x, z)
+                        } else if let Some(cell) = &grass_cell {
+                            cell.surface
                         } else {
                             block_type
                         };
@@ -262,6 +271,15 @@ pub fn generate_natural(
                         continue;
                     }
                     match natural_type.as_str() {
+                        "grassland" if grass_cell.is_some() => {
+                            field_texture::decorate(
+                                editor,
+                                grass_cell.as_ref().unwrap(),
+                                x,
+                                z,
+                                &mut rng,
+                            );
+                        }
                         "grassland" => {
                             if !editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                                 continue;

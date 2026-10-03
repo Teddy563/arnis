@@ -1481,6 +1481,8 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         ("--no-buildings", !args.buildings),
         ("--rocks", args.scatter.rocks),
         ("--bushes", args.scatter.bushes),
+        ("--grass-texture", args.fields.grass_texture),
+        ("--land-texture", args.fields.land_texture),
     ];
     values.extend(flags.iter().filter(|f| f.1).map(|f| f.0.to_string()));
     if let Some(t) = args.timeout {
@@ -1496,6 +1498,8 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
         args.snow.snow_y.map(|v| format!("--snow-y={v}")),
         args.fields.field_mix.map(|v| format!("--field-mix={v}")),
         args.fields.farm_crops.map(|v| format!("--farm-crops={v}")),
+        args.fields.grass_mix.map(|v| format!("--grass-mix={v}")),
+        args.fields.land_mix.map(|v| format!("--land-mix={v}")),
         args.tree_realm
             .as_ref()
             .map(|v| format!("--tree-realm={v}")),
@@ -2492,6 +2496,10 @@ mod piece_tests {
                 "--field-mix=prairie",
                 "--farm-crops=wheat=60,sunflower=20,fallow=20",
                 "--field-scale=175",
+                "--grass-texture",
+                "--grass-mix=plains=3,flower=1",
+                "--land-texture",
+                "--land-mix=prairie",
                 "--tree-realm=eur",
                 "--tree-size-weights=small=50,tall=150,giant=0",
                 "--cave-seed=12345",

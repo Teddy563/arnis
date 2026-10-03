@@ -13,6 +13,10 @@
 //! road where there is one (see `road_bearings`) and to one of six hashed angles where
 //! there is not, so plots do not all snap to the world axes.
 //!
+//! Experimental `--grass-texture` lays mapped grassland out the same way on larger,
+//! looser plots without crops, and `--land-texture` carries both onto the cropland and
+//! grassland that only satellite land cover knows about.
+//!
 //! Layout is a pure function of `(x, z)`: no per-run state, no RNG, so tiles, One World
 //! work units and separate runs of overlapping areas agree. Decoration uses the
 //! element's own RNG like the rest of `landuse`.
@@ -48,6 +52,30 @@ pub struct FieldArgs {
     /// also follow --scale.
     #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u16).range(25..=400))]
     pub field_scale: u16,
+
+    /// Experimental: lay mapped grassland (meadow, grass, greenfield, village_green,
+    /// orchard, natural=grassland) out as loose parcels of sward, wildflowers, worn and
+    /// mossy ground, like meadows cut and grazed at different times.
+    #[arg(long)]
+    pub grass_texture: bool,
+
+    /// Experimental: parcel mix for --grass-texture and --land-texture grassland, as
+    /// --field-mix takes it. A share list sits on the grassland plot sizes. Defaults to
+    /// `plains=64,flower=22,moss=8,coarse=6`.
+    #[arg(long, value_name = "PRESET|LIST", value_parser = FieldMix::parse_grass)]
+    pub grass_mix: Option<FieldMix>,
+
+    /// Experimental: texture land the map leaves untagged from satellite land cover, so
+    /// it reads like an aerial photo: cropland as farm parcels (--land-mix), grassland as
+    /// grass parcels (--grass-mix). Temperate, savanna and dry continental areas only;
+    /// other climates keep their own ground.
+    #[arg(long)]
+    pub land_texture: bool,
+
+    /// Experimental: parcel mix for --land-texture cropland, as --field-mix takes it.
+    /// Defaults to patchwork.
+    #[arg(long, value_name = "PRESET|LIST", value_parser = FieldMix::parse, requires = "land_texture")]
+    pub land_mix: Option<FieldMix>,
 }
 
 impl Default for FieldArgs {
@@ -56,6 +84,10 @@ impl Default for FieldArgs {
             field_mix: None,
             farm_crops: None,
             field_scale: 100,
+            grass_texture: false,
+            grass_mix: None,
+            land_texture: false,
+            land_mix: None,
         }
     }
 }
@@ -189,6 +221,13 @@ impl FieldMix {
         18,
         [45, 10, 10, 5, 20, 5, 5],
     );
+    /// Grassland: large loose plots of sward and wildflowers, few tracks, no crops.
+    const GRASS: Self = Self::preset(
+        [6, 64, 22, 0, 8],
+        [40, 80, 140],
+        18,
+        [40, 15, 15, 8, 12, 5, 5],
+    );
     /// `--farm-crops` alone: patchwork plots, all of them crops.
     const FARM_ONLY: Self = Self::preset(
         [0, 0, 0, 100, 0],
@@ -208,6 +247,15 @@ impl FieldMix {
 
     /// A preset name, or a share list on patchwork's parcel sizes and crops.
     pub fn parse(s: &str) -> Result<Self, String> {
+        Self::parse_on(s, Self::PATCHWORK)
+    }
+
+    /// `--grass-mix`: a preset name, or a share list on the grassland plot sizes.
+    pub fn parse_grass(s: &str) -> Result<Self, String> {
+        Self::parse_on(s, Self::GRASS)
+    }
+
+    fn parse_on(s: &str, base: Self) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
             "classic" => Ok(Self::CLASSIC),
             "smallholding" => Ok(Self::SMALLHOLDING),
@@ -216,7 +264,7 @@ impl FieldMix {
             "pasture" => Ok(Self::PASTURE),
             _ => Ok(FieldMix {
                 shares: parse_weights(s, &CATEGORY_KEYS)?,
-                ..Self::PATCHWORK
+                ..base
             }),
         }
     }
@@ -238,7 +286,7 @@ impl std::fmt::Display for FarmCrops {
 }
 
 /// The `--field-mix` value that parses back to this mix: a preset's name, else
-/// the share list (a list always sits on patchwork's sizes and crops).
+/// the share list (a list sits on patchwork's sizes, or grassland's for `--grass-mix`).
 impl std::fmt::Display for FieldMix {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let presets = [
@@ -420,11 +468,27 @@ impl FieldProfile {
     /// The profile `--field-mix` / `--farm-crops` ask for, or None for the uniform
     /// crop sheet (flags absent or classic), in which case callers skip the field pass.
     pub fn from_args(args: &FieldArgs, map_scale: f64) -> Option<Self> {
-        let mut mix = match (args.field_mix, args.farm_crops) {
+        let mix = match (args.field_mix, args.farm_crops) {
             (Some(mix), _) => mix,
             (None, Some(_)) => FieldMix::FARM_ONLY,
             (None, None) => return None,
         };
+        Self::with_mix(mix, args, map_scale)
+    }
+
+    /// The `--grass-texture` profile for mapped grassland, or None when it is off.
+    pub fn grassland(args: &FieldArgs, map_scale: f64) -> Option<Self> {
+        args.grass_texture
+            .then(|| Self::grass_profile(args, map_scale))
+            .flatten()
+    }
+
+    fn grass_profile(args: &FieldArgs, map_scale: f64) -> Option<Self> {
+        Self::with_mix(args.grass_mix.unwrap_or(FieldMix::GRASS), args, map_scale)
+    }
+
+    /// `mix` with the run's crop shares and sizes. None for classic (all-zero shares).
+    fn with_mix(mut mix: FieldMix, args: &FieldArgs, map_scale: f64) -> Option<Self> {
         if mix.shares == [0; 5] {
             return None;
         }
@@ -561,6 +625,37 @@ impl FieldProfile {
             surface,
             is_track,
         }
+    }
+}
+
+/// `--land-texture`: parcel profiles for the satellite land-cover classes the map
+/// leaves untagged. Same position-only layout as mapped fields, so where farmland
+/// polygons and untagged cropland share a mix their parcels run on across the border.
+pub struct LandTexture {
+    cropland: Option<FieldProfile>,
+    grassland: Option<FieldProfile>,
+}
+
+impl LandTexture {
+    pub fn from_args(args: &FieldArgs, map_scale: f64) -> Option<Self> {
+        args.land_texture.then(|| LandTexture {
+            cropland: FieldProfile::with_mix(
+                args.land_mix.unwrap_or(FieldMix::PATCHWORK),
+                args,
+                map_scale,
+            ),
+            grassland: FieldProfile::grass_profile(args, map_scale),
+        })
+    }
+
+    /// The cell for land-cover class `cover` at `(x, z)`; None for classes left alone.
+    pub fn cell_at(&self, cover: u8, x: i32, z: i32) -> Option<FieldCell> {
+        match cover {
+            crate::land_cover::LC_CROPLAND => self.cropland.as_ref(),
+            crate::land_cover::LC_GRASSLAND => self.grassland.as_ref(),
+            _ => None,
+        }
+        .map(|p| p.cell_at(x, z))
     }
 }
 
@@ -1015,6 +1110,83 @@ mod tests {
         for doubled in [at(200, 1.0), at(100, 2.0)] {
             assert!((doubled - 2 * w).abs() <= 2, "{doubled} is not ~2x {w}");
         }
+    }
+
+    /// Grass and land texture are off unless asked for; grassland grows no crops.
+    #[test]
+    fn grass_and_land_texture_default_off_and_cropless() {
+        use crate::land_cover::{LC_CROPLAND, LC_GRASSLAND, LC_TREE_COVER};
+        let off = FieldArgs::default();
+        assert!(FieldProfile::grassland(&off, 1.0).is_none());
+        assert!(LandTexture::from_args(&off, 1.0).is_none());
+        // --grass-mix alone changes nothing.
+        let mix_only = FieldArgs {
+            grass_mix: Some(FieldMix::parse_grass("moss=1").unwrap()),
+            ..FieldArgs::default()
+        };
+        assert!(FieldProfile::grassland(&mix_only, 1.0).is_none());
+
+        let on = FieldArgs {
+            grass_texture: true,
+            land_texture: true,
+            ..FieldArgs::default()
+        };
+        let grass = FieldProfile::grassland(&on, 1.0).unwrap();
+        let land = LandTexture::from_args(&on, 1.0).unwrap();
+        let mut cats = HashSet::new();
+        let mut farm_on_cropland = 0;
+        for x in (0..6000).step_by(19) {
+            for z in (0..6000).step_by(23) {
+                let c = grass.cell_at(x, z);
+                assert!(c.crop.is_none() && c.cat != FieldCategory::Farm);
+                cats.insert(format!("{:?}", c.cat));
+                assert_eq!(
+                    land.cell_at(LC_GRASSLAND, x, z).map(|c| c.surface),
+                    Some(c.surface)
+                );
+                assert!(land.cell_at(LC_TREE_COVER, x, z).is_none());
+                farm_on_cropland +=
+                    (land.cell_at(LC_CROPLAND, x, z).unwrap().cat == FieldCategory::Farm) as u32;
+            }
+        }
+        assert_eq!(cats.len(), 4, "grass styles {cats:?}");
+        assert!(farm_on_cropland > 0);
+    }
+
+    /// Untagged cropland on the farmland mix continues the mapped parcels exactly, so
+    /// a farmland polygon's border disappears into the land around it.
+    #[test]
+    fn land_cropland_matches_farmland_on_the_same_mix() {
+        let args = FieldArgs {
+            field_mix: Some(FieldMix::PRAIRIE),
+            land_texture: true,
+            land_mix: Some(FieldMix::PRAIRIE),
+            ..FieldArgs::default()
+        };
+        let farm = FieldProfile::from_args(&args, 1.0).unwrap();
+        let land = LandTexture::from_args(&args, 1.0).unwrap();
+        for x in (-900..900).step_by(7) {
+            for z in (-900..900).step_by(11) {
+                let (a, b) = (
+                    farm.cell_at(x, z),
+                    land.cell_at(crate::land_cover::LC_CROPLAND, x, z).unwrap(),
+                );
+                assert_eq!(
+                    (a.surface, a.crop, a.crop_age),
+                    (b.surface, b.crop, b.crop_age)
+                );
+            }
+        }
+    }
+
+    /// A --grass-mix list sits on grassland plot sizes and reads back from its text.
+    #[test]
+    fn grass_mix_lists_round_trip_on_grass_sizes() {
+        let m = FieldMix::parse_grass("plains=3,flower=1").unwrap();
+        assert_eq!(m.sizes, FieldMix::GRASS.sizes);
+        assert_eq!(FieldMix::parse_grass(&m.to_string()).unwrap(), m);
+        assert_eq!(FieldMix::parse_grass("pasture").unwrap(), FieldMix::PASTURE);
+        assert!(FieldMix::parse_grass("grass=1").is_err());
     }
 
     /// Crop placement shares one compound per age, and an out-of-range age clamps.

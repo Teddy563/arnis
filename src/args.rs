@@ -642,6 +642,8 @@ pub const CAPABILITIES: &[&str] = &[
     "no-buildings",
     "loot-table",
     "field-mix",
+    "grass-texture",
+    "land-texture",
     "tree-realm",
     "tree-size-weights",
     "cave-seed",
