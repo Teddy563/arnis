@@ -340,6 +340,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub units: UnitArgs,
+
+    #[command(flatten)]
+    pub snow: crate::snow_mode::SnowArgs,
 }
 
 /// Large One World jobs cut into region-group pieces. Off unless asked for,
@@ -883,6 +886,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
+    args.snow.validate(args.one_world)?;
     if args.units.coordinates() && args.save_json_file.is_some() {
         return Err("--save-json-file does not combine with a job built in pieces.".to_string());
     }

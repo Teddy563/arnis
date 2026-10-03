@@ -594,6 +594,36 @@ impl Ground {
         self.snow_threshold_y
     }
 
+    /// Moves the climatic snow line set at construction where `--snow-mode` puts it.
+    pub fn apply_snow_mode(&mut self, snow: &crate::snow_mode::SnowArgs) {
+        use crate::snow_mode::SnowMode;
+        // Off keeps the line: it only stops snow being laid.
+        if !self.body.is_earth() || matches!(snow.snow_mode, SnowMode::Realistic | SnowMode::Off) {
+            return;
+        }
+        let relief = self
+            .elevation_data
+            .as_ref()
+            .filter(|_| self.elevation_enabled)
+            .map(|d| {
+                d.heights
+                    .iter()
+                    .flatten()
+                    .fold((f64::MAX, f64::MIN), |(lo, hi), &h| {
+                        (lo.min(f64::from(h)), hi.max(f64::from(h)))
+                    })
+            })
+            .filter(|(lo, hi)| lo <= hi);
+        self.snow_threshold_y =
+            snow.threshold_y(self.snow_threshold_y, relief, self.blocks_per_meter());
+        if snow.snow_mode == SnowMode::Peaks {
+            match self.snow_threshold_y {
+                i32::MAX => println!("Snow peaks: too little relief for snow caps."),
+                y => println!("Snow peaks: snow from Y {y}."),
+            }
+        }
+    }
+
     /// Climate at the bbox center (Temperate keeps the existing surface/biome behaviour).
     #[inline(always)]
     pub fn climate(&self) -> crate::climate::Climate {
@@ -1366,7 +1396,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
     let frame = GroundFrame::from_args(args, &bbox);
     if args.terrain() {
         println!("{} Fetching elevation...", "[3/7]".bold());
-        let ground = Ground::new_enabled(
+        let mut ground = Ground::new_enabled(
             &bbox,
             args.scale,
             args.height_multiplier,
@@ -1380,6 +1410,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
             args.body,
             &frame,
         );
+        ground.apply_snow_mode(&args.snow);
         // The scaler may have sunk the base to reach the extended floor. The bedrock plane and
         // the out-of-bbox filler chunks both key off that base, so pin them to it now.
         let floor = area_floor_for(&ground, args);

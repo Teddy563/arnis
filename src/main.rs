@@ -53,6 +53,7 @@ mod progress_json;
 mod projection;
 mod retrieve_data;
 mod scale;
+mod snow_mode;
 mod structures;
 #[cfg(feature = "gui")]
 mod telemetry;

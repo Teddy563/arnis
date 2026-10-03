@@ -301,6 +301,7 @@ pub fn generate_ground_region(
 
     // Snow line and the band over which snow thickens into full cover.
     let snow_line = terrain_surface::SnowLine::new(ground, center_lat, args.rotation);
+    let snowfall = args.snow.snowfall();
     // Share of forest-floor grass that grows as ferns, by the habitat the forest is in.
     // Undergrowth thins out with dryness: sparse in deserts, thinner on steppe,
     // full in savanna, temperate and boreal country.
@@ -612,6 +613,7 @@ pub fn generate_ground_region(
                                 snow_depth = terrain_surface::glacier_depth(snow_depth);
                             }
                             let snow = if planetary_body.is_some()
+                                || !snowfall
                                 || snow_depth < terrain_surface::SNOW_MIN_DEPTH
                             {
                                 terrain_surface::Snow::None
