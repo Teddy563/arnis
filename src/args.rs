@@ -172,6 +172,12 @@ pub struct Args {
     #[arg(long, value_enum, default_value_t = crate::trees::tree_library::TreeSize::Giant)]
     pub max_tree_size: crate::trees::tree_library::TreeSize,
 
+    /// Tree realm pack to use instead of the one the area's ecoregion or location picks:
+    /// auto, afr, asn, aus, ena, eur, fl, ind, sam, wna or vanilla-plus. A forced realm
+    /// skips the ecoregion mixes and keeps its palms.
+    #[arg(long, value_name = "REALM", value_parser = clap::builder::PossibleValuesParser::new(crate::trees::tree_pack::REALMS))]
+    pub tree_realm: Option<String>,
+
     /// Place trees from the Meta/WRI global canopy height map instead of assuming
     /// every tree-cover cell is forest. Land cover still decides the surface.
     #[arg(long = "canopy-height", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]

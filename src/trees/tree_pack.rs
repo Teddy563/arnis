@@ -51,6 +51,21 @@ impl TreePackSource {
     }
 }
 
+/// Values `--tree-realm` accepts: "auto" plus every bundled realm pack.
+pub const REALMS: &[&str] = &[
+    "auto",
+    "afr",
+    "asn",
+    "aus",
+    "ena",
+    "eur",
+    "fl",
+    "ind",
+    "sam",
+    "wna",
+    "vanilla-plus",
+];
+
 /// Realm id for a point ("vanilla-plus" if none match); bounds inclusive, first match wins.
 pub fn realm_for_latlon(lat: f64, lon: f64) -> &'static str {
     // (code, lat_min, lat_max, lon_min, lon_max)
@@ -89,21 +104,27 @@ pub fn load(
     let sizes = SizeFilter::up_to(args.max_tree_size);
     let lat = (bbox.min().lat() + bbox.max().lat()) / 2.0;
     let lon = (bbox.min().lng() + bbox.max().lng()) / 2.0;
+    // A forced realm drops the ecoregion mixes, which would otherwise pick the communities.
+    let forced = args.tree_realm.as_deref().filter(|&r| r != "auto");
     let mapped: Vec<(u16, &'static str)> = ecoregions
+        .filter(|_| forced.is_none())
         .map(EcoMap::by_area)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(id, _)| ecoregion::tree_mix(id).map(|(pack, _)| (id, pack)))
         .collect();
-    let realm = mapped
-        .first()
-        .map_or_else(|| realm_for_latlon(lat, lon), |&(_, pack)| pack);
+    let realm = forced.unwrap_or_else(|| {
+        mapped
+            .first()
+            .map_or_else(|| realm_for_latlon(lat, lon), |&(_, pack)| pack)
+    });
     let source = TreePackSource::embedded(realm);
     let ids: Vec<u16> = mapped.iter().map(|&(id, _)| id).collect();
     // Palms stay loaded if any part of the area grows them; the ecoregion gates each cell.
     let abs_lat = lat.abs();
     let unmapped_palms = ecoregions.is_none_or(EcoMap::has_gaps) && abs_lat <= 35.0;
-    let exclude_palms = !unmapped_palms
+    let exclude_palms = forced.is_none()
+        && !unmapped_palms
         && !ids
             .iter()
             .filter_map(|&id| ecoregion::lookup(id))
@@ -119,7 +140,7 @@ pub fn load(
     ) {
         Ok(mut lib) => {
             // Micro trees below this scale never stamp a model, so nothing to resolve.
-            if scale >= crate::element_processing::tree::MICRO_TREE_MAX_SCALE {
+            if forced.is_none() && scale >= crate::element_processing::tree::MICRO_TREE_MAX_SCALE {
                 lib.attach_ecoregions(&ids, abs_lat);
             }
             lib.report();
@@ -149,5 +170,16 @@ mod tests {
         assert_eq!(realm_for_latlon(34.05, -118.24), "wna"); // Los Angeles
         assert_eq!(realm_for_latlon(51.51, -0.13), "eur"); // London
         assert_eq!(realm_for_latlon(85.0, 0.0), "vanilla-plus"); // Arctic: no box matches
+    }
+
+    #[test]
+    fn every_forceable_realm_is_bundled() {
+        for realm in &REALMS[1..] {
+            let source = TreePackSource::embedded(realm);
+            assert!(
+                source.realm_manifest().is_some(),
+                "{realm} has no region.json"
+            );
+        }
     }
 }
