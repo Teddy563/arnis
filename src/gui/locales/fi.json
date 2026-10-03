@@ -400,6 +400,5 @@
   "one_world_confirm_text": "Tämän alueen {count} chunkia on jo maailmassa. Ne luodaan uudelleen, ja kaikki mitä niihin on Minecraftissa rakennettu korvataan.",
   "one_world_confirm_cancel": "Peruuta",
   "one_world_confirm_ok": "Luo",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

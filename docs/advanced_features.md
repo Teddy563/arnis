@@ -31,10 +31,10 @@ of cells either side. The map draws the snapped outline and the cell lines
 (only the outline and the count past 2,000 cells), the readout under the
 selection gives its size in regions and pieces, and generation is given the
 snapped bbox. The frame maths is the run's own (`work_units::snap_to_cells`).
-A new world takes the middle latitude of its first bbox for its origin, so a
-selection more than about 20 km tall cannot keep both its north and south
-edges on cell lines; one of them then stops a few chunks inside its line
-(never outside, so no sliver of a piece row) and the readout says so.
+A new world is also given `--origin` at that centre, so its frame does not
+depend on the bbox and every edge, however tall the selection, lands on a
+cell line. A small accent dot on the map marks block (0, 0): that centre for
+a new world, the world's own origin for an existing one.
 
 `--origin LAT,LON` (CLI, `--one-world` only) sets block (0, 0) of the world a
 run creates, instead of the centre of its first bbox. A world that already

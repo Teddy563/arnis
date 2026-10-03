@@ -400,6 +400,5 @@
   "one_world_confirm_text": "{count} chunkov tega območja v svetu že obstaja. Ustvarjeni bodo znova, vse, kar je bilo tam zgrajeno v Minecraftu, pa bo zamenjano.",
   "one_world_confirm_cancel": "Prekliči",
   "one_world_confirm_ok": "Ustvari",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

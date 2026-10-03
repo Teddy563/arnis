@@ -2456,6 +2456,12 @@ function showSnapOverlay(snap, label) {
     if (segments.length === 0 && label) {
         outline.bindTooltip(label, { permanent: true, direction: 'center' });
     }
+    // Block (0, 0), the world's origin: on a new world the cell junction at
+    // the centre, which the run is pinned to.
+    L.circleMarker(snap.origin, {
+        renderer: renderer, radius: 5, color: '#1c1c1c', weight: 2,
+        fillColor: '#fecc44', fillOpacity: 1, interactive: false
+    }).addTo(snapLayer);
 }
 
 function notifyBboxUpdate() {

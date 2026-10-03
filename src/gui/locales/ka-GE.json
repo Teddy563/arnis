@@ -400,6 +400,5 @@
   "one_world_confirm_text": "ამ ტერიტორიის {count} ჩანკი უკვე არსებობს სამყაროში. ისინი თავიდან შეიქმნება, და ყველაფერი, რაც Minecraft-ში იქ აშენდა, ჩანაცვლდება.",
   "one_world_confirm_cancel": "გაუქმება",
   "one_world_confirm_ok": "გენერირება",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

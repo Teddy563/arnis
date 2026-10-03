@@ -400,6 +400,5 @@
   "one_world_confirm_text": "A terület {count} chunkja már létezik a világban. Újra létrejönnek, és minden, amit ott a Minecraftban építettek, lecserélődik.",
   "one_world_confirm_cancel": "Mégse",
   "one_world_confirm_ok": "Generálás",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

@@ -400,6 +400,5 @@
   "one_world_confirm_text": "{count} chunks desta área já existem no mundo. Eles são gerados novamente e tudo o que foi construído ali no Minecraft é substituído.",
   "one_world_confirm_cancel": "Cancelar",
   "one_world_confirm_ok": "Gerar",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

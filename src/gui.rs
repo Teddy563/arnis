@@ -447,7 +447,11 @@ struct SelectionSnap {
     lat_lines: Vec<f64>,
     cells: [i32; 2],
     regions: [i32; 2],
-    exact: bool,
+    /// Block (0, 0): the cell junction at the centre of a new world, or the
+    /// existing world's origin.
+    origin: [f64; 2],
+    /// The run must be given `origin` as `--origin`.
+    new_world: bool,
 }
 
 /// Past this many cells the map shows the outline and the count only.
@@ -503,7 +507,8 @@ fn gui_snap_selection(
             count(rect.min_x(), rect.max_x(), 512),
             count(rect.min_z(), rect.max_z(), 512),
         ],
-        exact: snap.exact,
+        origin: [frame.origin_lat, frame.origin_lon],
+        new_world: snap.new_world,
     })
 }
 

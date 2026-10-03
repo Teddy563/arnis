@@ -400,6 +400,5 @@
   "one_world_confirm_text": "{count} chunks de cette zone existent déjà dans le monde. Ils sont générés à nouveau et tout ce qui y a été construit dans Minecraft est remplacé.",
   "one_world_confirm_cancel": "Annuler",
   "one_world_confirm_ok": "Générer",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

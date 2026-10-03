@@ -400,6 +400,5 @@
   "one_world_confirm_text": "Чанков этой области уже есть в мире: {count}. Они будут созданы заново, и всё построенное там в Minecraft будет заменено.",
   "one_world_confirm_cancel": "Отмена",
   "one_world_confirm_ok": "Создать",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

@@ -400,6 +400,5 @@
   "one_world_confirm_text": "{count} šī apgabala chunki pasaulē jau ir. Tie tiek ģenerēti no jauna, un viss, kas tur uzbūvēts Minecraft, tiek aizstāts.",
   "one_world_confirm_cancel": "Atcelt",
   "one_world_confirm_ok": "Ģenerēt",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }

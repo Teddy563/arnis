@@ -2994,9 +2994,13 @@ function snapSelection(bbox) {
   });
 }
 
-// The bbox a run is given: the snapped one while snapping is on.
-async function runBBoxFor(bbox) {
-  return snapActive() ? (await snapSelection(bbox)).bbox : bbox;
+// The bbox a run is given: the snapped one while snapping is on. A new world
+// is also pinned to the snap's centre, so the run's frame is the one the cell
+// lines were placed in.
+async function runSelectionFor(bbox) {
+  if (!snapActive()) return { bbox, flags: [] };
+  const snap = await snapSelection(bbox);
+  return { bbox: snap.bbox, flags: snap.new_world ? ['--origin=' + snap.origin.join(',')] : [] };
 }
 
 let snapPreviewKey = null;
@@ -3027,7 +3031,6 @@ async function drawSnapPreview() {
   const text = snap
     ? oneWorldText('snap_regions_info', '{x} x {z} regions, {pieces} pieces',
       { x: snap.regions[0], z: snap.regions[1], pieces: snap.cells[0] * snap.cells[1] })
-      + (snap.exact ? '' : ' · ' + oneWorldText('snap_inexact', 'one edge a little short of its cell line'))
     : '';
   postToMap({ type: 'snapOverlay', snap, label: text });
   const info = document.getElementById('bbox-snap-info');
@@ -3723,7 +3726,8 @@ async function startGeneration(options = {}) {
     resetProgressUi(STARTING_MESSAGE);
 
     const oneWorld = isOneWorldEnabled();
-    const runBBox = await runBBoxFor(selectedBBox);
+    const runSelection = await runSelectionFor(selectedBBox);
+    const runBBox = runSelection.bbox;
     if (oneWorld && !prewarm && !(await prepareOneWorldRun(runBBox))) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
@@ -3865,9 +3869,9 @@ async function startGeneration(options = {}) {
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? oneWorldFolderName() : "",
         // A download refuses --offline, which only reads what it fetches.
-        flags: prewarm
+        flags: (prewarm
           ? advancedFeatureArgs().flags.filter((f) => f !== '--offline').concat('--prewarm')
-          : advancedFeatureArgs().flags
+          : advancedFeatureArgs().flags).concat(runSelection.flags)
     });
 
     console.log("Generation process started.");

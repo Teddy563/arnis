@@ -400,6 +400,5 @@
   "one_world_confirm_text": "{count} šios srities chunkų pasaulyje jau yra. Jie sukuriami iš naujo, o viskas, kas ten pastatyta Minecraft, pakeičiama.",
   "one_world_confirm_cancel": "Atšaukti",
   "one_world_confirm_ok": "Generuoti",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces",
-  "snap_inexact": "one edge a little short of its cell line"
+  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
 }
