@@ -113,6 +113,7 @@ fn fetch_thread_count() -> usize {
         .map(std::num::NonZeroUsize::get)
         .unwrap_or(2)
         .clamp(2, FETCH_THREADS_MAX)
+        .min(crate::net::max_requests())
 }
 
 /// One pool for the process, not one per fetch: the 3D preview re-fetches on

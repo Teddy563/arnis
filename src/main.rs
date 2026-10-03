@@ -204,8 +204,15 @@ fn run_cli() {
     // Parse input arguments
     let mut args: Args = Args::parse();
 
-    // Configure thread pool with 90% CPU cap to keep system responsive
-    floodfill_cache::configure_rayon_thread_pool(0.9);
+    // Configure thread pool with 90% CPU cap to keep system responsive, unless
+    // --threads or --cpu-target asked for a count
+    match args.process.thread_count() {
+        Some(threads) => floodfill_cache::configure_rayon_threads(threads),
+        None => floodfill_cache::configure_rayon_thread_pool(0.9),
+    }
+    if let Some(n) = args.process.max_downloads {
+        net::set_max_requests(n as usize);
+    }
 
     // Clean up old cached elevation tiles on startup
     if !args.process.no_cache_sweep {

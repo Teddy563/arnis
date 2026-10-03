@@ -353,6 +353,42 @@ pub struct ProcessArgs {
     /// every cache to one folder.
     #[arg(long, env = "ARNIS_NO_CACHE_SWEEP", value_parser = FalseyValueParser::new())]
     pub no_cache_sweep: bool,
+
+    /// Worker threads for generation. Defaults to 90% of the cores, or to
+    /// RAYON_NUM_THREADS when that is set; this flag wins over both.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "cpu_target")]
+    pub threads: Option<u32>,
+
+    /// Share of the cores to generate on, in percent (10-100). The same as
+    /// --threads, worked out from the core count; the default is 90.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(10..=100))]
+    pub cpu_target: Option<u32>,
+
+    /// Memory this run may assume it has, in MB. Used in place of the free-RAM
+    /// reading when deciding whether to stream regions to disk and how many
+    /// the flush queue holds, so several processes can split one machine.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    pub ram_budget_mb: Option<u64>,
+
+    /// Downloads this process keeps in flight at once (default 16). Covers
+    /// elevation, Mapillary, 3D models and the Overture fetch pool.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub max_downloads: Option<u32>,
+}
+
+impl ProcessArgs {
+    /// The thread count asked for with --threads or --cpu-target, if either.
+    /// A percentage rounds down like the 90% default does, so
+    /// `--cpu-target 90` builds the same pool as no flag at all.
+    pub fn thread_count(&self) -> Option<usize> {
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        self.threads.map(|n| n as usize).or_else(|| {
+            self.cpu_target
+                .map(|pct| (cores * pct as usize / 100).max(1))
+        })
+    }
 }
 
 /// Accepts the panel resolutions the atlas budget logic can halve cleanly.
@@ -1716,5 +1752,36 @@ mod tests {
         ]);
         assert!(args.process.no_update_check);
         assert!(args.process.no_cache_sweep);
+    }
+
+    #[test]
+    fn thread_flags_resolve_to_a_count() {
+        let parse = |extra: &[&str]| {
+            Args::try_parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra))
+        };
+        let cores = std::thread::available_parallelism().unwrap().get();
+        assert_eq!(parse(&[]).unwrap().process.thread_count(), None);
+        assert_eq!(
+            parse(&["--threads", "4"]).unwrap().process.thread_count(),
+            Some(4)
+        );
+        assert_eq!(
+            parse(&["--cpu-target", "100"])
+                .unwrap()
+                .process
+                .thread_count(),
+            Some(cores)
+        );
+        // The same floor the 90% default takes.
+        assert_eq!(
+            parse(&["--cpu-target", "90"])
+                .unwrap()
+                .process
+                .thread_count(),
+            Some((cores * 9 / 10).max(1))
+        );
+        assert!(parse(&["--cpu-target", "5"]).is_err());
+        assert!(parse(&["--threads", "0"]).is_err());
+        assert!(parse(&["--threads", "4", "--cpu-target", "50"]).is_err());
     }
 }

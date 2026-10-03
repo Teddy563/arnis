@@ -777,6 +777,25 @@ fn for_relation_ring_cells(
     }
 }
 
+/// Thread count set with `configure_rayon_threads`, so the flush pool can size
+/// itself from the same budget instead of the whole machine.
+static REQUESTED_THREADS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+/// The thread count given on the command line, if any.
+pub fn requested_threads() -> Option<usize> {
+    REQUESTED_THREADS.get().copied()
+}
+
+/// Builds the global Rayon pool with exactly `threads` workers. An explicit
+/// count is the more specific request, so it overrides RAYON_NUM_THREADS.
+pub fn configure_rayon_threads(threads: usize) {
+    let threads = threads.max(1);
+    let _ = REQUESTED_THREADS.set(threads);
+    let _ = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global();
+}
+
 /// Configures the global Rayon thread pool with a CPU usage cap.
 ///
 /// Call this once at startup before any parallel operations.

@@ -1006,7 +1006,10 @@ pub fn generate_world_with_options(
         // are kept via region deferral.
         // Read at the decision point: the precompute above allocates heavily, and an
         // optimistic figure would skip streaming in exactly the runs that need it.
-        let available_mb = available_memory_mb();
+        let available_mb = args
+            .process
+            .ram_budget_mb
+            .unwrap_or_else(available_memory_mb);
         eviction_active = matches!(world_format, WorldFormat::JavaAnvil)
             && should_stream_to_disk(tiles.len(), available_mb, args.fillground);
 

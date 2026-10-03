@@ -2533,9 +2533,11 @@ pub(crate) fn flush_pool_params(
     available_mb: u64,
     fillground: bool,
 ) -> (usize, usize) {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
+    let cores = crate::floodfill_cache::requested_threads().unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+    });
     // `capacity + threads + 1` regions are alive at once, so budget the total rather
     // than each knob. Shared with should_stream_to_disk; measured is ~7 on a vanilla run.
     let per_region_mb = per_region_estimate_mb(fillground);
