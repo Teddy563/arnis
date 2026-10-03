@@ -298,7 +298,10 @@ The job folder is removed when the job completes.
    blocks themselves are identical.
 9. **Caves** follow each area's bedrock plane, so where two neighbouring areas
    got different floors their caves and deepslate line do not line up at the
-   seam. Within an area they match across tiles as usual.
+   seam. Within an area they match across tiles as usual. `--cave-datum-y`
+   pins one depth frame for every area and piece (the manifest keeps the
+   first area's value, and its `--cave-seed`); nothing is carved below an
+   area's own bedrock, so pick the lowest bedrock of the region or below.
 
 ## Where to look
 

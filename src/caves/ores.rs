@@ -300,6 +300,10 @@ pub fn place_ores(
 ) {
     let table = ore_table();
     let shift = super::y_shift();
+    // With a pinned datum every piece shares one ore field, but each piece's own floor decides
+    // which blobs land in rock, so each blob draws from its own stream: a blob skipped in one
+    // piece must not shift the ones after it.
+    let pinned = super::datum_pinned();
     let cx0 = min_x.div_euclid(16) - 1;
     let cx1 = max_x.div_euclid(16) + 1;
     let cz0 = min_z.div_euclid(16) - 1;
@@ -330,6 +334,7 @@ pub fn place_ores(
                     } else {
                         sample_y(ore.dist, ore.ymin, ore.ymax, &mut r) + shift
                     };
+                    let mut own = pinned.then(|| XoroRandom::from_seed(r.next_long()));
                     if y > gl - 2 {
                         continue;
                     }
@@ -338,7 +343,7 @@ pub fn place_ores(
                     if !editor.block_exists_absolute(x, y, z) {
                         continue;
                     }
-                    place_blob(editor, x, y, z, ore, &mut r);
+                    place_blob(editor, x, y, z, ore, own.as_mut().unwrap_or(&mut r));
                 }
             }
         }
@@ -420,5 +425,63 @@ fn place_blob(editor: &mut WorldEditor, cx: i32, cy: i32, cz: i32, ore: &Ore, r:
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coordinate_system::cartesian::XZBBox;
+    use crate::coordinate_system::geographic::LLBBox;
+
+    const SIDE: i32 = 48;
+    const TOP: i32 = 120;
+
+    /// Ores over a stone block whose rock starts at `bottom`, the way pieces with different
+    /// floors see the same ground.
+    fn ores_over(xzbbox: &XZBBox, bottom: i32) -> Vec<(i32, i32, i32, Option<Block>)> {
+        let llbbox = LLBBox::new(54.6, 9.9, 54.61, 9.91).unwrap();
+        let mut editor =
+            WorldEditor::new(std::path::PathBuf::from("/dev/null/unused"), xzbbox, llbbox);
+        for x in 0..SIDE {
+            for z in 0..SIDE {
+                editor.register_road_surface_y(x, z, TOP);
+                editor.fill_column_absolute(STONE, x, z, bottom, TOP, false);
+            }
+        }
+        place_ores(&mut editor, 5, 0, SIDE - 1, 0, SIDE - 1);
+        let mut out = Vec::new();
+        for x in 0..SIDE {
+            for z in 0..SIDE {
+                for y in 40..TOP {
+                    out.push((x, y, z, editor.get_block_absolute(x, y, z)));
+                }
+            }
+        }
+        out
+    }
+
+    /// With a pinned datum, rock missing below one piece's floor does not move the ores above it.
+    #[test]
+    fn a_pinned_datum_keeps_ores_above_a_higher_floor() {
+        use crate::world_editor::{set_world_bounds, DEFAULT_MAX_Y, DEFAULT_MIN_Y};
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
+        let xzbbox = XZBBox::rect_from_min_max(0, 0, SIDE - 1, SIDE - 1).unwrap();
+        let pair = |datum| {
+            super::super::set_datum_y(datum);
+            (ores_over(&xzbbox, -63), ores_over(&xzbbox, 16))
+        };
+        let (low, high) = pair(None);
+        let unpinned_differs = low != high;
+        let (low, high) = pair(Some(-64));
+        super::super::set_datum_y(None);
+        assert!(
+            unpinned_differs,
+            "the test block no longer exercises the skip"
+        );
+        assert!(low == high);
     }
 }

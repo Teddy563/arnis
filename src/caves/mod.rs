@@ -68,6 +68,7 @@ use decoration::{BiomeAmounts, Decor};
 use density::CaveGen;
 use rayon::prelude::*;
 use shape::{CaveShape, Rect};
+use std::sync::atomic::{AtomicI32, Ordering};
 // FnvHashSet, not std HashSet: std seeds its hasher randomly PER PROCESS, so
 // iterating one yields a different order every run. These sets are iterated to apply
 // world edits (despeckle, prune, decoration), and where those edits interact the write
@@ -105,10 +106,33 @@ const CAVE_HOST: &[Block] = &[
     DIORITE,
 ];
 
-/// How far this world's bedrock plane sits above vanilla's.
+/// `--cave-datum-y`, or `i32::MIN` for none. Set from args at the start of every carve.
+static DATUM_Y: AtomicI32 = AtomicI32::new(i32::MIN);
+
+fn set_datum_y(y: Option<i32>) {
+    DATUM_Y.store(y.unwrap_or(i32::MIN), Ordering::Relaxed);
+}
+
+/// Where vanilla's floor sits for the cave passes: `--cave-datum-y` when given, so separate
+/// runs share one depth frame, else this world's bedrock plane.
+#[inline]
+pub(crate) fn datum_y() -> i32 {
+    match DATUM_Y.load(Ordering::Relaxed) {
+        i32::MIN => terrain_floor_y(),
+        y => y,
+    }
+}
+
+/// Whether `--cave-datum-y` pins the datum for this carve.
+#[inline]
+pub(crate) fn datum_pinned() -> bool {
+    DATUM_Y.load(Ordering::Relaxed) != i32::MIN
+}
+
+/// How far the cave datum sits above vanilla's floor.
 #[inline]
 pub(crate) fn y_shift() -> i32 {
-    terrain_floor_y() - VANILLA_FLOOR
+    datum_y() - VANILLA_FLOOR
 }
 
 /// A vanilla Y, translated into this world.
@@ -162,6 +186,7 @@ pub fn carve_region(
     min_z: i32,
     max_z: i32,
 ) {
+    set_datum_y(args.cave_datum_y);
     // The ore variants and the lava rims match the host rock, so the deepslate line goes first.
     deepslate::apply_region(editor, min_x, max_x, min_z, max_z);
 
@@ -754,6 +779,43 @@ mod tests {
         let carve = |s| carver::carve_positions(s, -64, 63, -64, 63);
         assert!(!carve(SEED).is_empty());
         assert_ne!(carve(SEED), carve(other));
+    }
+
+    /// Two runs whose bedrock planes differ carve the same field once `--cave-datum-y` pins it,
+    /// and without it each follows its own floor.
+    #[test]
+    fn a_pinned_datum_ignores_the_floor() {
+        use crate::world_editor::{set_terrain_floor_y, terrain_floor_y};
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let gen_at = |ground: i32, datum: Option<i32>| {
+            set_terrain_floor_y(ground);
+            set_datum_y(datum);
+            (CaveGen::new(SEED), datum_y())
+        };
+        let (low, low_datum) = gen_at(-64, Some(-64));
+        let (high, high_datum) = gen_at(16, Some(-64));
+        let (own, own_datum) = gen_at(16, None);
+        let own_floor = terrain_floor_y();
+        set_datum_y(None);
+        vanilla_bounds();
+
+        assert_eq!((low_datum, high_datum), (-64, -64));
+        assert!(
+            own_datum == own_floor && own_floor > -64,
+            "unpinned, the datum is the floor"
+        );
+        let mut differs = false;
+        for (x, y, z) in [(3, -40, 9), (40, 0, -17), (-75, 60, 33), (8, 110, 8)] {
+            assert_eq!(
+                low.combined_density(x, y, z),
+                high.combined_density(x, y, z)
+            );
+            assert_eq!(low.noodle_density(x, y, z), high.noodle_density(x, y, z));
+            differs |= own.combined_density(x, y, z) != high.combined_density(x, y, z);
+        }
+        assert!(differs);
     }
 
     /// `CaveShape` must answer exactly what the carve does (noise caves plus carvers), or features

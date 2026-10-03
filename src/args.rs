@@ -139,6 +139,15 @@ pub struct Args {
     #[arg(long = "cave-seed", value_name = "SEED")]
     pub cave_seed: Option<u64>,
 
+    /// Y the cave passes treat as vanilla's world floor (-64), a multiple of 16. Omitted, caves
+    /// follow each run's bedrock plane, which in a One World sits under each area's (and each
+    /// piece's) own lowest point, so neighbours with different floors do not line up
+    /// underground. One value for every run makes caves, the lava sea and the deepslate line
+    /// continuous across them; nothing is carved below a run's own bedrock, so pick the lowest
+    /// bedrock of the region or below. A One World keeps the value its first area was built with.
+    #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
+    pub cave_datum_y: Option<i32>,
+
     /// Render the cave biome layout for --bbox and exit without generating a world: writes
     /// `<PREFIX>-upper.png` (upper caves) and `<PREFIX>-deep.png` (deep caves), transparent
     /// where the cave is plain rock, and prints a `ZONEMAP {json}` line with each theme's
@@ -1076,6 +1085,14 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     }
     if args.cave_seed.is_some() && !args.caves && !cave_preview {
         return Err("--cave-seed only applies to --caves or --cave-zone-map.".to_string());
+    }
+    if let Some(y) = args.cave_datum_y {
+        if !args.caves {
+            return Err("--cave-datum-y only applies to --caves.".to_string());
+        }
+        if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+            return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+        }
     }
     if args.cave_zone_map_step.is_some() && !cave_preview {
         return Err("--cave-zone-map-step only applies to --cave-zone-map.".to_string());

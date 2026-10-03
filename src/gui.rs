@@ -1873,6 +1873,7 @@ fn gui_start_generation(
                 cave_zone_map: None,
                 cave_zone_map_step: None,
                 cave_seed: None,
+                cave_datum_y: None,
                 legacy_trees: legacy_trees_enabled,
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
                 canopy_height: canopy_height_enabled,
