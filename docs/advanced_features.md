@@ -53,3 +53,6 @@ pieces (see [Large areas](one_world.md#large-areas)).
   N x N regions (1-64). An interrupted job resumes when run again.
 - `--one-world-workers auto|N`: build that many pieces at once, each in its own
   process (1-64, or `auto` for 1 to 6 from the cores and free memory).
+- `--capabilities`: print the feature names this build supports as one JSON
+  array (`["progress-json","threads",...]`) and exit, so a program can probe
+  the binary before using them. Names are only ever added.

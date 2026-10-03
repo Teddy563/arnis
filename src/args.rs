@@ -439,7 +439,26 @@ pub struct ProcessArgs {
     /// with wall_s, cpu_s, peak_rss_mb and chunks. Other output is unchanged.
     #[arg(long, value_enum)]
     pub progress: Option<ProgressFormat>,
+
+    /// Print the features this build supports as one JSON line and exit, so
+    /// a program driving the CLI can probe before using them.
+    #[arg(long)]
+    pub capabilities: bool,
 }
+
+/// What `--capabilities` lists. Names only ever get added.
+pub const CAPABILITIES: &[&str] = &[
+    "progress-json",
+    "threads",
+    "cpu-target",
+    "ram-budget",
+    "max-downloads",
+    "cache-root",
+    "fill-budget",
+    "plan-units",
+    "unit-regions",
+    "one-world-workers",
+];
 
 /// Machine-readable progress formats for `--progress`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]

@@ -221,6 +221,12 @@ fn one_world_dir(args: &Args) -> PathBuf {
 
 fn run_cli() {
     let started = std::time::Instant::now();
+    // Parsed ahead of the banner so `--capabilities` prints its line alone.
+    let mut args: Args = Args::parse();
+    if args.process.capabilities {
+        println!("{}", serde_json::json!(args::CAPABILITIES));
+        return;
+    }
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
     println!(
@@ -242,8 +248,6 @@ fn run_cli() {
         repository.bright_white().bold()
     );
 
-    // Parse input arguments
-    let mut args: Args = Args::parse();
     if args.process.progress == Some(args::ProgressFormat::Json) {
         progress_json::enable();
     }
