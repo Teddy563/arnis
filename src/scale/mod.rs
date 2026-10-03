@@ -26,12 +26,82 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+pub mod child;
 
 /// Signage map ids each piece may use. A piece needing more fails loudly.
 const MAP_IDS_PER_PIECE: i32 = 1 << 16;
 /// Lines of a failed piece's output shown with its error.
 const TAIL_LINES: usize = 40;
+/// Further attempts at a piece that failed for a reason that may pass.
+const MAX_RETRIES: u32 = 2;
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// How many pieces run at once and what each of them may use. The job's
+/// budget is what one run would take (`--threads`/`--cpu-target`, else 90%
+/// of the cores; `--ram-budget-mb`, else free memory; `--max-downloads`,
+/// else 16), split between the pieces running at the same time.
+#[derive(Debug, PartialEq)]
+struct Sizing {
+    workers: usize,
+    threads: usize,
+    ram_mb: Option<u64>,
+    downloads: u32,
+}
+
+impl Sizing {
+    fn child_args(&self, mut argv: Vec<OsString>) -> Vec<OsString> {
+        argv.extend([
+            "--threads".into(),
+            self.threads.to_string().into(),
+            "--max-downloads".into(),
+            self.downloads.to_string().into(),
+        ]);
+        if let Some(mb) = self.ram_mb {
+            argv.extend(["--ram-budget-mb".into(), mb.to_string().into()]);
+        }
+        argv
+    }
+
+    fn child_env(&self) -> [(&'static str, String); 2] {
+        [
+            ("RAYON_NUM_THREADS", self.threads.to_string()),
+            // The stock writer sizing, on this piece's share of the cores.
+            (
+                "ARNIS_FLUSH_THREADS",
+                self.threads.div_ceil(4).clamp(1, 6).to_string(),
+            ),
+        ]
+    }
+}
+
+fn sizing(args: &Args, pieces: usize) -> Sizing {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let threads = args.process.thread_count().unwrap_or(cores * 9 / 10).max(1);
+    let workers = match args.units.one_world_workers {
+        None => 1,
+        Some(crate::args::Workers::Auto) => 4,
+        Some(crate::args::Workers::Count(n)) => n as usize,
+    }
+    .clamp(1, pieces.max(1));
+    let ram_mb = args
+        .process
+        .ram_budget_mb
+        .or_else(|| (workers > 1).then(crate::data_processing::available_memory_mb));
+    Sizing {
+        workers,
+        threads: (threads / workers).max(1),
+        ram_mb: ram_mb.map(|mb| (mb / workers as u64).max(1)),
+        downloads: (args.process.max_downloads.unwrap_or(16) / workers as u32).max(2),
+    }
+}
 
 /// What a finished piece reported.
 #[derive(Default, Clone, Debug)]
@@ -214,67 +284,135 @@ pub fn run(args: &Args, world_dir: &Path, selection: &LLBBox) -> Result<(), Stri
         })
         .collect();
 
-    let total: u64 = units.iter().map(WorkUnit::chunks).sum();
-    let mut done_chunks = 0u64;
-    let mut results = Vec::with_capacity(units.len());
-    for (unit, lease) in units.iter().zip(&leases) {
-        let of = units.len();
-        if let Some(r) = job.finished(unit.index) {
-            println!("  piece {}/{of}: already built", unit.index + 1);
-            progress_json::record(
-                "piece",
-                json!({"piece": unit.index, "of": of, "state": "skipped"}),
-            );
-            done_chunks += unit.chunks();
-            results.push(r);
-            continue;
-        }
+    let sizing = sizing(args, units.len());
+    if sizing.workers > 1 {
         println!(
-            "  piece {}/{of}: {} chunks at x {} z {}",
-            unit.index + 1,
-            unit.chunks(),
-            unit.rect.min_x(),
-            unit.rect.min_z()
+            "  {} pieces at a time, {} threads each",
+            sizing.workers, sizing.threads
         );
-        progress_json::record(
-            "piece",
-            json!({"piece": unit.index, "of": of, "state": "start"}),
-        );
-        let lease_path = job.dir.join(format!("piece-{}.lease.json", unit.index));
-        write(
-            &lease_path,
-            &serde_json::to_value(lease).map_err(|e| e.to_string())?,
-        )?;
-        let argv = child_args(std::env::args_os().skip(1), unit, &lease_path);
-        let base = done_chunks;
-        let result = run_piece(&argv, |f| {
-            let pct = (base as f64 + f * unit.chunks() as f64) / total.max(1) as f64 * 100.0;
-            progress_json::progress(pct, "");
-        });
-        let r = match result {
-            Ok(r) => r,
-            Err(e) => {
+    }
+    let total = units.iter().map(WorkUnit::chunks).sum::<u64>().max(1) as f64;
+    let of = units.len();
+    let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
+    let mut queue = VecDeque::new();
+    for unit in &units {
+        match job.finished(unit.index) {
+            Some(r) => {
+                println!("  piece {}/{of}: already built", unit.index + 1);
                 progress_json::record(
                     "piece",
-                    json!({"piece": unit.index, "of": of, "state": "failed"}),
+                    json!({"piece": unit.index, "of": of, "state": "skipped"}),
                 );
-                return Err(format!(
-                    "piece {} of {of} failed; run the same command again to resume.\n{e}",
-                    unit.index + 1
-                ));
+                lock(&results)[unit.index] = Some(r);
             }
-        };
-        write(&job.done_path(unit.index), &r.to_json())?;
-        crate::keep_one_world();
-        progress_json::record(
-            "piece",
-            json!({"piece": unit.index, "of": of, "state": "done",
-                   "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s}),
-        );
-        done_chunks += unit.chunks();
-        progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, std::sync::atomic::Ordering::Relaxed);
-        results.push(r);
+            None => queue.push_back(unit.index),
+        }
     }
+    let queue = Mutex::new(queue);
+    // Each piece's share done, weighted by its chunks for the job's bar.
+    let done: Mutex<Vec<f64>> = Mutex::new(
+        lock(&results)
+            .iter()
+            .map(|r| if r.is_some() { 1.0 } else { 0.0 })
+            .collect(),
+    );
+    let failure: Mutex<Option<String>> = Mutex::new(None);
+    let aborting = AtomicBool::new(false);
+
+    let work = || -> Result<(), String> {
+        while !aborting.load(Ordering::Relaxed) {
+            let Some(i) = lock(&queue).pop_front() else {
+                break;
+            };
+            let unit = &units[i];
+            let lease_path = job.dir.join(format!("piece-{i}.lease.json"));
+            write(
+                &lease_path,
+                &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
+            )?;
+            let argv =
+                sizing.child_args(child_args(std::env::args_os().skip(1), unit, &lease_path));
+            let mut attempt = 0;
+            let r = loop {
+                println!(
+                    "  piece {}/{of}: {} chunks at x {} z {}{}",
+                    i + 1,
+                    unit.chunks(),
+                    unit.rect.min_x(),
+                    unit.rect.min_z(),
+                    if attempt > 0 { " (retry)" } else { "" }
+                );
+                let state = if attempt > 0 { "retry" } else { "start" };
+                progress_json::record("piece", json!({"piece": i, "of": of, "state": state}));
+                let result = run_piece(&argv, &sizing.child_env(), |f| {
+                    let mut d = lock(&done);
+                    d[i] = f;
+                    let sum: f64 = d
+                        .iter()
+                        .zip(&units)
+                        .map(|(f, u)| f * u.chunks() as f64)
+                        .sum();
+                    drop(d);
+                    progress_json::progress(sum / total * 100.0, "");
+                });
+                match result {
+                    Ok(r) => break r,
+                    // Never once the job is stopping: a piece killed with it
+                    // looks like a crash.
+                    Err(f)
+                        if f.transient
+                            && attempt < MAX_RETRIES
+                            && !aborting.load(Ordering::Relaxed) =>
+                    {
+                        attempt += 1;
+                        eprintln!("Piece {} failed, retrying: {}", i + 1, f.message);
+                        std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
+                    }
+                    Err(f) => {
+                        progress_json::record(
+                            "piece",
+                            json!({"piece": i, "of": of, "state": "failed"}),
+                        );
+                        aborting.store(true, Ordering::Relaxed);
+                        return Err(format!("piece {} of {of} failed: {}", i + 1, f.message));
+                    }
+                }
+            };
+            write(&job.done_path(i), &r.to_json())?;
+            crate::keep_one_world();
+            progress_json::record(
+                "piece",
+                json!({"piece": i, "of": of, "state": "done",
+                       "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s}),
+            );
+            progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, Ordering::Relaxed);
+            lock(&results)[i] = Some(r);
+        }
+        Ok(())
+    };
+    std::thread::scope(|s| {
+        for _ in 0..sizing.workers {
+            s.spawn(|| {
+                if let Err(e) = work() {
+                    aborting.store(true, Ordering::Relaxed);
+                    lock(&failure).get_or_insert(e);
+                }
+            });
+        }
+    });
+    if let Some(e) = failure.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        return Err(format!(
+            "{e}\nFinished pieces are kept; run the same command again to resume."
+        ));
+    }
+    // Folded in plan order, so the outcome does not depend on which piece
+    // finished first.
+    let results: Vec<PieceResult> = results
+        .into_inner()
+        .unwrap_or_else(|e| e.into_inner())
+        .into_iter()
+        .map(Option::unwrap_or_default)
+        .collect();
 
     finish(
         args,
@@ -486,19 +624,68 @@ fn child_args(
     out
 }
 
+/// Why a piece failed, and whether running it again may help.
+struct PieceFailure {
+    message: String,
+    transient: bool,
+}
+
+/// Network trouble, or a piece that died without saying why (killed, out of
+/// memory), may pass; a reported error, a panic or a stop will not.
+fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
+    const NETWORK: &[&str] = &[
+        "timed out",
+        "timeout",
+        "connection",
+        "network",
+        "dns",
+        "429",
+        "502",
+        "503",
+        "504",
+        "too many requests",
+        "rate limit",
+        "temporarily",
+    ];
+    // 101 is a panic; 0xC000013A a Ctrl-C on Windows; no code is a signal.
+    let Some(code) = code.filter(|&c| c != 101 && c != 0xC000_013Au32 as i32) else {
+        return false;
+    };
+    let text = tail.join("\n").to_lowercase();
+    let reported = text.contains("error");
+    code != 0 && (!reported || NETWORK.iter().any(|w| text.contains(w)))
+}
+
 /// Runs one piece to the end. `progress` gets the piece's own fraction done.
-fn run_piece(argv: &[OsString], mut progress: impl FnMut(f64)) -> Result<PieceResult, String> {
-    let exe = std::env::current_exe().map_err(|e| format!("Cannot find this executable: {e}"))?;
-    let mut child = Command::new(exe)
-        .args(argv)
-        .stdin(Stdio::null())
+fn run_piece(
+    argv: &[OsString],
+    env: &[(&str, String)],
+    mut progress: impl FnMut(f64),
+) -> Result<PieceResult, PieceFailure> {
+    let fail = |message: String| PieceFailure {
+        message,
+        transient: false,
+    };
+    let exe =
+        std::env::current_exe().map_err(|e| fail(format!("Cannot find this executable: {e}")))?;
+    let mut cmd = Command::new(exe);
+    cmd.args(argv)
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    child::prepare(&mut cmd);
+    let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to start a piece: {e}"))?;
+        .map_err(|e| fail(format!("Failed to start a piece: {e}")))?;
+    if let Err(e) = child::adopt(&child) {
+        let _ = child.kill();
+        return Err(fail(format!("Could not tie a piece to this process: {e}")));
+    }
+    // Held open for the piece's life: on Unix it exits when this closes.
+    let _stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_LINES)));
     let push = |tail: &Mutex<VecDeque<String>>, line: String| {
-        let mut t = tail.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = lock(tail);
         if t.len() == TAIL_LINES {
             t.pop_front();
         }
@@ -541,18 +728,18 @@ fn run_piece(argv: &[OsString], mut progress: impl FnMut(f64)) -> Result<PieceRe
             }
         }
     }
-    let status = child.wait().map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| fail(e.to_string()))?;
     if let Some(t) = stderr {
         let _ = t.join();
     }
     if status.success() {
         return Ok(result);
     }
-    let tail = tail.lock().unwrap_or_else(|e| e.into_inner());
-    Err(format!(
-        "exit status {status}; last output:\n{}",
-        tail.iter().cloned().collect::<Vec<_>>().join("\n")
-    ))
+    let tail: Vec<String> = lock(&tail).iter().cloned().collect();
+    Err(PieceFailure {
+        transient: is_transient(status.code(), &tail),
+        message: format!("{status}; last output:\n{}", tail.join("\n")),
+    })
 }
 
 #[cfg(test)]
@@ -607,6 +794,66 @@ mod tests {
         let (rect, _) = crate::projection::snap_bbox_to_chunks(&proj, &parsed).unwrap();
         assert_eq!(rect.min_x(), units[3].rect.min_x());
         assert_eq!(rect.max_z(), units[3].rect.max_z());
+    }
+
+    #[test]
+    fn only_failures_that_may_pass_are_retried() {
+        let lines = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // Killed or crashed without a word: worth another go.
+        assert!(is_transient(Some(1), &lines(&["Processing data..."])));
+        assert!(is_transient(
+            Some(1),
+            &lines(&["Error: Failed to fetch data: operation timed out"])
+        ));
+        assert!(!is_transient(
+            Some(1),
+            &lines(&["Error: This area cannot be added to the One World"])
+        ));
+        assert!(!is_transient(Some(101), &lines(&["thread panicked"])));
+        assert!(!is_transient(Some(0xC000_013Au32 as i32), &[]));
+        assert!(!is_transient(None, &[]));
+    }
+
+    #[test]
+    fn a_job_budget_is_split_between_the_pieces_running_together() {
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec![
+                "arnis",
+                "--output-dir",
+                ".",
+                "--bbox",
+                "1,2,3,4",
+                "--one-world",
+            ];
+            cmd.extend_from_slice(extra);
+            <Args as clap::Parser>::parse_from(cmd)
+        };
+        let s = sizing(
+            &parse(&[
+                "--one-world-workers",
+                "4",
+                "--threads",
+                "20",
+                "--ram-budget-mb",
+                "8000",
+            ]),
+            16,
+        );
+        assert_eq!(
+            s,
+            Sizing {
+                workers: 4,
+                threads: 5,
+                ram_mb: Some(2000),
+                downloads: 4
+            }
+        );
+        // Never more workers than pieces, never less than a thread each.
+        let s = sizing(&parse(&["--one-world-workers", "8", "--threads", "3"]), 2);
+        assert_eq!((s.workers, s.threads), (2, 1));
+        // Sequential: the job's own knobs, nothing invented.
+        let s = sizing(&parse(&["--unit-regions", "2", "--threads", "6"]), 9);
+        assert_eq!((s.workers, s.threads, s.ram_mb), (1, 6, None));
     }
 
     #[test]

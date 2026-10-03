@@ -338,11 +338,35 @@ fn compatibility_errors(manifest: &Manifest, args: &Args) -> Vec<String> {
     errors
 }
 
+/// Why the world's lock is taken. Another run of this executable is named as
+/// such, since telling its user to close Minecraft would send them looking
+/// for a game that is not running.
 fn open_in_minecraft(world_dir: &Path) -> String {
-    format!(
-        "The One World at {} is open in Minecraft. Leave the world (or close the game) and try again.",
-        world_dir.display()
-    )
+    match other_arnis_process() {
+        Some(pid) => format!(
+            "The One World at {} is in use by another Arnis run (process {pid}). Wait for it to finish, or stop it, and try again.",
+            world_dir.display()
+        ),
+        None => format!(
+            "The One World at {} is open in Minecraft. Leave the world (or close the game) and try again.",
+            world_dir.display()
+        ),
+    }
+}
+
+/// Another process of this executable, other than this one and its own pieces.
+fn other_arnis_process() -> Option<u32> {
+    let exe = std::env::current_exe().ok()?;
+    let name = exe.file_name()?;
+    let own = sysinfo::get_current_pid().ok()?;
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    sys.processes()
+        .iter()
+        .find(|(pid, p)| {
+            **pid != own && p.parent() != Some(own) && p.name().eq_ignore_ascii_case(name)
+        })
+        .map(|(pid, _)| pid.as_u32())
 }
 
 /// Opens or creates the One World at `world_dir`, locks it, and points `args`

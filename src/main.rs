@@ -381,6 +381,7 @@ fn run_cli() {
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
     if let (true, Some(lease)) = (args.one_world, args.units.one_world_unit.clone()) {
+        scale::child::watch_parent();
         let world_dir = one_world_dir(&args);
         effective_bbox = one_world::prepare_unit(&world_dir, &effective_bbox, &mut args, &lease)
             .unwrap_or_else(|e| {

@@ -541,7 +541,7 @@ fn should_stream_to_disk(num_regions: usize, available_mb: u64, fillground: bool
 }
 
 /// Free RAM in MB.
-fn available_memory_mb() -> u64 {
+pub(crate) fn available_memory_mb() -> u64 {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     sys.available_memory() / (1024 * 1024)

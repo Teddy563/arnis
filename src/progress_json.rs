@@ -15,7 +15,7 @@
 //! go to stdout around these, so a reader keeps the lines starting `{"v":`.
 //!
 //! A job built in pieces (`--unit-regions`) adds `piece` records, state
-//! `start`, `done`, `skipped` or `failed`, and each piece's own run
+//! `start`, `retry`, `done`, `skipped` or `failed`, and each piece's own run
 //! ends with a `result` record before its `done`:
 //!
 //! ```text
