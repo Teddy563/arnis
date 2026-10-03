@@ -139,6 +139,14 @@ pub struct Args {
     #[arg(long = "cave-seed", value_name = "SEED")]
     pub cave_seed: Option<u64>,
 
+    /// EXPERIMENTAL. World seed mixed into every per-element and per-block random choice
+    /// (building colours, trees, scatter, ground patches, ...), so the same area can be
+    /// rebuilt with a different but repeatable look. Also seeds --caves when --cave-seed is
+    /// omitted. Omitted or 0 keeps the default look. A One World keeps the seed its first
+    /// area was built with.
+    #[arg(long = "seed", value_name = "SEED")]
+    pub seed: Option<u64>,
+
     /// Y the cave passes treat as vanilla's world floor (-64), a multiple of 16. Omitted, caves
     /// follow each run's bedrock plane, which in a One World sits under each area's (and each
     /// piece's) own lowest point, so neighbours with different floors do not line up
@@ -625,6 +633,7 @@ pub const CAPABILITIES: &[&str] = &[
     "tree-size-weights",
     "cave-seed",
     "cave-datum-y",
+    "seed",
     "river-bed",
     "water-detail",
     "min-y",

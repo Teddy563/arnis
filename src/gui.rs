@@ -1502,6 +1502,7 @@ fn piece_argv(args: &Args, world_path: &Path) -> Vec<std::ffi::OsString> {
             .map(|v| format!("--tree-size-weights={v}")),
         args.cave_seed.map(|v| format!("--cave-seed={v}")),
         args.cave_datum_y.map(|v| format!("--cave-datum-y={v}")),
+        args.seed.map(|v| format!("--seed={v}")),
     ];
     values.extend(optional.into_iter().flatten());
     // ponytail: the token rides on the pieces' command lines, visible to this
@@ -2007,6 +2008,7 @@ fn gui_start_generation(
                 cave_zone_map_step: None,
                 cave_seed: meld.cave_seed,
                 cave_datum_y: meld.cave_datum_y,
+                seed: None,
                 legacy_trees: legacy_trees_enabled,
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
                 tree_realm: meld.tree_realm,
@@ -2508,6 +2510,7 @@ mod piece_tests {
         args.cave_seed = meld.cave_seed;
         args.cave_datum_y = meld.cave_datum_y;
         args.water = meld.water;
+        args.seed = Some(424242);
         let back = base(&piece_argv(&args, &dir.path().join("My World")));
         assert_eq!(format!("{back:?}"), format!("{args:?}"));
 

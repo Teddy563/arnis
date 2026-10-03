@@ -141,10 +141,11 @@ pub(crate) fn vy(y: i32) -> i32 {
     y + y_shift()
 }
 
-/// This run's cave seed: `--cave-seed` (its bits, so every u64 is a distinct layout), else
-/// the built-in one.
+/// This run's cave seed: `--cave-seed` (its bits, so every u64 is a distinct layout), else a
+/// non-zero `--seed`, else the built-in one.
 pub(crate) fn seed(args: &Args) -> i64 {
-    args.cave_seed.map_or(SEED, |s| s as i64)
+    let world = args.seed.filter(|&s| s != 0);
+    args.cave_seed.or(world).map_or(SEED, |s| s as i64)
 }
 
 /// The `--cave-biomes` amounts for this run. `validate_args` has already rejected a bad list,
@@ -776,6 +777,10 @@ mod tests {
         assert_eq!(seed(&parse(&["--cave-seed", "3397307006"])), SEED);
         let other = seed(&parse(&["--cave-seed", "7"]));
         assert_eq!(other, 7);
+        // --seed stands in for a missing --cave-seed; 0 is no seed.
+        assert_eq!(seed(&parse(&["--seed", "7"])), 7);
+        assert_eq!(seed(&parse(&["--seed", "0"])), SEED);
+        assert_eq!(seed(&parse(&["--seed", "9", "--cave-seed", "7"])), 7);
         let carve = |s| carver::carve_positions(s, -64, 63, -64, 63);
         assert!(!carve(SEED).is_empty());
         assert_ne!(carve(SEED), carve(other));

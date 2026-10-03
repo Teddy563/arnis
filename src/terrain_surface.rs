@@ -57,6 +57,8 @@ const BED_FLOOR: i32 = -2200;
 const BED_CEIL: i32 = 4200;
 
 /// Where each bed of the stack starts, bottom up; the same stack everywhere.
+/// ponytail: reads `--seed` once per process (set before generation); a process that
+/// generated with two seeds would keep the first stack.
 static BED_STARTS: std::sync::LazyLock<Vec<i32>> = std::sync::LazyLock::new(|| {
     let mut starts = Vec::new();
     let mut y = BED_FLOOR;

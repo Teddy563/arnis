@@ -484,6 +484,8 @@ fn run_cli() {
         return;
     }
     let args = args;
+    // After One World has applied the seed its world keeps, before anything rolls a die.
+    deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
 
     // Heads-up for very large areas: generation is long and memory-heavy, and big
     // requests load the public OpenStreetMap / elevation servers. Non-blocking.

@@ -96,6 +96,9 @@ pub struct Manifest {
     /// `--cave-datum-y` of the first area, the same way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cave_datum_y: Option<i32>,
+    /// `--seed` of the first area; later areas and pieces build with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
     pub next_area_id: u32,
     pub areas: Vec<GeneratedArea>,
 }
@@ -140,6 +143,7 @@ impl Manifest {
             }),
             cave_seed: args.cave_seed,
             cave_datum_y: args.cave_datum_y,
+            seed: args.seed,
             next_area_id: 1,
             areas: Vec::new(),
         }
@@ -348,8 +352,13 @@ fn compatibility_errors(manifest: &Manifest, args: &Args) -> Vec<String> {
 
 /// Caves are a pure function of the seed and the datum, so a world keeps its first area's (none
 /// means the built-in seed and each run's own floor): a later area or piece with others would
-/// not line up with its neighbours underground.
+/// not line up with its neighbours underground. `--seed` the same way, for everything else.
 fn keep_cave_settings(manifest: &Manifest, args: &mut Args) {
+    if args.seed.is_some() && args.seed != manifest.seed {
+        let kept = manifest.seed.map_or("none".into(), |s| s.to_string());
+        println!("Note: One World keeps the seed it was created with ({kept}).");
+    }
+    args.seed = manifest.seed;
     if args.cave_seed.is_some() && args.cave_seed != manifest.cave_seed {
         let kept = manifest
             .cave_seed
@@ -1038,12 +1047,31 @@ mod tests {
         let manifest = Manifest::load(&world).unwrap().unwrap();
         assert_eq!(manifest.cave_seed, Some(42));
         assert_eq!(manifest.cave_datum_y, Some(-1024));
-        let later = ["--caves", "--cave-seed", "7", "--cave-datum-y", "0"];
+        let later = [
+            "--caves",
+            "--cave-seed",
+            "7",
+            "--cave-datum-y",
+            "0",
+            "--seed",
+            "5",
+        ];
         for extra in [&["--caves"][..], &later] {
             let mut args = args_for(MUNICH, extra);
             drop(prepare(&world, &req, &mut args).unwrap());
             assert_eq!(args.cave_seed, Some(42));
             assert_eq!(args.cave_datum_y, Some(-1024));
+            assert_eq!(args.seed, None);
+        }
+        assert!(!text.contains("\"seed\""), "{text}");
+
+        let seeded = dir.path().join("s");
+        drop(prepare(&seeded, &req, &mut args_for(MUNICH, &["--seed", "9"])).unwrap());
+        assert_eq!(Manifest::load(&seeded).unwrap().unwrap().seed, Some(9));
+        for extra in [&[][..], &["--seed", "5"]] {
+            let mut args = args_for(MUNICH, extra);
+            drop(prepare(&seeded, &req, &mut args).unwrap());
+            assert_eq!(args.seed, Some(9));
         }
         let mut args = args_for(MUNICH, &later);
         drop(prepare(&plain, &req, &mut args).unwrap());
