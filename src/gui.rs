@@ -130,6 +130,8 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_loot_table,
             gui_climate_preview,
             gui_pick_osm_file,
+            gui_save_preset,
+            gui_load_preset,
             gui_redraw_one_world_map,
             gui_start_generation,
             gui_get_version,
@@ -383,6 +385,32 @@ fn pick_file(current: String, kind: &str, extensions: &[&str]) -> String {
     dialog
         .pick_file()
         .map_or(current, |file| file.display().to_string())
+}
+
+/// Saves an Advanced Features preset where the user picks; false when they
+/// cancel.
+#[tauri::command]
+fn gui_save_preset(contents: String) -> Result<bool, String> {
+    let Some(path) = FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name("arnis-preset.json")
+        .save_file()
+    else {
+        return Ok(false);
+    };
+    fs::write(path, contents)
+        .map(|()| true)
+        .map_err(|e| e.to_string())
+}
+
+/// The preset file the user picks, or none when they cancel.
+#[tauri::command]
+fn gui_load_preset() -> Result<Option<String>, String> {
+    FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .pick_file()
+        .map(|path| fs::read_to_string(path).map_err(|e| e.to_string()))
+        .transpose()
 }
 
 /// `--climate-map` for the selected area, as a PNG data URL for the window.

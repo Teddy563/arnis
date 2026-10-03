@@ -93,6 +93,15 @@ the stock downloads.
 
 All of them reach the pieces of a One World job too.
 
+## Presets
+
+**Save Preset** and **Load Preset**, under the Advanced Features switch (and
+shown whether it is on or off), write and read every Advanced Features and OSM
+Data Source setting, the switch included, as a JSON file
+(`{"arnisPreset": 1, "settings": {...}}`, keyed by control id). Loading sets
+every setting it covers; one the file leaves out, or holds a value it cannot
+take, goes back to its default.
+
 ## Flags
 
 - `--threads N`: worker threads for generation. Default 90% of the cores, or

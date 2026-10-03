@@ -1105,6 +1105,22 @@
                     <input type="checkbox" class="switch" id="advanced-features-toggle" name="advanced-features-toggle">
                   </div>
                 </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="preset-save-button" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="presets">Presets</span>
+                        <span class="tooltip-icon" data-tooltip="A JSON file with every Advanced Features and OSM Data Source setting, the switch included. Loading one sets every setting it covers; one the file leaves out goes back to its default.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="presets_desc">These settings and the OSM Data Source, as a file.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="preset-save-button" class="clear-cache-button" data-localize="preset_save_button">Save Preset</button>
+                    <button type="button" id="preset-load-button" class="clear-cache-button" data-localize="preset_load_button">Load Preset</button>
+                  </div>
+                </div>
               </div>
 
               <!-- Hidden, and every control in it disabled, while the switch

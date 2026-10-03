@@ -8,6 +8,8 @@ import {
   localizeSettingsStore,
   cancelSettingsResetConfirm,
   flushSettingsStore,
+  exportSettings,
+  importSettings,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
 
@@ -1683,6 +1685,7 @@ function initAdvancedFeatures() {
   initPropFamilies();
   initExperimentalButtons();
   initOsmSource();
+  initPresets();
   formatCpuUsage();
   refreshAdvancedFeatures();
 }
@@ -1704,6 +1707,41 @@ function initOsmSource() {
     }
   });
   document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+}
+
+// Presets: the Advanced Features and OSM Data Source settings as a JSON file.
+function initPresets() {
+  const roots = ['settings-section-features', 'settings-section-osm'].map((id) => document.getElementById(id));
+  const flash = (button, ok) => {
+    button.classList.add(ok ? 'is-success' : 'is-error');
+    setTimeout(() => button.classList.remove('is-success', 'is-error'), 1500);
+  };
+  const save = document.getElementById('preset-save-button');
+  save.addEventListener('click', async () => {
+    try {
+      const contents = JSON.stringify({ arnisPreset: 1, settings: exportSettings(roots) }, null, 2);
+      if (await invoke('gui_save_preset', { contents })) flash(save, true);
+    } catch (error) {
+      console.error('Saving the preset failed:', error);
+      flash(save, false);
+    }
+  });
+  const load = document.getElementById('preset-load-button');
+  load.addEventListener('click', async () => {
+    try {
+      const text = await invoke('gui_load_preset');
+      if (text === null || text === undefined) return;
+      const preset = JSON.parse(text);
+      if (!preset || preset.arnisPreset !== 1 || typeof preset.settings !== 'object') {
+        throw new Error('not an Arnis preset');
+      }
+      importSettings(preset.settings, roots);
+      flash(load, true);
+    } catch (error) {
+      console.error('Loading the preset failed:', error);
+      flash(load, false);
+    }
+  });
 }
 
 // The prop families live in one hidden field, the comma list --props takes,

@@ -662,6 +662,35 @@ export function initSettingsStore(options = {}) {
   refresh();
 }
 
+// Presets: every setting inside `roots`, as { id: value }.
+export function exportSettings(roots) {
+  const values = {};
+  for (const entry of SETTINGS) {
+    const el = elementFor(entry);
+    if (el && roots.some((root) => root.contains(el))) values[entry.id] = currentValue(entry);
+  }
+  return values;
+}
+
+// Writes a preset back through the controls, so their handlers run. A
+// setting the preset leaves out, or holds an unusable value for, gets its
+// default, so a load always gives the same state.
+export function importSettings(values, roots) {
+  applying = true;
+  try {
+    for (const entry of SETTINGS) {
+      const el = elementFor(entry);
+      if (!el || !roots.some((root) => root.contains(el))) continue;
+      const value = sanitize(entry, values[entry.id]);
+      writeValue(entry, value === undefined ? defaultValue(entry) : value);
+    }
+  } finally {
+    applying = false;
+  }
+  writeStored(collectOwn());
+  refresh();
+}
+
 // Supplies a default the host had to detect at runtime.
 export function setDynamicDefault(name, value) {
   dynamicDefaults[name] = value;
