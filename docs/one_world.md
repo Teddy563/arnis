@@ -210,6 +210,68 @@ Manifests are validated on load. Preview paths are only followed inside
 `arnis_one_world/previews`, since a manifest can come with a downloaded world.
 `metadata.json` describes the union of all areas.
 
+## Large areas
+
+One run holds the whole selection in memory, which bounds how large a One World
+area can be. A job built in pieces is bounded by the piece instead:
+
+```
+arnis --one-world --output-dir <saves> --bbox ... --unit-regions 4 --one-world-workers auto
+```
+
+- `--unit-regions N` cuts the selection into pieces of at most N x N regions
+  (one region is 512 x 512 blocks; N from 1 to 64, default 4). The cut lines
+  sit on a lattice anchored at block 0 of the world, so every piece owns whole
+  region files, and two jobs over overlapping selections cut the same lines.
+  Pieces are built centre first.
+- `--one-world-workers auto|N` builds that many pieces at once, each in its own
+  process (a run of the same executable). The job's threads, memory and
+  downloads are split between them. Either flag alone starts a job; the other
+  takes its default (one worker, 4 x 4 regions).
+- `--plan-units N` prints the cut as one JSON line and exits without touching
+  the world.
+- GUI: Settings > Advanced Features > **Parallel Workers** and **Piece Size**,
+  available with One World on. The bar follows the whole job and the status
+  line counts finished pieces.
+
+**Auto sizing.** `auto` plans on 75% of the cores (`--cpu-target` or
+`--threads` override that) and the free memory less a reserve of 10% of RAM, at
+least 2 GB (`--ram-budget-mb` overrides the reading). It runs as many pieces as
+both allow, at least 4 threads each, never more than 6 pieces or more than there
+are. A piece's memory is estimated from its size and the scale until pieces
+finish; after that the largest peak they reported lowers the count if needed.
+A fixed N splits the threads, memory and downloads one run would take N ways.
+
+**Coordinator.** The process you start holds the world's lock for the whole job
+and writes everything that belongs to the world as a whole once, after the last
+piece: the manifest record, `level.dat`, the map id counter, `metadata.json`
+and the area preview, stitched from the pieces' previews. Pieces write only
+their own chunks and signage maps, with the world's elevation mapping fixed in
+the manifest before the first one starts. A piece dies with its coordinator
+(a Job Object on Windows, a closed stdin pipe on Unix), so closing the window or
+stopping the CLI stops the whole job.
+
+**Resume.** A job keeps its state in `arnis_one_world/jobs/<rect>_n<N>/`: one
+`done-<piece>.json` per finished piece. Running the same selection with the
+same N again skips those and builds the rest; once a piece is done, a failed or
+stopped job keeps the world instead of removing it. A failed piece is retried
+twice when the cause may pass (network trouble, a crash without a message).
+The job folder is removed when the job completes.
+
+**Known limitations of pieces.**
+
+1. **Bedrock floor per piece**: like separate areas (limitation 9 below), each
+   piece follows its own lowest point, so bedrock and the deepslate line can
+   step at a piece seam.
+2. **Seam-crossing geometry**: tunnels and polygons that cross a piece seam are
+   clipped per piece; about 0.02% of blocks differ from one run over the same
+   area.
+3. **Map id stride**: each piece gets 65,536 signage map ids; a piece needing
+   more fails, and a job whose pieces would run past the map id space is
+   refused (use a larger `--unit-regions`).
+4. **Unix** process handling (stdin watch, process groups) has not been run;
+   jobs were validated on Windows.
+
 ## Known limitations
 
 1. **Facade photo panels and preset facades** write a resource pack per run
@@ -241,6 +303,8 @@ Manifests are validated on load. Preview paths are only followed inside
 ## Where to look
 
 - `src/one_world.rs`: manifest, `prepare`, `record_area`, `existing_chunks`.
+- `src/work_units.rs` (the cut), `src/scale/` (coordinator, piece processes,
+  worker sizing).
 - `src/projection/`: `WebMercatorProjection`, `ProjectionSpec`,
   `snap_bbox_to_chunks`.
 - `src/ground.rs` (`GroundFrame`), `src/grid_ops.rs`,
