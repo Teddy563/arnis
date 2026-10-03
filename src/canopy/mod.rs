@@ -210,6 +210,7 @@ fn fetch_range(
     if length == 0 {
         return Ok(Vec::new());
     }
+    crate::net::ensure_online("canopy height")?;
     let end = start + length - 1;
     let response = client
         .get(url)

@@ -71,6 +71,7 @@ pub fn fetch_model(url: &str) -> Result<Vec<u8>, String> {
             return Ok(bytes);
         }
     }
+    crate::net::ensure_online("3D models (Wikimedia)")?;
     let client = client()?;
     let _permit = crate::net::request_permit();
     let resp = client.get(url).send().map_err(|e| e.to_string())?;

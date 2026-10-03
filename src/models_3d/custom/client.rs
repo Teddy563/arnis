@@ -46,6 +46,7 @@ pub(super) fn fetch_glb(url: &str, filename: &str) -> Result<Vec<u8>, String> {
         }
     }
 
+    crate::net::ensure_online("3D models")?;
     let client = client()?;
     let _permit = crate::net::request_permit();
     let mut resp = client.get(url).send().map_err(|e| e.to_string())?;

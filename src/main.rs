@@ -210,6 +210,24 @@ fn exit_failed() -> ! {
     std::process::exit(1);
 }
 
+/// `--offline` stops here rather than build a world with holes where the
+/// cache had nothing.
+fn exit_if_offline_misses() {
+    let missing = net::offline_misses();
+    if missing.is_empty() {
+        return;
+    }
+    eprintln!(
+        "{} --offline, and the cache lacks data this area needs:",
+        "Error:".red().bold()
+    );
+    for (what, refused) in missing {
+        eprintln!("  - {what} ({refused} request(s) refused)");
+    }
+    eprintln!("Run the same command once without --offline to fetch it.");
+    exit_failed();
+}
+
 /// The One World folder: `--world-name` inside the saves folder.
 fn one_world_dir(args: &Args) -> PathBuf {
     let base_dir = args.path.clone().unwrap_or_else(|| {
@@ -291,6 +309,7 @@ fn run_cli() {
     if let Some(n) = args.process.max_downloads {
         net::set_max_requests(n as usize);
     }
+    net::set_offline(args.process.offline);
     retrieve_data::set_overpass_urls(args.process.overpass_url.clone());
 
     // Clean up old cached elevation tiles on startup
@@ -299,7 +318,7 @@ fn run_cli() {
     }
 
     // Fire-and-forget update check; prints a one-line notice on a background thread.
-    if !args.process.no_update_check {
+    if !args.process.no_update_check && !args.process.offline {
         version_check::check_for_updates_async();
     }
     args::apply_body_defaults(&mut args);
@@ -669,6 +688,10 @@ fn run_cli() {
                 !args.no_tile_archive,
             )
             .unwrap_or_else(|e| {
+                // Offline, the other fetches finish first so the error lists all that is missing.
+                if net::offline() {
+                    return osm_parser::OsmData::empty();
+                }
                 eprintln!("{} Failed to fetch data: {e}", "Error:".red().bold());
                 exit_failed();
             })
@@ -695,6 +718,8 @@ fn run_cli() {
     });
     bench.report("fetch_total", fetch_start.elapsed());
     bench.reset();
+
+    exit_if_offline_misses();
 
     // Parse raw data
     let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
@@ -944,6 +969,8 @@ fn run_cli() {
             exit_failed();
         }
     }
+    // 3D models and Mapillary facades are fetched during generation.
+    exit_if_offline_misses();
     if let Some(u) = unit {
         progress_json::record(
             "result",

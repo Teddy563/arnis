@@ -462,6 +462,7 @@ fn range_get(
     offset: u64,
     len: usize,
 ) -> Result<Vec<u8>, String> {
+    crate::net::ensure_online("planetary elevation")?;
     let range = format!("bytes={}-{}", offset, offset + len as u64 - 1);
     let mut last = String::new();
     for attempt in 0..ROW_MAX_RETRIES {

@@ -622,6 +622,12 @@ pub struct ProcessArgs {
     )]
     pub overpass_url: Vec<String>,
 
+    /// Never use the network: read OSM, Overture, elevation, land cover,
+    /// canopy and 3D models from the caches only. A run that needs anything
+    /// they lack stops and lists it instead of building flat or empty ground.
+    #[arg(long, env = "ARNIS_OFFLINE", value_parser = FalseyValueParser::new())]
+    pub offline: bool,
+
     /// Also report progress as JSON lines on stdout for programs driving the
     /// CLI: `{"v":1,"type":"phase"|"progress"|"error"|"done",...}`, the last
     /// with wall_s, cpu_s, peak_rss_mb and chunks. Other output is unchanged.
@@ -667,6 +673,7 @@ pub const CAPABILITIES: &[&str] = &[
     "climate-mode",
     "climate-map",
     "overpass-url",
+    "offline",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1132,6 +1139,9 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     args.snow.validate(args.one_world)?;
+    if args.process.offline && args.mapillary_probe {
+        return Err("--mapillary-probe asks Mapillary, so it cannot run --offline.".to_string());
+    }
     if args.units.coordinates() && args.save_json_file.is_some() {
         return Err("--save-json-file does not combine with a job built in pieces.".to_string());
     }
@@ -2209,6 +2219,8 @@ mod tests {
         assert_eq!(args.process.overpass_url, ["http://a/api", "http://b/api"]);
         let args = parse(&["--overpass-url=http://a/api", "--overpass-url=http://c/api"]).unwrap();
         assert_eq!(args.process.overpass_url, ["http://a/api", "http://c/api"]);
+        let args = parse(&["--offline", "--mapillary-probe"]).unwrap();
+        assert!(validate_args(&args).is_err());
     }
 
     #[test]

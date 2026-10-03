@@ -754,6 +754,7 @@ fn fetch_range(
     start: u64,
     length: u64,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    crate::net::ensure_online("land cover (ESA WorldCover)")?;
     let end = start + length - 1;
     let response = client
         .get(url)

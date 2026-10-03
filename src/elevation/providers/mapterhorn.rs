@@ -499,6 +499,9 @@ fn download_tile(
     tile_path: &Path,
     net_ok: &std::sync::atomic::AtomicBool,
 ) -> TileFetch {
+    if let Err(e) = crate::net::ensure_online("elevation tiles (Mapterhorn)") {
+        return TileFetch::Failed(e);
+    }
     let url = key.url();
     let mut last_error = String::new();
 

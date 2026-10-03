@@ -770,6 +770,7 @@ mod tests {
             "--progress",
             "json",
             "--no-update-check",
+            "--offline",
             "--scale=1",
         ]
         .map(OsString::from);
@@ -784,6 +785,7 @@ mod tests {
                 "--one-world",
                 "--output-dir",
                 "out dir",
+                "--offline",
                 "--scale=1",
                 "--bbox",
                 &units[3].bbox_arg(),
@@ -796,7 +798,7 @@ mod tests {
             ]
         );
         // What the piece parses is the bbox that snaps to its rectangle.
-        let parsed = LLBBox::from_str(&got[5]).unwrap();
+        let parsed = LLBBox::from_str(&got[6]).unwrap();
         let (rect, _) = crate::projection::snap_bbox_to_chunks(&proj, &parsed).unwrap();
         assert_eq!(rect.min_x(), units[3].rect.min_x());
         assert_eq!(rect.max_z(), units[3].rect.max_z());

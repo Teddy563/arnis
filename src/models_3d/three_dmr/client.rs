@@ -105,6 +105,7 @@ pub fn fetch_info(id: u64) -> Result<ModelInfo, String> {
         }
     }
 
+    crate::net::ensure_online("3D models (3DMR)")?;
     let client = client()?;
     let url = format!("{API_BASE}/info/{id}");
     let _permit = crate::net::request_permit();
@@ -133,6 +134,7 @@ pub fn fetch_glb(id: u64) -> Result<Vec<u8>, String> {
         }
     }
 
+    crate::net::ensure_online("3D models (3DMR)")?;
     let client = client()?;
     let url = format!("{API_BASE}/model/{id}");
     let _permit = crate::net::request_permit();

@@ -1033,6 +1033,10 @@ fn parse_release_listing(body: &str) -> Result<Vec<String>, Box<dyn std::error::
 
 /// Release names currently published in the bucket, newest first.
 fn discover_releases(client: &Client) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Offline the remembered release is the answer; not data the run is missing.
+    if crate::net::offline() {
+        return Err("offline".into());
+    }
     stats::record_request();
     let body = client
         .get(OVERTURE_RELEASE_LIST_URL)
@@ -1125,6 +1129,7 @@ fn stac_index_for(
         return Ok(bytes::Bytes::from(cached));
     }
 
+    crate::net::ensure_online("Overture STAC index")?;
     let url = format!("{OVERTURE_STAC_ROOT}/{release}/collections.parquet");
     stats::record_request();
     let response = client.get(&url).send()?;
@@ -2295,6 +2300,7 @@ fn partition_size_cached(
         return Ok(size);
     }
 
+    crate::net::ensure_online("Overture GeoParquet")?;
     stats::record_request();
     let head_resp = client.head(url).send()?;
     if !head_resp.status().is_success() {
@@ -2375,6 +2381,7 @@ fn fetch_range_with_attempts(
     let end = start
         .checked_add(length - 1)
         .ok_or_else(|| format!("range {start}+{length} overflows the partition"))?;
+    crate::net::ensure_online("Overture GeoParquet")?;
     let mut last_error = String::new();
 
     for attempt in 0..max_attempts.max(1) {

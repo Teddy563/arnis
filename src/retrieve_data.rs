@@ -324,6 +324,7 @@ pub fn fetch_data_from_overpass(
 ) -> Result<OsmData, Box<dyn std::error::Error>> {
     println!("{} Fetching data...", "[1/7]".bold());
     emit_gui_progress_update(1.0, "Downloading data...");
+    crate::net::ensure_online("OpenStreetMap data (Overpass)")?;
 
     // Arnis's own instance, and only that one. Data comes from the tile archive now; this is
     // the fallback. The public instances are deliberately gone: arnis was blocked from
