@@ -143,9 +143,11 @@ the stock downloads.
 
 | Control | CLI flag | Default | Description |
 | --- | --- | --- | --- |
-| Download Plan: Download & Bake What's Missing | `--prewarm` | | Shown with a selection while Offline Mode is on or the source is Region Download or Local File. Per source (OpenStreetMap, elevation, land cover, canopy height, Overture): Cached, Partly cached (n/m) or Missing, with an estimated download; for Region Download, the Geofabrik extract the cached index picks and whether a bake holds the area. Read from disk only; the button runs the download and checks again. |
-| Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`), Local File (`--file`) or Region Download (Geofabrik) (`--osm-pbf`). |
+| Download Plan: Download & Bake What's Missing | `--prewarm` | | Shown with a selection while Offline Mode is on or the source is Region Download, Local File or Local Archive. Per source (OpenStreetMap, elevation, land cover, canopy height, Overture): Cached, Partly cached (n/m) or Missing, with an estimated download; for Region Download, the Geofabrik extract the cached index picks and whether a bake holds the area; for Local Archive, the archives in the folder that cover the selection and the Prepare Countries list (see [Local Archive](#local-archive)). Read from disk only; the button runs the download and checks again. |
+| Source | | Arnis Tile Archive | Arnis Tile Archive (no flag), Overpass (`--no-tile-archive`), Local File (`--file`), Region Download (Geofabrik) (`--osm-pbf`) or Local Archive (Baked Countries) (`--osm-tiles-url <folder>`). |
 | Archive URL | `--osm-tiles-url` | Empty (Arnis's archive) | Shown for the tile archive. |
+| Archive Folder | `--osm-tiles-url` | Empty (`<cache>/arnis/local-archive`) | The local archive folder. Shown for Local Archive. |
+| arnis-tiles Path | | Empty | Where arnis-tiles is when it is not next to Arnis or on PATH: the program or its folder. Shown for Local Archive. |
 | Overpass Servers | `--overpass-url` | Empty (Arnis's server) | Comma list, tried in order. Shown for Overpass. |
 | Local File | `--file` | Empty | An `.osm`, `.xml` or Arnis `.json` file; the area is still the map selection. Shown for Local File. |
 | PBF File | `--osm-pbf` | Empty (`geofabrik`) | An `.osm.pbf` extract; empty sends `--osm-pbf=geofabrik`. Shown for Region Download. |
@@ -155,6 +157,71 @@ the stock downloads.
 | Warm Caches Before Building Pieces | `--prewarm-first` | Off | Needs a One World built in pieces (Extra Features on); greyed with Offline Mode. |
 
 All of them reach the pieces of a One World job too.
+
+## Local Archive
+
+A local tile archive is what the Arnis tile archive is, baked on this computer
+from whole Geofabrik country extracts by
+[arnis-tiles](https://github.com/louis-e/arnis-tiles): the same AOT1 format,
+zoom 13 tiles and decoder, so a world built from it is the same as one built
+from the public archive of the same data date. `--osm-tiles-url` takes the
+folder (or a `file://` URL) and reads `archives.json` and the `.pmtiles` files
+in place: no HTTP, no cache copy, and it works with `--offline`. A country is
+baked once and serves every selection inside it.
+
+In the window, pick **Local Archive (Baked Countries)** as the Source. The
+Download Plan then shows:
+
+- which archives in the folder hold the selection, read from `archives.json`
+  and its coverage cells (z6) on disk. OpenStreetMap shows Cached when every
+  z13 tile of the selection falls in an archive's cells, so Offline Mode with
+  a fully covered selection reads Cached ✓;
+- **Prepare Countries**: the extracts `arnis-tiles prepare --dry-run` picks for
+  the selection (the cheapest Geofabrik extracts covering it), with their
+  download size and Baked ✓ for those already in the folder. The dry run runs
+  in the background when the selection changes and is kept per bbox for the
+  session;
+- **Download & Bake** runs `arnis-tiles prepare` for the selection into the
+  folder, with the Extra Features Threads or CPU Usage (else 75 % of the
+  cores). Progress goes on the main bar: the download share, then
+  "Baking ..." with the elapsed time (the bake reports nothing until it ends),
+  then writing the archive. **Stop** ends it; countries already baked are
+  kept, and arnis-tiles resumes the rest next time. The plan is checked again
+  when it ends.
+
+arnis-tiles keeps its Geofabrik index and size cache in
+`<cache>/arnis/arnis-tiles/`, and its bake state in `<folder>/work`.
+
+Sizes and cost, Romania (2026-10): a 330 MB `.pbf` download, a 457 MB archive
+(23,455 tiles), about 1.6 GB of RAM while baking. arnis-tiles stops a bake when
+less than 15 GB is free on the folder's disk. Bucharest from this archive and
+from the public archive gives the same world.
+
+The same from a terminal:
+
+```sh
+arnis-tiles --cache <cache>/arnis/arnis-tiles/cache --out <folder> prepare --bbox 44.40,26.00,44.50,26.20 --dry-run
+arnis-tiles --cache <cache>/arnis/arnis-tiles/cache --out <folder> prepare --bbox 44.40,26.00,44.50,26.20 --threads 12
+arnis --bbox 44.445,26.095,44.448,26.103 --osm-tiles-url <folder> --offline --output-dir <saves>
+```
+
+**Finding arnis-tiles.** Arnis looks next to its own executable (where a
+release bundle puts it), then on PATH, then at **arnis-tiles Path**. Without
+it the panel says where to get it and Download & Bake stays off. A release
+bundles it as a Tauri sidecar:
+
+```sh
+# in a clone of louis-e/arnis-tiles
+cargo build --release
+# in arnis: the sidecar name carries the target triple
+mkdir -p binaries
+cp <arnis-tiles>/target/release/arnis-tiles.exe binaries/arnis-tiles-x86_64-pc-windows-msvc.exe
+cargo tauri build --config tauri.sidecar.conf.json
+```
+
+`tauri.sidecar.conf.json` adds `bundle.externalBin: ["binaries/arnis-tiles"]`.
+It is a separate file because Tauri's build script fails when a listed
+external binary is missing, which would break every plain `cargo build`.
 
 ## Presets
 

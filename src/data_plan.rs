@@ -23,6 +23,8 @@ pub struct DataPlan {
     pub items: Vec<Item>,
     /// The `.pbf` extract, with Region Download or a `.pbf` file.
     pub extract: Option<crate::osm_pbf::ExtractPlan>,
+    /// The local tile archive folder's archives, with Local Archive.
+    pub local_archive: Option<crate::osm_tiles::LocalCoverage>,
 }
 
 /// Typical cached file per source, measured over a working cache (2026-10),
@@ -81,6 +83,17 @@ pub fn plan(root: &Path, args: &Args, bbox: LLBBox) -> DataPlan {
             });
         } else if args.no_tile_archive {
             out.items.push(count("osm", None, 0));
+        } else if let Some(dir) = crate::overture::pmtiles::local_path(&args.osm_tiles_url) {
+            // A local archive is read in place: a tile is there when an
+            // archive in the folder holds its cell, and nothing downloads.
+            let cov = crate::osm_tiles::local_coverage(&dir, &bbox);
+            out.items.push(Item {
+                source: "osm",
+                cached: cov.as_ref().map_or(0, |c| c.covered),
+                total: cov.as_ref().map_or(0, |c| c.tiles),
+                missing_bytes: None,
+            });
+            out.local_archive = cov;
         } else {
             let files = crate::osm_tiles::cache_files(root, &args.osm_tiles_url, &bbox);
             out.items.push(count("osm", files, TYPICAL_OSM_TILE));
@@ -190,6 +203,14 @@ mod tests {
         let p = plan(&root, &pbf, bbox);
         assert_eq!(p.extract.as_ref().unwrap().bytes, Some(4321));
         assert_eq!(item(&p, "osm").cached, 1, "downloaded, not baked");
+
+        // Local Archive: the folder's cells, nothing to download.
+        let local = root.join("local-archive");
+        let flag = format!("--osm-tiles-url={}", local.display());
+        let empty = plan(&root, &args(&[flag.as_str()]), bbox);
+        assert_eq!(item(&empty, "osm").cached, 0);
+        assert!(item(&empty, "osm").total > 0);
+        assert!(empty.local_archive.unwrap().archives.is_empty());
 
         // Terrain-only builds no objects, so OSM is not part of the plan.
         let terrain_only = plan(&root, &args(&["--mode=terrain-only"]), bbox);

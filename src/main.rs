@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod arnis_tiles;
 mod bedrock_block_map;
 mod bench;
 mod biome;

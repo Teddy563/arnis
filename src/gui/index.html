@@ -1982,6 +1982,16 @@
                   </div>
                   <ul id="data-plan-list" class="data-plan-list"></ul>
                   <p id="data-plan-extract" class="data-plan-extract" style="display: none;"></p>
+                  <!-- Local Archive only: the countries arnis-tiles would bake for the selection -->
+                  <div id="prepare-panel" class="prepare-panel" style="display: none;">
+                    <div class="prepare-head">
+                      <span class="prepare-title" data-localize="prepare_countries">Prepare Countries</span>
+                      <button type="button" id="prepare-stop-button" class="clear-cache-button" style="display: none;" data-localize="prepare_stop_button">Stop</button>
+                      <button type="button" id="prepare-bake-button" class="clear-cache-button" data-localize="prepare_bake_button">Download &amp; Bake</button>
+                    </div>
+                    <ul id="prepare-list" class="data-plan-list"></ul>
+                    <p id="prepare-status" class="data-plan-extract"></p>
+                  </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="osm-source-select" class="setting-label">
@@ -1989,7 +1999,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="osm_source">Source</span>
-                        <span class="tooltip-icon" data-tooltip="The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Local File reads an .osm, .xml or Arnis .json file; the area is still the one selected on the map. Region Download reads an .osm.pbf extract, by default the smallest Geofabrik region holding the selection, downloaded once; the area is cut out and kept, so later runs and parallel pieces reuse it.">?</span>
+                        <span class="tooltip-icon" data-tooltip="The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Local File reads an .osm, .xml or Arnis .json file; the area is still the one selected on the map. Region Download reads an .osm.pbf extract, by default the smallest Geofabrik region holding the selection, downloaded once; the area is cut out and kept, so later runs and parallel pieces reuse it. Local Archive reads a tile archive baked from whole Geofabrik countries by arnis-tiles, from a folder on this computer: the same data and format as the Arnis tile archive, with no network.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="osm_source_desc">Where the OpenStreetMap data comes from.</span>
                     </span>
@@ -2000,6 +2010,7 @@
                       <option value="overpass" data-localize="osm_source_overpass">Overpass</option>
                       <option value="file" data-localize="osm_source_file">Local File</option>
                       <option value="pbf" data-localize="osm_source_pbf">Region Download (Geofabrik)</option>
+                      <option value="local" data-localize="osm_source_local">Local Archive (Baked Countries)</option>
                     </select>
                   </div>
                 </div>
@@ -2013,6 +2024,39 @@
                   </label>
                   <div class="settings-control">
                     <input type="text" id="osm-tiles-url-input" name="osm-tiles-url-input" placeholder="https://tiles.arnisproject.com/v1" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="local-archive-row">
+                  <label for="local-archive-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-folder"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="local_archive">Archive Folder</span>
+                        <span class="tooltip-icon" data-tooltip="A folder holding archives.json and the .pmtiles files arnis-tiles bakes, one per Geofabrik country. Prepare Countries in the Download Plan bakes the countries the selection needs into it; a country is baked once and serves every area inside it. Read in place, so Offline Mode works with it.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="local_archive_desc">Where baked countries are kept. Empty uses the cache folder.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control save-path-control">
+                    <input type="text" id="local-archive-input" name="local-archive-input" class="save-path-input" spellcheck="false">
+                    <button type="button" id="local-archive-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                      <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide" id="arnis-tiles-path-row">
+                  <label for="arnis-tiles-path-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="arnis_tiles_path">arnis-tiles Path</span>
+                        <span class="tooltip-icon" data-tooltip="Release builds ship arnis-tiles next to Arnis. Otherwise it is looked for next to Arnis, then on PATH, then here: the program or the folder holding it.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="arnis_tiles_path_desc">The baking tool, when it is not next to Arnis or on PATH.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="arnis-tiles-path-input" name="arnis-tiles-path-input" placeholder="arnis-tiles" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide" id="overpass-url-row">

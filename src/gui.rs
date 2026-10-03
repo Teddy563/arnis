@@ -136,6 +136,10 @@ pub fn run_gui() -> Result<(), String> {
             gui_redraw_one_world_map,
             gui_snap_selection,
             gui_data_plan,
+            gui_local_archive_info,
+            gui_prepare_plan,
+            gui_bake_archive,
+            gui_cancel_bake,
             gui_render_preview,
             gui_start_generation,
             gui_get_version,
@@ -553,6 +557,176 @@ fn gui_data_plan(
     let bbox = LLBBox::from_str(&bbox_text)?;
     let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
     Ok(crate::data_plan::plan(&root, &args, bbox))
+}
+
+/// The Local Archive folder an empty field means, and where arnis-tiles is
+/// (`None` when it is not installed).
+#[derive(serde::Serialize)]
+struct LocalArchiveInfo {
+    default_folder: String,
+    arnis_tiles: Option<String>,
+}
+
+#[tauri::command]
+fn gui_local_archive_info(tiles_path: String) -> LocalArchiveInfo {
+    LocalArchiveInfo {
+        default_folder: crate::arnis_tiles::default_folder(&cache_root())
+            .display()
+            .to_string(),
+        arnis_tiles: crate::arnis_tiles::locate(&tiles_path).map(|p| p.display().to_string()),
+    }
+}
+
+fn cache_root() -> PathBuf {
+    crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// The archive folder a Local Archive field names; empty is the default.
+fn archive_folder(folder: &str) -> Result<PathBuf, String> {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return Ok(crate::arnis_tiles::default_folder(&cache_root()));
+    }
+    crate::overture::pmtiles::local_path(folder)
+        .ok_or_else(|| format!("{folder} is not a folder on this computer."))
+}
+
+/// arnis-tiles' own index cache and scratch.
+fn arnis_tiles_state() -> PathBuf {
+    cache_root().join("arnis").join("arnis-tiles")
+}
+
+fn arnis_tiles_exe(tiles_path: &str) -> Result<PathBuf, String> {
+    crate::arnis_tiles::locate(tiles_path).ok_or_else(|| {
+        format!(
+            "arnis-tiles not found; get it from {}",
+            crate::arnis_tiles::HOME
+        )
+    })
+}
+
+/// One extract of the Prepare Countries list.
+#[derive(serde::Serialize)]
+struct PrepareRow {
+    #[serde(flatten)]
+    extract: crate::arnis_tiles::Extract,
+    /// The folder already holds its archive.
+    baked: bool,
+}
+
+#[derive(serde::Serialize)]
+struct PreparePlan {
+    extracts: Vec<PrepareRow>,
+    total_bytes: u64,
+    uncovered_points: u64,
+}
+
+/// Prepare Countries: the Geofabrik extracts covering the selection, from
+/// `arnis-tiles prepare --dry-run` (kept per bbox for the session), each
+/// marked baked when the folder already holds its archive.
+#[tauri::command(async)]
+fn gui_prepare_plan(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+) -> Result<PreparePlan, String> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static PLANS: Mutex<Option<HashMap<String, crate::arnis_tiles::Prepare>>> = Mutex::new(None);
+
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let cached = PLANS
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get_or_insert_with(HashMap::new)
+        .get(&bbox_text)
+        .cloned();
+    let plan = match cached {
+        Some(p) => p,
+        None => {
+            let exe = arnis_tiles_exe(&tiles_path)?;
+            let p = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
+            PLANS
+                .lock()
+                .map_err(|e| e.to_string())?
+                .get_or_insert_with(HashMap::new)
+                .insert(bbox_text, p.clone());
+            p
+        }
+    };
+    let baked: Vec<String> = crate::osm_tiles::local_coverage(&folder, &bbox)
+        .map(|c| c.archives.into_iter().map(|a| a.name).collect())
+        .unwrap_or_default();
+    Ok(PreparePlan {
+        extracts: plan
+            .extracts
+            .into_iter()
+            .map(|e| PrepareRow {
+                baked: baked.contains(&e.id),
+                extract: e,
+            })
+            .collect(),
+        total_bytes: plan.total_bytes,
+        uncovered_points: plan.uncovered_points,
+    })
+}
+
+fn bake_cancel() -> &'static std::sync::atomic::AtomicBool {
+    static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    &CANCEL
+}
+
+/// Download & Bake: `arnis-tiles prepare` for the selection into the folder,
+/// on the Extra Features threads (`flags`, as for a generation) or 75 % of the
+/// cores, with its progress on the main bar. `Ok(false)` when stopped.
+#[tauri::command(async)]
+fn gui_bake_archive(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+    flags: Vec<String>,
+) -> Result<bool, String> {
+    use clap::Parser;
+    let args =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| e.to_string())?;
+    let threads = args.process.thread_count().unwrap_or_else(|| {
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        (cores * 3 / 4).max(1)
+    });
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let exe = arnis_tiles_exe(&tiles_path)?;
+    let _slot = BusySlot::acquire(BUSY_BAKE)?;
+    let cancel = bake_cancel();
+    cancel.store(false, std::sync::atomic::Ordering::Release);
+    progress::reset_progress_floor();
+    progress::emit_gui_progress_update(0.0, "Choosing the extracts to bake...");
+    let result = crate::arnis_tiles::bake(
+        &exe,
+        &arnis_tiles_state(),
+        &folder,
+        &bbox,
+        threads,
+        cancel,
+        &mut |pct, msg| progress::emit_gui_progress_update(pct, msg),
+    );
+    match &result {
+        Ok(true) => progress::emit_gui_progress_update(100.0, "Done! The local archive is ready."),
+        Ok(false) => progress::emit_gui_progress_update(
+            progress::MESSAGE_ONLY,
+            "Bake stopped. Finished countries are kept.",
+        ),
+        Err(e) => progress::emit_gui_error(e),
+    }
+    result
+}
+
+/// Stops a running bake. Harmless when nothing runs.
+#[tauri::command]
+fn gui_cancel_bake() {
+    bake_cancel().store(true, std::sync::atomic::Ordering::Release);
 }
 
 /// A live option preview card for one settings group, as a PNG data URL:
@@ -1568,6 +1742,7 @@ const BUSY_IDLE: u8 = 0;
 const BUSY_GENERATION: u8 = 1;
 const BUSY_PRECOMPUTE: u8 = 2;
 const BUSY_CLEAR: u8 = 3;
+const BUSY_BAKE: u8 = 4;
 
 /// Owns [`BUSY`] for the length of one job and clears it on drop, including
 /// on the early-return paths before the worker is spawned.
@@ -1585,6 +1760,7 @@ impl BusySlot {
             // short one that finishes.
             Err(BUSY_PRECOMPUTE) => Err("A precompute is running.".to_string()),
             Err(BUSY_CLEAR) => Err("The caches are being cleared.".to_string()),
+            Err(BUSY_BAKE) => Err("A country bake is running.".to_string()),
             Err(_) => Err("A generation is already running.".to_string()),
         }
     }

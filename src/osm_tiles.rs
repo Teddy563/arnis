@@ -77,6 +77,11 @@ struct ArchiveEntry {
     min_lon: f64,
     max_lat: f64,
     max_lon: f64,
+    /// The extract a local bake was made from, and the file's size.
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    bytes: Option<u64>,
 }
 
 impl ArchiveEntry {
@@ -151,17 +156,7 @@ pub(crate) fn cache_files(root: &Path, base_url: &str, bbox: &LLBBox) -> Option<
     if manifest.zoom != ZOOM || manifest.cell_zoom > ZOOM {
         return None;
     }
-    let (min_x, min_y) = pmtiles::lonlat_to_tile(bbox.min().lng(), bbox.max().lat(), ZOOM);
-    let (max_x, max_y) = pmtiles::lonlat_to_tile(bbox.max().lng(), bbox.min().lat(), ZOOM);
-    let (xs, xe, ys, ye) = (
-        min_x.min(max_x),
-        min_x.max(max_x),
-        min_y.min(max_y),
-        min_y.max(max_y),
-    );
-    if ((xe - xs) as usize + 1).saturating_mul((ye - ys) as usize + 1) > MAX_TILES {
-        return None;
-    }
+    let (xs, xe, ys, ye) = tile_range(bbox)?;
     let shift = ZOOM - manifest.cell_zoom;
     let side = 1u32 << manifest.cell_zoom;
     let mut out = Vec::new();
@@ -180,6 +175,94 @@ pub(crate) fn cache_files(root: &Path, base_url: &str, bbox: &LLBBox) -> Option<
         }
     }
     Some(out)
+}
+
+/// The z13 tiles a read of `bbox` takes, as `(min_x, max_x, min_y, max_y)`;
+/// `None` past the tile cap.
+fn tile_range(bbox: &LLBBox) -> Option<(u32, u32, u32, u32)> {
+    let (min_x, min_y) = pmtiles::lonlat_to_tile(bbox.min().lng(), bbox.max().lat(), ZOOM);
+    let (max_x, max_y) = pmtiles::lonlat_to_tile(bbox.max().lng(), bbox.min().lat(), ZOOM);
+    let (xs, xe, ys, ye) = (
+        min_x.min(max_x),
+        min_x.max(max_x),
+        min_y.min(max_y),
+        min_y.max(max_y),
+    );
+    (((xe - xs) as usize + 1).saturating_mul((ye - ys) as usize + 1) <= MAX_TILES)
+        .then_some((xs, xe, ys, ye))
+}
+
+/// One archive in a local archive folder.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct LocalArchive {
+    /// The extract it was baked from (`romania`), or its file name.
+    pub name: String,
+    pub bytes: Option<u64>,
+    /// Holds part of the selection.
+    pub covers: bool,
+}
+
+/// What a local archive folder holds for a selection, from its archives.json
+/// and coverage cells alone.
+#[derive(serde::Serialize, Debug, Default, PartialEq)]
+pub struct LocalCoverage {
+    pub archives: Vec<LocalArchive>,
+    /// z13 tiles the selection reads, and how many of them some archive holds.
+    pub tiles: usize,
+    pub covered: usize,
+}
+
+/// The coverage of `bbox` by the local archive in `dir`; an empty folder
+/// covers nothing. `None` past the tile cap.
+pub(crate) fn local_coverage(dir: &Path, bbox: &LLBBox) -> Option<LocalCoverage> {
+    let (xs, xe, ys, ye) = tile_range(bbox)?;
+    let tiles = (xe - xs + 1) as usize * (ye - ys + 1) as usize;
+    let manifest = std::fs::read(dir.join("archives.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Manifest>(&b).ok())
+        .filter(|m| m.zoom == ZOOM && m.cell_zoom <= ZOOM);
+    let Some(manifest) = manifest else {
+        return Some(LocalCoverage {
+            tiles,
+            ..LocalCoverage::default()
+        });
+    };
+    // An entry whose file is gone holds nothing.
+    let present: Vec<&ArchiveEntry> = manifest
+        .archives
+        .iter()
+        .filter(|a| a.file_is_safe() && dir.join(&a.file).is_file())
+        .collect();
+    let shift = ZOOM - manifest.cell_zoom;
+    let side = 1u32 << manifest.cell_zoom;
+    let mut covering = vec![false; present.len()];
+    let mut covered = 0;
+    for x in xs..=xe {
+        for y in ys..=ye {
+            let cell = HashSet::from([(y >> shift) * side + (x >> shift)]);
+            let mut any = false;
+            for (i, a) in present.iter().enumerate() {
+                if a.covers(&cell, bbox) {
+                    covering[i] = true;
+                    any = true;
+                }
+            }
+            covered += usize::from(any);
+        }
+    }
+    Some(LocalCoverage {
+        archives: present
+            .iter()
+            .zip(covering)
+            .map(|(a, covers)| LocalArchive {
+                name: a.name.clone().unwrap_or_else(|| a.file.clone()),
+                bytes: a.bytes,
+                covers,
+            })
+            .collect(),
+        tiles,
+        covered,
+    })
 }
 
 fn client() -> Result<Client> {
@@ -836,6 +919,8 @@ mod tests {
             min_lon: 0.0,
             max_lat: 1.0,
             max_lon: 1.0,
+            name: None,
+            bytes: None,
         }
     }
 
@@ -967,6 +1052,41 @@ mod tests {
         .unwrap();
         let m = manifest(&client().unwrap(), dir.path().to_str().unwrap()).unwrap();
         assert_eq!((m.zoom, m.archives[0].file.as_str()), (13, "ro.pmtiles"));
+    }
+
+    #[test]
+    fn local_coverage_reads_the_cells_of_files_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let bucharest = LLBBox::from_str("44.4450,26.0950,44.4480,26.1030").unwrap();
+        let munich = LLBBox::from_str("48.13,11.57,48.14,11.58").unwrap();
+        let empty = local_coverage(dir.path(), &bucharest).unwrap();
+        assert!(empty.archives.is_empty() && empty.tiles > 0 && empty.covered == 0);
+
+        // Romania's real cells; the file named but not on disk yet holds nothing.
+        std::fs::write(
+            dir.path().join("archives.json"),
+            r#"{"zoom":13,"cell_zoom":6,"archives":[{"name":"romania","file":"romania-1.pmtiles","bytes":5,
+                "cells":[1380,1443,1444,1445,1507,1508,1509,1511],
+                "min_lat":42.1,"min_lon":19.9,"max_lat":49.6,"max_lon":41.7}]}"#,
+        )
+        .unwrap();
+        assert!(local_coverage(dir.path(), &bucharest)
+            .unwrap()
+            .archives
+            .is_empty());
+        std::fs::write(dir.path().join("romania-1.pmtiles"), b"12345").unwrap();
+        let c = local_coverage(dir.path(), &bucharest).unwrap();
+        assert_eq!(c.covered, c.tiles);
+        assert_eq!(
+            c.archives,
+            vec![LocalArchive {
+                name: "romania".into(),
+                bytes: Some(5),
+                covers: true
+            }]
+        );
+        let m = local_coverage(dir.path(), &munich).unwrap();
+        assert_eq!((m.covered, m.archives[0].covers), (0, false));
     }
 
     #[test]

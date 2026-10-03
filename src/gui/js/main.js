@@ -1055,6 +1055,7 @@ function setupProgressListener() {
       }
       // The facade pipeline reports its stages here whichever job is driving it.
       notePrecomputeStage(message);
+      if (bakeRunning) setPrepareStatus((progress >= 0 ? Math.round(progress) + '% · ' : '') + message);
       // A finished download (or a failed one) changed what the caches hold.
       if (message.startsWith("Done!") || message.startsWith("Error!")) refreshDataPlan(true);
     }
@@ -1737,6 +1738,7 @@ function initOsmSource() {
   // The bake is the OSM step of a prewarm: same settings, same threads, same progress.
   document.getElementById('osm-pbf-bake-button').addEventListener('click', () => startGeneration({ prewarm: true }));
   document.getElementById('data-plan-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+  initLocalArchive();
   // Any setting can change what a run reads; the check is debounced and skips
   // a request it has already answered.
   document.getElementById('settings-modal').addEventListener('change', () => refreshDataPlan());
@@ -1759,7 +1761,7 @@ function refreshDataPlan(force) {
 function dataPlanRequest() {
   const source = document.getElementById('osm-source-select').value;
   const offline = document.getElementById('offline-toggle').checked;
-  if (!selectedBBox || !(offline || source === 'pbf' || source === 'file')) return null;
+  if (!selectedBBox || !(offline || source === 'pbf' || source === 'file' || source === 'local')) return null;
   const mode = document.getElementById('generation-mode-select').value;
   return {
     bboxText: selectedBBox,
@@ -1776,6 +1778,7 @@ function dataPlanRequest() {
 async function checkDataPlan() {
   const request = dataPlanRequest();
   document.getElementById('data-plan-row').style.display = request ? '' : 'none';
+  checkPreparePlan();
   const key = request ? JSON.stringify(request) : null;
   if (!request || key === dataPlanKey) return;
   dataPlanKey = key;
@@ -1840,8 +1843,168 @@ function renderDataPlan() {
   } else if (e) {
     line = t('data_plan_no_index', 'The Geofabrik index is not downloaded yet; the button fetches it.');
   }
+  const local = dataPlan.local_archive;
+  if (local) {
+    const here = local.archives.filter((a) => a.covers)
+      .map((a) => (a.bytes ? a.name + ' (' + formatPlanBytes(a.bytes) + ')' : a.name));
+    line = here.length
+      ? t('data_plan_local', 'In the folder for this area: {names}', { names: here.join(', ') })
+      : t('data_plan_local_none', 'No archive in the folder covers this area yet.');
+  }
   extractLine.textContent = line;
   extractLine.style.display = line ? '' : 'none';
+}
+
+/* Local Archive: a folder of countries baked by arnis-tiles, read through
+   --osm-tiles-url. Prepare Countries lists the Geofabrik extracts that cover
+   the selection (arnis-tiles prepare --dry-run, kept per bbox by the backend)
+   and bakes them into the folder with Download & Bake. */
+let localArchiveInfo = null;
+let prepareKey = null;
+let preparePlan = null;
+let bakeRunning = false;
+// How the last bake ended, shown once the list is back.
+let bakeNote = '';
+
+function localArchiveFolder() {
+  const typed = document.getElementById('local-archive-input').value.trim();
+  return typed || (localArchiveInfo && localArchiveInfo.default_folder) || null;
+}
+
+function arnisTilesPath() {
+  return document.getElementById('arnis-tiles-path-input').value.trim();
+}
+
+async function refreshLocalArchiveInfo() {
+  try {
+    localArchiveInfo = await invoke('gui_local_archive_info', { tilesPath: arnisTilesPath() });
+    if (localArchiveInfo) {
+      document.getElementById('local-archive-input').placeholder = localArchiveInfo.default_folder;
+    }
+  } catch (error) {
+    console.warn('Local archive info failed:', error);
+  }
+  prepareKey = null;
+  refreshDataPlan(true);
+}
+
+function initLocalArchive() {
+  const folder = document.getElementById('local-archive-input');
+  document.getElementById('local-archive-browse').addEventListener('click', async () => {
+    try {
+      const current = localArchiveFolder() || '';
+      const picked = await invoke('gui_pick_save_directory', { startPath: current });
+      if (picked && picked !== current) {
+        folder.value = picked;
+        folder.dispatchEvent(new Event('input', { bubbles: true }));
+        folder.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      console.error('Archive folder picker failed:', error);
+    }
+  });
+  document.getElementById('arnis-tiles-path-input').addEventListener('change', refreshLocalArchiveInfo);
+  document.getElementById('prepare-bake-button').addEventListener('click', bakeCountries);
+  document.getElementById('prepare-stop-button').addEventListener('click', () => {
+    invoke('gui_cancel_bake').catch((error) => console.warn('Stop failed:', error));
+  });
+  refreshLocalArchiveInfo();
+}
+
+function setPrepareStatus(text) {
+  const status = document.getElementById('prepare-status');
+  status.replaceChildren(text);
+  status.style.display = text ? '' : 'none';
+}
+
+async function checkPreparePlan() {
+  const panel = document.getElementById('prepare-panel');
+  const source = document.getElementById('osm-source-select').value;
+  const show = source === 'local' && !!selectedBBox;
+  panel.style.display = show ? '' : 'none';
+  if (!show || bakeRunning) return;
+  if (!localArchiveInfo || !localArchiveInfo.arnis_tiles) {
+    // Says how to get it rather than only greying the button.
+    preparePlan = null;
+    prepareKey = null;
+    renderPreparePlan();
+    const link = document.createElement('a');
+    link.href = 'https://github.com/louis-e/arnis-tiles';
+    link.textContent = 'github.com/louis-e/arnis-tiles';
+    link.addEventListener('click', (e) => { e.preventDefault(); openExternal(link.href); });
+    const status = document.getElementById('prepare-status');
+    status.replaceChildren(oneWorldText('prepare_missing_tool',
+      'Baking needs arnis-tiles next to Arnis, on PATH or in arnis-tiles Path. Get it from') + ' ', link, '.');
+    status.style.display = '';
+    return;
+  }
+  const request = { bboxText: selectedBBox, folder: localArchiveFolder() || '', tilesPath: arnisTilesPath() };
+  const key = JSON.stringify(request);
+  if (key === prepareKey) return;
+  prepareKey = key;
+  preparePlan = null;
+  renderPreparePlan();
+  setPrepareStatus(oneWorldText('prepare_loading', 'Finding the countries that cover the selection...'));
+  try {
+    const plan = await invoke('gui_prepare_plan', request);
+    // A newer request went out while arnis-tiles was answering this one.
+    if (key !== prepareKey) return;
+    preparePlan = plan;
+    setPrepareStatus(bakeNote);
+    bakeNote = '';
+  } catch (error) {
+    if (key !== prepareKey) return;
+    prepareKey = null;
+    setPrepareStatus(String(error));
+  }
+  renderPreparePlan();
+}
+
+function renderPreparePlan() {
+  const t = oneWorldText;
+  const rows = preparePlan ? preparePlan.extracts : [];
+  document.getElementById('prepare-list').replaceChildren(...rows.map((e) => {
+    const li = document.createElement('li');
+    [e.name, e.baked ? t('prepare_baked', 'Baked ✓') : '', formatPlanBytes(e.bytes)].forEach((text, i) => {
+      const span = document.createElement('span');
+      span.textContent = text;
+      if (i === 1 && e.baked) span.className = 'is-cached';
+      if (i === 2) span.className = 'data-plan-size';
+      li.appendChild(span);
+    });
+    return li;
+  }));
+  if (preparePlan && !rows.length) {
+    setPrepareStatus(t('prepare_none', 'No Geofabrik extract covers the selection.'));
+  }
+  document.getElementById('prepare-bake-button').disabled =
+    bakeRunning || !rows.length || rows.every((e) => e.baked);
+  document.getElementById('prepare-stop-button').style.display = bakeRunning ? '' : 'none';
+}
+
+async function bakeCountries() {
+  if (bakeRunning || !selectedBBox) return;
+  bakeRunning = true;
+  setGenerationButtonEnabled(false);
+  renderPreparePlan();
+  bakeNote = '';
+  setPrepareStatus(oneWorldText('prepare_starting', 'Starting arnis-tiles...'));
+  try {
+    const done = await invoke('gui_bake_archive', {
+      bboxText: selectedBBox,
+      folder: localArchiveFolder() || '',
+      tilesPath: arnisTilesPath(),
+      flags: advancedFeatureArgs().flags,
+    });
+    if (!done) bakeNote = oneWorldText('prepare_stopped', 'Stopped. Countries already baked are kept.');
+  } catch (error) {
+    bakeNote = String(error);
+  } finally {
+    bakeRunning = false;
+    setGenerationButtonEnabled(true);
+    prepareKey = null;
+    refreshDataPlan(true);
+  }
 }
 
 // Presets: the Extra Features and OSM Data Source settings as a JSON file.
@@ -2143,7 +2306,8 @@ function refreshAdvancedFeatures() {
 
   // OSM Data Source, not behind the switch: each source shows its own field.
   const source = document.getElementById('osm-source-select').value;
-  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file'], ['osm-pbf', 'pbf']].forEach(([id, value]) => {
+  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file'], ['osm-pbf', 'pbf'],
+    ['local-archive', 'local'], ['arnis-tiles-path', 'local']].forEach(([id, value]) => {
     shown(id + '-row', source === value);
     setSettingsRowAvailable(id + '-input', source === value);
   });
@@ -2242,7 +2406,8 @@ function advancedFeatureArgs() {
     'props-min-scale': text('props-min-scale-input'),
     // OSM Data Source: sent whatever the Extra Features switch says.
     'no-tile-archive': source === 'overpass' ? true : null,
-    'osm-tiles-url': text('osm-tiles-url-input'),
+    // Local Archive reads the baked folder through the same flag.
+    'osm-tiles-url': source === 'local' ? localArchiveFolder() : text('osm-tiles-url-input'),
     'overpass-url': overpass || null,
     'file': text('osm-file-input'),
     // Region Download: an empty file field picks the Geofabrik extract.

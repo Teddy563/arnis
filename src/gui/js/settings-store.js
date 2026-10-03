@@ -115,6 +115,8 @@ const SETTINGS = [
   // OSM Data Source
   { id: 'osm-source-select', kind: 'select', store: OWN },
   { id: 'osm-tiles-url-input', kind: 'text', store: OWN },
+  { id: 'local-archive-input', kind: 'text', store: OWN },
+  { id: 'arnis-tiles-path-input', kind: 'text', store: OWN },
   { id: 'overpass-url-input', kind: 'text', store: OWN },
   { id: 'osm-file-input', kind: 'text', store: OWN },
   { id: 'osm-pbf-input', kind: 'text', store: OWN },

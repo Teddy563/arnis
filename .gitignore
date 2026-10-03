@@ -82,3 +82,6 @@ gen/
 
 # Working notes for coding agents, not part of the project.
 /CLAUDE.md
+
+# arnis-tiles sidecar for a release bundle (docs/advanced_features.md, Local Archive)
+/binaries/
