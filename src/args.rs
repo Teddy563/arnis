@@ -220,6 +220,30 @@ pub struct Args {
     #[arg(long, value_name = "LIST", value_parser = crate::trees::size_weights::SizeWeights::parse)]
     pub tree_size_weights: Option<crate::trees::size_weights::SizeWeights>,
 
+    /// Experimental. A folder of your own tree schematics, laid out like the
+    /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
+    /// The folders say what a file is; the size folder (small, medium, big,
+    /// tall, giant) is optional and otherwise measured from the height. A file
+    /// that does not load is skipped with a warning. See --init-tree-pack-dir.
+    #[arg(long, value_name = "FOLDER")]
+    pub tree_pack_dir: Option<PathBuf>,
+
+    /// With --tree-pack-dir: add the folder's trees to the built-in ones, or
+    /// replace a realm's built-in trees wherever the folder has any for it.
+    #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
+    pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
+
+    /// Create the empty --tree-pack-dir layout of every bundled pack (realm,
+    /// community, tree type and size folders, with README.txt files) in FOLDER
+    /// and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub init_tree_pack_dir: Option<PathBuf>,
+
+    /// Write every bundled tree schematic into the --tree-pack-dir layout in
+    /// FOLDER, to edit or adapt, and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub export_tree_packs: Option<PathBuf>,
+
     /// Place trees from the Meta/WRI global canopy height map instead of assuming
     /// every tree-cover cell is forest. Land cover still decides the surface.
     #[arg(long = "canopy-height", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
@@ -745,6 +769,7 @@ pub const CAPABILITIES: &[&str] = &[
     "origin",
     "osm-pbf",
     "local-tile-archive",
+    "tree-pack-dir",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.

@@ -1,32 +1,47 @@
 //! Schematic tree pack: bundled assets, a source abstraction, and the realm-by-location pick.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use include_dir::{include_dir, Dir};
 
 use crate::args::Args;
 use crate::coordinate_system::geographic::LLBBox;
 use crate::ecoregion::{self, EcoMap};
+use crate::trees::pack_dir::{PackDir, USER};
 use crate::trees::region::RegionLibrary;
 use crate::trees::tree_library::SizeFilter;
 
 // The bundled region tree packs (gzipped Sponge .schem grouped by realm/community).
 static EMBEDDED: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/tree-packs");
 
-/// Reads a realm pack and its vanilla-plus sprinkle from the compiled-in bundle.
+/// Reads a realm pack and its vanilla-plus sprinkle from the compiled-in bundle,
+/// with the trees of a user folder (`--tree-pack-dir`) added or in their place.
 pub struct TreePackSource {
     realm: String,
+    dir: Option<Arc<PackDir>>,
 }
 
-fn embedded_read(key: &str) -> Option<Cow<'static, [u8]>> {
+pub(crate) fn embedded_read(key: &str) -> Option<Cow<'static, [u8]>> {
     EMBEDDED.get_file(key).map(|f| Cow::Borrowed(f.contents()))
 }
 
 impl TreePackSource {
+    #[cfg(test)]
     pub fn embedded(realm: &str) -> Self {
+        Self::with_dir(realm, None)
+    }
+
+    pub fn with_dir(realm: &str, dir: Option<Arc<PackDir>>) -> Self {
         TreePackSource {
             realm: realm.to_string(),
+            dir,
         }
+    }
+
+    /// The user folder, for packs loaded later from this one.
+    pub fn dir(&self) -> Option<Arc<PackDir>> {
+        self.dir.clone()
     }
 
     /// Pack directory, as ecoregion tree mixes name it.
@@ -34,20 +49,35 @@ impl TreePackSource {
         &self.realm
     }
 
+    fn manifest(&self, realm: &str) -> Option<Cow<'static, [u8]>> {
+        let base = embedded_read(&format!("{realm}/region.json"))?;
+        match self.dir.as_ref().and_then(|d| d.manifest(realm, &base)) {
+            Some(merged) => Some(Cow::Owned(merged)),
+            None => Some(base),
+        }
+    }
+
+    fn file(&self, realm: &str, rel: &str) -> Option<Cow<'static, [u8]>> {
+        match rel.strip_prefix(USER) {
+            Some(user) => self.dir.as_ref()?.read(user).map(Cow::Owned),
+            None => embedded_read(&format!("{realm}/{rel}")),
+        }
+    }
+
     pub fn realm_manifest(&self) -> Option<Cow<'static, [u8]>> {
-        embedded_read(&format!("{}/region.json", self.realm))
+        self.manifest(&self.realm)
     }
 
     pub fn realm_file(&self, rel: &str) -> Option<Cow<'static, [u8]>> {
-        embedded_read(&format!("{}/{rel}", self.realm))
+        self.file(&self.realm, rel)
     }
 
     pub fn vanilla_manifest(&self) -> Option<Cow<'static, [u8]>> {
-        embedded_read("vanilla-plus/region.json")
+        self.manifest("vanilla-plus")
     }
 
     pub fn vanilla_file(&self, rel: &str) -> Option<Cow<'static, [u8]>> {
-        embedded_read(&format!("vanilla-plus/{rel}"))
+        self.file("vanilla-plus", rel)
     }
 }
 
@@ -121,7 +151,12 @@ pub fn load(
             .first()
             .map_or_else(|| realm_for_latlon(lat, lon), |&(_, pack)| pack)
     });
-    let source = TreePackSource::embedded(realm);
+    let dir = args.tree_pack_dir.as_deref().map(|root| {
+        let dir = PackDir::scan(root, args.tree_pack_mode);
+        dir.report();
+        Arc::new(dir)
+    });
+    let source = TreePackSource::with_dir(realm, dir);
     let ids: Vec<u16> = mapped.iter().map(|&(id, _)| id).collect();
     // Palms stay loaded if any part of the area grows them; the ecoregion gates each cell.
     let abs_lat = lat.abs();

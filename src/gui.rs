@@ -2342,6 +2342,10 @@ fn gui_start_generation(
                 max_tree_size: crate::trees::tree_library::TreeSize::from_str_lossy(&max_tree_size),
                 tree_realm: meld.tree_realm,
                 tree_size_weights: meld.tree_size_weights,
+                tree_pack_dir: meld.tree_pack_dir,
+                tree_pack_mode: meld.tree_pack_mode,
+                init_tree_pack_dir: None,
+                export_tree_packs: None,
                 canopy_height: canopy_height_enabled,
                 // Overture only adds buildings, as in run_cli.
                 overture: overture_enabled && meld.buildings,
@@ -2905,6 +2909,8 @@ mod piece_tests {
         args.fields = meld.fields;
         args.tree_realm = meld.tree_realm;
         args.tree_size_weights = meld.tree_size_weights;
+        args.tree_pack_dir = meld.tree_pack_dir;
+        args.tree_pack_mode = meld.tree_pack_mode;
         args.cave_seed = meld.cave_seed;
         args.cave_datum_y = meld.cave_datum_y;
         args.water = meld.water;

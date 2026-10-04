@@ -291,6 +291,8 @@ pub struct RegionLibrary {
     /// Palms where no ecoregion says otherwise, by the area's latitude.
     palms_default: bool,
     mixes: HashMap<u16, EcoMix>,
+    /// The user tree folder, for communities ecoregion mixes load from other packs.
+    pack_dir: Option<std::sync::Arc<crate::trees::pack_dir::PackDir>>,
 }
 
 // Metres above the selection's lowest point at which a cell counts as montane.
@@ -328,7 +330,9 @@ fn build_community(
                 };
                 if let Ok(schem) = load_schem(&bytes) {
                     if schem.has_leaves() {
-                        let size = size_for_height(schem.height);
+                        // A user file in a size folder takes that size.
+                        let size = crate::trees::pack_dir::tier_of(rel)
+                            .unwrap_or_else(|| size_for_height(schem.height));
                         entries.push((schem, size, wclass));
                         idxs.push(entries.len() - 1);
                     }
@@ -546,6 +550,7 @@ impl RegionLibrary {
             palms_stripped: exclude_palms,
             palms_default: true,
             mixes: HashMap::new(),
+            pack_dir: source.dir(),
         };
         lib.mark_palms();
         Ok(lib)
@@ -727,7 +732,7 @@ impl RegionLibrary {
             self.realm_pack.communities.push(derived);
             return Some(self.realm_pack.communities.len() - 1);
         }
-        let source = TreePackSource::embedded(spec.pack);
+        let source = TreePackSource::with_dir(spec.pack, self.pack_dir.clone());
         let manifest = manifests.entry(spec.pack.to_string()).or_insert_with(|| {
             source
                 .realm_manifest()
