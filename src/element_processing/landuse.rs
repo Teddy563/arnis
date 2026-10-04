@@ -1,7 +1,7 @@
 use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
-use crate::deterministic_rng::element_rng;
+use crate::deterministic_rng::coord_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
@@ -10,6 +10,9 @@ use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::prelude::IndexedRandom;
 use rand::Rng;
+
+/// Salt of the per-block random draws of landuse fills.
+const FILL_SALT: u64 = 0x4C41_4E44;
 
 pub fn generate_landuse(
     editor: &mut WorldEditor,
@@ -23,9 +26,6 @@ pub fn generate_landuse(
     // Determine block type based on landuse tag
     let binding: String = "".to_string();
     let landuse_tag: &String = element.tags.get("landuse").unwrap_or(&binding);
-
-    // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-    let mut rng = element_rng(element.id);
 
     let block_type = match landuse_tag.as_str() {
         "greenfield" | "meadow" | "grass" | "orchard" | "forest" => GRASS_BLOCK,
@@ -125,6 +125,11 @@ pub fn generate_landuse(
     };
 
     for &(x, z) in floor_area.iter() {
+        // Keyed by the block alone, not drawn in fill order or by id: the cells a
+        // run fills depend on its area and tiles, and an assembled multipolygon
+        // ring's id on which member ways the run saw, so either would grow
+        // different plants on each side of a seam.
+        let mut rng = coord_rng(x, z, FILL_SALT);
         // One resolution per block, shared by the surface and the decoration below.
         let field_cell = fields.as_ref().map(|f| f.cell_at(x, z));
         // Apply per-block randomness for certain landuse types

@@ -28,6 +28,28 @@ pub const MANIFEST_VERSION: u32 = 3;
 /// built whole on both sides.
 pub const CLIP_PAD_BLOCKS: i32 = 64;
 
+/// How far past its own chunks a piece of a job builds, writing only its own:
+/// a tree rooted in a neighbour's ground spreads its crown across the seam,
+/// and a single run plants it from there. The widest bundled tree reaches 20
+/// blocks from its trunk, which snaps up to 6 blocks from the cell asking.
+// ponytail: fixed reach; a --tree-pack-dir tree over ~50 blocks wide still loses crown at a seam.
+pub const PIECE_HALO_BLOCKS: i32 = 32;
+// Whole chunks, so the piece's own chunk snap gives its build rect back exactly.
+const _: () = assert!(PIECE_HALO_BLOCKS % 16 == 0);
+
+/// What a piece over `rect` builds: `rect` grown by `PIECE_HALO_BLOCKS`, but
+/// never past the job's `selection`, which a single run would not build either.
+pub fn piece_build_rect(rect: &XZBBox, selection: &XZBBox) -> XZBBox {
+    let h = PIECE_HALO_BLOCKS;
+    XZBBox::rect_from_min_max(
+        (rect.min_x() - h).max(selection.min_x()),
+        (rect.min_z() - h).max(selection.min_z()),
+        (rect.max_x() + h).min(selection.max_x()),
+        (rect.max_z() + h).min(selection.max_z()),
+    )
+    .unwrap_or_else(|_| rect.clone())
+}
+
 const MAX_ABS_LAT: f64 = 85.0;
 
 /// Rounds to `decimals` places. serde_json reads such short decimals back
@@ -317,6 +339,10 @@ pub struct UnitLease {
     pub area_id: u32,
     /// min_x, min_z, max_x, max_z; the piece's bbox must snap to exactly this.
     pub rect: [i32; 4],
+    /// What the piece builds (`piece_build_rect`); it writes only `rect`.
+    pub build: [i32; 4],
+    /// The job as one run would take the tile-parallel path.
+    pub tiled: bool,
     /// Signage map ids of this piece: `first_map_id..map_id_end`.
     pub first_map_id: i32,
     pub map_id_end: i32,
@@ -789,7 +815,7 @@ pub fn prepare_unit(
     args.height_multiplier = manifest.height_multiplier;
     args.aws_only_elevation = manifest.aws_only_elevation;
     keep_cave_settings(&manifest, args);
-    let (xzbbox, llbbox) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
+    let (xzbbox, _) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
     let rect = [
         xzbbox.min_x(),
         xzbbox.min_z(),
@@ -806,6 +832,23 @@ pub fn prepare_unit(
         "One World: piece {} of area #{}: blocks x {}..={} z {}..={}",
         lease.piece, lease.area_id, rect[0], rect[2], rect[1], rect[3]
     );
+    let replaced_chunks = existing_chunks(world_dir, &xzbbox);
+    let [x0, z0, x1, z1] = lease.build;
+    let build = XZBBox::rect_from_min_max(x0, z0, x1, z1)?;
+    let llbbox = crate::projection::llbbox_for_rect(&manifest.projection(), &build)?;
+    let (snapped, _) = snap_bbox_to_chunks(&manifest.projection(), &llbbox)?;
+    let built = [
+        snapped.min_x(),
+        snapped.min_z(),
+        snapped.max_x(),
+        snapped.max_z(),
+    ];
+    if built != lease.build {
+        return Err(format!(
+            "piece {} builds {built:?}, not its planned {:?}",
+            lease.piece, lease.build
+        ));
+    }
     args.one_world_run = Some(RunContext {
         world_dir: world_dir.to_path_buf(),
         origin_lat: manifest.origin_lat,
@@ -814,7 +857,7 @@ pub fn prepare_unit(
         extending: true,
         elevation: manifest.elevation,
         elevation_zoom: manifest.elevation_zoom,
-        replaced_chunks: existing_chunks(world_dir, &xzbbox),
+        replaced_chunks,
         area_id: lease.area_id,
         unit: Some(lease),
     });
@@ -1451,6 +1494,18 @@ mod tests {
             None
         );
         assert_eq!(safe_preview_path(w, "arnis_one_world/previews/x.txt"), None);
+    }
+
+    #[test]
+    fn a_piece_builds_its_halo_but_never_past_the_selection() {
+        let selection = XZBBox::rect_from_min_max(-320, -288, 1023, 287).unwrap();
+        let rect = XZBBox::rect_from_min_max(0, -288, 511, 287).unwrap();
+        let b = piece_build_rect(&rect, &selection);
+        let h = PIECE_HALO_BLOCKS;
+        assert_eq!(
+            (b.min_x(), b.min_z(), b.max_x(), b.max_z()),
+            (-h, -288, 511 + h, 287)
+        );
     }
 
     #[test]

@@ -1255,6 +1255,34 @@ mod tests {
         }
     }
 
+    /// A piece of a One World job builds `PIECE_HALO_BLOCKS` past its own chunks so a
+    /// tree rooted across the seam still reaches in. Every bundled model, its trunk
+    /// snapped as far from the asking cell as the widest spacing allows, must fit.
+    #[test]
+    fn every_bundled_crown_fits_the_piece_halo() {
+        let snap = 6; // trunk_slot_s jitters within a cell of up to 7 blocks
+        for realm in ["afr", "asn", "aus", "ena", "eur", "fl", "ind", "sam", "wna"] {
+            let lib = RegionLibrary::load(
+                &TreePackSource::embedded(realm),
+                1.0,
+                -62,
+                1.0,
+                SizeFilter::default(),
+                false,
+            )
+            .expect(realm);
+            for (schem, _, _) in &lib.entries {
+                // place_schematic_tree anchors the model at ((w - 1) / 2, (l - 1) / 2).
+                let side = schem.width.max(schem.length);
+                let reach = side - 1 - (side - 1) / 2;
+                assert!(
+                    reach + snap <= crate::one_world::PIECE_HALO_BLOCKS,
+                    "{realm}: a {side}-block model reaches {reach} past its trunk"
+                );
+            }
+        }
+    }
+
     /// Entry indices of every pack species whose genus passes `keep`.
     fn entries_where(lib: &RegionLibrary, keep: impl Fn(&str) -> bool) -> Vec<usize> {
         [&lib.realm_pack, &lib.vanilla_pack]

@@ -191,6 +191,8 @@ pub fn run(
     if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_objects()) {
         crate::osm_pbf::bake_for_job(&src, *selection)?;
     }
+    // As `generate_world_with_options` decides it for one run of the whole selection.
+    let tiled = crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3;
     let leases: Vec<UnitLease> = units
         .iter()
         .map(|u| UnitLease {
@@ -203,6 +205,11 @@ pub fn run(
                 u.rect.max_x(),
                 u.rect.max_z(),
             ],
+            build: {
+                let b = one_world::piece_build_rect(&u.rect, &rect);
+                [b.min_x(), b.min_z(), b.max_x(), b.max_z()]
+            },
+            tiled,
             first_map_id: job.map_base + u.index as i32 * MAP_IDS_PER_PIECE,
             map_id_end: job.map_base + (u.index as i32 + 1) * MAP_IDS_PER_PIECE,
             spawn: spawn

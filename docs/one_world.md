@@ -269,6 +269,15 @@ the manifest before the first one starts. A piece dies with its coordinator
 (a Job Object on Windows, a closed stdin pipe on Unix), so closing the window or
 stopping the CLI stops the whole job.
 
+**Margin.** Each piece builds 32 blocks past its edges (never past the
+selection) and writes only its own chunks, so a tree rooted in the neighbour's
+ground still spreads its crown into the piece, and takes the tile path one run
+of the whole selection would take. A one-region piece does about a quarter more
+work; a four-region piece about 6%. On a forest at scale 1 (640 x 576 blocks,
+four one-region pieces) the blocks that differ from one run fell from 540,081
+(2.2% fewer leaves) to 662, around the one-block ground steps of the elevation
+baseline (Known limitations, 4).
+
 **Resume.** A job keeps its state in `arnis_one_world/jobs/<rect>_n<N>/`: one
 `done-<piece>.json` per finished piece. Running the same selection with the
 same N again skips those and builds the rest; once a piece is done, a failed or

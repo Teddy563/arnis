@@ -586,6 +586,11 @@ pub fn generate_world_with_options(
     let extending = one_world.is_some_and(|run| run.extending);
     // A piece of a larger job: the coordinator owns everything world-wide.
     let unit = one_world.and_then(|run| run.unit.as_ref());
+    // A piece builds `one_world::PIECE_HALO_BLOCKS` past its own chunks, so the trees
+    // rooted there reach in, and writes and previews only its own.
+    let own_rect = unit
+        .and_then(|u| XZBBox::rect_from_min_max(u.rect[0], u.rect[1], u.rect[2], u.rect[3]).ok())
+        .unwrap_or_else(|| xzbbox.clone());
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
 
     // Before anything reads a footprint, so the ground under them stays open.
@@ -652,7 +657,7 @@ pub fn generate_world_with_options(
     editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
     editor.set_projection_info(&args.projection.to_string(), args.scale);
     if let Some(run) = one_world {
-        editor.set_merge_into_existing(true);
+        editor.set_merge_into_existing(own_rect.clone());
         editor.set_climate_anchor(run.origin_lat, run.origin_lon);
         // metadata.json describes the whole world, not this area alone.
         if let Ok(Some(manifest)) = crate::one_world::Manifest::load(&run.world_dir) {
@@ -808,7 +813,7 @@ pub fn generate_world_with_options(
     let preview = (wants_png || wants_map_item || wants_local_maps).then(|| {
         Arc::new(if wants_png && one_world.is_some() {
             // Every area of a One World is sent to the map overlay at once.
-            PreviewAccumulator::new_capped(&xzbbox, 2048)
+            PreviewAccumulator::new_capped(&own_rect, 2048)
         } else if wants_png {
             PreviewAccumulator::new(&xzbbox)
         } else if wants_local_maps {
@@ -1053,7 +1058,10 @@ pub fn generate_world_with_options(
     // format-dependent block-entity schema (banners) only matches Java output.
     // Restrict the parallel tile path to Java; Bedrock/Luanti large worlds use
     // the sequential path (correct, just not tile-parallel).
-    let use_parallel_tiles = tiles.len() >= 3 && matches!(world_format, WorldFormat::JavaAnvil);
+    // A piece takes its job's path: the two paths settle overlapping trees at a
+    // tile seam in a different order.
+    let use_parallel_tiles = unit.map_or(tiles.len() >= 3, |u| u.tiled)
+        && matches!(world_format, WorldFormat::JavaAnvil);
 
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.

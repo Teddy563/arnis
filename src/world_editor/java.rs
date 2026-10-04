@@ -220,6 +220,24 @@ impl RegionWriteMode {
             }
         }
     }
+
+    /// Whether any chunk of `r.X.Z` is written. A merge never opens another region's
+    /// file: a One World piece builds a margin in its neighbours' regions, which the
+    /// neighbour's own process may be writing at the same time.
+    fn writes_region(&self, region_x: i32, region_z: i32) -> bool {
+        match *self {
+            RegionWriteMode::Fresh => true,
+            RegionWriteMode::Merge {
+                min_x,
+                min_z,
+                max_x,
+                max_z,
+            } => {
+                let (bx0, bz0) = (region_x * 512, region_z * 512);
+                bx0 + 511 >= min_x && bx0 <= max_x && bz0 + 511 >= min_z && bz0 <= max_z
+            }
+        }
+    }
 }
 
 /// Opens `r.X.Z.mca` for a merge, or creates it empty. Never from the
@@ -383,6 +401,9 @@ fn write_region_to_disk(
     ground_origin: (i32, i32),
     blinear_level: Option<i32>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !mode.writes_region(region_x, region_z) {
+        return Ok(());
+    }
     if let Some(preview) = preview {
         preview.ingest_region(region_x, region_z, region_to_modify);
     }
@@ -2432,5 +2453,7 @@ mod merge_tests {
         assert!(!m.writes_chunk(-3, 0));
         assert!(!m.writes_chunk(0, 1));
         assert!(RegionWriteMode::Fresh.writes_chunk(1000, -1000));
+        assert!(m.writes_region(-1, 0) && m.writes_region(0, 0));
+        assert!(!m.writes_region(1, 0) && !m.writes_region(0, -1));
     }
 }

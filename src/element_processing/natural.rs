@@ -2,7 +2,7 @@ use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::climate::Climate;
-use crate::deterministic_rng::element_rng;
+use crate::deterministic_rng::coord_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
@@ -11,6 +11,9 @@ use crate::osm_parser::{ProcessedElement, ProcessedMemberRole, ProcessedRelation
 use crate::trees::mapped::{tree_row_positions, MappedTree};
 use crate::world_editor::WorldEditor;
 use rand::{prelude::IndexedRandom, Rng};
+
+/// Salt of the per-block random draws of natural fills.
+const FILL_SALT: u64 = 0x4E41_5455;
 
 pub fn generate_natural(
     editor: &mut WorldEditor,
@@ -178,9 +181,6 @@ pub fn generate_natural(
                     trees
                 };
 
-                // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-                let mut rng = element_rng(way.id);
-
                 // Blocks that natural areas should not overwrite
                 let protected_blocks: &[Block] = &[
                     BLACK_CONCRETE,
@@ -210,6 +210,11 @@ pub fn generate_natural(
                     .flatten();
 
                 for &(x, z) in filled_area.iter() {
+                    // Keyed by the block alone, not drawn in fill order or by id: the
+                    // cells a run fills depend on its area and tiles, and an assembled
+                    // multipolygon ring's id on which member ways the run saw, so
+                    // either would grow different plants on each side of a seam.
+                    let mut rng = coord_rng(x, z, FILL_SALT);
                     let grass_cell = grass.as_ref().map(|g| g.cell_at(x, z));
                     // Roads, paths and paved areas keep their own surface. Checked
                     // by mask because a gravel or dirt road is not in the block list.

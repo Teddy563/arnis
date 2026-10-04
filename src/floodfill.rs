@@ -132,12 +132,18 @@ pub fn flood_fill_area(
     }
 
     // For small and medium areas, use optimized flood fill with span filling
-    if area < 50000 {
+    let mut filled = if area < 50000 {
         optimized_flood_fill_area(polygon_coords, timeout, min_x, max_x, min_z, max_z)
     } else {
         // For larger areas, use original flood fill with grid sampling
         original_flood_fill_area(polygon_coords, timeout, min_x, max_x, min_z, max_z)
-    }
+    };
+    // Row-major, like the scanline path. The flood order follows the ring's bounding box,
+    // so a ring clipped to another area or piece would visit its shared cells in another
+    // order, and whatever a fill places first (one tree over its neighbour's crown) would
+    // differ across a seam.
+    filled.sort_unstable_by_key(|&(x, z)| (z, x));
+    filled
 }
 
 /// Even-odd scanline fill for polygons whose bounding box is past the bitmap cap.
