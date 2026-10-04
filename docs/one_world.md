@@ -88,6 +88,16 @@ Minecraft already moved out of the chunk do not linger over the new blocks.
 - **Metres to Y**: one mapping for the whole world, stored in the manifest when
   the world is created (see [Build height](#build-height)). Every area uses it
   (`AffinePolicy::Fixed`), so the same height is the same Y everywhere.
+- **Elevation source**: a new world pins the top zoom of the Mapterhorn pyramid
+  for its frame (`elevation_zoom`; one cell per block gives the same zoom
+  anywhere in the frame, z16 at scale 1 in mid-latitudes). Every area and piece
+  samples from it and fetches every pyramid level, without the spread probe that
+  lets a large selection skip a level when its 16 sample tiles miss the data; and
+  without the AWS fallback, so an area whose elevation cannot be fetched fails
+  instead of being built flat or from another dataset. Worlds without the field
+  (older, or Legacy Terrain, which is AWS only) keep choosing per area. The
+  outlier gate, the anomaly filter and the land-cover smoothing have fixed or
+  frame-fixed parameters, so they need no pin.
 - **Elements across a seam**: OSM ways and Overture footprints are clipped to
   the area plus 64 blocks, so a building on the edge is built whole on both
   sides; writes outside the area are dropped.
@@ -120,7 +130,7 @@ with their previews.
 ### What the manifest fixes
 
 Refused with a message naming the mismatch: world scale, ground level, terrain
-on/off. Taken from the manifest: the elevation source and the build height.
+on/off. Taken from the manifest: the elevation source (and its pinned zoom) and the build height.
 Forced: rotation 0, Web Mercator, no Voxy LOD cache, Mapillary facades as
 blocks, no preset facades, map preview on, no Luanti. The GUI greys and pins
 these rows and puts the user's own values back when One World is turned off.
@@ -203,6 +213,7 @@ in Minecraft's world list.
     "min_height_m": -430.0, "blocks_per_meter": 1.0, "ground_level": -2014,
     "soft_top": { "knee_m": 2800.0, "width_blocks": 194.4 }
   },
+  "elevation_zoom": 16,
   "next_area_id": 3,
   "areas": [
     { "id": 1, "generated_at": 1789000000, "arnis_version": "3.2.0",
@@ -294,9 +305,12 @@ The job folder is removed when the job completes.
    add sections to the existing database, or rebuild from all regions.
 3. **World map item** shows the first area only. Fix: re-render it from all
    previews after each run.
-4. **Elevation providers**: next to the edge of a regional high-resolution
-   dataset, a seam carries the difference between the two datasets. Fix: pin the
-   provider chain in the manifest.
+4. **Elevation providers**: worlds created before `elevation_zoom` was pinned
+   can still step where a large area skipped a sparse high-resolution level that
+   its neighbour used, or fell back to AWS. A pinned world stops at the
+   resolution steps of the dataset itself, which a single run has too. Under
+   0.2% of the columns near a seam differ from a single run, mostly by one block
+   (each area samples its own fetch grid; see Validation).
 5. **Water depth tiers** are computed per water body inside the area, so a lake
    cut by an area edge can get a small underwater step. Fix: compute tiers on
    the padded grid before cropping.
@@ -353,6 +367,25 @@ The job folder is removed when the job completes.
   and the Matterhorn reaches Y 1772 with bedrock at 1072, snow-capped like an
   ordinary world of the same area. The seam between the Munich areas is in the
   range of the interior chunk boundaries next to it. 10 to 14 s per area.
+- Separate areas against one run over their union, same frame, terrain only,
+  ground height in 32 columns either side of the seam:
+  - Bucharest, a 640 x 336 block area and a 2144 x 1792 (or 6128 x 5568)
+    neighbour: 8 of 21,504 columns differ by 1 to 2 blocks, the seam step
+    differs in 1 of 336 rows. Romania has only the 30 m floor, so the pin
+    changes nothing there; the large neighbour probes past z16 and z15 but
+    reads the same tiles.
+  - Bucegi, a 640 x 672 area and a 2432 x 3920 neighbour: 28 columns
+    differ, 26 of them by one block (bedrock under trees aside, limitation 9).
+  - Slovenia, an area on 1 m LiDAR at the edge of a coverage gap
+    (46.460,16.437,46.466,16.447) and a 6592 x 5024 neighbour inside the gap:
+    before, the neighbour's probes all missed and it sampled the strip next to
+    the seam at z14: 3,560 of 21,504 columns on its side differed and the seam
+    step differed in 103 of 672 rows. With the pinned zoom: 0 and 0; 56
+    columns differ by one block inside the small area.
+  - A Mapterhorn outage (unreachable proxy) builds a flat area before; with
+    the pin the run fails and the new world is removed.
+- Ordinary runs are NBT-identical to the previous build (Bucharest terrain
+  only, Slovenia default mode).
 - A world made by the previous build (vanilla height, version 2) is extended
   with its own mapping, no pack, and stays version 2.
 - The same area generated into two fresh worlds gives identical blocks.

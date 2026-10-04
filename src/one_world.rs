@@ -99,6 +99,10 @@ pub struct Manifest {
     /// `--seed` of the first area; later areas and pieces build with it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    /// Top zoom of the Mapterhorn pyramid every area samples, without the AWS fallback.
+    /// Set at creation; absent (older or legacy-terrain worlds) each area picks its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_zoom: Option<u8>,
     pub next_area_id: u32,
     pub areas: Vec<GeneratedArea>,
 }
@@ -144,6 +148,9 @@ impl Manifest {
             cave_seed: args.cave_seed,
             cave_datum_y: args.cave_datum_y,
             seed: args.seed,
+            elevation_zoom: (args.terrain() && !args.aws_only_elevation).then(|| {
+                crate::elevation::providers::mapterhorn::frame_zoom(stable(origin_lat, 7), scale)
+            }),
             next_area_id: 1,
             areas: Vec::new(),
         }
@@ -273,6 +280,8 @@ pub struct RunContext {
     pub origin_lon: f64,
     pub extending: bool,
     pub elevation: Option<ElevationAffine>,
+    /// `Manifest::elevation_zoom`.
+    pub elevation_zoom: Option<u8>,
     /// Chunks of this area that already exist and are replaced.
     pub replaced_chunks: u64,
     pub area_id: u32,
@@ -666,6 +675,7 @@ fn resolve(
         origin_lon: manifest.origin_lon,
         extending,
         elevation: manifest.elevation,
+        elevation_zoom: manifest.elevation_zoom,
         replaced_chunks: replaced,
         area_id,
         unit: None,
@@ -798,6 +808,7 @@ pub fn prepare_unit(
         // The world-wide extras of a first area are the coordinator's.
         extending: true,
         elevation: manifest.elevation,
+        elevation_zoom: manifest.elevation_zoom,
         replaced_chunks: existing_chunks(world_dir, &xzbbox),
         area_id: lease.area_id,
         unit: Some(lease),
@@ -971,6 +982,40 @@ mod tests {
         assert_eq!(run2.origin_lat, run.origin_lat);
         assert_eq!(run2.origin_lon, run.origin_lon);
         assert_eq!(run2.replaced_chunks, 0, "nothing was written yet");
+    }
+
+    /// A new world pins the elevation zoom of its frame, and every later area and piece
+    /// reads it; a world without the field (older, or legacy AWS terrain) leaves the choice
+    /// to each area as before.
+    #[test]
+    fn elevation_zoom_is_pinned_at_creation_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let mut args = args_for(MUNICH, &[]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        let manifest = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(manifest.elevation_zoom, Some(16));
+        assert_eq!(args.one_world_run.unwrap().elevation_zoom, Some(16));
+
+        let east = "48.130,11.585,48.145,11.610";
+        let mut args = args_for(east, &[]);
+        drop(prepare(&world, &LLBBox::from_str(east).unwrap(), &mut args).unwrap());
+        assert_eq!(args.one_world_run.unwrap().elevation_zoom, Some(16));
+
+        let mut legacy = manifest.clone();
+        legacy.elevation_zoom = None;
+        legacy.save(&world).unwrap();
+        let text = std::fs::read_to_string(Manifest::path_in(&world)).unwrap();
+        assert!(!text.contains("elevation_zoom"));
+        let mut args = args_for(east, &[]);
+        drop(prepare(&world, &LLBBox::from_str(east).unwrap(), &mut args).unwrap());
+        assert_eq!(args.one_world_run.unwrap().elevation_zoom, None);
+
+        let aws = dir.path().join("aws");
+        let mut args = args_for(MUNICH, &["--aws-only-elevation"]);
+        drop(prepare(&aws, &req, &mut args).unwrap());
+        assert_eq!(Manifest::load(&aws).unwrap().unwrap().elevation_zoom, None);
     }
 
     /// `--origin` pins block (0, 0) of a new world; an existing world keeps its own.

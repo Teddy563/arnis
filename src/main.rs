@@ -745,6 +745,10 @@ fn run_cli() {
             eprintln!("{} Terrain fetch failed.", "Error:".red().bold());
             exit_failed();
         });
+        let ground = ground.unwrap_or_else(|e| {
+            eprintln!("{} {e}", "Error:".red().bold());
+            exit_failed();
+        });
         bench.report("terrain_total", ground_dur);
 
         (raw_data, overture_data, ground)

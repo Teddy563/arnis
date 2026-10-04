@@ -229,7 +229,7 @@ pub fn fetch_elevation_data(
     // Fallback chain: Mapterhorn, then AWS if it fails outright.
     let provider = select_provider(bbox, source_mode);
     let mut chain: Vec<Box<dyn ElevationProvider>> = vec![provider];
-    if source_mode.allows_earth_fallback() && chain[0].name() != "aws" {
+    if source_mode == SourceMode::Auto {
         chain.push(Box::new(providers::aws_terrain::AwsTerrain));
     }
 
