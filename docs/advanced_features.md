@@ -88,6 +88,9 @@ greyed out or hidden, sends no flag.
 | World Seed | `--seed` | Empty | Another, repeatable look per seed. |
 | Props | `--props` | Auto | Auto follows 3D Models (no flag); All, None, or Custom with a family checklist. |
 | Props Minimum Scale | `--props-min-scale` | Empty | No props below this world scale. |
+| Tree Pack Folder | `--tree-pack-dir` | Empty (`tree-packs` next to Arnis) | Your own tree schematics, see [Tree Pack Folder](#tree-pack-folder). Sent only when the folder exists; the status line under the rows reads "*n* custom trees found (*m* skipped)". |
+| Tree Pack Mode | `--tree-pack-mode` | Add to Built-in | Add to Built-in or Replace Built-in. Sent with the folder. |
+| Tree Pack Layout: Create Folder Structure / Export Built-in Trees | `--init-tree-pack-dir` / `--export-tree-packs` | | Run in the window on the Tree Pack Folder. |
 | Redraw One World Map: Redraw | `--map-item-only` | | Repaints the One World's map item over every area. Needs One World. |
 
 The window applies what the CLI does for these: the seed, the tall
@@ -118,6 +121,10 @@ is the option, e.g. `--field-mix=prairie`), then quantized to 128 colours:
 The script that does all of this (`make_previews.py`, Python with Pillow and
 nbtlib) is kept with the Meld tooling, not in this repository; the table and
 the command above are enough to redo any card by hand.
+
+The Tree Realm card also renders live with a Tree Pack Folder: its flags
+belong to the trees group, and the render cache key includes the folder's
+file list (path, size, time), so editing the folder gives a new card.
 
 **Live previews.** When a group's other settings leave the stock defaults
 (Farm Crops or Parcel Size for the fields, a tree size weight, Snow Cap
@@ -222,6 +229,67 @@ cargo tauri build --config tauri.sidecar.conf.json
 `tauri.sidecar.conf.json` adds `bundle.externalBin: ["binaries/arnis-tiles"]`.
 It is a separate file because Tauri's build script fails when a listed
 external binary is missing, which would break every plain `cargo build`.
+
+## Tree Pack Folder
+
+`--tree-pack-dir FOLDER` (experimental) loads your own tree schematics beside
+the bundled packs, laid out the way the bundled packs are organised:
+
+```
+FOLDER/<realm>/<community>/<tree type>/[<size>/]<any name>.schem
+```
+
+- **realm**: `afr`, `asn`, `aus`, `ena`, `eur`, `fl`, `ind`, `sam`, `wna` or
+  `vanilla-plus` (the pack `--tree-realm` names). The area's location picks
+  the realm as usual.
+- **community**: one of the realm's forest types (the names in its
+  `region.json`, e.g. `EUR - Alpine forest (mature)`); case does not matter.
+  An unknown community is skipped: the ecoregion tree mixes pick communities
+  by name, so a new one would never be chosen.
+- **tree type**: the species. Any folder name; a new one adds a species to the
+  community, and its part before the first `_` is the genus (palm and conifer
+  checks go by genus, as for the bundled trees).
+- **size**: optional `small` (up to 6 blocks tall), `medium` (7-12), `big`
+  (13-20), `tall` (21-28) or `giant` (29 and up), the thresholds of
+  `tree_library::size_for_height`. Outside a size folder a file gets the size
+  its height gives. `--max-tree-size`, `--tree-size-weights` and the
+  giant-only-at-1:1 rule apply to it like to any tree.
+
+File names are free; `.schem` and `.schematic` (Sponge v2/v3) are read, other
+files (`README.txt`, ...) are ignored. Every file goes through the pack's
+`.schem` loader when the run starts; one that does not parse, has no leaves,
+is over 8 MB or over 256 blocks on a side, or sits outside the layout is
+skipped with one `Warning: tree-pack-dir: skipped ...` line. Files are taken
+in path order (`/`-separated, relative to the folder), so two machines with
+the same folder place the same trees. User trees count as narrow trunks (the
+bundled `w1` class).
+
+`--tree-pack-mode add|replace` (default `add`):
+
+- `add`: the folder's trees join the bundled ones of their community.
+- `replace`: in every realm the folder has at least one usable tree for, the
+  bundled trees are dropped and only the folder's are used; communities left
+  empty drop out of that realm. Realms without user trees keep the bundled
+  set. Communities that ecoregion mixes load from other packs come from the
+  folder too.
+
+`--init-tree-pack-dir FOLDER` creates the empty layout of every bundled pack
+(10 realms, 172 communities, 1056 tree types, each with the five size
+folders) and a `README.txt` at the root and in each realm, then exits.
+`--export-tree-packs FOLDER` does the same and writes every bundled schematic
+(3746 files) into the size folder its height gives, to edit or adapt. An
+exported folder in `replace` mode holds the bundled trees again (eur: 355 of
+355), but not the same picks: the files come in folder order and the
+wide-trunk variants lose their rarity. In `add` mode it doubles them.
+
+With the flags absent nothing changes: the pack reads the compiled-in
+manifests and files as before. The folder rides on every piece's command line
+of a One World job, and picks stay a function of the block position, so
+pieces still meet without a seam. The capability name is `tree-pack-dir`
+(covering all four flags).
+
+In the window: Extra Features > Experimental, rows Tree Pack Folder, Tree
+Pack Mode and Tree Pack Layout (see the table above).
 
 ## Presets
 
