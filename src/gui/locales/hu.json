@@ -201,7 +201,13 @@
   "one_world_workers": "Parallel Workers",
   "one_world_workers_desc": "Pieces of a large world built at once. Requires One World.",
   "unit_regions": "Cell Size",
-  "unit_regions_desc": "Regions in each piece; the selection grows to whole cells. Requires One World.",
+  "unit_regions_desc": "Regions in each piece; the selection snaps to whole cells. Requires One World.",
+  "snap_mode": "Selection Snap",
+  "snap_mode_desc": "Whole cells inside the selection, or covering it. Requires One World.",
+  "snap_mode_fit": "Fit Inside",
+  "snap_mode_cover": "Cover",
+  "square_selection": "Square Selection",
+  "square_selection_desc": "Same number of cells both ways. Requires One World.",
   "features_group_meld": "Meld Generation (Experimental)",
   "features_group_meld_desc": "Changes what gets built: snow, roads, fields, trees, caves and water.",
   "features_group_terrain": "Terrain",
@@ -454,5 +460,6 @@
   "one_world_confirm_text": "A terület {count} chunkja már létezik a világban. Újra létrejönnek, és minden, amit ott a Minecraftban építettek, lecserélődik.",
   "one_world_confirm_cancel": "Mégse",
   "one_world_confirm_ok": "Generálás",
-  "snap_regions_info": "{x} x {z} regions, {pieces} pieces"
+  "snap_regions_info": "{x} × {z} regions · {cx} × {cz} cells · {pieces} pieces · {w} × {h} km",
+  "snap_fallback": "No whole cell fits inside, so one is used."
 }

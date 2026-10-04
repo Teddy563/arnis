@@ -72,6 +72,8 @@ const SETTINGS = [
   { id: 'max-downloads-input', kind: 'number', store: OWN },
   { id: 'one-world-workers-select', kind: 'select', store: OWN },
   { id: 'unit-regions-select', kind: 'select', store: OWN },
+  { id: 'snap-mode-select', kind: 'select', store: OWN },
+  { id: 'square-selection-toggle', kind: 'checkbox', store: OWN },
   // Meld Generation. The cave fields default to empty, so they are text.
   { id: 'snow-mode-select', kind: 'select', store: OWN },
   { id: 'snow-percent-slider', kind: 'number', store: OWN },

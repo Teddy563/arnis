@@ -92,6 +92,9 @@
     <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
     <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></symbol>
     <symbol id="i-thermometer" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
+    <symbol id="i-grid-2x2" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M6 8h4"/><path d="M6 18h4"/><path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M14 8h4"/><path d="M14 18h4"/><path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/></symbol>
   </svg>
 
   <main class="container">
@@ -1223,9 +1226,9 @@
                       <span class="setting-text">
                         <span class="setting-heading">
                           <span data-localize="unit_regions">Cell Size</span>
-                          <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Each cell is built as one piece, and the map selection grows to whole cells around the world&#x27;s centre. Smaller cells lose less work to a failure, larger ones build fewer seams.">?</span>
+                          <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Each cell is built as one piece, and the map selection snaps to whole cells around the world&#x27;s centre. Smaller cells lose less work to a failure, larger ones build fewer seams.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="unit_regions_desc">Regions in each piece; the selection grows to whole cells. Requires One World.</span>
+                        <span class="setting-desc" data-localize="unit_regions_desc">Regions in each piece; the selection snaps to whole cells. Requires One World.</span>
                       </span>
                     </label>
                     <div class="settings-control">
@@ -1234,6 +1237,39 @@
                         <option value="4" selected>4x4</option>
                         <option value="8">8x8</option>
                       </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="snap-mode-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-grid-2x2"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="snap_mode">Selection Snap</span>
+                          <span class="tooltip-icon" data-tooltip="Fit Inside keeps the whole cells that lie inside the selection, centred on it, so nothing outside what you drew is built. Cover grows the selection outward to whole cells. When no whole cell fits inside, Fit Inside uses one cell around the centre.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="snap_mode_desc">Whole cells inside the selection, or covering it. Requires One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="snap-mode-select" name="snap-mode-select" class="settings-select">
+                        <option value="fit" selected data-localize="snap_mode_fit">Fit Inside</option>
+                        <option value="cover" data-localize="snap_mode_cover">Cover</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="square-selection-toggle" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-square"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="square_selection">Square Selection</span>
+                          <span class="tooltip-icon" data-tooltip="Snaps to the same number of cells east-west and north-south, centred on the selection: the smaller count with Fit Inside, the larger with Cover.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="square_selection_desc">Same number of cells both ways. Requires One World.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="checkbox" class="switch" id="square-selection-toggle" name="square-selection-toggle">
                     </div>
                   </div>
                 </div>

@@ -18,23 +18,43 @@ generated; the Meld Generation ones do.
 | Parallel Downloads | `--max-downloads` | Default 16. |
 | Parallel Workers | `--one-world-workers` | One World only. Auto or 1 to 6. |
 | Cell Size | `--unit-regions` | One World only. 2x2, 4x4 or 8x8 regions per piece, default 4x4. A stored 3, 5, 6 or 7 from an older version falls back to 4x4. |
+| Selection Snap | | One World only. Fit Inside (default) or Cover; see below. |
+| Square Selection | | One World only. The same number of cells both ways. |
 
 With One World on, Parallel Workers and Cell Size always build the area in
 pieces (see [Large areas](one_world.md#large-areas)).
 
-While pieces are in use, the map selection grows outward to whole cells
-(one cell is Cell Size regions, one piece) on the world's lattice, which is anchored at
+While pieces are in use, the map selection snaps to whole cells (one cell
+is Cell Size regions, one piece) on the world's lattice, which is anchored at
 block (0, 0): an existing One World's own, or for a new one the frame its
-first area will create, whose block (0, 0) (the corner of four regions and of
-four cells) is the centre of the selection, so the snap has the same number
-of cells either side. The map draws the snapped outline and the cell lines
-(only the outline and the count past 2,000 cells), the readout under the
-selection gives its size in regions and pieces, and generation is given the
-snapped bbox. The frame maths is the run's own (`work_units::snap_to_cells`).
-A new world is also given `--origin` at that centre, so its frame does not
-depend on the bbox and every edge, however tall the selection, lands on a
-cell line. A small accent dot on the map marks block (0, 0): that centre for
-a new world, the world's own origin for an existing one.
+first area will create. **Selection Snap** picks how:
+
+- **Fit Inside** (default) keeps the whole cells that lie inside the
+  selection, so nothing outside what was drawn is built. On a new world the
+  cells are centred on the selection: block (0, 0) is its centre when both
+  counts are even, and moves half a cell on a side whose count is odd, so the
+  centre is the middle of a cell (still a region junction, as cells are 2, 4
+  or 8 regions). On an existing world the lattice is fixed, so the cells are
+  the ones inside. A side with no whole cell inside gets one, around the
+  selection's centre, and the readout says so.
+- **Cover** grows the selection outward to whole cells. On a new world block
+  (0, 0), the corner of four regions and of four cells, is the centre of the
+  selection, so the snap has the same number of cells either side.
+
+**Square Selection** makes both sides the same number of cells, centred: the
+smaller count with Fit Inside, the larger with Cover.
+
+The map draws the snapped outline and the block (0, 0) dot always, and the cell
+lines only once a cell is at least 8 pixels on screen (and the snap has at most
+2,000 cells), so a country-sized selection zoomed out draws three shapes. The
+overlay is redrawn when the zoom ends or the selection changes, never while
+panning. The readout under the selection gives width (east-west) by height
+(north-south): `12 × 8 regions · 3 × 2 cells · 6 pieces · 6.1 × 4.1 km`, the
+kilometres being blocks over the world scale. Generation is given the snapped
+bbox; the frame maths is the run's own (`work_units::snap_to_cells`). A new
+world is also given `--origin` at the snap's block (0, 0), so its frame does
+not depend on the bbox and every edge, however tall the selection, lands on a
+cell line.
 
 `--origin LAT,LON` (CLI, `--one-world` only) sets block (0, 0) of the world a
 run creates, instead of the centre of its first bbox. A world that already

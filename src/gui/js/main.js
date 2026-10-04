@@ -1699,7 +1699,7 @@ function initAdvancedFeatures() {
   refreshOptionPreviews();
   initOsmSource();
   initPresets();
-  ['unit-regions-select', 'scale-value-slider'].forEach((id) => {
+  ['unit-regions-select', 'snap-mode-select', 'square-selection-toggle', 'scale-value-slider'].forEach((id) => {
     document.getElementById(id).addEventListener('change', refreshSnapPreview);
   });
   formatCpuUsage();
@@ -2318,6 +2318,8 @@ function refreshAdvancedFeatures() {
   const pieces = on && isOneWorldEnabled();
   setSettingsRowAvailable('one-world-workers-select', pieces);
   setSettingsRowAvailable('unit-regions-select', pieces);
+  setSettingsRowAvailable('snap-mode-select', pieces);
+  setSettingsRowAvailable('square-selection-toggle', pieces);
 
   MELD_ALWAYS.forEach((id) => setSettingsRowAvailable(id, on));
   const checked = (id) => {
@@ -3465,6 +3467,8 @@ function snapSelection(bbox) {
     worldName: oneWorldFolderName(),
     scale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
     unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
+    snapMode: document.getElementById('snap-mode-select').value,
+    square: document.getElementById('square-selection-toggle').checked,
   });
 }
 
@@ -3490,7 +3494,9 @@ async function drawSnapPreview() {
   const on = snapActive() && !!selectedBBox;
   const key = on ? [selectedBBox, savePath, oneWorldFolderName(),
     document.getElementById('scale-value-slider').value,
-    document.getElementById('unit-regions-select').value].join('|') : 'off';
+    document.getElementById('unit-regions-select').value,
+    document.getElementById('snap-mode-select').value,
+    document.getElementById('square-selection-toggle').checked].join('|') : 'off';
   if (key === snapPreviewKey) return;
   snapPreviewKey = key;
   let snap = null;
@@ -3502,9 +3508,14 @@ async function drawSnapPreview() {
     }
     if (key !== snapPreviewKey) return;
   }
+  // Width (east-west) first, then height (north-south).
   const text = snap
-    ? oneWorldText('snap_regions_info', '{x} x {z} regions, {pieces} pieces',
-      { x: snap.regions[0], z: snap.regions[1], pieces: snap.cells[0] * snap.cells[1] })
+    ? oneWorldText('snap_regions_info', '{x} × {z} regions · {cx} × {cz} cells · {pieces} pieces · {w} × {h} km', {
+      x: snap.regions[0], z: snap.regions[1], cx: snap.cells[0], cz: snap.cells[1],
+      pieces: snap.cells[0] * snap.cells[1], w: snap.size_km[0].toFixed(1), h: snap.size_km[1].toFixed(1),
+    }) + (snap.fallback
+      ? ' · ' + oneWorldText('snap_fallback', 'No whole cell fits inside, so one is used.')
+      : '')
     : '';
   postToMap({ type: 'snapOverlay', snap, label: text });
   const info = document.getElementById('bbox-snap-info');
