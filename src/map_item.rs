@@ -49,7 +49,7 @@ pub fn read_spawn_xz(world_path: &Path) -> Option<(i32, i32)> {
     None
 }
 
-fn read_gzip_nbt(path: &Path) -> Result<Value, String> {
+pub(crate) fn read_gzip_nbt(path: &Path) -> Result<Value, String> {
     let raw = std::fs::read(path).map_err(|e| format!("read {path:?}: {e}"))?;
     let mut decompressed = Vec::new();
     GzDecoder::new(raw.as_slice())

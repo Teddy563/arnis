@@ -1675,8 +1675,7 @@ function initAdvancedFeatures() {
   cpu.addEventListener('input', () => { formatCpuUsage(); refreshAdvancedFeatures(); });
   cpu.addEventListener('dblclick', () => {
     cpu.value = 0;
-    cpu.dispatchEvent(new Event('input', { bubbles: true }));
-    cpu.dispatchEvent(new Event('change', { bubbles: true }));
+    fireInputChange(cpu);
   });
   document.getElementById('threads-input').addEventListener('input', refreshAdvancedFeatures);
   // Meld Generation rows that follow another control.
@@ -1695,24 +1694,12 @@ function initAdvancedFeatures() {
     // Double-click resets, as on the other sliders.
     slider.addEventListener('dblclick', () => {
       slider.value = slider.defaultValue;
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-      slider.dispatchEvent(new Event('change', { bubbles: true }));
+      fireInputChange(slider);
     });
     show();
   });
   const loot = document.getElementById('loot-table-input');
-  document.getElementById('loot-table-browse').addEventListener('click', async () => {
-    try {
-      const picked = await invoke('gui_pick_loot_table', { current: loot.value.trim() });
-      if (picked !== loot.value) {
-        loot.value = picked;
-        loot.dispatchEvent(new Event('input', { bubbles: true }));
-        loot.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } catch (error) {
-      console.error('Loot table picker failed:', error);
-    }
-  });
+  bindBrowse('loot-table-browse', loot, 'gui_pick_loot_table', () => loot.value.trim());
   initPropFamilies();
   initExperimentalButtons();
   initTreePack();
@@ -1739,31 +1726,9 @@ function initAdvancedFeatures() {
 // runs the generation's own settings with --prewarm.
 function initOsmSource() {
   const file = document.getElementById('osm-file-input');
-  document.getElementById('osm-file-browse').addEventListener('click', async () => {
-    try {
-      const picked = await invoke('gui_pick_osm_file', { current: file.value.trim() });
-      if (picked !== file.value) {
-        file.value = picked;
-        file.dispatchEvent(new Event('input', { bubbles: true }));
-        file.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } catch (error) {
-      console.error('OSM file picker failed:', error);
-    }
-  });
+  bindBrowse('osm-file-browse', file, 'gui_pick_osm_file', () => file.value.trim());
   const pbf = document.getElementById('osm-pbf-input');
-  document.getElementById('osm-pbf-browse').addEventListener('click', async () => {
-    try {
-      const picked = await invoke('gui_pick_pbf_file', { current: pbf.value.trim() });
-      if (picked !== pbf.value) {
-        pbf.value = picked;
-        pbf.dispatchEvent(new Event('input', { bubbles: true }));
-        pbf.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } catch (error) {
-      console.error('PBF file picker failed:', error);
-    }
-  });
+  bindBrowse('osm-pbf-browse', pbf, 'gui_pick_pbf_file', () => pbf.value.trim());
   document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
   // The bake is the OSM step of a prewarm: same settings, same threads, same progress.
   document.getElementById('osm-pbf-bake-button').addEventListener('click', () => startGeneration({ prewarm: true }));
@@ -1919,20 +1884,8 @@ async function refreshLocalArchiveInfo() {
 }
 
 function initLocalArchive() {
-  const folder = document.getElementById('local-archive-input');
-  document.getElementById('local-archive-browse').addEventListener('click', async () => {
-    try {
-      const current = localArchiveFolder() || '';
-      const picked = await invoke('gui_pick_save_directory', { startPath: current });
-      if (picked && picked !== current) {
-        folder.value = picked;
-        folder.dispatchEvent(new Event('input', { bubbles: true }));
-        folder.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } catch (error) {
-      console.error('Archive folder picker failed:', error);
-    }
-  });
+  bindBrowse('local-archive-browse', document.getElementById('local-archive-input'),
+    'gui_pick_save_directory', () => localArchiveFolder() || '', 'startPath');
   document.getElementById('arnis-tiles-path-input').addEventListener('change', refreshLocalArchiveInfo);
   document.getElementById('prepare-bake-button').addEventListener('click', bakeCountries);
   document.getElementById('prepare-stop-button').addEventListener('click', () => {
@@ -2165,16 +2118,15 @@ try { previewMode = localStorage.getItem(PREVIEW_MODE_KEY) === '3d' ? '3d' : '2d
 function paintPreview(card) {
   const img = card.querySelector('img');
   const flat = card.dataset.shown || card.dataset.static;
-  const frame = card.classList.contains('preview-frame');
   card.querySelectorAll('.preview-mode button').forEach((b) => {
     b.classList.toggle('active', b.dataset.mode === previewMode);
     b.setAttribute('aria-pressed', String(b.dataset.mode === previewMode));
   });
   // Frames without a 2D | 3D switch (Grass, Land, Climate) are 2D only.
-  const want3d = frame && previewMode === '3d' && !!card.querySelector('.preview-mode');
+  const want3d = previewMode === '3d' && !!card.querySelector('.preview-mode');
   // Live renders are 2D only.
   const iso = want3d && !card.dataset.live && card.dataset.exact === '1'
-    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/').replace(/\.(png|webp)$/, '.webp')
+    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/')
     : null;
   card.classList.toggle('is-coming', want3d && !iso);
   img.onerror = iso ? () => {
@@ -2285,15 +2237,11 @@ function initTreeSizeToggles() {
     box.disabled = field.disabled;
     box.closest('.tree-size-row').classList.toggle('is-off', !box.checked);
   });
-  const send = (field) => {
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    field.dispatchEvent(new Event('change', { bubbles: true }));
-  };
   boxes.forEach((box) => {
     const field = document.getElementById(box.dataset.weight);
     box.addEventListener('change', () => {
       field.value = box.checked ? 100 : 0;
-      send(field);
+      fireInputChange(field);
     });
     field.addEventListener('input', sync);
     field.addEventListener('change', () => {
@@ -2301,7 +2249,7 @@ function initTreeSizeToggles() {
       const clamped = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100;
       if (String(clamped) !== field.value) {
         field.value = clamped;
-        send(field);
+        fireInputChange(field);
         return;
       }
       sync();
@@ -2374,8 +2322,7 @@ function initMixRows() {
     const write = (text) => {
       if (field.value === text) return;
       field.value = text;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true }));
+      fireInputChange(field);
     };
     // Rows to text: the preset as is, or the shares that are on.
     const commit = () => {
@@ -2468,13 +2415,6 @@ function showAutoRealm() {
 // all of a list's switches on is the stock mix and goes unsaid.
 function previewName(card) {
   const block = card.closest('.preview-block');
-  const control = document.getElementById(card.dataset.for);
-  if (!block) {
-    if (control && control.type === 'checkbox') {
-      return control.checked ? oneWorldText('preview_on', 'On') : oneWorldText('preview_off', 'Off');
-    }
-    return control && control.selectedOptions[0] ? control.selectedOptions[0].textContent : '';
-  }
   const picked = Array.from(block.querySelectorAll('.preview-options .segment.active')).map((b) => b.textContent.trim());
   const switches = Array.from(block.querySelectorAll('.tree-size-row input.switch, .preview-controls > .settings-row > .settings-control > input.switch'));
   const on = switches.filter((s) => s.checked).map((s) => {
@@ -2500,16 +2440,13 @@ function previewCaption(card) {
 function refreshOptionPreviews() {
   showAutoRealm();
   document.querySelectorAll('.option-preview[data-for]').forEach((card) => {
-    const control = document.getElementById(card.dataset.for);
-    if (!control || !card.querySelector('img')) return;
-    const value = control.type === 'checkbox' ? (control.checked ? 'on' : 'off') : control.value;
-    let src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
-    if (card.classList.contains('preview-frame')) {
-      // No shipped picture: keep the last one under the live render.
-      const key = blockPictureKey(card);
-      card.dataset.exact = key ? '1' : '';
-      src = key ? 'images/previews/' + key : (card.dataset.static || src);
-    }
+    const img = card.querySelector('img');
+    if (!document.getElementById(card.dataset.for) || !img) return;
+    // No shipped picture: keep the last one (at first, the page's own) under
+    // the live render.
+    const key = blockPictureKey(card);
+    card.dataset.exact = key ? '1' : '';
+    const src = key ? 'images/previews/' + key : (card.dataset.static || img.getAttribute('src'));
     // A live render stands until its group changes; the group's own refresh
     // puts the shipped picture back when that is exact again.
     if (card.dataset.static !== src) {
@@ -2538,11 +2475,7 @@ function refreshLivePreviews() {
     const seq = ++state.seq;
     clearTimeout(state.timer);
     const cards = Array.from(document.querySelectorAll('.option-preview[data-group="' + group + '"]'));
-    const shown = cards.map((c) => c.dataset.preview);
-    const blocks = cards.filter((c) => c.classList.contains('preview-frame'));
-    const exact = blocks.length
-      ? blocks.every((c) => c.dataset.exact === '1')
-      : mine.every((f) => shown.includes(flagName(f)));
+    const exact = cards.every((c) => c.dataset.exact === '1');
     const settle = (card) => {
       delete card.dataset.live;
       delete card.dataset.note;
@@ -2556,7 +2489,7 @@ function refreshLivePreviews() {
       return;
     }
     // A frame whose own options match a shipped picture keeps it.
-    const live = blocks.length ? cards.filter((c) => c.dataset.exact !== '1') : cards;
+    const live = cards.filter((c) => c.dataset.exact !== '1');
     cards.filter((c) => !live.includes(c)).forEach(settle);
     live.forEach((card) => { card.classList.add('is-updating'); previewCaption(card); });
     state.timer = setTimeout(async () => {
@@ -2598,8 +2531,7 @@ function initPropFamilies() {
   };
   boxes.forEach((box) => box.addEventListener('change', () => {
     field.value = boxes.filter((b) => b.checked).map((b) => b.dataset.prop).join(',');
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    field.dispatchEvent(new Event('change', { bubbles: true }));
+    fireInputChange(field);
   }));
   field.addEventListener('change', show);
   show();
@@ -2632,19 +2564,8 @@ async function refreshTreePack() {
 
 function initTreePack() {
   const field = document.getElementById('tree-pack-dir-input');
-  document.getElementById('tree-pack-dir-browse').addEventListener('click', async () => {
-    try {
-      const current = field.value.trim() || (treePack && treePack.folder) || '';
-      const picked = await invoke('gui_pick_save_directory', { startPath: current });
-      if (picked && picked !== current) {
-        field.value = picked;
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        field.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } catch (error) {
-      console.error('Tree pack folder picker failed:', error);
-    }
-  });
+  bindBrowse('tree-pack-dir-browse', field, 'gui_pick_save_directory',
+    () => field.value.trim() || (treePack && treePack.folder) || '', 'startPath');
   field.addEventListener('change', refreshTreePack);
   [['tree-pack-create-button', false], ['tree-pack-export-button', true]].forEach(([id, exporting]) => {
     const button = document.getElementById(id);
@@ -4395,6 +4316,29 @@ function writeOneWorldRestore(record) {
 
 function controlValue(el) {
   return el.type === 'checkbox' ? el.checked : parseFloat(el.value);
+}
+
+// Tells the store and every listener a control changed.
+function fireInputChange(el) {
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// A Browse button: the picker opens at `start()` and hands it back on cancel;
+// anything else goes into the field.
+function bindBrowse(buttonId, field, command, start, arg = 'current') {
+  document.getElementById(buttonId).addEventListener('click', async () => {
+    try {
+      const current = start();
+      const picked = await invoke(command, { [arg]: current });
+      if (picked && picked !== current) {
+        field.value = picked;
+        fireInputChange(field);
+      }
+    } catch (error) {
+      console.error(command + ' failed:', error);
+    }
+  });
 }
 
 function writeControl(el, value) {

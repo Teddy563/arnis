@@ -1093,12 +1093,8 @@ mod tests {
     #[test]
     fn the_world_border_holds_every_area() {
         fn border(world: &Path) -> std::collections::HashMap<String, f64> {
-            let raw = std::fs::read(world.join("level.dat")).unwrap();
-            let mut buf = Vec::new();
-            flate2::read::GzDecoder::new(raw.as_slice())
-                .read_to_end(&mut buf)
-                .unwrap();
-            let fastnbt::Value::Compound(root) = fastnbt::from_bytes(&buf).unwrap() else {
+            let level = crate::map_item::read_gzip_nbt(&world.join("level.dat")).unwrap();
+            let fastnbt::Value::Compound(root) = level else {
                 panic!("root");
             };
             let Some(fastnbt::Value::Compound(data)) = root.get("Data") else {

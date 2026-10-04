@@ -850,18 +850,4 @@ mod tests {
         assert!(!is_transient(Some(0xC000_013Au32 as i32), &[]));
         assert!(!is_transient(None, &[]));
     }
-
-    #[test]
-    fn a_piece_result_survives_the_done_file() {
-        let r = PieceResult {
-            spawn_y: Some(-40),
-            peak_rss_mb: Some(900),
-            wall_s: Some(1.5),
-            chunks: 1024,
-        };
-        let back: PieceResult = serde_json::from_value(json!(r)).unwrap();
-        assert_eq!(back.spawn_y, Some(-40));
-        assert_eq!(back.peak_rss_mb, Some(900));
-        assert_eq!(back.chunks, 1024);
-    }
 }

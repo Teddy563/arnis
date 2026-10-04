@@ -497,26 +497,20 @@ label[for].setting-label {
   accent-color: var(--ui-accent);
 }
 
-/* Option preview cards and the Download Plan list sit under the row,
-   lined up with its text (22px icon + 12px gap). */
-.settings-page .setting-tile.has-preview,
+/* The Download Plan list sits under the row, lined up with its text
+   (22px icon + 12px gap). */
 .settings-page .setting-tile.data-plan {
   flex-wrap: wrap;
 }
 
 .settings-page .option-preview {
   flex: 1 0 calc(100% - 34px);
-  margin: 0 0 2px 34px;
 }
 
 .settings-page .option-preview img {
   display: block;
   width: 100%;
-  max-width: 256px;
   height: auto;
-  aspect-ratio: 8 / 5;
-  border: 1px solid var(--ui-tile-border);
-  border-radius: 10px;
   background: var(--ui-field);
   transition: opacity 0.2s ease;
 }
@@ -524,12 +518,6 @@ label[for].setting-label {
 /* A live render of the group's current settings is on its way. */
 .settings-page .option-preview.is-updating img {
   opacity: 0.6;
-}
-
-.settings-page .option-preview figcaption {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--ui-muted);
 }
 
 /* Preview card: one card per settings group, at the section's own width
@@ -841,12 +829,8 @@ label[for].setting-label {
 
 .settings-page .preview-frame img {
   width: 100%;
-  max-width: none;
   height: 100%;
-  aspect-ratio: auto;
   object-fit: contain;
-  border: none;
-  border-radius: 0;
   transform-origin: 0 0;
   cursor: grab;
   touch-action: none;
