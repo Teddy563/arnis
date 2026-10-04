@@ -1718,6 +1718,7 @@ function initAdvancedFeatures() {
   initTreePack();
   // The cards follow their controls, restored and reset values included.
   initTreeSizeToggles();
+  initMixRows();
   initPreviewModes();
   groups.addEventListener('change', refreshOptionPreviews);
   // Offline, a live render may only read the caches.
@@ -2038,7 +2039,10 @@ async function bakeCountries() {
 
 // Presets: the Extra Features and OSM Data Source settings as a JSON file.
 function initPresets() {
-  const roots = ['settings-section-features', 'settings-section-osm'].map((id) => document.getElementById(id));
+  // Every setting on the page (version 2). A version 1 file held only these
+  // two sections, so it leaves the others as they are.
+  const all = [document.getElementById('settings-modal')];
+  const v1 = ['settings-section-features', 'settings-section-osm'].map((id) => document.getElementById(id));
   const flash = (button, ok) => {
     button.classList.add(ok ? 'is-success' : 'is-error');
     setTimeout(() => button.classList.remove('is-success', 'is-error'), 1500);
@@ -2046,7 +2050,7 @@ function initPresets() {
   const save = document.getElementById('preset-save-button');
   save.addEventListener('click', async () => {
     try {
-      const contents = JSON.stringify({ arnisPreset: 1, settings: exportSettings(roots) }, null, 2);
+      const contents = JSON.stringify({ arnisPreset: 2, settings: exportSettings(all) }, null, 2);
       if (await invoke('gui_save_preset', { contents })) flash(save, true);
     } catch (error) {
       console.error('Saving the preset failed:', error);
@@ -2059,10 +2063,11 @@ function initPresets() {
       const text = await invoke('gui_load_preset');
       if (text === null || text === undefined) return;
       const preset = JSON.parse(text);
-      if (!preset || preset.arnisPreset !== 1 || typeof preset.settings !== 'object') {
+      if (!preset || ![1, 2].includes(preset.arnisPreset) || typeof preset.settings !== 'object') {
         throw new Error('not an Arnis preset');
       }
-      importSettings(preset.settings, roots);
+      importSettings(preset.settings, preset.arnisPreset === 1 ? v1 : all);
+      refreshOptionPreviews();
       flash(load, true);
     } catch (error) {
       console.error('Loading the preset failed:', error);
@@ -2085,9 +2090,58 @@ const PREVIEW_GROUPS = {
   grass: ['grass-texture', 'grass-mix'],
   land: ['land-texture', 'land-mix'],
 };
-// Groups whose shipped pictures match no setting exactly (the scatter ones
-// were drawn at the densest setting), so any flag asks for a live render.
-const PREVIEW_NO_STATIC = ['scatter'];
+const TREE_SIZES = ['small', 'medium', 'big', 'tall', 'giant'];
+
+// The shipped picture (work/previews/iso_render.py, option B: one per
+// option) a frame's current settings match, as a file under images/previews/
+// (the 3D one, if any, has the same name under iso/), or null when only a
+// live 2D render shows them: any custom value. Rocks and Bushes are drawn at
+// the densest setting, so the formations show; they stand for the default
+// densities. Grass, Land and Climate keep their 2D cards.
+function blockPictureKey(card) {
+  const el = (id) => document.getElementById(id);
+  const stock = (id) => el(id).value === el(id).defaultValue;
+  const on = (id) => (el(id).checked ? 'on' : 'off');
+  switch (card.dataset.for) {
+    case 'tree-realm-select': {
+      const realm = el('tree-realm-select').value;
+      const w = TREE_SIZES.map((s) => parseFloat(el('tree-weight-' + s + '-slider').value));
+      if (w.every((v) => v === 100)) return 'tree-realm-' + realm + '.webp';
+      const single = w.filter((v) => v === 100).length === 1 && w.every((v) => v === 0 || v === 100);
+      return realm === 'auto' && single ? 'tree-size-' + TREE_SIZES[w.indexOf(100)] + '.webp' : null;
+    }
+    case 'field-mix-select':
+      return el('farm-crops-input').value.trim() === '' && stock('field-scale-slider')
+        ? 'field-mix-' + el('field-mix-select').value + '.webp' : null;
+    case 'road-detail-select':
+      return 'road-detail-' + el('road-detail-select').value + '.webp';
+    case 'rocks-toggle': {
+      if (!stock('rock-density-slider') || !stock('bush-density-slider')) return null;
+      const r = el('rocks-toggle').checked;
+      const b = el('bushes-toggle').checked;
+      return 'scatter-' + (r ? (b ? 'both' : 'rocks') : (b ? 'bushes' : 'off')) + '.webp';
+    }
+    case 'snow-mode-select': {
+      const mode = el('snow-mode-select').value;
+      return stock('snow-percent-slider') && (mode !== 'manual' || stock('snow-y-input'))
+        ? 'snow-mode-' + mode + '.webp' : null;
+    }
+    case 'river-bed-select':
+      return el('water-detail-select').value === 'default'
+        ? 'river-bed-' + el('river-bed-select').value + '.webp' : null;
+    case 'water-detail-select':
+      return el('river-bed-select').value === 'off'
+        ? 'water-detail-' + el('water-detail-select').value + '.webp' : null;
+    case 'grass-texture-toggle':
+      return el('grass-mix-input').value.trim() === '' ? 'grass-texture-' + on('grass-texture-toggle') + '.png' : null;
+    case 'land-texture-toggle':
+      return el('land-mix-input').value.trim() === '' ? 'land-texture-' + on('land-texture-toggle') + '.png' : null;
+    case 'climate-mode-select':
+      return 'climate-mode-' + el('climate-mode-select').value + '.webp';
+    default:
+      return null;
+  }
+}
 const livePreviews = {};
 
 // The picture a card shows: 3D (images/previews/iso/) when picked and drawn
@@ -2105,10 +2159,11 @@ function paintPreview(card) {
     b.classList.toggle('active', b.dataset.mode === previewMode);
     b.setAttribute('aria-pressed', String(b.dataset.mode === previewMode));
   });
-  const want3d = frame && previewMode === '3d';
+  // Frames without a 2D | 3D switch (Grass, Land, Climate) are 2D only.
+  const want3d = frame && previewMode === '3d' && !!card.querySelector('.preview-mode');
   // Live renders are 2D only.
-  const iso = want3d && !card.dataset.live
-    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/').replace(/\.png$/, '.webp')
+  const iso = want3d && !card.dataset.live && card.dataset.exact === '1'
+    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/').replace(/\.(png|webp)$/, '.webp')
     : null;
   card.classList.toggle('is-coming', want3d && !iso);
   img.onerror = iso ? () => {
@@ -2208,29 +2263,168 @@ function initPreviewZoom(card) {
   new ResizeObserver(apply).observe(card);
 }
 
-// Tree Sizes: per size a switch and its weight slider in one row. Off is
-// weight 0 and greys the slider; on from 0 puts it back at 100. The slider
-// stays enabled either way, since a disabled control sends nothing.
+// Tree Sizes: per size a switch and its weight, 0 to 100 % of the usual
+// share. Off is 0 and greys the number; on from 0 puts it back at 100. The
+// number stays enabled either way, since a disabled control sends nothing.
 function initTreeSizeToggles() {
   const boxes = Array.from(document.querySelectorAll('.tree-size-row input[data-weight]'));
   const sync = () => boxes.forEach((box) => {
-    const slider = document.getElementById(box.dataset.weight);
-    box.checked = parseFloat(slider.value) > 0;
-    box.disabled = slider.disabled;
+    const field = document.getElementById(box.dataset.weight);
+    box.checked = parseFloat(field.value) > 0;
+    box.disabled = field.disabled;
     box.closest('.tree-size-row').classList.toggle('is-off', !box.checked);
   });
+  const send = (field) => {
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  };
   boxes.forEach((box) => {
-    const slider = document.getElementById(box.dataset.weight);
+    const field = document.getElementById(box.dataset.weight);
     box.addEventListener('change', () => {
-      slider.value = box.checked ? 100 : 0;
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-      slider.dispatchEvent(new Event('change', { bubbles: true }));
+      field.value = box.checked ? 100 : 0;
+      send(field);
     });
-    slider.addEventListener('input', sync);
-    slider.addEventListener('change', sync);
-    new MutationObserver(sync).observe(slider, { attributes: true, attributeFilter: ['disabled'] });
+    field.addEventListener('input', sync);
+    field.addEventListener('change', () => {
+      const v = Math.round(parseFloat(field.value));
+      const clamped = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100;
+      if (String(clamped) !== field.value) {
+        field.value = clamped;
+        send(field);
+        return;
+      }
+      sync();
+    });
+    new MutationObserver(sync).observe(field, { attributes: true, attributeFilter: ['disabled'] });
   });
   sync();
+}
+
+// Farm Crops, Grass Mix and Land Mix: a row per part with a switch and its
+// share, starting from the layout's or preset's own shares (the FieldMix
+// presets in field_texture.rs). The hidden text field stays what the store
+// keeps and generation sends: a share list only when the rows differ from
+// the preset's, else the preset's name, or nothing for the default.
+const CROP_KEYS = ['wheat', 'potato', 'carrot', 'beetroot', 'sunflower', 'pumpkin', 'fallow'];
+const MIX_KEYS = ['coarse', 'plains', 'flower', 'farm', 'moss'];
+const FIELD_PRESETS = {
+  classic: { shares: [0, 0, 0, 0, 0], crops: [100, 0, 0, 0, 0, 0, 0] },
+  smallholding: { shares: [12, 10, 4, 70, 4], crops: [22, 18, 18, 14, 12, 10, 6] },
+  patchwork: { shares: [10, 8, 2, 75, 5], crops: [40, 15, 15, 8, 12, 5, 5] },
+  prairie: { shares: [6, 6, 1, 85, 2], crops: [62, 8, 6, 4, 12, 2, 6] },
+  pasture: { shares: [6, 58, 24, 6, 6], crops: [45, 10, 10, 5, 20, 5, 5] },
+  // --grass-mix's own default (FieldMix::GRASS).
+  default: { shares: [6, 64, 22, 0, 8] },
+};
+const MIXES = {
+  'farm-crops-input': {
+    keys: CROP_KEYS,
+    original: (name) => FIELD_PRESETS[name].crops,
+    encode: () => '',
+  },
+  'grass-mix-input': {
+    keys: MIX_KEYS,
+    fallback: 'default',
+    original: (name) => FIELD_PRESETS[name].shares,
+    encode: (name) => (name === 'default' ? '' : name),
+  },
+  'land-mix-input': {
+    keys: MIX_KEYS,
+    fallback: 'patchwork',
+    original: (name) => FIELD_PRESETS[name].shares,
+    encode: (name) => (name === 'patchwork' ? '' : name),
+  },
+};
+
+function initMixRows() {
+  Object.entries(MIXES).forEach(([id, mix]) => {
+    const field = document.getElementById(id);
+    const list = document.querySelector('.mix-list[data-mix="' + id + '"]');
+    if (!field || !list) return;
+    const select = document.querySelector('.mix-preset[data-mix="' + id + '"]');
+    const layout = document.getElementById('field-mix-select');
+    const rows = mix.keys.map((k) => list.querySelector('.mix-row[data-key="' + k + '"]'));
+    const reset = list.querySelector('.mix-reset');
+    const presetName = () => (select ? select.value : layout.value);
+    const original = () => mix.original(presetName());
+    const same = (a, b) => a.every((v, i) => v === b[i]);
+    const values = () => rows.map((r) => {
+      const v = Math.round(parseFloat(r.querySelector('input[type="number"]').value));
+      return r.querySelector('.switch').checked && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
+    });
+    const show = (vals) => {
+      rows.forEach((r, i) => {
+        r.querySelector('input[type="number"]').value = vals[i];
+        r.querySelector('.switch').checked = vals[i] > 0;
+        r.classList.toggle('is-off', vals[i] === 0);
+      });
+      if (reset) reset.disabled = same(vals, original());
+    };
+    const write = (text) => {
+      if (field.value === text) return;
+      field.value = text;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    // Rows to text: the preset as is, or the shares that are on.
+    const commit = () => {
+      const vals = values();
+      show(vals);
+      write(same(vals, original())
+        ? mix.encode(presetName())
+        : mix.keys.map((k, i) => (vals[i] > 0 ? k + '=' + vals[i] : null)).filter(Boolean).join(','));
+    };
+    // Text to rows: restore, reset and preset files write the field.
+    const read = () => {
+      const text = field.value.trim().toLowerCase();
+      if (select) {
+        const named = text === '' ? mix.fallback : text;
+        if (FIELD_PRESETS[named] && named !== 'classic' && select.querySelector('option[value="' + named + '"]')) {
+          select.value = named;
+        }
+      }
+      let vals = original();
+      if (text.includes('=')) {
+        vals = mix.keys.map(() => 0);
+        text.split(',').forEach((pair) => {
+          const [k, v] = pair.split('=').map((t) => t.trim());
+          const i = mix.keys.indexOf(k);
+          if (i >= 0) vals[i] = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
+        });
+      }
+      show(vals);
+    };
+    rows.forEach((r, i) => {
+      const box = r.querySelector('.switch');
+      const num = r.querySelector('input[type="number"]');
+      box.addEventListener('change', () => {
+        if (box.checked && !(parseFloat(num.value) > 0)) num.value = original()[i] || 10;
+        // One part stays on: an all-zero list is refused.
+        if (!values().some((v) => v > 0)) box.checked = true;
+        commit();
+      });
+      num.addEventListener('change', () => {
+        box.checked = parseFloat(num.value) > 0;
+        if (!values().some((v) => v > 0)) {
+          num.value = original()[i] || 10;
+          box.checked = true;
+        }
+        commit();
+      });
+    });
+    const restart = () => { show(original()); commit(); };
+    if (reset) reset.addEventListener('click', restart);
+    // A new layout or preset starts again from its own shares.
+    (select || layout).addEventListener('change', restart);
+    field.addEventListener('change', read);
+    const disable = () => {
+      rows.forEach((r) => r.querySelectorAll('input').forEach((x) => { x.disabled = field.disabled; }));
+      if (select) select.disabled = field.disabled;
+    };
+    new MutationObserver(disable).observe(field, { attributes: true, attributeFilter: ['disabled'] });
+    disable();
+    read();
+  });
 }
 
 // The realm Auto would pick by the selection's centre, as tree_pack.rs
@@ -2271,7 +2465,7 @@ function previewName(card) {
     return control && control.selectedOptions[0] ? control.selectedOptions[0].textContent : '';
   }
   const picked = Array.from(block.querySelectorAll('.preview-options .segment.active')).map((b) => b.textContent.trim());
-  const switches = Array.from(block.querySelectorAll('.tree-size-row input.switch, .preview-controls > .settings-row input.switch'));
+  const switches = Array.from(block.querySelectorAll('.tree-size-row input.switch, .preview-controls > .settings-row > .settings-control > input.switch'));
   const on = switches.filter((s) => s.checked).map((s) => {
     const label = s.closest('label') || s.closest('.settings-row').querySelector('.setting-heading > span');
     return label.textContent.trim();
@@ -2298,7 +2492,13 @@ function refreshOptionPreviews() {
     const control = document.getElementById(card.dataset.for);
     if (!control || !card.querySelector('img')) return;
     const value = control.type === 'checkbox' ? (control.checked ? 'on' : 'off') : control.value;
-    const src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
+    let src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
+    if (card.classList.contains('preview-frame')) {
+      // No shipped picture: keep the last one under the live render.
+      const key = blockPictureKey(card);
+      card.dataset.exact = key ? '1' : '';
+      src = key ? 'images/previews/' + key : (card.dataset.static || src);
+    }
     // A live render stands until its group changes; the group's own refresh
     // puts the shipped picture back when that is exact again.
     if (card.dataset.static !== src) {
@@ -2328,19 +2528,26 @@ function refreshLivePreviews() {
     clearTimeout(state.timer);
     const cards = Array.from(document.querySelectorAll('.option-preview[data-group="' + group + '"]'));
     const shown = cards.map((c) => c.dataset.preview);
-    const exact = !PREVIEW_NO_STATIC.includes(group) && mine.every((f) => shown.includes(flagName(f)));
+    const blocks = cards.filter((c) => c.classList.contains('preview-frame'));
+    const exact = blocks.length
+      ? blocks.every((c) => c.dataset.exact === '1')
+      : mine.every((f) => shown.includes(flagName(f)));
+    const settle = (card) => {
+      delete card.dataset.live;
+      delete card.dataset.note;
+      card.classList.remove('is-updating');
+      card.dataset.shown = card.dataset.static;
+      paintPreview(card);
+      previewCaption(card);
+    };
     if (mine.length === 0 || exact) {
-      cards.forEach((card) => {
-        delete card.dataset.live;
-        delete card.dataset.note;
-        card.classList.remove('is-updating');
-        card.dataset.shown = card.dataset.static;
-        paintPreview(card);
-        previewCaption(card);
-      });
+      cards.forEach(settle);
       return;
     }
-    cards.forEach((card) => { card.classList.add('is-updating'); previewCaption(card); });
+    // A frame whose own options match a shipped picture keeps it.
+    const live = blocks.length ? cards.filter((c) => c.dataset.exact !== '1') : cards;
+    cards.filter((c) => !live.includes(c)).forEach(settle);
+    live.forEach((card) => { card.classList.add('is-updating'); previewCaption(card); });
     state.timer = setTimeout(async () => {
       let src = null;
       let note = '';
@@ -2354,7 +2561,7 @@ function refreshLivePreviews() {
         }
       }
       if (seq !== state.seq) return;
-      cards.forEach((card) => {
+      live.forEach((card) => {
         card.classList.remove('is-updating');
         // A failed render shows the shipped picture, not an older combination's.
         if (src) card.dataset.live = '1';
@@ -2497,7 +2704,6 @@ const MELD_SLIDERS = [
   ['rock-density-slider', (v) => v.toFixed(2)],
   ['bush-density-slider', (v) => v.toFixed(2)],
   ['field-scale-slider', formatPercent],
-  ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => ['tree-weight-' + size + '-slider', formatPercent]),
 ];
 
 // Meld Generation rows that only depend on the master switch.

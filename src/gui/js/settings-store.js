@@ -671,12 +671,15 @@ export function initSettingsStore(options = {}) {
   refresh();
 }
 
-// Presets: every setting inside `roots`, as { id: value }.
+// Presets: every setting inside `roots`, as { id: value }. Secrets (password
+// fields) and the telemetry choice (not revertable) never go in a file.
+const portable = (entry, el) => entry.revertable !== false && el.type !== 'password';
+
 export function exportSettings(roots) {
   const values = {};
   for (const entry of SETTINGS) {
     const el = elementFor(entry);
-    if (el && roots.some((root) => root.contains(el))) values[entry.id] = currentValue(entry);
+    if (el && portable(entry, el) && roots.some((root) => root.contains(el))) values[entry.id] = currentValue(entry);
   }
   return values;
 }
@@ -689,7 +692,7 @@ export function importSettings(values, roots) {
   try {
     for (const entry of SETTINGS) {
       const el = elementFor(entry);
-      if (!el || !roots.some((root) => root.contains(el))) continue;
+      if (!el || !portable(entry, el) || !roots.some((root) => root.contains(el))) continue;
       const value = sanitize(entry, values[entry.id]);
       writeValue(entry, value === undefined ? defaultValue(entry) : value);
     }

@@ -532,29 +532,46 @@ label[for].setting-label {
   color: var(--ui-muted);
 }
 
-/* Side-by-side preview block: a group's controls as a list on the left, one
-   4:3 picture of their combination on the right (about 340x255 at the app's
-   1000px minimum, 480x360 from about 1280px). It stays in view while the
-   list scrolls past it. */
+/* Preview card: one card per settings group, at the section's own width
+   (a wide grid item, like any other tile). Left, the group's rows as plain
+   rows split by hairlines; right, a square picture of their combination at
+   the top. The card is as tall as the taller column. Below 900px the picture
+   goes under the rows. */
 .settings-page .preview-block {
+  --preview-size: 300px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, min(480px, 52%));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) var(--preview-size);
+  gap: 18px;
   align-items: start;
+  padding: 2px 14px 2px 14px;
+  border: 1px solid var(--ui-tile-border);
+  border-radius: 10px;
+  background: var(--ui-tile);
 }
 
 .settings-page .preview-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-width: 0;
 }
 
-.settings-page .preview-controls .setting-tile {
+.settings-page .preview-controls > .setting-tile {
   flex-wrap: wrap;
+  padding: 11px 0;
+  border: none;
+  border-radius: 0;
+  background: none;
 }
 
-/* In a narrow column a slider or field drops under its name. */
+.settings-page .preview-controls > .setting-tile:hover {
+  background: none;
+}
+
+.settings-page .preview-controls > .setting-tile + .setting-tile {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* In the narrower column a slider or field drops under its name. */
 .settings-page .preview-controls .setting-tile:not(.tree-sizes) > .setting-label {
   flex: 1 1 180px;
 }
@@ -675,41 +692,50 @@ label[for].setting-label {
   font-weight: 400;
 }
 
-/* Tree Sizes: one card, a row per size: switch, name and height in blocks,
-   weight slider. Off greys the slider. */
+/* Tree Sizes, Farm Crops, Grass and Land Mix: a row per part, in aligned
+   columns: switch | name | hint | number | unit. Off is 0 and greys the
+   number. */
 .settings-page .setting-tile.tree-sizes {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
 }
 
-.settings-page .tree-size-list {
+.settings-page .mix-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  flex: 1 0 calc(100% - 34px);
+  margin: 0 0 2px 34px;
 }
 
-.settings-page .tree-size-row {
+.settings-page .tree-sizes .mix-list {
+  margin: 0;
+}
+
+.settings-page .mix-row {
   display: grid;
-  grid-template-columns: auto max-content minmax(40px, 1fr) 38px;
+  grid-template-columns: auto minmax(0, 1fr) auto 64px 14px;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
+  gap: 10px;
+  min-height: 32px;
 }
 
-.settings-page .tree-size-row input[type="range"] {
-  width: 100%;
+.settings-page .mix-row .switch {
+  transform: scale(0.8);
+  transform-origin: left center;
+  margin-right: -8px;
 }
 
-.settings-page .tree-size-name {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+.settings-page .mix-row label,
+.settings-page .mix-name {
   min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.settings-page .tree-size-name .setting-heading {
+.settings-page .mix-row .setting-heading {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -717,28 +743,100 @@ label[for].setting-label {
   white-space: nowrap;
 }
 
+.settings-page .mix-hint,
 .settings-page .tree-size-hint {
   font-size: 11.5px;
   color: var(--ui-faint);
   white-space: nowrap;
+  text-align: right;
 }
 
-.settings-page .tree-size-row.is-off input[type="range"],
-.settings-page .tree-size-row.is-off .setting-value {
-  opacity: 0.35;
+.settings-page .tree-size-name {
+  display: contents;
+}
+
+.settings-page .mix-row input[type="number"] {
+  width: 64px;
+  height: 28px;
+  padding: 2px 6px;
+  font-size: 13px;
+  text-align: right;
+}
+
+.settings-page .mix-unit {
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.settings-page .mix-row.is-off input[type="number"],
+.settings-page .mix-row.is-off .mix-unit,
+.settings-page .mix-row.is-off .mix-name {
+  opacity: 0.4;
+}
+
+.settings-page .mix-row.is-off input[type="number"] {
   pointer-events: none;
 }
 
+.settings-page .mix-reset {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-link);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-page .mix-reset:hover {
+  text-decoration: underline;
+}
+
+.settings-page .mix-reset:disabled {
+  visibility: hidden;
+}
+
+.settings-page .setting-tile.has-mix {
+  flex-wrap: wrap;
+}
+
+.settings-page .setting-tile.has-mix .mix-list {
+  max-width: 420px;
+}
+
+/* Presets and Reset: the page-wide actions at the foot of the sidebar. */
+.settings-page .settings-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.settings-page .settings-presets .settings-reset-button {
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.settings-page .settings-presets .settings-reset-button.is-success {
+  border-color: #4caf50;
+  background: rgba(76, 175, 80, 0.08);
+}
+
+.settings-page .settings-presets .settings-reset-button.is-error {
+  border-color: var(--ui-danger);
+}
+
 .settings-page .preview-frame {
-  position: sticky;
-  top: 12px;
-  margin: 0;
+  position: relative;
+  width: var(--preview-size);
+  margin: 12px 0;
   overflow: hidden;
   border: 1px solid var(--ui-tile-border);
   border-radius: 12px;
   background: var(--ui-field);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
 }
 
 .settings-page .preview-frame img {
@@ -746,8 +844,7 @@ label[for].setting-label {
   max-width: none;
   height: 100%;
   aspect-ratio: auto;
-  object-fit: cover;
-  image-rendering: pixelated;
+  object-fit: contain;
   border: none;
   border-radius: 0;
   transform-origin: 0 0;
@@ -760,11 +857,6 @@ label[for].setting-label {
 .settings-page .preview-frame.is-panning img {
   cursor: grabbing;
   transition: none;
-}
-
-/* The 3D pictures are drawn smooth; the 2D maps stay crisp blocks. */
-.settings-page .preview-frame img[src*="/iso/"] {
-  image-rendering: auto;
 }
 
 .settings-page .preview-frame figcaption,
@@ -843,15 +935,20 @@ label[for].setting-label {
   color: var(--ui-on-accent);
 }
 
-/* Too narrow for two columns: the picture goes under the list. */
+@media (max-width: 1100px) {
+  .settings-page .preview-block {
+    --preview-size: 240px;
+  }
+}
+
 @media (max-width: 900px) {
   .settings-page .preview-block {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-page .preview-frame {
-    position: static;
-    width: min(100%, 480px);
+    width: min(100%, 300px);
+    margin-top: 0;
   }
 }
 

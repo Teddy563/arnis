@@ -95,10 +95,10 @@ A control on its default, or greyed out, sends no flag.
 | Roads & Buildings | No Buildings | `--no-buildings` | Off | Roads, rail, water and land cover only. |
 | Roads & Buildings | Chest Loot Table | `--loot-table` | Built-in | JSON loot file for interior chests. Needs Interior Generation. A file that does not load stops the run. |
 | Fields & Trees | Field Layout | `--field-mix` | Classic | Classic, Smallholding, Patchwork, Prairie or Pasture parcels. |
-| Fields & Trees | Farm Crops | `--farm-crops` | Empty | Crop shares, e.g. `wheat=60,sunflower=20,fallow=20`. |
+| Fields & Trees | Farm Crops | `--farm-crops` | The layout's | A row per crop (wheat, potato, carrot, beetroot, sunflower, pumpkin, fallow): switch and share, starting from the Field Layout's own shares; a new layout or **Reset to preset** puts those back. Sent only when the rows differ from them. |
 | Fields & Trees | Parcel Size | `--field-scale` | 100% | 25 to 400% of the layout's parcel size. Needs a layout or farm crops. |
 | Fields & Trees | Tree Realm | `--tree-realm` | Auto | Force one region's trees (Africa, Asia, Europe, ...). |
-| Fields & Trees | Small / Medium / Big / Tall / Giant Trees | `--tree-size-weights` | 100% each | 0 to 200% per size; sent only when one differs from 100%. |
+| Fields & Trees | Tree Sizes | `--tree-size-weights` | 100% each | A row per size (Small to Giant, with its height in blocks): switch and 0 to 100% of the usual share. Off is 0; on from 0 is 100. Sent only when one differs from 100%. |
 | Caves & Water | Cave Seed | `--cave-seed` | Empty | Another cave layout per seed. Needs Caves. |
 | Caves & Water | Cave Datum Y | `--cave-datum-y` | Empty | Floor Y for the caves, a multiple of 16, so areas line up. Needs Caves. |
 | Caves & Water | River Bed | `--river-bed` | Off | U-Shaped (`v1`) beds for rivers, canals and streams. |
@@ -120,8 +120,8 @@ greyed out or hidden, sends no flag.
 | Climate Map: Preview | `--climate-map` | | Draws the climate zones of the selected area in the window. |
 | Grass Texture | `--grass-texture` | Off | Mapped meadows as loose parcels. |
 | Land Texture | `--land-texture` | Off | Untagged land textured from satellite land cover. |
-| Grass Mix | `--grass-mix` | Empty | Preset or share list. Needs Grass or Land Texture. |
-| Land Mix | `--land-mix` | Empty (patchwork) | Preset or share list. Needs Land Texture. |
+| Grass Mix | `--grass-mix` | Default | A preset, then a row per part (plains, flowers, moss, coarse, farm) starting from its shares. Sends the preset's name, or the share list when the rows differ. Needs Grass or Land Texture. |
+| Land Mix | `--land-mix` | Patchwork | As Grass Mix, from Patchwork, Smallholding, Prairie or Pasture. Needs Land Texture. |
 | World Floor / World Ceiling | `--min-y` / `--max-y` | Empty (auto) | Needs Extend Build Height on a Java world; greyed with One World. |
 | World Seed | `--seed` | Empty | Another, repeatable look per seed. |
 | Props | `--props` | Auto | Auto follows 3D Models (no flag); All, None, or Custom with a family checklist. |
@@ -138,35 +138,41 @@ format. The two buttons run in the window, not as a generation.
 
 ### Option Previews
 
-Under Field Layout, Tree Realm, the tree size sliders, Snow, Rocks, Bushes,
-Road Detail, River Bed, Climate Sampling, Grass Texture and Land Texture a
-256x160 card shows the selected option, from
-`src/gui/images/previews/<setting>-<value>.png`. Each was built by the
-release CLI over a small sample area and cut from its `--map-preview` PNG
-(`arnis --bbox=AREA --output-dir=DIR --map-preview --no-3d FLAG`, where FLAG
-is the option, e.g. `--field-mix=prairie`), then quantized to 128 colours:
+Each previewed group is one card: on the left its rows (Snow; Rocks &
+Bushes with their densities; Road Detail; Field Layout with Farm Crops and
+Parcel Size; Tree Realm with Tree Sizes; Climate Sampling with Climate Map;
+River Bed; Water Detail; Grass Texture with Grass Mix; Land Texture with
+Land Mix), on the right a square picture of their combination (300 px, 240
+px under 1100 px wide), captioned with it (e.g. "Europe · Tall + Giant").
+The picture opens fitted, the whole sample in view; it zooms (wheel, pinch,
++/-) and pans by dragging, and a double-click fits it again. A 2D | 3D
+switch, kept per viewer, picks the top-down map or an isometric view
+(Climate, Grass and Land are 2D only). Tree Realm's Auto names the realm of
+the selection's centre.
 
-| Cards | Sample area (`--bbox`) | Notes |
+The shipped pictures are one per option, no combinations (option B):
+`src/gui/images/previews/<option>.webp` (2D) and
+`src/gui/images/previews/iso/<option>.webp` (3D), each the world the release
+CLI builds over the group's sample area with that option alone
+(`arnis --bbox=AREA --output-dir=DIR --map-preview --no-3d FLAG`), drawn by
+`final_render.py`:
+
+| Pictures | Sample area (`--bbox`) | Flags |
 | --- | --- | --- |
-| Field Layout, Rocks, Bushes | `44.55,26.00,44.555,26.008` | Rocks and Bushes on `--field-mix=pasture` (rocks avoid tilled farmland), density 0.2. |
-| Tree Realm, tree sizes | `44.2000,25.9000,44.2050,25.9080` | Tree sizes: one run per size with only it weighted, cut into five strips. |
-| Snow | `46.53,7.95,46.54,7.965` | Manual with `--snow-y=180`. |
-| Road Detail | `44.4450,26.0950,44.4470,26.0980` | |
-| River Bed | `44.4300,26.0850,44.4340,26.0950` | Water shaded by depth from the region files: the bed cannot be seen from above. |
-| Grass Texture | `46.6200,8.0400,46.6240,8.0460` | |
-| Land Texture | `44.6000,25.7000,44.6050,25.7080` | |
-| Climate Sampling | `25.0,-5.0,65.0,45.0` | The `--climate-map` PNG; Origin is the centre's climate everywhere. |
+| Tree Realm (11), Tree Sizes (5) | `48.15593,11.59211,48.15693,11.59361` | Englischer Garten, Munich. A size alone at 100%, the rest at 0. |
+| Field Layout (5) | `44.5500,25.9995,44.5550,26.0085` | Baragan plain. |
+| Road Detail (3) | `44.4448,26.0948,44.4474,26.0984` | Piata Romana, Bucharest. |
+| Rocks & Bushes (off, rocks, bushes, both) | `46.61489,8.03016,46.61640,8.03235` | Grindelwald meadow, `--seed=1`, densities 0.35 so the formations show; they stand for the default densities. |
+| Snow (4) | `46.545,7.955,46.595,8.025` | Eiger and Kleine Scheidegg, `--scale=0.45`. |
+| River Bed (2), Water Detail (2) | `48.1050,11.5550,48.1140,11.5645` | The Isar at the Flaucher, Munich; Water Detail at `--scale=0.3`. 3D: a slab across the channel, its front face a cross-section. |
+| Climate Sampling (2) | `0.0,-15.0,72.0,75.0` | The `--climate-map` PNG; Origin is the centre's climate everywhere. |
+| Grass Texture, Land Texture | old 256x160 card areas | 2D only. |
 
-Snow, Rocks & Bushes, Road Detail, Field Layout and the trees (Tree Realm
-with Tree Sizes) show their controls as a list beside one 4:3 picture of the
-combination, captioned with it (e.g. "Europe · Tall + Giant"). Tree Sizes is a
-switch per size over its weight (off is 0, on from 0 is 100). The picture
-zooms (wheel, pinch, +/−) and pans by dragging; a double-click fits it again.
-A 2D | 3D switch over it, kept per viewer, picks the top-down card or an
-isometric one from `src/gui/images/previews/iso/<card>.webp`; where no 3D
-picture exists yet (live renders included) the 2D one shows with "3D preview
-coming". The 3D pictures are 1280x960, drawn by `iso_render.py` beside
-`make_previews.py`.
+Any custom value (a tree size weight, farm crops, a grass or land mix, a
+density, Snow Cap Share or Snow Line Y, Parcel Size, or two water options at
+once) has no shipped picture: the frame shows the live 2D render, and with
+3D picked it says "Custom settings: 2D preview". A 3D render is never asked
+for.
 
 The script that does all of this (`make_previews.py`, Python with Pillow and
 nbtlib) is kept with the Meld tooling, not in this repository; the table and
@@ -191,6 +197,19 @@ cached, and are kept under the cache root in `arnis/option-previews`, keyed
 by group, flags and Arnis version, so a combination seen before is instant.
 With Offline Mode on the render reads the caches only; if they lack the
 sample area the card keeps the shipped picture and says "Preview needs data".
+**Live previews.** When a group's settings match no shipped picture (Farm
+Crops or Parcel Size for the fields, a mix of tree sizes or a realm with
+sizes, Snow Cap Share or Snow Line Y, a density, a Grass or Land Mix, Water
+Detail), the window asks `gui_render_preview` for that group, 600 ms after
+the last change. It builds the group's sample area (above, with the same base flags) with
+this executable as a CLI run, with only the group's flags and stock defaults
+for everything else, and returns the whole map, at most 1280x1280. The picture
+shows the last shipped one until the render arrives, dimmed and captioned
+"Updating". Renders take a few seconds once the sample's data is cached, and
+are kept under the cache root in `arnis/option-previews`, keyed by group,
+flags and Arnis version, so a combination seen before is instant. With
+Offline Mode on the render reads the caches only; if they lack the sample
+area the picture stays and says "Preview needs data".
 
 ## OSM Data Source
 
@@ -343,12 +362,14 @@ Pack Mode and Tree Pack Layout (see the table above).
 
 ## Presets
 
-**Save Preset** and **Load Preset**, under the Extra Features switch (and
-shown whether it is on or off), write and read every Extra Features and OSM
-Data Source setting, the switch included, as a JSON file
-(`{"arnisPreset": 1, "settings": {...}}`, keyed by control id). Loading sets
-every setting it covers; one the file leaves out, or holds a value it cannot
-take, goes back to its default.
+**Save Preset** and **Load Preset** sit at the foot of the settings sidebar,
+beside Reset all settings, since they cover the whole page: every setting of
+every section (World to OSM Data Source), except the Mapillary token and the
+telemetry choice. The file is JSON, keyed by control id:
+`{"arnisPreset": 2, "settings": {...}}`. Loading sets every setting; one the
+file leaves out, or holds a value it cannot take, goes back to its default,
+and unknown keys are ignored. A version 1 file (Extra Features and OSM Data
+Source only) sets just those two sections.
 
 ## B_Linear Container
 

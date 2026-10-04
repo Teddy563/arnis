@@ -283,6 +283,18 @@
         <!-- settings-store.js owns the label text (idle and confirm) and the
              disabled state, which it lifts as soon as anything differs from
              the defaults. -->
+        <!-- Presets hold every setting on the page, so they sit with the
+             other page-wide action, beside Reset. -->
+        <div class="settings-presets" role="group" aria-label="Presets">
+          <button type="button" id="preset-save-button" class="settings-reset-button" title="Saves every setting on this page to a JSON file, except tokens and the telemetry choice.">
+            <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+            <span data-localize="preset_save_button">Save Preset</span>
+          </button>
+          <button type="button" id="preset-load-button" class="settings-reset-button" title="Sets every setting from a preset file; one the file leaves out goes back to its default.">
+            <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+            <span data-localize="preset_load_button">Load Preset</span>
+          </button>
+        </div>
         <button type="button" id="reset-settings-button" class="settings-reset-button" disabled>
           <svg class="icon" aria-hidden="true"><use href="#i-reset"></use></svg>
           <span class="settings-reset-label">Reset all settings</span>
@@ -1112,22 +1124,6 @@
                     <input type="checkbox" class="switch" id="advanced-features-toggle" name="advanced-features-toggle">
                   </div>
                 </div>
-                <div class="settings-row setting-tile is-wide">
-                  <label for="preset-save-button" class="setting-label">
-                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
-                    <span class="setting-text">
-                      <span class="setting-heading">
-                        <span data-localize="presets">Presets</span>
-                        <span class="tooltip-icon" data-tooltip="A JSON file with every Extra Features and OSM Data Source setting, the switch included. Loading one sets every setting it covers; one the file leaves out goes back to its default.">?</span>
-                      </span>
-                      <span class="setting-desc" data-localize="presets_desc">These settings and the OSM Data Source, as a file.</span>
-                    </span>
-                  </label>
-                  <div class="settings-control">
-                    <button type="button" id="preset-save-button" class="clear-cache-button" data-localize="preset_save_button">Save Preset</button>
-                    <button type="button" id="preset-load-button" class="clear-cache-button" data-localize="preset_load_button">Load Preset</button>
-                  </div>
-                </div>
               </div>
 
               <!-- Hidden, and every control in it disabled, while the switch
@@ -1359,7 +1355,7 @@
                   </div>
                   </div>
                     <figure class="option-preview preview-frame" data-for="snow-mode-select" data-preview="snow-mode" data-group="snow">
-                      <img src="images/previews/snow-mode-realistic.png" alt="" width="480" height="360">
+                      <img src="images/previews/snow-mode-realistic.webp" alt="" width="480" height="480">
                       <div class="preview-tools">
                         <div class="preview-zoom" role="group" aria-label="Zoom">
                           <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -1370,7 +1366,7 @@
                           <button type="button" data-mode="3d">3D</button>
                         </div>
                       </div>
-                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1437,7 +1433,7 @@
                   </div>
                   </div>
                     <figure class="option-preview preview-frame" data-for="rocks-toggle" data-preview="rocks" data-group="scatter">
-                      <img src="images/previews/rocks-off.png" alt="" width="480" height="360">
+                      <img src="images/previews/scatter-off.webp" alt="" width="480" height="480">
                       <div class="preview-tools">
                         <div class="preview-zoom" role="group" aria-label="Zoom">
                           <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -1448,7 +1444,7 @@
                           <button type="button" data-mode="3d">3D</button>
                         </div>
                       </div>
-                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1483,7 +1479,7 @@
                   </div>
                   </div>
                     <figure class="option-preview preview-frame" data-for="road-detail-select" data-preview="road-detail" data-group="roads">
-                      <img src="images/previews/road-detail-max.png" alt="" width="480" height="360">
+                      <img src="images/previews/road-detail-max.webp" alt="" width="480" height="480">
                       <div class="preview-tools">
                         <div class="preview-zoom" role="group" aria-label="Zoom">
                           <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -1494,7 +1490,7 @@
                           <button type="button" data-mode="3d">3D</button>
                         </div>
                       </div>
-                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1564,19 +1560,27 @@
                       <button type="button" class="segment" data-value="pasture" data-localize="field_mix_pasture">Pasture</button>
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-mix">
                     <label for="farm-crops-input" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
                       <span class="setting-text">
                         <span class="setting-heading">
                           <span data-localize="farm_crops">Farm Crops</span>
-                          <span class="tooltip-icon" data-tooltip="Comma-separated name=share pairs over wheat, potato, carrot, beetroot, sunflower, pumpkin and fallow. Each plot grows one crop. With Classic, farmland becomes crop plots only.">?</span>
+                          <span class="tooltip-icon" data-tooltip="Relative shares, starting from the Field Layout&#x27;s own; each plot grows one crop. Sent only when they differ from the layout&#x27;s. With Classic, changed shares turn farmland into crop plots.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="farm_crops_desc">Crop shares for farm plots. Empty keeps the layout&#x27;s.</span>
+                        <span class="setting-desc" data-localize="farm_crops_desc">Crop shares for farm plots, from the layout&#x27;s own.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <input type="text" id="farm-crops-input" name="farm-crops-input" placeholder="wheat=60,sunflower=20,fallow=20" spellcheck="false">
+                    <input type="text" id="farm-crops-input" name="farm-crops-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                    <div class="mix-list" data-mix="farm-crops-input">
+                      <div class="mix-row" data-key="wheat"><input type="checkbox" class="switch" aria-label="Wheat"><span class="mix-name" data-localize="mix_wheat">Wheat</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Wheat"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="potato"><input type="checkbox" class="switch" aria-label="Potato"><span class="mix-name" data-localize="mix_potato">Potato</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Potato"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="carrot"><input type="checkbox" class="switch" aria-label="Carrot"><span class="mix-name" data-localize="mix_carrot">Carrot</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Carrot"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="beetroot"><input type="checkbox" class="switch" aria-label="Beetroot"><span class="mix-name" data-localize="mix_beetroot">Beetroot</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Beetroot"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="sunflower"><input type="checkbox" class="switch" aria-label="Sunflower"><span class="mix-name" data-localize="mix_sunflower">Sunflower</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Sunflower"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="pumpkin"><input type="checkbox" class="switch" aria-label="Pumpkin"><span class="mix-name" data-localize="mix_pumpkin">Pumpkin</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Pumpkin"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="fallow"><input type="checkbox" class="switch" aria-label="Fallow"><span class="mix-name" data-localize="mix_fallow">Fallow</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Fallow"><span class="mix-unit"></span></div>
+                      <button type="button" class="mix-reset" data-localize="mix_reset">Reset to preset</button>
                     </div>
                   </div>
                   <div class="settings-row setting-tile is-wide">
@@ -1597,7 +1601,7 @@
                   </div>
                   </div>
                     <figure class="option-preview preview-frame" data-for="field-mix-select" data-preview="field-mix" data-group="fields">
-                      <img src="images/previews/field-mix-classic.png" alt="" width="480" height="360">
+                      <img src="images/previews/field-mix-classic.webp" alt="" width="480" height="480">
                       <div class="preview-tools">
                         <div class="preview-zoom" role="group" aria-label="Zoom">
                           <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -1608,7 +1612,7 @@
                           <button type="button" data-mode="3d">3D</button>
                         </div>
                       </div>
-                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1639,17 +1643,17 @@
                         <option value="vanilla-plus" data-localize="tree_realm_vanilla_plus">Vanilla Plus</option>
                       </select>
                     <div class="preview-options realm-grid" data-select="tree-realm-select">
-                      <button type="button" class="segment realm-auto" data-value="auto"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-auto.png)"></span><span data-localize="features_auto">Auto</span><span class="realm-detected"></span></button>
-                      <button type="button" class="segment" data-value="afr" title="Africa"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-afr.png)"></span><span data-localize="tree_realm_short_afr">Africa</span></button>
-                      <button type="button" class="segment" data-value="asn" title="Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-asn.png)"></span><span data-localize="tree_realm_short_asn">Asia</span></button>
-                      <button type="button" class="segment" data-value="aus" title="Australia &amp; Oceania"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-aus.png)"></span><span data-localize="tree_realm_short_aus">Oceania</span></button>
-                      <button type="button" class="segment" data-value="ena" title="Eastern North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ena.png)"></span><span data-localize="tree_realm_short_ena">E. North America</span></button>
-                      <button type="button" class="segment" data-value="eur" title="Europe"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-eur.png)"></span><span data-localize="tree_realm_short_eur">Europe</span></button>
-                      <button type="button" class="segment" data-value="fl" title="Florida &amp; Caribbean"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-fl.png)"></span><span data-localize="tree_realm_short_fl">Caribbean</span></button>
-                      <button type="button" class="segment" data-value="ind" title="Tropical Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ind.png)"></span><span data-localize="tree_realm_short_ind">Tropical Asia</span></button>
-                      <button type="button" class="segment" data-value="sam" title="South America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-sam.png)"></span><span data-localize="tree_realm_short_sam">South America</span></button>
-                      <button type="button" class="segment" data-value="wna" title="Western North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-wna.png)"></span><span data-localize="tree_realm_short_wna">W. North America</span></button>
-                      <button type="button" class="segment" data-value="vanilla-plus" title="Vanilla Plus"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-vanilla-plus.png)"></span><span data-localize="tree_realm_short_vanilla_plus">Vanilla Plus</span></button>
+                      <button type="button" class="segment realm-auto" data-value="auto"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-auto.webp)"></span><span data-localize="features_auto">Auto</span><span class="realm-detected"></span></button>
+                      <button type="button" class="segment" data-value="afr" title="Africa"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-afr.webp)"></span><span data-localize="tree_realm_short_afr">Africa</span></button>
+                      <button type="button" class="segment" data-value="asn" title="Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-asn.webp)"></span><span data-localize="tree_realm_short_asn">Asia</span></button>
+                      <button type="button" class="segment" data-value="aus" title="Australia &amp; Oceania"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-aus.webp)"></span><span data-localize="tree_realm_short_aus">Oceania</span></button>
+                      <button type="button" class="segment" data-value="ena" title="Eastern North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ena.webp)"></span><span data-localize="tree_realm_short_ena">E. North America</span></button>
+                      <button type="button" class="segment" data-value="eur" title="Europe"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-eur.webp)"></span><span data-localize="tree_realm_short_eur">Europe</span></button>
+                      <button type="button" class="segment" data-value="fl" title="Florida &amp; Caribbean"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-fl.webp)"></span><span data-localize="tree_realm_short_fl">Caribbean</span></button>
+                      <button type="button" class="segment" data-value="ind" title="Tropical Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ind.webp)"></span><span data-localize="tree_realm_short_ind">Tropical Asia</span></button>
+                      <button type="button" class="segment" data-value="sam" title="South America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-sam.webp)"></span><span data-localize="tree_realm_short_sam">South America</span></button>
+                      <button type="button" class="segment" data-value="wna" title="Western North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-wna.webp)"></span><span data-localize="tree_realm_short_wna">W. North America</span></button>
+                      <button type="button" class="segment" data-value="vanilla-plus" title="Vanilla Plus"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-vanilla-plus.webp)"></span><span data-localize="tree_realm_short_vanilla_plus">Vanilla Plus</span></button>
                     </div>
                   </div>
                   <div class="setting-tile tree-sizes">
@@ -1663,42 +1667,42 @@
                         <span class="setting-desc" data-localize="tree_sizes_desc">Which sizes to plant, and how often.</span>
                       </span>
                     </span>
-                    <div class="tree-size-list">
-                      <div class="settings-row tree-size-row">
+                    <div class="mix-list">
+                      <div class="settings-row mix-row tree-size-row">
                         <input type="checkbox" class="switch" data-weight="tree-weight-small-slider" aria-label="Small">
                         <label for="tree-weight-small-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_small">Small</span></span><span class="tree-size-hint">≤ 6</span></label>
-                        <input type="range" id="tree-weight-small-slider" name="tree-weight-small-slider" min="0" max="200" step="10" value="100">
-                        <span id="tree-weight-small-value" class="setting-value">100%</span>
+                        <input type="number" id="tree-weight-small-slider" name="tree-weight-small-slider" min="0" max="100" step="5" value="100" aria-label="%">
+                        <span class="mix-unit">%</span>
                       </div>
-                      <div class="settings-row tree-size-row">
+                      <div class="settings-row mix-row tree-size-row">
                         <input type="checkbox" class="switch" data-weight="tree-weight-medium-slider" aria-label="Medium">
                         <label for="tree-weight-medium-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_medium">Medium</span></span><span class="tree-size-hint">≤ 12</span></label>
-                        <input type="range" id="tree-weight-medium-slider" name="tree-weight-medium-slider" min="0" max="200" step="10" value="100">
-                        <span id="tree-weight-medium-value" class="setting-value">100%</span>
+                        <input type="number" id="tree-weight-medium-slider" name="tree-weight-medium-slider" min="0" max="100" step="5" value="100" aria-label="%">
+                        <span class="mix-unit">%</span>
                       </div>
-                      <div class="settings-row tree-size-row">
+                      <div class="settings-row mix-row tree-size-row">
                         <input type="checkbox" class="switch" data-weight="tree-weight-big-slider" aria-label="Big">
                         <label for="tree-weight-big-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_big">Big</span></span><span class="tree-size-hint">≤ 20</span></label>
-                        <input type="range" id="tree-weight-big-slider" name="tree-weight-big-slider" min="0" max="200" step="10" value="100">
-                        <span id="tree-weight-big-value" class="setting-value">100%</span>
+                        <input type="number" id="tree-weight-big-slider" name="tree-weight-big-slider" min="0" max="100" step="5" value="100" aria-label="%">
+                        <span class="mix-unit">%</span>
                       </div>
-                      <div class="settings-row tree-size-row">
+                      <div class="settings-row mix-row tree-size-row">
                         <input type="checkbox" class="switch" data-weight="tree-weight-tall-slider" aria-label="Tall">
                         <label for="tree-weight-tall-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_tall">Tall</span></span><span class="tree-size-hint">≤ 28</span></label>
-                        <input type="range" id="tree-weight-tall-slider" name="tree-weight-tall-slider" min="0" max="200" step="10" value="100">
-                        <span id="tree-weight-tall-value" class="setting-value">100%</span>
+                        <input type="number" id="tree-weight-tall-slider" name="tree-weight-tall-slider" min="0" max="100" step="5" value="100" aria-label="%">
+                        <span class="mix-unit">%</span>
                       </div>
-                      <div class="settings-row tree-size-row">
+                      <div class="settings-row mix-row tree-size-row">
                         <input type="checkbox" class="switch" data-weight="tree-weight-giant-slider" aria-label="Giant">
                         <label for="tree-weight-giant-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_giant">Giant</span></span><span class="tree-size-hint">> 28</span></label>
-                        <input type="range" id="tree-weight-giant-slider" name="tree-weight-giant-slider" min="0" max="200" step="10" value="100">
-                        <span id="tree-weight-giant-value" class="setting-value">100%</span>
+                        <input type="number" id="tree-weight-giant-slider" name="tree-weight-giant-slider" min="0" max="100" step="5" value="100" aria-label="%">
+                        <span class="mix-unit">%</span>
                       </div>
                     </div>
                   </div>
                   </div>
                     <figure class="option-preview preview-frame" data-for="tree-realm-select" data-preview="tree-realm" data-group="trees">
-                      <img src="images/previews/tree-realm-auto.png" alt="" width="480" height="360">
+                      <img src="images/previews/tree-realm-auto.webp" alt="" width="480" height="480">
                       <div class="preview-tools">
                         <div class="preview-zoom" role="group" aria-label="Zoom">
                           <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -1709,7 +1713,7 @@
                           <button type="button" data-mode="3d">3D</button>
                         </div>
                       </div>
-                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1748,7 +1752,60 @@
                       <input type="number" id="cave-datum-y-input" name="cave-datum-y-input" min="-2032" max="2016" step="16" placeholder="Default">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide has-preview">
+                  <div class="preview-block is-wide" data-group="climate">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
+                    <label for="climate-mode-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-thermometer"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="climate_mode">Climate Sampling</span>
+                          <span class="tooltip-icon" data-tooltip="Origin reads one climate at the centre of the area, or at the One World origin. Per Position reads it at every block with organic borders, so a large world crosses climate zones.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="climate_mode_desc">Where the climate behind ground and biomes is read.</span>
+                      </span>
+                    </label>
+                    <select id="climate-mode-select" name="climate-mode-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                        <option value="origin" selected data-localize="climate_mode_origin">Origin</option>
+                        <option value="per-position" data-localize="climate_mode_per_position">Per Position</option>
+                      </select>
+                    <div class="preview-options" data-select="climate-mode-select">
+                      <button type="button" class="segment" data-value="origin" data-localize="climate_mode_origin">Origin</button>
+                      <button type="button" class="segment" data-value="per-position" data-localize="climate_mode_per_position">Per Position</button>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile">
+                    <label for="climate-preview-button" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-image"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading"><span data-localize="climate_preview">Climate Map</span></span>
+                        <span class="setting-desc" data-localize="climate_preview_desc">Draws the climate zones of the selected area.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <button type="button" id="climate-preview-button" class="clear-cache-button" data-localize="climate_preview_button">Preview</button>
+                    </div>
+                  </div>
+                  <div id="climate-preview" class="settings-notice climate-preview" style="display: none;">
+                    <span id="climate-preview-text"></span>
+                    <img id="climate-preview-image" alt="">
+                  </div>
+                  </div>
+                  <figure class="option-preview preview-frame" data-for="climate-mode-select" data-preview="climate-mode">
+                    <img src="images/previews/climate-mode-origin.webp" alt="" width="480" height="480">
+                    <div class="preview-tools">
+                      <div class="preview-zoom" role="group" aria-label="Zoom">
+                        <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                    </div>
+                    <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                    <figcaption></figcaption>
+                  </figure>
+                  </div>
+                  <div class="preview-block is-wide" data-group="water">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="river-bed-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-waves"></use></svg>
                       <span class="setting-text">
@@ -1759,18 +1816,35 @@
                         <span class="setting-desc" data-localize="river_bed_desc">Shape of river, canal and stream beds.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="river-bed-select" name="river-bed-select" class="settings-select">
+                    <select id="river-bed-select" name="river-bed-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="off" selected data-localize="river_bed_off">Off</option>
                         <option value="v1" data-localize="river_bed_v1">U-Shaped</option>
                       </select>
+                    <div class="preview-options" data-select="river-bed-select">
+                      <button type="button" class="segment" data-value="off" data-localize="river_bed_off">Off</button>
+                      <button type="button" class="segment" data-value="v1" data-localize="river_bed_v1">U-Shaped</button>
                     </div>
-                    <figure class="option-preview" data-for="river-bed-select" data-preview="river-bed" data-group="water">
-                      <img src="images/previews/river-bed-off.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
+                  </div>
+                  <figure class="option-preview preview-frame" data-for="river-bed-select" data-preview="river-bed" data-group="water">
+                    <img src="images/previews/river-bed-off.webp" alt="" width="480" height="480">
+                    <div class="preview-tools">
+                      <div class="preview-zoom" role="group" aria-label="Zoom">
+                        <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                      <div class="preview-mode" role="group" aria-label="2D / 3D">
+                        <button type="button" data-mode="2d">2D</button>
+                        <button type="button" data-mode="3d">3D</button>
+                      </div>
+                    </div>
+                    <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                    <figcaption></figcaption>
+                  </figure>
+                  </div>
+                  <div class="preview-block is-wide" data-group="water">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="water-detail-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-droplets"></use></svg>
                       <span class="setting-text">
@@ -1781,12 +1855,31 @@
                         <span class="setting-desc" data-localize="water_detail_desc">Finer water for small scales.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="water-detail-select" name="water-detail-select" class="settings-select">
+                    <select id="water-detail-select" name="water-detail-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="default" selected data-localize="water_detail_default">Default</option>
                         <option value="scaled" data-localize="water_detail_scaled">Scaled</option>
                       </select>
+                    <div class="preview-options" data-select="water-detail-select">
+                      <button type="button" class="segment" data-value="default" data-localize="water_detail_default">Default</button>
+                      <button type="button" class="segment" data-value="scaled" data-localize="water_detail_scaled">Scaled</button>
                     </div>
+                  </div>
+                  </div>
+                  <figure class="option-preview preview-frame" data-for="water-detail-select" data-preview="water-detail" data-group="water">
+                    <img src="images/previews/water-detail-default.webp" alt="" width="480" height="480">
+                    <div class="preview-tools">
+                      <div class="preview-zoom" role="group" aria-label="Zoom">
+                        <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                      <div class="preview-mode" role="group" aria-label="2D / 3D">
+                        <button type="button" data-mode="2d">2D</button>
+                        <button type="button" data-mode="3d">3D</button>
+                      </div>
+                    </div>
+                    <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                    <figcaption></figcaption>
+                  </figure>
                   </div>
                 </div>
                 <div class="setting-choice setting-subgroup">
@@ -1828,45 +1921,9 @@
                       <input type="number" id="blinear-level-input" name="blinear-level-input" min="1" max="22" step="1" value="6">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide has-preview">
-                    <label for="climate-mode-select" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-thermometer"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="climate_mode">Climate Sampling</span>
-                          <span class="tooltip-icon" data-tooltip="Origin reads one climate at the centre of the area, or at the One World origin. Per Position reads it at every block with organic borders, so a large world crosses climate zones.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="climate_mode_desc">Where the climate behind ground and biomes is read.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <select id="climate-mode-select" name="climate-mode-select" class="settings-select">
-                        <option value="origin" selected data-localize="climate_mode_origin">Origin</option>
-                        <option value="per-position" data-localize="climate_mode_per_position">Per Position</option>
-                      </select>
-                    </div>
-                    <figure class="option-preview" data-for="climate-mode-select" data-preview="climate-mode">
-                      <img src="images/previews/climate-mode-origin.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="climate-preview-button" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-image"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading"><span data-localize="climate_preview">Climate Map</span></span>
-                        <span class="setting-desc" data-localize="climate_preview_desc">Draws the climate zones of the selected area.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <button type="button" id="climate-preview-button" class="clear-cache-button" data-localize="climate_preview_button">Preview</button>
-                    </div>
-                  </div>
-                  <div id="climate-preview" class="settings-notice climate-preview" style="display: none;">
-                    <span id="climate-preview-text"></span>
-                    <img id="climate-preview-image" alt="">
-                  </div>
-                  <div class="settings-row setting-tile has-preview">
+                  <div class="preview-block is-wide" data-group="grass">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile">
                     <label for="grass-texture-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
                       <span class="setting-text">
@@ -1880,12 +1937,53 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="grass-texture-toggle" name="grass-texture-toggle">
                     </div>
-                    <figure class="option-preview" data-for="grass-texture-toggle" data-preview="grass-texture" data-group="grass">
-                      <img src="images/previews/grass-texture-off.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
-                  <div class="settings-row setting-tile has-preview">
+                  <div class="settings-row setting-tile is-wide has-mix">
+                    <label for="grass-mix-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="grass_mix">Grass Mix</span>
+                          <span class="tooltip-icon" data-tooltip="A preset, then relative shares of plain sward, wildflowers, moss, worn coarse ground and farm plots. Changed shares keep the default plot sizes. Requires Grass Texture or Land Texture.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="grass_mix_desc">Parcel mix for grassland, from a preset.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select class="settings-select mix-preset" data-mix="grass-mix-input" aria-label="Preset">
+                        <option value="default" data-localize="mix_default">Default</option>
+                        <option value="smallholding" data-localize="field_mix_smallholding">Smallholding</option>
+                        <option value="patchwork" data-localize="field_mix_patchwork">Patchwork</option>
+                        <option value="prairie" data-localize="field_mix_prairie">Prairie</option>
+                        <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
+                      </select>
+                    </div>
+                    <input type="text" id="grass-mix-input" name="grass-mix-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                    <div class="mix-list" data-mix="grass-mix-input">
+                      <div class="mix-row" data-key="plains"><input type="checkbox" class="switch" aria-label="Plains"><span class="mix-name" data-localize="mix_plains">Plains</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Plains"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="flower"><input type="checkbox" class="switch" aria-label="Flowers"><span class="mix-name" data-localize="mix_flower">Flowers</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Flowers"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="moss"><input type="checkbox" class="switch" aria-label="Moss"><span class="mix-name" data-localize="mix_moss">Moss</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Moss"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="coarse"><input type="checkbox" class="switch" aria-label="Coarse"><span class="mix-name" data-localize="mix_coarse">Coarse</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Coarse"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="farm"><input type="checkbox" class="switch" aria-label="Farm"><span class="mix-name" data-localize="mix_farm">Farm</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Farm"><span class="mix-unit"></span></div>
+                      <button type="button" class="mix-reset" data-localize="mix_reset">Reset to preset</button>
+                    </div>
+                  </div>
+                  </div>
+                  <figure class="option-preview preview-frame" data-for="grass-texture-toggle" data-preview="grass-texture" data-group="grass">
+                    <img src="images/previews/grass-texture-off.png" alt="" width="480" height="480">
+                    <div class="preview-tools">
+                      <div class="preview-zoom" role="group" aria-label="Zoom">
+                        <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                    </div>
+                    <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                    <figcaption></figcaption>
+                  </figure>
+                  </div>
+                  <div class="preview-block is-wide" data-group="land">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile">
                     <label for="land-texture-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
                       <span class="setting-text">
@@ -1899,40 +1997,48 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="land-texture-toggle" name="land-texture-toggle">
                     </div>
-                    <figure class="option-preview" data-for="land-texture-toggle" data-preview="land-texture" data-group="land">
-                      <img src="images/previews/land-texture-off.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="grass-mix-input" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sprout"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="grass_mix">Grass Mix</span>
-                          <span class="tooltip-icon" data-tooltip="A preset (smallholding, patchwork, prairie, pasture) or shares over coarse, plains, flower, farm and moss. Requires Grass Texture or Land Texture.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="grass_mix_desc">Parcel mix for grassland. Empty keeps the default.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="text" id="grass-mix-input" name="grass-mix-input" placeholder="plains=64,flower=22,moss=8,coarse=6" spellcheck="false">
-                    </div>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
+                  <div class="settings-row setting-tile is-wide has-mix">
                     <label for="land-mix-input" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
                       <span class="setting-text">
                         <span class="setting-heading">
                           <span data-localize="land_mix">Land Mix</span>
-                          <span class="tooltip-icon" data-tooltip="A preset (smallholding, patchwork, prairie, pasture) or shares over coarse, plains, flower, farm and moss. Requires Land Texture.">?</span>
+                          <span class="tooltip-icon" data-tooltip="A preset, then relative shares of plain sward, wildflowers, moss, worn coarse ground and farm plots. Changed shares keep patchwork&#x27;s plot sizes. Requires Land Texture.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="land_mix_desc">Parcel mix for textured cropland. Empty keeps patchwork.</span>
+                        <span class="setting-desc" data-localize="land_mix_desc">Parcel mix for textured cropland, from a preset.</span>
                       </span>
                     </label>
                     <div class="settings-control">
-                      <input type="text" id="land-mix-input" name="land-mix-input" placeholder="patchwork" spellcheck="false">
+                      <select class="settings-select mix-preset" data-mix="land-mix-input" aria-label="Preset">
+                        <option value="patchwork" data-localize="field_mix_patchwork">Patchwork</option>
+                        <option value="smallholding" data-localize="field_mix_smallholding">Smallholding</option>
+                        <option value="prairie" data-localize="field_mix_prairie">Prairie</option>
+                        <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
+                      </select>
                     </div>
+                    <input type="text" id="land-mix-input" name="land-mix-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                    <div class="mix-list" data-mix="land-mix-input">
+                      <div class="mix-row" data-key="plains"><input type="checkbox" class="switch" aria-label="Plains"><span class="mix-name" data-localize="mix_plains">Plains</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Plains"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="flower"><input type="checkbox" class="switch" aria-label="Flowers"><span class="mix-name" data-localize="mix_flower">Flowers</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Flowers"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="moss"><input type="checkbox" class="switch" aria-label="Moss"><span class="mix-name" data-localize="mix_moss">Moss</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Moss"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="coarse"><input type="checkbox" class="switch" aria-label="Coarse"><span class="mix-name" data-localize="mix_coarse">Coarse</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Coarse"><span class="mix-unit"></span></div>
+                      <div class="mix-row" data-key="farm"><input type="checkbox" class="switch" aria-label="Farm"><span class="mix-name" data-localize="mix_farm">Farm</span><span class="mix-hint"></span><input type="number" min="0" max="100" step="1" aria-label="Farm"><span class="mix-unit"></span></div>
+                      <button type="button" class="mix-reset" data-localize="mix_reset">Reset to preset</button>
+                    </div>
+                  </div>
+                  </div>
+                  <figure class="option-preview preview-frame" data-for="land-texture-toggle" data-preview="land-texture" data-group="land">
+                    <img src="images/previews/land-texture-off.png" alt="" width="480" height="480">
+                    <div class="preview-tools">
+                      <div class="preview-zoom" role="group" aria-label="Zoom">
+                        <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                    </div>
+                    <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                    <figcaption></figcaption>
+                  </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="world-floor-input" class="setting-label">

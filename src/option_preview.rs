@@ -1,24 +1,23 @@
-//! Live option previews: a tiny sample area built with one settings group's
-//! current flags (stock defaults for the rest), drawn top-down for the
-//! group's card in the window. The same areas and crops as the shipped
-//! cards (docs/advanced_features.md), so a live card and a shipped one
-//! line up. Results are cached on disk per group, flags and Arnis version.
+//! Live option previews: a sample area built with one settings group's
+//! current flags (stock defaults for the rest), drawn top-down whole for the
+//! group's picture in the window. The same areas and base flags as the
+//! shipped pictures (work/previews/final_render.py,
+//! docs/advanced_features.md), so a live picture and a shipped one show the
+//! same place. Results are cached on disk per group, flags and Arnis version.
 
 use image::{imageops, Rgb, RgbImage};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// Card size.
-const W: u32 = 256;
-const H: u32 = 160;
+/// The largest picture; a bigger map is scaled down to fit, aspect kept.
+const W: u32 = 1280;
+const H: u32 = 1280;
 
-/// One group's sample: the area's centre, blocks per card pixel, flags every
-/// render of it carries, and the flags the group's controls send.
+/// One group's sample: its area, flags every render of it carries, and the
+/// flags the group's controls send.
 struct Sample {
-    lat: f64,
-    lon: f64,
-    zoom: u32,
+    bbox: &'static str,
     base: &'static [&'static str],
     flags: &'static [&'static str],
     /// Water shaded by depth: a river bed cannot be seen from above.
@@ -26,25 +25,21 @@ struct Sample {
 }
 
 fn sample(group: &str) -> Option<Sample> {
-    let s = |lat, lon, zoom, flags| Sample {
-        lat,
-        lon,
-        zoom,
+    let s = |bbox, flags| Sample {
+        bbox,
         base: &[],
         flags,
         depth: false,
     };
     Some(match group {
+        // Baragan plain: open cropland.
         "fields" => s(
-            44.5525,
-            26.004,
-            2,
+            "44.5500,25.9995,44.5550,26.0085",
             &["field-mix", "farm-crops", "field-scale"],
         ),
+        // Englischer Garten, Munich: meadow with single trees.
         "trees" => s(
-            44.2025,
-            25.904,
-            1,
+            "48.15593,11.59211,48.15693,11.59361",
             &[
                 "tree-realm",
                 "tree-size-weights",
@@ -52,42 +47,46 @@ fn sample(group: &str) -> Option<Sample> {
                 "tree-pack-mode",
             ],
         ),
-        "snow" => s(46.535, 7.9575, 4, &["snow-mode", "snow-percent", "snow-y"]),
-        // Rocks never go on tilled farmland, so the fields are pasture.
-        "scatter" => Sample {
-            base: &["--field-mix=pasture"],
+        // Eiger, Moench and Kleine Scheidegg, across the 3000 m line.
+        "snow" => Sample {
+            base: &["--scale=0.45"],
             ..s(
-                44.5525,
-                26.004,
-                1,
+                "46.545,7.955,46.595,8.025",
+                &["snow-mode", "snow-percent", "snow-y"],
+            )
+        },
+        // Grindelwald: open meadow.
+        "scatter" => Sample {
+            base: &["--seed=1"],
+            ..s(
+                "46.61489,8.03016,46.61640,8.03235",
                 &["rocks", "rock-density", "bushes", "bush-density"],
             )
         },
-        "roads" => s(44.446, 26.0965, 1, &["road-detail"]),
+        // Piata Romana, Bucharest: boulevard crossroads.
+        "roads" => s("44.4448,26.0948,44.4474,26.0984", &["road-detail"]),
+        // The Isar at the Flaucher, Munich: gravel and wooded banks.
         "water" => Sample {
             depth: true,
-            ..s(44.43256, 26.09, 2, &["river-bed", "water-detail"])
+            ..s(
+                "48.1050,11.5550,48.1140,11.5645",
+                &["river-bed", "water-detail"],
+            )
         },
-        "grass" => s(46.62077, 8.04167, 1, &["grass-texture", "grass-mix"]),
-        "land" => s(44.6025, 25.704, 2, &["land-texture", "land-mix"]),
+        // The old card areas: these still show 256x160 shipped cards.
+        "grass" => s(
+            "46.620051,8.039940,46.621489,8.043400",
+            &["grass-texture", "grass-mix"],
+        ),
+        "land" => s(
+            "44.601063,25.700769,44.603937,25.707231",
+            &["land-texture", "land-mix"],
+        ),
         _ => return None,
     })
 }
 
 impl Sample {
-    /// The card's ground at scale 1, one block per metre.
-    fn bbox(&self) -> String {
-        let half_h = f64::from(H * self.zoom) / 2.0 / 111_320.0;
-        let half_w = f64::from(W * self.zoom) / 2.0 / (111_320.0 * self.lat.to_radians().cos());
-        format!(
-            "{:.6},{:.6},{:.6},{:.6}",
-            self.lat - half_h,
-            self.lon - half_w,
-            self.lat + half_h,
-            self.lon + half_w
-        )
-    }
-
     /// `flags` if every one belongs to this group, sorted, so one setting
     /// combination is one cache entry.
     fn check(&self, flags: &[String]) -> Result<Vec<String>, String> {
@@ -170,7 +169,7 @@ pub fn render(
     std::fs::create_dir_all(&tmp).map_err(|e| Failure::Other(e.to_string()))?;
     let map = build(&sample, exe, &tmp, &flags, offline);
     let _ = std::fs::remove_dir_all(&tmp);
-    let png = encode(&card(&map?, sample.zoom)).map_err(Failure::Other)?;
+    let png = encode(&fit(map?)).map_err(Failure::Other)?;
     if let Some(dir) = cached.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -187,7 +186,7 @@ fn build(
     offline: bool,
 ) -> Result<RgbImage, Failure> {
     let mut cmd = std::process::Command::new(exe);
-    cmd.arg(format!("--bbox={}", sample.bbox()))
+    cmd.arg(format!("--bbox={}", sample.bbox))
         .arg("--output-dir")
         .arg(tmp)
         .args(["--map-preview", "--no-3d"])
@@ -220,18 +219,16 @@ fn build(
     Ok(map)
 }
 
-/// The middle of `map`, at most `zoom` blocks per pixel, cut to the card's
-/// aspect and scaled to the card.
-fn card(map: &RgbImage, zoom: u32) -> RgbImage {
-    let (mut cw, mut ch) = (map.width().min(W * zoom), map.height().min(H * zoom));
-    if cw * H > ch * W {
-        cw = (ch * W / H).max(1);
-    } else {
-        ch = (cw * H / W).max(1);
+/// The whole map, scaled down to fit W x H when it is bigger.
+fn fit(map: RgbImage) -> RgbImage {
+    let k = f64::from(W) / f64::from(map.width()).max(1.0);
+    let k = k.min(f64::from(H) / f64::from(map.height()).max(1.0));
+    if k >= 1.0 {
+        return map;
     }
-    let crop =
-        imageops::crop_imm(map, (map.width() - cw) / 2, (map.height() - ch) / 2, cw, ch).to_image();
-    imageops::resize(&crop, W, H, imageops::FilterType::Triangle)
+    let w = ((f64::from(map.width()) * k).round() as u32).max(1);
+    let h = ((f64::from(map.height()) * k).round() as u32).max(1);
+    imageops::resize(&map, w, h, imageops::FilterType::Triangle)
 }
 
 fn encode(img: &RgbImage) -> Result<Vec<u8>, String> {
@@ -334,14 +331,25 @@ mod tests {
     }
 
     #[test]
-    fn the_card_keeps_its_aspect_and_size() {
-        let map = RgbImage::new(700, 300);
-        let c = card(&map, 2);
-        assert_eq!(c.dimensions(), (W, H));
-        // The sample area is sized for the card at its zoom.
-        let s = sample("fields").unwrap();
-        let b: Vec<f64> = s.bbox().split(',').map(|v| v.parse().unwrap()).collect();
-        assert!((b[2] - b[0]) * 111_320.0 - f64::from(H * s.zoom) < 1.0);
+    fn the_picture_is_the_whole_map_fitted() {
+        let small = fit(RgbImage::new(700, 300));
+        assert_eq!(small.dimensions(), (700, 300));
+        let wide = fit(RgbImage::new(2560, 640));
+        assert_eq!(wide.dimensions(), (W, 320));
+        let tall = fit(RgbImage::new(1000, 2560));
+        assert_eq!(tall.dimensions(), (500, H));
+        // Every group's area parses as four numbers.
+        for g in [
+            "fields", "trees", "snow", "scatter", "roads", "water", "grass", "land",
+        ] {
+            let b: Vec<f64> = sample(g)
+                .unwrap()
+                .bbox
+                .split(',')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            assert!(b.len() == 4 && b[0] < b[2] && b[1] < b[3], "{g}");
+        }
     }
 
     #[test]
