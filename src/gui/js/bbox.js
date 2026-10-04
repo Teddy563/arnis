@@ -2432,34 +2432,55 @@ $(document).ready(function () {
 });
 
 var snapLayer = null;
+var snapRenderer = null;
+var snapState = null;
+// Cell lines are drawn only once a cell is this wide on screen.
+var SNAP_MIN_CELL_PX = 8;
+
+function showSnapOverlay(snap, label) {
+    snapState = snap ? { snap: snap, label: label } : null;
+    drawSnapOverlay();
+}
 
 // One canvas-drawn polyline holds every cell line, so a grid of a couple of
 // thousand cells costs one layer; Leaflet reprojects it on zoom by itself.
-// Past that the Rust side sends no lines and the outline carries the count.
+// Zoomed out until a cell is under SNAP_MIN_CELL_PX (and past the cell count
+// the Rust side draws lines for), only the outline, its readout and the origin
+// are drawn. Redrawn on zoomend and on a new snap, never while panning.
 // Dark, so the lines read over the yellow selection.
-function showSnapOverlay(snap, label) {
-    if (!snapLayer) snapLayer = L.layerGroup().addTo(map);
+function drawSnapOverlay() {
+    if (!snapLayer) {
+        snapLayer = L.layerGroup().addTo(map);
+        // One renderer for good: Leaflet keeps a renderer on the map once a
+        // path used it, so one per draw would pile up canvases that all
+        // redraw on every move.
+        snapRenderer = L.canvas({ padding: 0.2 });
+        map.on('zoomend', drawSnapOverlay);
+    }
     snapLayer.clearLayers();
-    if (!snap) return;
+    if (!snapState) return;
+    var snap = snapState.snap, label = snapState.label;
     var s = snap.outline[0], w = snap.outline[1], n = snap.outline[2], e = snap.outline[3];
-    var segments = snap.lon_lines.map(function (lon) { return [[s, lon], [n, lon]]; })
-        .concat(snap.lat_lines.map(function (lat) { return [[lat, w], [lat, e]]; }));
-    var renderer = L.canvas({ padding: 0.2 });
+    var nw = map.latLngToContainerPoint([n, w]), se = map.latLngToContainerPoint([s, e]);
+    var cellPx = Math.min((se.x - nw.x) / snap.cells[0], (se.y - nw.y) / snap.cells[1]);
+    var segments = cellPx < SNAP_MIN_CELL_PX ? [] :
+        snap.lon_lines.map(function (lon) { return [[s, lon], [n, lon]]; })
+            .concat(snap.lat_lines.map(function (lat) { return [[lat, w], [lat, e]]; }));
     if (segments.length > 0) {
         L.polyline(segments, {
-            renderer: renderer, color: '#1c1c1c', weight: 1.5, opacity: 0.75, interactive: false
+            renderer: snapRenderer, color: '#1c1c1c', weight: 1.5, opacity: 0.75, interactive: false
         }).addTo(snapLayer);
     }
     var outline = L.rectangle([[s, w], [n, e]], {
-        renderer: renderer, color: '#1c1c1c', weight: 2.5, dashArray: '8 5', fill: false, interactive: false
+        renderer: snapRenderer, color: '#1c1c1c', weight: 2.5, dashArray: '8 5', fill: false, interactive: false
     }).addTo(snapLayer);
     if (segments.length === 0 && label) {
         outline.bindTooltip(label, { permanent: true, direction: 'center' });
     }
-    // Block (0, 0), the world's origin: on a new world the cell junction at
-    // the centre, which the run is pinned to.
+    // Block (0, 0), the world's origin, which a new world's run is pinned to:
+    // the centre, or half a cell off it on a side Fit Inside made odd.
     L.circleMarker(snap.origin, {
-        renderer: renderer, radius: 5, color: '#1c1c1c', weight: 2,
+        renderer: snapRenderer, radius: 5, color: '#1c1c1c', weight: 2,
         fillColor: '#fecc44', fillOpacity: 1, interactive: false
     }).addTo(snapLayer);
 }
