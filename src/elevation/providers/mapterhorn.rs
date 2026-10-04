@@ -84,7 +84,7 @@ impl ElevationProvider for Mapterhorn {
         let outcome = fetch_tile_pyramid(bbox, zoom, &cache_dir, self.pinned_zoom.is_none())?;
         if self.pinned_zoom.is_some() && outcome.failed_downloads > 0 {
             return Err(format!(
-                "{} Mapterhorn tile downloads failed",
+                "{} Mapterhorn tile downloads failed at the One World's pinned z{zoom};                  this area may show a step at its seams",
                 outcome.failed_downloads
             )
             .into());

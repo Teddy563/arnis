@@ -77,7 +77,7 @@ pub struct GroundFrame {
     pub climate_anchor: Option<(f64, f64)>,
     /// What the water options add to the land-cover estimate of the deepest carve.
     pub carve_depth: crate::water_detail::CarveDepth,
-    /// A One World's pinned elevation zoom: one source for every area, or no terrain.
+    /// A One World's pinned elevation zoom; unavailable tiles fall back like any run.
     pub elevation_zoom: Option<u8>,
 }
 
@@ -447,7 +447,7 @@ impl Ground {
         canopy_height: bool,
         body: CelestialBody,
         frame: &GroundFrame,
-    ) -> Result<Self, String> {
+    ) -> Self {
         let mut bench = crate::bench::Bench::new(benchmark);
         // Land cover, canopy and the snow line are Earth datasets keyed by
         // terrestrial lat/lon, so off Earth they return plausible nonsense.
@@ -551,7 +551,7 @@ impl Ground {
                             c.crop(plan.pad, plan.pad, final_w, final_h);
                         }
                     }
-                    Ok(Self {
+                    Self {
                         elevation_enabled: true,
                         extended_ceiling: disable_height_limit
                             && extended_max_y > crate::world_editor::DEFAULT_MAX_Y,
@@ -570,14 +570,7 @@ impl Ground {
                             .then(|| frame.ecoregions(&requested_bbox, (final_w, final_h)))
                             .flatten(),
                         climate_field: None,
-                    })
-                }
-                // Flat ground or another source would leave a step at every seam of the world.
-                Err(e) if frame.elevation_zoom.is_some() => {
-                    drop(canopy_job.and_then(|h| h.join().ok()));
-                    Err(format!(
-                        "Elevation unavailable ({e}). A One World keeps one elevation source, so this area was not built; try again later."
-                    ))
+                    }
                 }
                 Err(e) => {
                     eprintln!("Failed to fetch elevation data: {}", e);
@@ -594,7 +587,7 @@ impl Ground {
                     // elevation grid to align against.
                     // Still has to be collected before the scope can close.
                     drop(canopy_job.and_then(|h| h.join().ok()));
-                    Ok(Self {
+                    Self {
                         elevation_enabled: false,
                         extended_ceiling: false,
                         ground_level,
@@ -612,7 +605,7 @@ impl Ground {
                             .then(|| frame.ecoregions(&requested_bbox, plan.final_dims))
                             .flatten(),
                         climate_field: None,
-                    })
+                    }
                 }
             }
         })
@@ -1452,8 +1445,7 @@ impl Ground {
     }
 }
 
-/// Fails only in a One World with a pinned elevation source, when that source is unavailable.
-pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Result<Ground, String> {
+pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
     // Cleared before the scaler publishes its own: in the GUI a previous run's terrain top
     // would misgrade this world's map preview.
     crate::world_editor::common::set_terrain_top_y(args.ground_level);
@@ -1474,7 +1466,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Result<Ground, String>
             args.canopy_height,
             args.body,
             &frame,
-        )?;
+        );
         ground.apply_snow_mode(&args.snow);
         ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
         // The scaler may have sunk the base to reach the extended floor. The bedrock plane and
@@ -1490,7 +1482,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Result<Ground, String>
             ground.save_land_cover_debug_image("landcover_debug");
             ground.save_canopy_debug_image("canopy_debug");
         }
-        return Ok(ground);
+        return ground;
     }
     println!("{} Fetching land cover...", "[3/7]".bold());
     let mut ground = Ground::new_flat_with_land_cover(
@@ -1505,7 +1497,7 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Result<Ground, String>
     crate::world_editor::set_terrain_floor_y(ground.base_level());
     pin_floor_to_cave_datum(args);
     crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
-    Ok(ground)
+    ground
 }
 
 /// With `--cave-datum-y`, bedrock drops to the datum wherever the run's own floor sits above it.

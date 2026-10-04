@@ -226,12 +226,7 @@ pub fn fetch_elevation_data(
     let mut bench = crate::bench::Bench::new(benchmark);
     let (world_width, world_height, grid_width, grid_height) = dims;
 
-    // Fallback chain: Mapterhorn, then AWS if it fails outright.
-    let provider = select_provider(bbox, source_mode);
-    let mut chain: Vec<Box<dyn ElevationProvider>> = vec![provider];
-    if source_mode == SourceMode::Auto {
-        chain.push(Box::new(providers::aws_terrain::AwsTerrain));
-    }
+    let chain = provider_chain(bbox, source_mode);
 
     emit_gui_progress_update(10.0, "Downloading data...");
 
@@ -375,6 +370,19 @@ pub fn cleanup_old_cached_tiles() {
 
 /// Try each provider in `chain` until one delivers usable data. Non-final
 /// providers are skipped on error or mostly empty data (over-claiming bboxes).
+/// Fallback chain: Mapterhorn, then AWS if it fails outright. A One World's pinned zoom
+/// comes first; when its tiles are unavailable the area falls back like any other run.
+fn provider_chain(bbox: &LLBBox, source_mode: SourceMode) -> Vec<Box<dyn ElevationProvider>> {
+    let mut chain = vec![select_provider(bbox, source_mode)];
+    if let SourceMode::Pinned(_) = source_mode {
+        chain.push(Box::new(providers::mapterhorn::Mapterhorn::default()));
+    }
+    if matches!(source_mode, SourceMode::Auto | SourceMode::Pinned(_)) {
+        chain.push(Box::new(providers::aws_terrain::AwsTerrain));
+    }
+    chain
+}
+
 fn fetch_raw_with_fallback(
     chain: &[Box<dyn ElevationProvider>],
     bbox: &LLBBox,
@@ -460,6 +468,24 @@ mod grid_dim_tests {
     /// The Switzerland bbox: ~346 km x ~225 km, a 1.54:1 aspect.
     fn switzerland() -> LLBBox {
         LLBBox::from_str("45.80,5.95,47.82,10.50").unwrap()
+    }
+
+    /// A pinned One World zoom whose tiles are unavailable falls back to the chain an
+    /// ordinary run takes (unpinned Mapterhorn, then AWS) instead of failing the area.
+    #[test]
+    fn a_pinned_zoom_falls_back_like_an_ordinary_run() {
+        let names = |mode| -> Vec<&str> {
+            provider_chain(&switzerland(), mode)
+                .iter()
+                .map(|p| p.name())
+                .collect()
+        };
+        assert_eq!(names(SourceMode::Auto), ["mapterhorn", "aws"]);
+        assert_eq!(
+            names(SourceMode::Pinned(16)),
+            ["mapterhorn", "mapterhorn", "aws"]
+        );
+        assert_eq!(names(SourceMode::AwsOnly), ["aws"]);
     }
 
     #[test]

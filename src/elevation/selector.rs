@@ -12,8 +12,8 @@ pub enum SourceMode {
     Auto,
     /// Legacy AWS tiles only (--aws-only-elevation / "Legacy terrain" toggle).
     AwsOnly,
-    /// One World: Mapterhorn from the world's pinned top zoom, without the AWS fallback,
-    /// so no area of the world is built from another source or resolution.
+    /// One World: Mapterhorn from the world's pinned top zoom, so every area reads the
+    /// same tiles. Unavailable tiles fall back to `Auto`'s chain with a warning.
     Pinned(u8),
     /// NASA PDS raster for a non-Earth body. No fallback: an Earth provider would
     /// return sea-level noise for these coordinates.

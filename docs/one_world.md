@@ -92,12 +92,12 @@ Minecraft already moved out of the chunk do not linger over the new blocks.
   for its frame (`elevation_zoom`; one cell per block gives the same zoom
   anywhere in the frame, z16 at scale 1 in mid-latitudes). Every area and piece
   samples from it and fetches every pyramid level, without the spread probe that
-  lets a large selection skip a level when its 16 sample tiles miss the data; and
-  without the AWS fallback, so an area whose elevation cannot be fetched fails
-  instead of being built flat or from another dataset. Worlds without the field
-  (older, or Legacy Terrain, which is AWS only) keep choosing per area. The
-  outlier gate, the anomaly filter and the land-cover smoothing have fixed or
-  frame-fixed parameters, so they need no pin.
+  lets a large selection skip a level when its 16 sample tiles miss the data. When
+  those tiles cannot be fetched, the area warns and falls back like an ordinary
+  run (its own zoom, then AWS, then flat ground), which may leave a step at its
+  seams. Worlds without the field (older, or Legacy Terrain, which is AWS only)
+  keep choosing per area. The outlier gate, the anomaly filter and the
+  land-cover smoothing have fixed or frame-fixed parameters, so they need no pin.
 - **Elements across a seam**: OSM ways and Overture footprints are clipped to
   the area plus 64 blocks, so a building on the edge is built whole on both
   sides; writes outside the area are dropped.
@@ -391,8 +391,8 @@ The job folder is removed when the job completes.
     the seam at z14: 3,560 of 21,504 columns on its side differed and the seam
     step differed in 103 of 672 rows. With the pinned zoom: 0 and 0; 56
     columns differ by one block inside the small area.
-  - A Mapterhorn outage (unreachable proxy) builds a flat area before; with
-    the pin the run fails and the new world is removed.
+  - A Mapterhorn outage (unreachable proxy) builds a flat area, with and
+    without the pin; the pinned fetch only adds a warning.
 - Ordinary runs are NBT-identical to the previous build (Bucharest terrain
   only, Slovenia default mode).
 - A world made by the previous build (vanilla height, version 2) is extended

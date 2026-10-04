@@ -2692,10 +2692,7 @@ fn gui_start_generation(
             // regardless of the selected generation mode.
             if args.skip_objects() {
                 // Generate ground data (terrain) for terrain-only mode
-                let mut ground = ground::generate_ground_data(&args, bbox).inspect_err(|e| {
-                    eprintln!("{e}");
-                    emit_gui_error(e);
-                })?;
+                let mut ground = ground::generate_ground_data(&args, bbox);
                 offline_complete()?;
                 // Matches run_cli.
                 ground.mark_beaches();
@@ -2786,17 +2783,11 @@ fn gui_start_generation(
             });
             offline_complete()?;
 
-            let ground = match ground {
-                Some(Ok(ground)) => ground,
-                failed => {
-                    let error_msg = match failed {
-                        Some(Err(e)) => e,
-                        _ => "Terrain fetch failed unexpectedly".to_string(),
-                    };
-                    eprintln!("{error_msg}");
-                    emit_gui_error(&error_msg);
-                    return Err(error_msg);
-                }
+            let Some(ground) = ground else {
+                let error_msg = "Terrain fetch failed unexpectedly".to_string();
+                eprintln!("{error_msg}");
+                emit_gui_error(&error_msg);
+                return Err(error_msg);
             };
 
             // Run world generation
