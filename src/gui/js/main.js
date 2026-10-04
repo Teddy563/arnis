@@ -2097,11 +2097,22 @@ const TREE_SIZES = ['small', 'medium', 'big', 'tall', 'giant'];
 // (the 3D one, if any, has the same name under iso/), or null when only a
 // live 2D render shows them: any custom value. Rocks and Bushes are drawn at
 // the densest setting, so the formations show; they stand for the default
-// densities. Grass, Land and Climate keep their 2D cards.
+// densities. Climate is 2D only.
+// Grass and Land Texture: off, on with the default mix, or on with another
+// preset; changed shares have no shipped picture.
+function mixPicture(kind, fallback) {
+  if (!document.getElementById(kind + '-texture-toggle').checked) return kind + '-texture-off.webp';
+  const text = document.getElementById(kind + '-mix-input').value.trim();
+  if (text.includes('=')) return null;
+  const preset = text || fallback;
+  // Classic lays no parcels: the same ground as the texture off.
+  if (preset === 'classic') return kind + '-texture-off.webp';
+  return preset === fallback ? kind + '-texture-on.webp' : kind + '-mix-' + preset + '.webp';
+}
+
 function blockPictureKey(card) {
   const el = (id) => document.getElementById(id);
   const stock = (id) => el(id).value === el(id).defaultValue;
-  const on = (id) => (el(id).checked ? 'on' : 'off');
   switch (card.dataset.for) {
     case 'tree-realm-select': {
       const realm = el('tree-realm-select').value;
@@ -2133,9 +2144,9 @@ function blockPictureKey(card) {
       return el('river-bed-select').value === 'off'
         ? 'water-detail-' + el('water-detail-select').value + '.webp' : null;
     case 'grass-texture-toggle':
-      return el('grass-mix-input').value.trim() === '' ? 'grass-texture-' + on('grass-texture-toggle') + '.png' : null;
+      return mixPicture('grass', 'default');
     case 'land-texture-toggle':
-      return el('land-mix-input').value.trim() === '' ? 'land-texture-' + on('land-texture-toggle') + '.png' : null;
+      return mixPicture('land', 'patchwork');
     case 'climate-mode-select':
       return 'climate-mode-' + el('climate-mode-select').value + '.webp';
     default:
@@ -2379,7 +2390,7 @@ function initMixRows() {
       const text = field.value.trim().toLowerCase();
       if (select) {
         const named = text === '' ? mix.fallback : text;
-        if (FIELD_PRESETS[named] && named !== 'classic' && select.querySelector('option[value="' + named + '"]')) {
+        if (FIELD_PRESETS[named] && select.querySelector('option[value="' + named + '"]')) {
           select.value = named;
         }
       }

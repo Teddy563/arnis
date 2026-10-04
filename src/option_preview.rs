@@ -73,13 +73,14 @@ fn sample(group: &str) -> Option<Sample> {
                 &["river-bed", "water-detail"],
             )
         },
-        // The old card areas: these still show 256x160 shipped cards.
+        // Grindelwald meadow.
         "grass" => s(
-            "46.620051,8.039940,46.621489,8.043400",
+            "46.62002,8.04012,46.62398,8.04588",
             &["grass-texture", "grass-mix"],
         ),
+        // Rural Wallachia.
         "land" => s(
-            "44.601063,25.700769,44.603937,25.707231",
+            "44.59981,25.70021,44.60519,25.70779",
             &["land-texture", "land-mix"],
         ),
         _ => return None,

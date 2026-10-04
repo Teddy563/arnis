@@ -1950,12 +1950,13 @@
                       </span>
                     </label>
                     <div class="settings-control">
-                      <select class="settings-select mix-preset" data-mix="grass-mix-input" aria-label="Preset">
+                      <select class="settings-select mix-preset" data-mix="grass-mix-input" aria-label="Preset" title="Classic means no parcels: the plain ground.">
                         <option value="default" data-localize="mix_default">Default</option>
                         <option value="smallholding" data-localize="field_mix_smallholding">Smallholding</option>
                         <option value="patchwork" data-localize="field_mix_patchwork">Patchwork</option>
                         <option value="prairie" data-localize="field_mix_prairie">Prairie</option>
                         <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
+                        <option value="classic" data-localize="field_mix_classic" title="Classic: no parcels, the plain ground">Classic</option>
                       </select>
                     </div>
                     <input type="text" id="grass-mix-input" name="grass-mix-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
@@ -1970,11 +1971,15 @@
                   </div>
                   </div>
                   <figure class="option-preview preview-frame" data-for="grass-texture-toggle" data-preview="grass-texture" data-group="grass">
-                    <img src="images/previews/grass-texture-off.png" alt="" width="480" height="480">
+                    <img src="images/previews/grass-texture-off.webp" alt="" width="480" height="480">
                     <div class="preview-tools">
                       <div class="preview-zoom" role="group" aria-label="Zoom">
                         <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
                         <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                      <div class="preview-mode" role="group" aria-label="2D / 3D">
+                        <button type="button" data-mode="2d">2D</button>
+                        <button type="button" data-mode="3d">3D</button>
                       </div>
                     </div>
                     <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
@@ -2010,11 +2015,12 @@
                       </span>
                     </label>
                     <div class="settings-control">
-                      <select class="settings-select mix-preset" data-mix="land-mix-input" aria-label="Preset">
+                      <select class="settings-select mix-preset" data-mix="land-mix-input" aria-label="Preset" title="Classic means no parcels: the plain ground.">
                         <option value="patchwork" data-localize="field_mix_patchwork">Patchwork</option>
                         <option value="smallholding" data-localize="field_mix_smallholding">Smallholding</option>
                         <option value="prairie" data-localize="field_mix_prairie">Prairie</option>
                         <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
+                        <option value="classic" data-localize="field_mix_classic" title="Classic: no parcels, the plain ground">Classic</option>
                       </select>
                     </div>
                     <input type="text" id="land-mix-input" name="land-mix-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
@@ -2029,11 +2035,15 @@
                   </div>
                   </div>
                   <figure class="option-preview preview-frame" data-for="land-texture-toggle" data-preview="land-texture" data-group="land">
-                    <img src="images/previews/land-texture-off.png" alt="" width="480" height="480">
+                    <img src="images/previews/land-texture-off.webp" alt="" width="480" height="480">
                     <div class="preview-tools">
                       <div class="preview-zoom" role="group" aria-label="Zoom">
                         <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
                         <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                      </div>
+                      <div class="preview-mode" role="group" aria-label="2D / 3D">
+                        <button type="button" data-mode="2d">2D</button>
+                        <button type="button" data-mode="3d">3D</button>
                       </div>
                     </div>
                     <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>

@@ -147,7 +147,7 @@ px under 1100 px wide), captioned with it (e.g. "Europe · Tall + Giant").
 The picture opens fitted, the whole sample in view; it zooms (wheel, pinch,
 +/-) and pans by dragging, and a double-click fits it again. A 2D | 3D
 switch, kept per viewer, picks the top-down map or an isometric view
-(Climate, Grass and Land are 2D only). Tree Realm's Auto names the realm of
+(Climate is 2D only). Tree Realm's Auto names the realm of
 the selection's centre.
 
 The shipped pictures are one per option, no combinations (option B):
@@ -166,7 +166,7 @@ CLI builds over the group's sample area with that option alone
 | Snow (4) | `46.545,7.955,46.595,8.025` | Eiger and Kleine Scheidegg, `--scale=0.45`. |
 | River Bed (2), Water Detail (2) | `48.1050,11.5550,48.1140,11.5645` | The Isar at the Flaucher, Munich; Water Detail at `--scale=0.3`. 3D: a slab across the channel, its front face a cross-section. |
 | Climate Sampling (2) | `0.0,-15.0,72.0,75.0` | The `--climate-map` PNG; Origin is the centre's climate everywhere. |
-| Grass Texture, Land Texture | old 256x160 card areas | 2D only. |
+| Grass Texture, Land Texture (off, on, and on with each other preset) | see `final_render.py` | `grass-texture-{off,on}`, `grass-mix-<preset>`, `land-texture-{off,on}`, `land-mix-<preset>`. |
 
 Any custom value (a tree size weight, farm crops, a grass or land mix, a
 density, Snow Cap Share or Snow Line Y, Parcel Size, or two water options at
