@@ -1487,6 +1487,10 @@ $(document).ready(function () {
         if (event.data && event.data.type === 'snapOverlay') {
             showSnapOverlay(event.data.snap, event.data.label);
         }
+        if (event.data && event.data.type === 'snapGridControl') {
+            snapGridControlVisible = !!event.data.visible;
+            syncGridToggleButton();
+        }
 
         // One World keeps rotation at 0.
         if (event.data && event.data.type === 'setRotationLocked') {
@@ -1679,6 +1683,12 @@ $(document).ready(function () {
                 name: mapText('map_tool_terrain', '3D terrain preview'),
                 desc: mapText('map_tool_terrain_desc', "Shows the selected area's terrain in 3D."),
                 note: terrainNote
+            };
+        }
+        if (btn.id === 'grid-toggle-btn') {
+            return {
+                name: mapText('map_tool_grid', 'Show grid'),
+                desc: mapText('map_tool_grid_desc', 'Cell lines of the selection. Hiding them keeps the snap.')
             };
         }
         if (btn.id === 'body-toggle-btn') {
@@ -2073,6 +2083,38 @@ $(document).ready(function () {
         syncBodyToggleButton();
     })();
 
+    // Show grid: hides the cell overlay, never the snap itself. Its own group
+    // under the world toggle, shown while the parent has Extra Features on.
+    (function addGridToggleButton() {
+        var drawContainer = document.querySelector('.leaflet-draw');
+        if (!drawContainer) return;
+
+        var section = L.DomUtil.create('div', 'leaflet-draw-section', drawContainer);
+        var bar = L.DomUtil.create('div', 'leaflet-draw-toolbar leaflet-bar', section);
+        var btn = L.DomUtil.create('a', 'leaflet-draw-edit-grid', bar);
+        btn.href = '#';
+        btn.id = 'grid-toggle-btn';
+        btn.setAttribute('role', 'button');
+
+        L.DomEvent
+            .on(btn, 'mousedown dblclick', L.DomEvent.stopPropagation)
+            .on(btn, 'click', L.DomEvent.stop)
+            .on(btn, 'click', function () {
+                snapGridShown = !snapGridShown;
+                try {
+                    localStorage.setItem(SNAP_GRID_KEY, String(snapGridShown));
+                } catch (e) {
+                    // Not remembered; on again next start.
+                }
+                syncGridToggleButton();
+                drawSnapOverlay();
+            });
+
+        _gridToggleSection = section;
+        _gridToggleBtn = btn;
+        syncGridToggleButton();
+    })();
+
     // Leaflet.draw's own buttons came with English titles; every button is
     // labelled from its description now.
     refreshMapToolLabels();
@@ -2434,6 +2476,26 @@ $(document).ready(function () {
 var snapLayer = null;
 var snapRenderer = null;
 var snapState = null;
+// Show grid, on unless turned off; remembered across starts.
+var SNAP_GRID_KEY = 'arnis-show-grid';
+var snapGridShown = (function () {
+    try {
+        return localStorage.getItem(SNAP_GRID_KEY) !== 'false';
+    } catch (e) {
+        return true;
+    }
+})();
+var snapGridControlVisible = false;
+var _gridToggleBtn = null;
+var _gridToggleSection = null;
+
+function syncGridToggleButton() {
+    if (!_gridToggleBtn) return;
+    _gridToggleSection.style.display = snapGridControlVisible ? '' : 'none';
+    _gridToggleBtn.classList.toggle('active', snapGridShown);
+    _gridToggleBtn.setAttribute('aria-pressed', String(snapGridShown));
+    if (window.refreshMapToolLabel) window.refreshMapToolLabel(_gridToggleBtn);
+}
 // Cell lines are drawn only once a cell is this wide on screen.
 var SNAP_MIN_CELL_PX = 8;
 
@@ -2447,7 +2509,6 @@ function showSnapOverlay(snap, label) {
 // Zoomed out until a cell is under SNAP_MIN_CELL_PX (and past the cell count
 // the Rust side draws lines for), only the outline, its readout and the origin
 // are drawn. Redrawn on zoomend and on a new snap, never while panning.
-// Dark, so the lines read over the yellow selection.
 function drawSnapOverlay() {
     if (!snapLayer) {
         snapLayer = L.layerGroup().addTo(map);
@@ -2458,7 +2519,7 @@ function drawSnapOverlay() {
         map.on('zoomend', drawSnapOverlay);
     }
     snapLayer.clearLayers();
-    if (!snapState) return;
+    if (!snapState || !snapGridShown) return;
     var snap = snapState.snap, label = snapState.label;
     var s = snap.outline[0], w = snap.outline[1], n = snap.outline[2], e = snap.outline[3];
     var nw = map.latLngToContainerPoint([n, w]), se = map.latLngToContainerPoint([s, e]);
@@ -2466,13 +2527,21 @@ function drawSnapOverlay() {
     var segments = cellPx < SNAP_MIN_CELL_PX ? [] :
         snap.lon_lines.map(function (lon) { return [[s, lon], [n, lon]]; })
             .concat(snap.lat_lines.map(function (lat) { return [[lat, w], [lat, e]]; }));
+    // Yellow dashes on a dark halo, readable on light tiles and dark ones.
     if (segments.length > 0) {
         L.polyline(segments, {
-            renderer: snapRenderer, color: '#1c1c1c', weight: 1.5, opacity: 0.75, interactive: false
+            renderer: snapRenderer, color: '#000000', weight: 3, opacity: 0.5, interactive: false
+        }).addTo(snapLayer);
+        L.polyline(segments, {
+            renderer: snapRenderer, color: '#fecc44', weight: 1.5, opacity: 0.85, dashArray: '4 4',
+            interactive: false
         }).addTo(snapLayer);
     }
+    L.rectangle([[s, w], [n, e]], {
+        renderer: snapRenderer, color: '#000000', weight: 4.5, opacity: 0.5, fill: false, interactive: false
+    }).addTo(snapLayer);
     var outline = L.rectangle([[s, w], [n, e]], {
-        renderer: snapRenderer, color: '#1c1c1c', weight: 2.5, dashArray: '8 5', fill: false, interactive: false
+        renderer: snapRenderer, color: '#fecc44', weight: 2.5, fill: false, interactive: false
     }).addTo(snapLayer);
     if (segments.length === 0 && label) {
         outline.bindTooltip(label, { permanent: true, direction: 'center' });

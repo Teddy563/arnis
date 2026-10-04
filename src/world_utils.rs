@@ -493,7 +493,7 @@ fn is_sharing_violation(e: &std::io::Error) -> bool {
 
 /// Generates a unique "Arnis World N" name.
 /// Checks for both "Arnis World X" and "Arnis World X: Location" patterns.
-fn generate_unique_default_world_name(base_path: &Path) -> String {
+pub fn generate_unique_default_world_name(base_path: &Path) -> String {
     let mut counter: i32 = 1;
     loop {
         let candidate_name: String = format!("Arnis World {counter}");

@@ -468,6 +468,11 @@ struct SelectionSnap {
     new_world: bool,
     /// Fit Inside found no whole cell on a side and took one.
     fallback: bool,
+    /// Folder name of the world the snap is for: the named One World, or a
+    /// fresh "Arnis World N" when no name was given.
+    world_name: String,
+    /// Pieces the job would build at once, as `--one-world-workers` sizes it.
+    workers: usize,
     /// East-west and north-south size in kilometres on the ground.
     size_km: [f64; 2],
 }
@@ -476,21 +481,38 @@ struct SelectionSnap {
 const MAX_DRAWN_CELLS: i32 = 2000;
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 fn gui_snap_selection(
     bbox_text: String,
     save_path: String,
-    world_name: String,
+    world_name: Option<String>,
     scale: f64,
     unit_regions: i32,
     snap_mode: Option<String>,
     square: Option<bool>,
+    flags: Option<Vec<String>>,
 ) -> Result<SelectionSnap, String> {
     use crate::work_units::SnapMode;
     use clap::Parser;
-    let args = Args::try_parse_from(["arnis".to_string(), format!("--scale={scale}")])
-        .map_err(|e| e.to_string())?;
+    let scale_flag = format!("--scale={scale}");
+    // The run's own flags size the workers; ones that do not parse (the run
+    // says why) leave the defaults.
+    let args = Args::try_parse_from(
+        ["arnis", scale_flag.as_str()]
+            .into_iter()
+            .chain(flags.iter().flatten().map(String::as_str)),
+    )
+    .or_else(|_| Args::try_parse_from(["arnis", scale_flag.as_str()]))
+    .map_err(|e| e.to_string())?;
     let requested = LLBBox::from_str(&bbox_text)?;
-    let world = one_world_dir(&save_path, &world_name);
+    // No name: the new One World a large selection becomes, named as a new
+    // world is.
+    let world = match &world_name {
+        Some(name) => one_world_dir(&save_path, name),
+        None => PathBuf::from(save_path.trim()).join(
+            crate::world_utils::generate_unique_default_world_name(Path::new(save_path.trim())),
+        ),
+    };
     let mode = match snap_mode.as_deref() {
         Some("cover") => SnapMode::Cover,
         _ => SnapMode::FitInside,
@@ -542,6 +564,16 @@ fn gui_snap_selection(
         origin: [frame.origin_lat, frame.origin_lon],
         new_world: snap.new_world,
         fallback: snap.fallback,
+        world_name: world
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        workers: crate::scale::budget::sizing(
+            &args,
+            cells[0].max(1).saturating_mul(cells[1].max(1)) as usize,
+            (unit_regions * unit_regions).max(1) as u64,
+        )
+        .workers,
         // A block is 1/scale metres at the frame's origin.
         size_km: [
             f64::from(rect.max_x() + 1 - rect.min_x()) / scale / 1000.0,
@@ -3248,11 +3280,12 @@ mod tests {
                 let snap = gui_snap_selection(
                     bbox.clone(),
                     save.clone(),
-                    String::new(),
+                    Some(String::new()),
                     scale,
                     n,
                     Some(mode.to_string()),
                     Some(square),
+                    None,
                 )
                 .unwrap();
                 let what = format!("scale {scale} n {n} {mode} square {square}");
@@ -3273,6 +3306,41 @@ mod tests {
         }
         // Nothing was created: the snap only reads.
         assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+    }
+
+    /// A large selection without One World becomes a new One World: the snap
+    /// names it as a new world is named, and sizes its workers from the flags.
+    #[test]
+    fn an_unnamed_snap_is_for_the_next_new_world() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("Arnis World 1")).unwrap();
+        let save = tmp.path().to_string_lossy().to_string();
+        let snap = |bbox: &str, workers: &str| {
+            gui_snap_selection(
+                bbox.to_string(),
+                save.clone(),
+                None,
+                1.0,
+                2,
+                None,
+                None,
+                Some(vec![format!("--one-world-workers={workers}")]),
+            )
+            .unwrap()
+        };
+        let large = snap("44.43 26.0 44.46 26.15", "2");
+        assert_eq!(large.world_name, "Arnis World 2");
+        assert!(large.new_world);
+        assert!(large.cells[0] * large.cells[1] > 2);
+        assert_eq!(large.workers, 2);
+        // Never more workers than pieces.
+        let small = snap("44.430 26.000 44.431 26.001", "6");
+        assert_eq!(small.cells, [1, 1]);
+        assert_eq!(small.workers, 1);
+        // Flags that do not parse still give a snap.
+        let odd = snap("44.43 26.0 44.46 26.15", "many");
+        assert_eq!(odd.cells, large.cells);
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
     }
 
     #[test]

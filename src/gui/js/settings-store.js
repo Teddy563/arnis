@@ -70,6 +70,7 @@ const SETTINGS = [
   { id: 'threads-input', kind: 'number', store: OWN },
   { id: 'ram-budget-input', kind: 'number', store: OWN },
   { id: 'max-downloads-input', kind: 'number', store: OWN },
+  { id: 'big-worlds-toggle', kind: 'checkbox', store: OWN },
   { id: 'one-world-workers-select', kind: 'select', store: OWN },
   { id: 'unit-regions-select', kind: 'select', store: OWN },
   { id: 'snap-mode-select', kind: 'select', store: OWN },

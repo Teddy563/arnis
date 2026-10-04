@@ -16,15 +16,30 @@ generated; the Meld Generation ones do.
 | Threads | `--threads` | Exact thread count; wins over CPU Usage. |
 | Memory Budget | `--ram-budget-mb` | 0 reads free memory as usual. |
 | Parallel Downloads | `--max-downloads` | Default 16. |
-| Parallel Workers | `--one-world-workers` | One World only. Auto or 1 to 6. |
-| Cell Size | `--unit-regions` | One World only. 2x2, 4x4 or 8x8 regions per piece, default 4x4. A stored 3, 5, 6 or 7 from an older version falls back to 4x4. |
-| Selection Snap | | One World only. Fit Inside (default) or Cover; see below. |
-| Square Selection | | One World only. The same number of cells both ways. |
+| Big Worlds | | On with the switch. Splits every selection into cells built in parallel; see below. |
+| Parallel Workers | `--one-world-workers` | Needs Big Worlds. Auto or 1 to 6. |
+| Cell Size | `--unit-regions` | Needs Big Worlds. 2x2, 4x4 or 8x8 regions per piece, default 4x4. A stored 3, 5, 6 or 7 from an older version falls back to 4x4. |
+| Selection Snap | | Needs Big Worlds. Fit Inside (default) or Cover; see below. |
+| Square Selection | | Needs Big Worlds. The same number of cells both ways. |
 
-With One World on, Parallel Workers and Cell Size always build the area in
-pieces (see [Large areas](one_world.md#large-areas)).
+**Big Worlds** turns on with the switch, and can be turned off, which gives
+the usual single run and no grid. With it on, a selection is built in pieces (see
+[Large areas](one_world.md#large-areas)) whenever it can be: with One World on,
+always; with it off, when the snapped selection is more than one cell, and the
+run then makes a new One World named as a new world is ("Arnis World N"),
+pinned with `--origin` to the snap. The readout under the selection says
+"Builds as a One World". A selection of one cell, or one on Bedrock, Luanti or
+another body than Earth, is the usual single run of what was drawn ("Builds in
+one run"). Pieces need a Java world on Earth.
 
-While pieces are in use, the map selection snaps to whole cells (one cell
+The size line under the selection follows the same rule. Built in pieces, it
+reads "Builds in N pieces · W workers", W being Parallel Workers or what Auto
+picks for this machine. Otherwise a large selection gets the usual size
+warning, and with the switch off the warning carries a link, "Use Extra
+Features to build it in pieces", that opens this section and turns the switch
+on (Big Worlds too).
+
+With Big Worlds on (on Earth), the map selection snaps to whole cells (one cell
 is Cell Size regions, one piece) on the world's lattice, which is anchored at
 block (0, 0): an existing One World's own, or for a new one the frame its
 first area will create. **Selection Snap** picks how:
@@ -48,7 +63,10 @@ The map draws the snapped outline and the block (0, 0) dot always, and the cell
 lines only once a cell is at least 8 pixels on screen (and the snap has at most
 2,000 cells), so a country-sized selection zoomed out draws three shapes. The
 overlay is redrawn when the zoom ends or the selection changes, never while
-panning. The readout under the selection gives width (east-west) by height
+panning. Cell lines are yellow dashes on a dark halo, the outline solid
+yellow, so both read on light and dark tiles. **Show grid**, a button under
+the map's world toggle shown while Big Worlds is on, hides or shows the overlay (on by default, remembered); the
+snap and the run do not change. The readout under the selection gives width (east-west) by height
 (north-south): `12 × 8 regions · 3 × 2 cells · 6 pieces · 6.1 × 4.1 km`, the
 kilometres being blocks over the world scale. Generation is given the snapped
 bbox; the frame maths is the run's own (`work_units::snap_to_cells`). A new

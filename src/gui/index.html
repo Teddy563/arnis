@@ -158,6 +158,8 @@
               <div id="one-world-status" class="one-world-status" style="display: none;" aria-live="polite"></div>
             </div>
             <span id="bbox-selection-info" class="bbox-selection-text" data-localize="select_area_prompt">Select an area on the map using the tools.</span>
+            <!-- Under a size warning while Extra Features is off: the way to build it in pieces -->
+            <button type="button" id="bbox-features-cta" style="display: none;" onclick="useExtraFeatures()">Use Extra Features to build it in pieces</button>
             <!-- Large worlds: the selection as whole regions and pieces (hidden unless pieces are in use) -->
             <div id="bbox-snap-info" class="one-world-status" style="display: none;" aria-live="polite"></div>
 
@@ -1198,14 +1200,29 @@
                     </div>
                   </div>
                   <div class="settings-row setting-tile is-wide">
+                    <label for="big-worlds-toggle" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="big_worlds">Big Worlds</span>
+                          <span class="tooltip-icon" data-tooltip="Snaps every selection to whole cells and builds the cells as pieces side by side, with the cell grid on the map. A selection of more than one cell is built as a One World: the one picked under One World, or a new one. Turns on with Extra Features. Off, every run is the usual single run.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="big_worlds_desc">Splits every selection into cells built in parallel.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <input type="checkbox" class="switch" id="big-worlds-toggle" name="big-worlds-toggle" checked>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
                     <label for="one-world-workers-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
                       <span class="setting-text">
                         <span class="setting-heading">
                           <span data-localize="one_world_workers">Parallel Workers</span>
-                          <span class="tooltip-icon" data-tooltip="Splits a large One World area into pieces and builds several side by side. Auto picks a count from free memory and cores.">?</span>
+                          <span class="tooltip-icon" data-tooltip="Splits a large area into pieces and builds several side by side. Without One World on, a selection of more than one cell is built as a new One World. Auto picks a count from free memory and cores.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="one_world_workers_desc">Pieces of a large world built at once. Requires One World.</span>
+                        <span class="setting-desc" data-localize="one_world_workers_desc">Pieces of a large area built at once.</span>
                       </span>
                     </label>
                     <div class="settings-control">
@@ -1228,7 +1245,7 @@
                           <span data-localize="unit_regions">Cell Size</span>
                           <span class="tooltip-icon" data-tooltip="One region is 512 by 512 blocks. Each cell is built as one piece, and the map selection snaps to whole cells around the world&#x27;s centre. Smaller cells lose less work to a failure, larger ones build fewer seams.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="unit_regions_desc">Regions in each piece; the selection snaps to whole cells. Requires One World.</span>
+                        <span class="setting-desc" data-localize="unit_regions_desc">Regions in each piece; the selection snaps to whole cells.</span>
                       </span>
                     </label>
                     <div class="settings-control">
@@ -1247,7 +1264,7 @@
                           <span data-localize="snap_mode">Selection Snap</span>
                           <span class="tooltip-icon" data-tooltip="Fit Inside keeps the whole cells that lie inside the selection, centred on it, so nothing outside what you drew is built. Cover grows the selection outward to whole cells. When no whole cell fits inside, Fit Inside uses one cell around the centre.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="snap_mode_desc">Whole cells inside the selection, or covering it. Requires One World.</span>
+                        <span class="setting-desc" data-localize="snap_mode_desc">Whole cells inside the selection, or covering it.</span>
                       </span>
                     </label>
                     <div class="settings-control">
@@ -1265,7 +1282,7 @@
                           <span data-localize="square_selection">Square Selection</span>
                           <span class="tooltip-icon" data-tooltip="Snaps to the same number of cells east-west and north-south, centred on the selection: the smaller count with Fit Inside, the larger with Cover.">?</span>
                         </span>
-                        <span class="setting-desc" data-localize="square_selection_desc">Same number of cells both ways. Requires One World.</span>
+                        <span class="setting-desc" data-localize="square_selection_desc">Same number of cells both ways.</span>
                       </span>
                     </label>
                     <div class="settings-control">

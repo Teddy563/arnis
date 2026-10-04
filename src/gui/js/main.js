@@ -27,11 +27,20 @@ const DEFAULT_LOCALE_PATH = `./locales/en.json`;
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
 let currentBboxSelectionColor = "#ffffff";
+// Values for the {placeholders} of the current key, or null.
+let currentBboxSelectionVars = null;
+
+function fillBboxSelectionVars(element) {
+  for (const k in (currentBboxSelectionVars || {})) {
+    element.textContent = element.textContent.split('{' + k + '}').join(currentBboxSelectionVars[k]);
+  }
+}
 
 // Helper function to set bbox selection info text and track it for language changes
-async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color) {
+async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color, vars) {
   currentBboxSelectionKey = localizationKey;
   currentBboxSelectionColor = color;
+  currentBboxSelectionVars = vars || null;
   
   // Ensure localization is available
   let localization = window.localization;
@@ -39,7 +48,8 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
     localization = await getLocalization();
   }
   
-  localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  await localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
 }
 
@@ -135,6 +145,7 @@ async function applyLocalization(localization) {
 
     // Placeholder strings
     "input[id='bbox-coords']": "placeholder_bbox",
+    "#bbox-features-cta": "area_use_extra_features",
     // DEPRECATED: Ground level placeholder removed
     // "input[id='ground-level']": "placeholder_ground"
   };
@@ -157,7 +168,8 @@ async function applyLocalization(localization) {
   // Re-apply current bbox selection info text with new language
   const bboxSelectionInfo = document.getElementById("bbox-selection-info");
   if (bboxSelectionInfo && currentBboxSelectionKey) {
-    localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    await localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    fillBboxSelectionVars(bboxSelectionInfo);
     bboxSelectionInfo.style.color = currentBboxSelectionColor;
   }
 
@@ -1031,7 +1043,7 @@ function setupProgressListener() {
         window.arnisPreview3D?.setGenerationRunning(false);
         if (lastRunOneWorld) {
           // The world keeps its name; the status line carries the reason.
-          setWorldNameLabel(oneWorldDisplayName());
+          setWorldNameLabel(isOneWorldEnabled() ? oneWorldDisplayName() : lastRunWorldName);
           if (isOneWorldEnabled()) setOneWorldStatus(message.replace(/^Error!\s*/, ''), 'error');
         } else {
           setWorldNameLabel("");
@@ -1647,7 +1659,17 @@ function initAdvancedFeatures() {
   const groups = document.getElementById('advanced-features-groups');
   const cpu = document.getElementById('cpu-usage-slider');
   if (!master || !groups || !cpu) return;
-  master.addEventListener('change', refreshAdvancedFeatures);
+  // Big Worlds comes on with the switch. The store restores in DOM order, so a
+  // stored Big Worlds off is written after this and wins.
+  master.addEventListener('change', () => {
+    const big = document.getElementById('big-worlds-toggle');
+    if (master.checked && big && !big.checked) {
+      big.checked = true;
+      big.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    refreshAdvancedFeatures();
+  });
+  document.getElementById('big-worlds-toggle').addEventListener('change', refreshAdvancedFeatures);
   cpu.addEventListener('input', () => { formatCpuUsage(); refreshAdvancedFeatures(); });
   cpu.addEventListener('dblclick', () => {
     cpu.value = 0;
@@ -1699,7 +1721,9 @@ function initAdvancedFeatures() {
   refreshOptionPreviews();
   initOsmSource();
   initPresets();
-  ['unit-regions-select', 'snap-mode-select', 'square-selection-toggle', 'scale-value-slider'].forEach((id) => {
+  // The workers and memory rows size the "W workers" of the size line.
+  ['unit-regions-select', 'snap-mode-select', 'square-selection-toggle', 'scale-value-slider',
+    'one-world-workers-select', 'ram-budget-input', 'max-downloads-input'].forEach((id) => {
     document.getElementById(id).addEventListener('change', refreshSnapPreview);
   });
   formatCpuUsage();
@@ -2315,11 +2339,14 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('threads-input', on && (threadsSet || !cpuSet));
   setSettingsRowAvailable('ram-budget-input', on);
   setSettingsRowAvailable('max-downloads-input', on);
-  const pieces = on && isOneWorldEnabled();
-  setSettingsRowAvailable('one-world-workers-select', pieces);
-  setSettingsRowAvailable('unit-regions-select', pieces);
-  setSettingsRowAvailable('snap-mode-select', pieces);
-  setSettingsRowAvailable('square-selection-toggle', pieces);
+  // Big Worlds builds in pieces with or without One World (a large selection
+  // becomes one), so these follow it alone.
+  setSettingsRowAvailable('big-worlds-toggle', on);
+  const big = on && document.getElementById('big-worlds-toggle').checked;
+  setSettingsRowAvailable('one-world-workers-select', big);
+  setSettingsRowAvailable('unit-regions-select', big);
+  setSettingsRowAvailable('snap-mode-select', big);
+  setSettingsRowAvailable('square-selection-toggle', big);
 
   MELD_ALWAYS.forEach((id) => setSettingsRowAvailable(id, on));
   const checked = (id) => {
@@ -2428,8 +2455,7 @@ function advancedFeatureArgs() {
     'threads': positive('threads-input'),
     'ram-budget-mb': positive('ram-budget-input'),
     'max-downloads': positive('max-downloads-input'),
-    // Either one builds a One World area in pieces; both rows are disabled
-    // without One World.
+    // Either one builds a One World area in pieces; a single run ignores both.
     'one-world-workers': workers ? workers.value : null,
     'unit-regions': positive('unit-regions-select'),
     'snow-mode': changed('snow-mode-select'),
@@ -3357,20 +3383,48 @@ let customBBoxValid = false;  // Tracks if custom input is valid
  */
 function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   const t = AREA_THRESHOLDS[selectedCelestialBody] || AREA_THRESHOLDS.earth;
-  if (selectedSize > t.extreme) {
+  const pieces = selectionPieces();
+  let warned = false;
+  // Built in pieces, the size is no longer a worry: say how instead.
+  if (pieces) {
+    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+  } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
+    warned = true;
   } else if (selectedSize > t.large) {
     setBboxSelectionInfo(bboxSelectionElement, "area_too_large", "#fa7878");
+    warned = true;
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
+    warned = true;
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  const cta = document.getElementById("bbox-features-cta");
+  if (cta) cta.style.display = warned && !snapActive() && selectedCelestialBody === "earth" ? "" : "none";
 }
+
+// Keys the size status owns, so a late snap may replace them.
+const BBOX_SIZE_KEYS = ["area_pieces_info", "area_extreme", "area_too_large", "area_extensive", "selection_confirmed"];
+
+// The warning's way out: open Extra Features with the switch and Big Worlds on.
+function useExtraFeatures() {
+  window.openSettings();
+  ["advanced-features-toggle", "big-worlds-toggle"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.checked) {
+      el.checked = true;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  const nav = document.querySelector('.settings-nav-item[data-target="settings-section-features"]');
+  if (nav) nav.click();
+}
+window.useExtraFeatures = useExtraFeatures;
 
 // Re-runs the size status, e.g. after a body switch changes which tiers apply.
 function refreshBboxSelectionInfo() {
-  if (!mapSelectedBBox) return;
+  if (!mapSelectedBBox || !BBOX_SIZE_KEYS.includes(currentBboxSelectionKey)) return;
   const [lat1, lng1, lat2, lng2] = mapSelectedBBox.split(" ").map(Number);
   displayBboxSizeStatus(
     document.getElementById("bbox-selection-info"),
@@ -3456,35 +3510,60 @@ function displayBboxInfoText(bboxText) {
    One World's grid, so every piece is whole regions. The Rust side does the
    frame maths, the same as the run's; the map draws the result. */
 
-// Pieces are built with Extra Features on and One World on.
+function extraFeaturesOn() {
+  const master = document.getElementById('advanced-features-toggle');
+  return !!(master && master.checked);
+}
+
+// With Big Worlds on, every selection gets its cells on the map. Off Earth the
+// scale slider is not the world's, so there is no grid to place.
 function snapActive() {
-  const workers = document.getElementById('one-world-workers-select');
-  return !!(workers && !workers.disabled) && isOneWorldEnabled();
+  const big = document.getElementById('big-worlds-toggle');
+  return extraFeaturesOn() && !!(big && big.checked && !big.disabled) && selectedCelestialBody === 'earth';
 }
 
 function snapSelection(bbox) {
   return invoke('gui_snap_selection', {
     bboxText: bbox,
     savePath: savePath,
-    worldName: oneWorldFolderName(),
+    // null: the new One World a large selection becomes.
+    worldName: isOneWorldEnabled() ? oneWorldFolderName() : null,
     scale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
     unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
     snapMode: document.getElementById('snap-mode-select').value,
     square: document.getElementById('square-selection-toggle').checked,
+    // Sizes Parallel Workers as the run will.
+    flags: advancedFeatureArgs().flags,
   });
 }
 
-// The bbox a run is given: the snapped one while snapping is on. A new world
-// is also pinned to the snap's centre, so the run's frame is the one the cell
-// lines were placed in.
+// Pieces need a One World, so a Java world on Earth. With One World on they
+// are always used; without it a selection of more than one cell runs as a new
+// One World, and one cell is the usual single run.
+function snapRunsAsOneWorld(snap) {
+  return isOneWorldEnabled() || (isOneWorldAvailable() && snap.cells[0] * snap.cells[1] > 1);
+}
+
+// The bbox a run is given and the world it goes to: the snapped bbox when it
+// builds in pieces. A new world is also pinned to the snap's centre, so the
+// run's frame is the one the cell lines were placed in.
 async function runSelectionFor(bbox) {
-  if (!snapActive()) return { bbox, flags: [] };
+  const plain = { bbox, flags: [], oneWorld: isOneWorldEnabled(), worldName: oneWorldFolderName() };
+  if (!snapActive()) return plain;
   const snap = await snapSelection(bbox);
-  return { bbox: snap.bbox, flags: snap.new_world ? ['--origin=' + snap.origin.join(',')] : [] };
+  if (!snapRunsAsOneWorld(snap)) return plain;
+  return {
+    bbox: snap.bbox,
+    flags: snap.new_world ? ['--origin=' + snap.origin.join(',')] : [],
+    oneWorld: true,
+    worldName: isOneWorldEnabled() ? oneWorldFolderName() : snap.world_name,
+  };
 }
 
 let snapPreviewKey = null;
 let snapPreviewTimer = null;
+// The last drawn snap and the selection it is for.
+let lastSnap = null;
 // Debounced: a dragged selection or a slider fires many events, and only the
 // last one needs a grid.
 function refreshSnapPreview() {
@@ -3492,13 +3571,26 @@ function refreshSnapPreview() {
   snapPreviewTimer = setTimeout(drawSnapPreview, 100);
 }
 
+// { n, w } while the current selection is built in more than one piece, so
+// the size line can say "Builds in N pieces · W workers"; else null.
+function selectionPieces() {
+  if (!snapActive() || !lastSnap || lastSnap.bbox !== selectedBBox) return null;
+  const snap = lastSnap.snap;
+  const n = snap.cells[0] * snap.cells[1];
+  return n > 1 && snapRunsAsOneWorld(snap) ? { n, w: snap.workers } : null;
+}
+
 async function drawSnapPreview() {
   const on = snapActive() && !!selectedBBox;
-  const key = on ? [selectedBBox, savePath, oneWorldFolderName(),
+  // The map shows its Show grid button while a grid can show.
+  postToMap({ type: 'snapGridControl', visible: snapActive() });
+  const key = on ? JSON.stringify([selectedBBox, savePath, isOneWorldEnabled(), isOneWorldAvailable(),
+    oneWorldFolderName(),
     document.getElementById('scale-value-slider').value,
     document.getElementById('unit-regions-select').value,
     document.getElementById('snap-mode-select').value,
-    document.getElementById('square-selection-toggle').checked].join('|') : 'off';
+    document.getElementById('square-selection-toggle').checked,
+    advancedFeatureArgs().flags]) : 'off';
   if (key === snapPreviewKey) return;
   snapPreviewKey = key;
   let snap = null;
@@ -3509,7 +3601,13 @@ async function drawSnapPreview() {
       console.warn('Cell snap failed:', error);
     }
     if (key !== snapPreviewKey) return;
+    // A failed snap is asked again on the next change, not never.
+    if (!snap) snapPreviewKey = null;
   }
+  lastSnap = snap ? { bbox: selectedBBox, snap } : null;
+  const how = !snap ? ''
+    : !snapRunsAsOneWorld(snap) ? oneWorldText('snap_single_run', 'Builds in one run')
+      : isOneWorldEnabled() ? '' : oneWorldText('snap_as_one_world', 'Builds as a One World');
   // Width (east-west) first, then height (north-south).
   const text = snap
     ? oneWorldText('snap_regions_info', '{x} × {z} regions · {cx} × {cz} cells · {pieces} pieces · {w} × {h} km', {
@@ -3517,9 +3615,10 @@ async function drawSnapPreview() {
       pieces: snap.cells[0] * snap.cells[1], w: snap.size_km[0].toFixed(1), h: snap.size_km[1].toFixed(1),
     }) + (snap.fallback
       ? ' · ' + oneWorldText('snap_fallback', 'No whole cell fits inside, so one is used.')
-      : '')
+      : '') + (how ? ' · ' + how : '')
     : '';
   postToMap({ type: 'snapOverlay', snap, label: text });
+  refreshBboxSelectionInfo();
   const info = document.getElementById('bbox-snap-info');
   if (!info) return;
   info.style.display = snap ? '' : 'none';
@@ -3764,6 +3863,8 @@ let oneWorldPinned = false;
 let oneWorldOverlayKey = null;
 // Whether the running (or last) generation was a One World run.
 let lastRunOneWorld = false;
+// The One World it went to: the named one, or a new one for a large selection.
+let lastRunWorldName = '';
 let oneWorldName = localStorage.getItem(ONE_WORLD_NAME_KEY) || '';
 
 function isOneWorldAvailable() {
@@ -4135,6 +4236,9 @@ function initOneWorld() {
   if (mapFrame) {
     mapFrame.addEventListener('load', () => {
       oneWorldOverlayKey = null;
+      // The new map has no grid yet.
+      snapPreviewKey = null;
+      refreshSnapPreview();
       if (isOneWorldEnabled()) refreshOneWorldState();
     });
   }
@@ -4212,15 +4316,21 @@ async function startGeneration(options = {}) {
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
 
-    const oneWorld = isOneWorldEnabled();
     const runSelection = await runSelectionFor(selectedBBox);
     const runBBox = runSelection.bbox;
-    if (oneWorld && !prewarm && !(await prepareOneWorldRun(runBBox))) {
+    const oneWorld = runSelection.oneWorld;
+    // Without One World on, a run in pieces makes a new One World there.
+    if (oneWorld && !isOneWorldEnabled() && !savePath) {
+      handleWorldSelectionError(1);
+      return;
+    }
+    if (isOneWorldEnabled() && !prewarm && !(await prepareOneWorldRun(runBBox))) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
     }
     lastRunOneWorld = oneWorld;
+    lastRunWorldName = runSelection.worldName;
 
     // Auto-create world for Java format (a One World is resolved by the backend)
     if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {
@@ -4247,7 +4357,7 @@ async function startGeneration(options = {}) {
     // Clear any existing world preview since we're generating a new one.
     // A One World keeps its areas on the map; the new one joins them at the end.
     if (!oneWorld && !prewarm) notifyWorldChanged();
-    if (oneWorld && !prewarm) setWorldNameLabel(oneWorldFolderName());
+    if (oneWorld && !prewarm) setWorldNameLabel(runSelection.worldName);
 
     // Get the map iframe reference
     const mapFrame = document.querySelector('.map-container');
@@ -4354,7 +4464,7 @@ async function startGeneration(options = {}) {
         facadeDetail: getFacadeDetail(),
         celestialBodyName: selectedCelestialBody,
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : "",
+        oneWorldName: oneWorld ? runSelection.worldName : "",
         // A download refuses --offline, which only reads what it fetches.
         flags: (prewarm
           ? advancedFeatureArgs().flags.filter((f) => f !== '--offline').concat('--prewarm')
