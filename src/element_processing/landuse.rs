@@ -1,7 +1,7 @@
 use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
-use crate::deterministic_rng::coord_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
@@ -124,12 +124,16 @@ pub fn generate_landuse(
         _ => None,
     };
 
+    let mut rng = element_rng(element.id);
     for &(x, z) in floor_area.iter() {
-        // Keyed by the block alone, not drawn in fill order or by id: the cells a
+        // One World keys these by the block alone (plain runs keep the
+        // per-element stream), not drawn in fill order or by id: the cells a
         // run fills depend on its area and tiles, and an assembled multipolygon
         // ring's id on which member ways the run saw, so either would grow
         // different plants on each side of a seam.
-        let mut rng = coord_rng(x, z, FILL_SALT);
+        if args.one_world_run.is_some() {
+            rng = coord_rng(x, z, FILL_SALT);
+        }
         // One resolution per block, shared by the surface and the decoration below.
         let field_cell = fields.as_ref().map(|f| f.cell_at(x, z));
         // Apply per-block randomness for certain landuse types

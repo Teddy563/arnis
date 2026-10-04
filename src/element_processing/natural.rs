@@ -2,7 +2,7 @@ use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::climate::Climate;
-use crate::deterministic_rng::coord_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
@@ -209,12 +209,16 @@ pub fn generate_natural(
                     .then(|| FieldProfile::grassland(&args.fields, args.scale))
                     .flatten();
 
+                let mut rng = element_rng(way.id);
                 for &(x, z) in filled_area.iter() {
-                    // Keyed by the block alone, not drawn in fill order or by id: the
+                    // One World keys these by the block alone (plain runs keep the
+                    // per-element stream), not drawn in fill order or by id: the
                     // cells a run fills depend on its area and tiles, and an assembled
                     // multipolygon ring's id on which member ways the run saw, so
                     // either would grow different plants on each side of a seam.
-                    let mut rng = coord_rng(x, z, FILL_SALT);
+                    if args.one_world_run.is_some() {
+                        rng = coord_rng(x, z, FILL_SALT);
+                    }
                     let grass_cell = grass.as_ref().map(|g| g.cell_at(x, z));
                     // Roads, paths and paved areas keep their own surface. Checked
                     // by mask because a gravel or dirt road is not in the block list.

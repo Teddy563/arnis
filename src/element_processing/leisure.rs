@@ -1,7 +1,7 @@
 use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
-use crate::deterministic_rng::coord_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::tree::Tree;
@@ -91,11 +91,15 @@ pub fn generate_leisure(
 
         // Flood-fill the interior of the leisure area using cache
         if corner_count > 0 {
+            let mut rng = element_rng(element.id);
             for &(x, z) in filled_area.iter() {
-                // Keyed by the block alone, not drawn in fill order or by id: the
+                // One World keys these by the block alone (plain runs keep the
+                // per-element stream), not drawn in fill order or by id: the
                 // cells a run fills depend on its area and tiles, and an assembled
                 // multipolygon ring's id on which member ways the run saw.
-                let mut rng = coord_rng(x, z, FILL_SALT);
+                if args.one_world_run.is_some() {
+                    rng = coord_rng(x, z, FILL_SALT);
+                }
                 if leisure_type == "schoolyard" && editor.nested_area_owns(x, z) {
                     continue;
                 }

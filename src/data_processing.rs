@@ -919,7 +919,8 @@ pub fn generate_world_with_options(
     sort_ground_fill_areas(&mut elements);
 
     // Pre-compute all flood fills in parallel for better CPU utilization
-    let mut flood_fill_cache = FloodFillCache::precompute(&elements, args.timeout.as_ref());
+    let mut flood_fill_cache =
+        FloodFillCache::precompute(&elements, args.timeout.as_ref(), one_world.is_some());
 
     // Collect building footprints to prevent trees from spawning inside buildings
     // Uses a memory-efficient bitmap (~1 bit per coordinate) instead of a HashSet (~24 bytes per coordinate)
