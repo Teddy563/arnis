@@ -380,6 +380,38 @@ pub fn export(root: &Path) -> Result<usize, String> {
     Ok(written)
 }
 
+/// Every file's path, size and time under `root`, as one line: changes when the folder does.
+pub fn stamp(root: &Path) -> String {
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    files.sort();
+    files
+        .iter()
+        .map(|p| {
+            let meta = fs::metadata(p).ok();
+            let time = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            format!("{}|{}|{time}", p.display(), meta.map_or(0, |m| m.len()))
+        })
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+/// The folder the window offers when its field is empty: `tree-packs` next to the executable.
+pub fn default_folder() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .unwrap_or_default()
+        .join("tree-packs")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

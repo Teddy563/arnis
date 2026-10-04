@@ -111,6 +111,8 @@ const SETTINGS = [
   { id: 'props-select', kind: 'select', store: OWN },
   { id: 'props-custom-input', kind: 'text', store: OWN },
   { id: 'props-min-scale-input', kind: 'text', store: OWN },
+  { id: 'tree-pack-dir-input', kind: 'text', store: OWN },
+  { id: 'tree-pack-mode-select', kind: 'select', store: OWN },
 
   // OSM Data Source
   { id: 'osm-source-select', kind: 'select', store: OWN },

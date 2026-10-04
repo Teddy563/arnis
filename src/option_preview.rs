@@ -41,7 +41,17 @@ fn sample(group: &str) -> Option<Sample> {
             2,
             &["field-mix", "farm-crops", "field-scale"],
         ),
-        "trees" => s(44.2025, 25.904, 1, &["tree-realm", "tree-size-weights"]),
+        "trees" => s(
+            44.2025,
+            25.904,
+            1,
+            &[
+                "tree-realm",
+                "tree-size-weights",
+                "tree-pack-dir",
+                "tree-pack-mode",
+            ],
+        ),
         "snow" => s(46.535, 7.9575, 4, &["snow-mode", "snow-percent", "snow-y"]),
         // Rocks never go on tilled farmland, so the fields are pasture.
         "scatter" => Sample {
@@ -137,7 +147,15 @@ pub fn render(
 ) -> Result<Vec<u8>, Failure> {
     let sample = sample(group).ok_or_else(|| Failure::Other(format!("no preview {group}")))?;
     let flags = sample.check(flags).map_err(Failure::Other)?;
-    let cached = cache_path(root, group, &flags);
+    // A tree folder's contents are part of the combination, not only its name.
+    let mut key = flags.clone();
+    if let Some(dir) = flags
+        .iter()
+        .find_map(|f| f.strip_prefix("--tree-pack-dir="))
+    {
+        key.push(crate::trees::pack_dir::stamp(Path::new(dir)));
+    }
+    let cached = cache_path(root, group, &key);
     if let Ok(png) = std::fs::read(&cached) {
         return Ok(png);
     }

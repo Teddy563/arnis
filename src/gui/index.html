@@ -1934,6 +1934,59 @@
                       <input type="number" id="props-min-scale-input" name="props-min-scale-input" min="0" max="10" step="0.05" placeholder="Off">
                     </div>
                   </div>
+                  <div class="settings-row setting-tile is-wide" id="tree-pack-dir-row">
+                    <label for="tree-pack-dir-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="tree_pack_dir">Tree Pack Folder</span>
+                          <span class="tooltip-icon" data-tooltip="Your own tree schematics (.schem), in folders realm / community / tree type / size, like the built-in packs. The folders say what a tree is, so file names are free; the size folder is optional. Files that do not load are skipped. Used only when the folder exists.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="tree_pack_dir_desc">Your own tree schematics. Empty uses tree-packs next to Arnis.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control save-path-control">
+                      <input type="text" id="tree-pack-dir-input" name="tree-pack-dir-input" class="save-path-input" spellcheck="false">
+                      <button type="button" id="tree-pack-dir-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                        <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="tree-pack-mode-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="tree_pack_mode">Tree Pack Mode</span>
+                          <span class="tooltip-icon" data-tooltip="Add puts your trees beside the built-in ones. Replace uses only your trees in every realm the folder has trees for; realms without any keep the built-in trees.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="tree_pack_mode_desc">Whether your trees join the built-in ones or replace them.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <select id="tree-pack-mode-select" name="tree-pack-mode-select" class="settings-select">
+                        <option value="add" selected data-localize="tree_pack_mode_add">Add to Built-in</option>
+                        <option value="replace" data-localize="tree_pack_mode_replace">Replace Built-in</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide">
+                    <label for="tree-pack-create-button" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-folder"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="tree_pack_layout">Tree Pack Layout</span>
+                          <span class="tooltip-icon" data-tooltip="Create Folder Structure makes a folder for every realm, community, tree type and size, with a README in each realm. Export Built-in Trees also copies every built-in tree into them, to edit or adapt. Nothing is deleted.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="tree_pack_layout_desc">Makes the folders, or fills them with the built-in trees.</span>
+                      </span>
+                    </label>
+                    <div class="settings-control">
+                      <button type="button" id="tree-pack-create-button" class="clear-cache-button" data-localize="tree_pack_create_button">Create Folder Structure</button>
+                      <button type="button" id="tree-pack-export-button" class="clear-cache-button" data-localize="tree_pack_export_button">Export Built-in Trees</button>
+                    </div>
+                  </div>
+                  <div id="tree-pack-status" class="settings-notice" style="display: none;"></div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="redraw-map-button" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-map"></use></svg>

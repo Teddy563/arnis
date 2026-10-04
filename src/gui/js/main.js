@@ -1691,6 +1691,7 @@ function initAdvancedFeatures() {
   });
   initPropFamilies();
   initExperimentalButtons();
+  initTreePack();
   // The cards follow their controls, restored and reset values included.
   groups.addEventListener('change', refreshOptionPreviews);
   // Offline, a live render may only read the caches.
@@ -2048,7 +2049,7 @@ function initPresets() {
 // sample area with its current flags replaces it (gui_render_preview).
 const PREVIEW_GROUPS = {
   fields: ['field-mix', 'farm-crops', 'field-scale'],
-  trees: ['tree-realm', 'tree-size-weights'],
+  trees: ['tree-realm', 'tree-size-weights', 'tree-pack-dir', 'tree-pack-mode'],
   snow: ['snow-mode', 'snow-percent', 'snow-y'],
   scatter: ['rocks', 'rock-density', 'bushes', 'bush-density'],
   roads: ['road-detail'],
@@ -2167,6 +2168,64 @@ function initPropFamilies() {
   show();
 }
 
+// Tree Pack Folder: what gui_tree_pack_status last found there (the field's
+// folder, or the default next to Arnis when it is empty).
+let treePack = null;
+let treePackSeq = 0;
+
+async function refreshTreePack() {
+  const seq = ++treePackSeq;
+  const field = document.getElementById('tree-pack-dir-input');
+  let status = null;
+  try {
+    status = await invoke('gui_tree_pack_status', { folder: field.value });
+  } catch (error) {
+    console.warn('Tree pack status failed:', error);
+  }
+  if (seq !== treePackSeq) return;
+  treePack = status;
+  if (status) {
+    field.placeholder = status.default_folder;
+    setFeatureNotice('tree-pack-status', status.exists
+      ? oneWorldText('tree_pack_found', '{n} custom trees found ({m} skipped)', { n: status.found, m: status.skipped })
+      : oneWorldText('tree_pack_missing', 'No folder there yet. Create Folder Structure makes it.'));
+  }
+  refreshLivePreviews();
+}
+
+function initTreePack() {
+  const field = document.getElementById('tree-pack-dir-input');
+  document.getElementById('tree-pack-dir-browse').addEventListener('click', async () => {
+    try {
+      const current = field.value.trim() || (treePack && treePack.folder) || '';
+      const picked = await invoke('gui_pick_save_directory', { startPath: current });
+      if (picked && picked !== current) {
+        field.value = picked;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      console.error('Tree pack folder picker failed:', error);
+    }
+  });
+  field.addEventListener('change', refreshTreePack);
+  [['tree-pack-create-button', false], ['tree-pack-export-button', true]].forEach(([id, exporting]) => {
+    const button = document.getElementById(id);
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await invoke('gui_tree_pack_layout', { folder: field.value, export: exporting });
+        await refreshTreePack();
+      } catch (error) {
+        setFeatureNotice('tree-pack-status', String(error), false);
+      } finally {
+        refreshAdvancedFeatures();
+      }
+    });
+  });
+  refreshTreePack();
+}
+
 // A notice under a button: what the click did, green when it worked.
 function setFeatureNotice(id, text, ok) {
   const el = document.getElementById(id);
@@ -2229,6 +2288,7 @@ const MELD_ALWAYS = [
   ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => 'tree-weight-' + size + '-slider'),
   'climate-mode-select', 'climate-preview-button', 'grass-texture-toggle', 'land-texture-toggle',
   'world-seed-input', 'props-select',
+  'tree-pack-dir-input', 'tree-pack-mode-select', 'tree-pack-create-button', 'tree-pack-export-button',
 ];
 
 function formatCpuUsage() {
@@ -2353,6 +2413,7 @@ function advancedFeatureArgs() {
   const sizes = ['small', 'medium', 'big', 'tall', 'giant'];
   const weights = sizes.map((size) => enabled('tree-weight-' + size + '-slider'));
   const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
+  const treePackDir = enabled('tree-pack-dir-input') && treePack && treePack.exists ? treePack.folder : null;
   const workers = enabled('one-world-workers-select');
   const propsSelect = enabled('props-select');
   // Auto leaves the props to the 3D Models switch, as stock.
@@ -2386,6 +2447,9 @@ function advancedFeatureArgs() {
     'tree-size-weights': weighted
       ? sizes.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
       : null,
+    // Only a folder that is there; an empty field means the default one.
+    'tree-pack-dir': treePackDir,
+    'tree-pack-mode': treePackDir ? changed('tree-pack-mode-select') : null,
     // A string, so a seed past 2^53 reaches the parser whole.
     'cave-seed': text('cave-seed-input'),
     'cave-datum-y': int('cave-datum-y-input'),

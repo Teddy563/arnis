@@ -141,6 +141,8 @@ pub fn run_gui() -> Result<(), String> {
             gui_bake_archive,
             gui_cancel_bake,
             gui_render_preview,
+            gui_tree_pack_status,
+            gui_tree_pack_layout,
             gui_start_generation,
             gui_get_version,
             gui_get_update_info,
@@ -745,6 +747,52 @@ fn gui_render_preview(group: String, flags: Vec<String>, offline: bool) -> Resul
         )),
         Err(Failure::NeedsData) => Err("needs-data".to_string()),
         Err(Failure::Other(e)) => Err(e),
+    }
+}
+
+/// The Tree Pack Folder an empty field means: `tree-packs` next to Arnis.
+fn tree_pack_folder(folder: &str) -> PathBuf {
+    match folder.trim() {
+        "" => crate::trees::pack_dir::default_folder(),
+        typed => PathBuf::from(typed),
+    }
+}
+
+/// What a Tree Pack Folder holds, for its status line.
+#[derive(serde::Serialize)]
+struct TreePackStatus {
+    folder: String,
+    default_folder: String,
+    exists: bool,
+    found: usize,
+    skipped: usize,
+}
+
+/// Scans the Tree Pack Folder (empty: the default) as a run would.
+#[tauri::command(async)]
+fn gui_tree_pack_status(folder: String) -> TreePackStatus {
+    use crate::trees::pack_dir::{default_folder, PackDir, TreePackMode};
+    let path = tree_pack_folder(&folder);
+    let exists = path.is_dir();
+    let scan = exists.then(|| PackDir::scan(&path, TreePackMode::Add));
+    TreePackStatus {
+        folder: path.display().to_string(),
+        default_folder: default_folder().display().to_string(),
+        exists,
+        found: scan.as_ref().map_or(0, PackDir::found),
+        skipped: scan.map_or(0, |s| s.skipped.len()),
+    }
+}
+
+/// Create Folder Structure (`--init-tree-pack-dir`) or, with `export`, Export
+/// Built-in Trees (`--export-tree-packs`) into the Tree Pack Folder.
+#[tauri::command(async)]
+fn gui_tree_pack_layout(folder: String, export: bool) -> Result<usize, String> {
+    let path = tree_pack_folder(&folder);
+    if export {
+        crate::trees::pack_dir::export(&path)
+    } else {
+        crate::trees::pack_dir::init(&path)
     }
 }
 
