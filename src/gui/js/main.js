@@ -1178,6 +1178,8 @@ function initSettings() {
     refreshCacheSize();
     // Same for the plan: a run since the last look may have filled the caches.
     refreshDataPlan(true);
+    // Auto's realm follows the selection.
+    refreshOptionPreviews();
   }
 
   // Close the settings page
@@ -1715,6 +1717,8 @@ function initAdvancedFeatures() {
   initExperimentalButtons();
   initTreePack();
   // The cards follow their controls, restored and reset values included.
+  initTreeSizeToggles();
+  initPreviewModes();
   groups.addEventListener('change', refreshOptionPreviews);
   // Offline, a live render may only read the caches.
   document.getElementById('offline-toggle').addEventListener('change', refreshLivePreviews);
@@ -2086,14 +2090,202 @@ const PREVIEW_GROUPS = {
 const PREVIEW_NO_STATIC = ['scatter'];
 const livePreviews = {};
 
-function previewCaption(card) {
-  const control = document.getElementById(card.dataset.for);
-  let name = '';
-  if (control && control.type === 'checkbox') {
-    name = control.checked ? oneWorldText('preview_on', 'On') : oneWorldText('preview_off', 'Off');
-  } else if (control && control.selectedOptions[0]) {
-    name = control.selectedOptions[0].textContent;
+// The picture a card shows: 3D (images/previews/iso/) when picked and drawn
+// for the shipped option, else the 2D one with a note. The pick is a viewer
+// preference kept outside the settings store.
+const PREVIEW_MODE_KEY = 'arnis-preview-mode';
+let previewMode = '2d';
+try { previewMode = localStorage.getItem(PREVIEW_MODE_KEY) === '3d' ? '3d' : '2d'; } catch (_) {}
+
+function paintPreview(card) {
+  const img = card.querySelector('img');
+  const flat = card.dataset.shown || card.dataset.static;
+  const frame = card.classList.contains('preview-frame');
+  card.querySelectorAll('.preview-mode button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === previewMode);
+    b.setAttribute('aria-pressed', String(b.dataset.mode === previewMode));
+  });
+  const want3d = frame && previewMode === '3d';
+  // Live renders are 2D only.
+  const iso = want3d && !card.dataset.live
+    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/').replace(/\.png$/, '.webp')
+    : null;
+  card.classList.toggle('is-coming', want3d && !iso);
+  img.onerror = iso ? () => {
+    img.onerror = null;
+    card.classList.add('is-coming');
+    img.setAttribute('src', flat);
+  } : null;
+  const src = iso || flat;
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+}
+
+function initPreviewModes() {
+  document.querySelectorAll('.preview-frame .preview-mode button').forEach((button) => {
+    button.addEventListener('click', () => {
+      previewMode = button.dataset.mode;
+      try { localStorage.setItem(PREVIEW_MODE_KEY, previewMode); } catch (_) {}
+      document.querySelectorAll('.preview-frame').forEach(paintPreview);
+    });
+  });
+  document.querySelectorAll('.preview-frame').forEach(initPreviewZoom);
+}
+
+// Zoom inside a frame: wheel or pinch around the pointer, drag to pan,
+// double-click to fit, +/- by steps. A CSS transform on the picture (drawn
+// at 2-3x the frame), so nothing is rendered again; the picture always
+// covers the frame. The view stays when the picture changes, for comparing.
+const PREVIEW_MAX_ZOOM = 6;
+
+function initPreviewZoom(card) {
+  const img = card.querySelector('img');
+  let k = 1;
+  let x = 0;
+  let y = 0;
+  const apply = () => {
+    const w = card.clientWidth;
+    const h = card.clientHeight;
+    k = Math.min(PREVIEW_MAX_ZOOM, Math.max(1, k));
+    x = Math.min(0, Math.max(w * (1 - k), x));
+    y = Math.min(0, Math.max(h * (1 - k), y));
+    img.style.transform = k === 1 ? '' : 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')';
+  };
+  // Zoom by `f` keeping the frame point (px, py) still.
+  const zoomAt = (f, px, py) => {
+    const next = Math.min(PREVIEW_MAX_ZOOM, Math.max(1, k * f));
+    x = px - (px - x) * (next / k);
+    y = py - (py - y) * (next / k);
+    k = next;
+    apply();
+  };
+  const local = (e) => {
+    const r = card.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  card.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(Math.exp(-e.deltaY * 0.0015), ...local(e));
+  }, { passive: false });
+  card.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    k = 1;
+    apply();
+  });
+  card.querySelectorAll('.preview-zoom button').forEach((b) => b.addEventListener('click', () => {
+    zoomAt(b.dataset.zoom === '1' ? 1.5 : 1 / 1.5, card.clientWidth / 2, card.clientHeight / 2);
+  }));
+  // One pointer pans, two pinch.
+  const pointers = new Map();
+  let pinch = 0;
+  img.addEventListener('pointerdown', (e) => {
+    img.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, local(e));
+    card.classList.add('is-panning');
+  });
+  img.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const [px, py] = local(e);
+    const [ox, oy] = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [px, py]);
+    if (pointers.size === 1) {
+      x += px - ox;
+      y += py - oy;
+      apply();
+    } else if (pointers.size === 2) {
+      const [a, b] = Array.from(pointers.values());
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) zoomAt(d / pinch, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      pinch = d;
+    }
+  });
+  const up = (e) => {
+    pointers.delete(e.pointerId);
+    pinch = 0;
+    if (!pointers.size) card.classList.remove('is-panning');
+  };
+  img.addEventListener('pointerup', up);
+  img.addEventListener('pointercancel', up);
+  new ResizeObserver(apply).observe(card);
+}
+
+// Tree Sizes: per size a switch and its weight slider in one row. Off is
+// weight 0 and greys the slider; on from 0 puts it back at 100. The slider
+// stays enabled either way, since a disabled control sends nothing.
+function initTreeSizeToggles() {
+  const boxes = Array.from(document.querySelectorAll('.tree-size-row input[data-weight]'));
+  const sync = () => boxes.forEach((box) => {
+    const slider = document.getElementById(box.dataset.weight);
+    box.checked = parseFloat(slider.value) > 0;
+    box.disabled = slider.disabled;
+    box.closest('.tree-size-row').classList.toggle('is-off', !box.checked);
+  });
+  boxes.forEach((box) => {
+    const slider = document.getElementById(box.dataset.weight);
+    box.addEventListener('change', () => {
+      slider.value = box.checked ? 100 : 0;
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    slider.addEventListener('input', sync);
+    slider.addEventListener('change', sync);
+    new MutationObserver(sync).observe(slider, { attributes: true, attributeFilter: ['disabled'] });
+  });
+  sync();
+}
+
+// The realm Auto would pick by the selection's centre, as tree_pack.rs
+// realm_for_latlon does (its ecoregion pick usually agrees). First match wins.
+const REALM_BOXES = [
+  ['fl', 8, 31, -90, -60], ['ena', 8, 62, -100, -52], ['wna', 25, 72, -170, -100],
+  ['sam', -56, 14, -82, -34], ['eur', 34, 72, -25, 40], ['afr', -36, 37, -19, 52],
+  ['ind', -11, 29, 60, 155], ['asn', 5, 75, 40, 155], ['aus', -50, 0, 110, 180],
+  ['aus', -50, 32, -180, -130],
+];
+
+function showAutoRealm() {
+  const slot = document.querySelector('.realm-auto .realm-detected');
+  if (!slot) return;
+  const b = (selectedBBox || '').split(/[ ,]+/).map(parseFloat);
+  let text = '';
+  if (b.length === 4 && b.every(Number.isFinite) && b.some((v) => v !== 0)) {
+    const lat = (b[0] + b[2]) / 2;
+    const lon = (b[1] + b[3]) / 2;
+    const hit = REALM_BOXES.find(([, a0, a1, o0, o1]) => lat >= a0 && lat <= a1 && lon >= o0 && lon <= o1);
+    const code = hit ? hit[0] : 'vanilla-plus';
+    const name = document.querySelector('.realm-grid .segment[data-value="' + code + '"] span[data-localize]');
+    if (name) text = ' · ' + name.textContent.trim();
   }
+  slot.textContent = text;
+}
+
+// What a card shows, in words. A side-by-side block names the picked option
+// of each list and the switches that are on ("Europe · Small + Tall");
+// all of a list's switches on is the stock mix and goes unsaid.
+function previewName(card) {
+  const block = card.closest('.preview-block');
+  const control = document.getElementById(card.dataset.for);
+  if (!block) {
+    if (control && control.type === 'checkbox') {
+      return control.checked ? oneWorldText('preview_on', 'On') : oneWorldText('preview_off', 'Off');
+    }
+    return control && control.selectedOptions[0] ? control.selectedOptions[0].textContent : '';
+  }
+  const picked = Array.from(block.querySelectorAll('.preview-options .segment.active')).map((b) => b.textContent.trim());
+  const switches = Array.from(block.querySelectorAll('.tree-size-row input.switch, .preview-controls > .settings-row input.switch'));
+  const on = switches.filter((s) => s.checked).map((s) => {
+    const label = s.closest('label') || s.closest('.settings-row').querySelector('.setting-heading > span');
+    return label.textContent.trim();
+  });
+  if (switches.length && on.length < switches.length) {
+    picked.push(on.length ? on.join(' + ') : oneWorldText('preview_off', 'Off'));
+  } else if (switches.length && !picked.length) {
+    picked.push(on.join(' + '));
+  }
+  return picked.join(' · ');
+}
+
+function previewCaption(card) {
+  const name = previewName(card);
   const state = card.classList.contains('is-updating')
     ? oneWorldText('preview_updating', 'Updating…')
     : card.dataset.note || '';
@@ -2101,18 +2293,19 @@ function previewCaption(card) {
 }
 
 function refreshOptionPreviews() {
+  showAutoRealm();
   document.querySelectorAll('.option-preview[data-for]').forEach((card) => {
     const control = document.getElementById(card.dataset.for);
-    const img = card.querySelector('img');
-    if (!control || !img) return;
+    if (!control || !card.querySelector('img')) return;
     const value = control.type === 'checkbox' ? (control.checked ? 'on' : 'off') : control.value;
     const src = 'images/previews/' + card.dataset.preview + '-' + value + '.png';
     // A live render stands until its group changes; the group's own refresh
     // puts the shipped picture back when that is exact again.
     if (card.dataset.static !== src) {
       card.dataset.static = src;
-      if (!card.dataset.live) img.setAttribute('src', src);
+      if (!card.dataset.live) card.dataset.shown = src;
     }
+    paintPreview(card);
     previewCaption(card);
   });
   refreshLivePreviews();
@@ -2141,7 +2334,8 @@ function refreshLivePreviews() {
         delete card.dataset.live;
         delete card.dataset.note;
         card.classList.remove('is-updating');
-        card.querySelector('img').setAttribute('src', card.dataset.static);
+        card.dataset.shown = card.dataset.static;
+        paintPreview(card);
         previewCaption(card);
       });
       return;
@@ -2165,7 +2359,8 @@ function refreshLivePreviews() {
         // A failed render shows the shipped picture, not an older combination's.
         if (src) card.dataset.live = '1';
         else delete card.dataset.live;
-        card.querySelector('img').setAttribute('src', src || card.dataset.static);
+        card.dataset.shown = src || card.dataset.static;
+        paintPreview(card);
         if (note) card.dataset.note = note;
         else delete card.dataset.note;
         previewCaption(card);

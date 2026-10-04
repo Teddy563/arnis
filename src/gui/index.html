@@ -1303,7 +1303,9 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_terrain">Terrain</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide has-preview">
+                  <div class="preview-block is-wide" data-group="snow">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="snow-mode-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-snowflake"></use></svg>
                       <span class="setting-text">
@@ -1314,18 +1316,18 @@
                         <span class="setting-desc" data-localize="snow_mode_desc">Where snow lies on the terrain.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="snow-mode-select" name="snow-mode-select" class="settings-select">
+                    <select id="snow-mode-select" name="snow-mode-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="realistic" selected data-localize="snow_mode_realistic">Realistic</option>
                         <option value="peaks" data-localize="snow_mode_peaks">Peaks</option>
                         <option value="manual" data-localize="snow_mode_manual">Manual</option>
                         <option value="off" data-localize="snow_mode_off">Off</option>
                       </select>
+                    <div class="preview-options" data-select="snow-mode-select">
+                      <button type="button" class="segment" data-value="realistic" data-localize="snow_mode_realistic">Realistic</button>
+                      <button type="button" class="segment" data-value="peaks" data-localize="snow_mode_peaks">Peaks</button>
+                      <button type="button" class="segment" data-value="manual" data-localize="snow_mode_manual">Manual</button>
+                      <button type="button" class="segment" data-value="off" data-localize="snow_mode_off">Off</button>
                     </div>
-                    <figure class="option-preview" data-for="snow-mode-select" data-preview="snow-mode" data-group="snow">
-                      <img src="images/previews/snow-mode-realistic.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide" id="snow-percent-row">
                     <label for="snow-percent-slider" class="setting-label">
@@ -1355,7 +1357,26 @@
                       <input type="number" id="snow-y-input" name="snow-y-input" min="-2048" max="2048" step="1" value="120">
                     </div>
                   </div>
-                  <div class="settings-row setting-tile has-preview">
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="snow-mode-select" data-preview="snow-mode" data-group="snow">
+                      <img src="images/previews/snow-mode-realistic.png" alt="" width="480" height="360">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <figcaption></figcaption>
+                    </figure>
+                  </div>
+                  <div class="preview-block is-wide" data-group="scatter">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile">
                     <label for="rocks-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
                       <span class="setting-text">
@@ -1369,12 +1390,8 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="rocks-toggle" name="rocks-toggle">
                     </div>
-                    <figure class="option-preview" data-for="rocks-toggle" data-preview="rocks" data-group="scatter">
-                      <img src="images/previews/rocks-off.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
-                  <div class="settings-row setting-tile has-preview">
+                  <div class="settings-row setting-tile">
                     <label for="bushes-toggle" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-shrub"></use></svg>
                       <span class="setting-text">
@@ -1388,10 +1405,6 @@
                     <div class="settings-control">
                       <input type="checkbox" class="switch" id="bushes-toggle" name="bushes-toggle">
                     </div>
-                    <figure class="option-preview" data-for="bushes-toggle" data-preview="bushes" data-group="scatter">
-                      <img src="images/previews/bushes-off.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="rock-density-slider" class="setting-label">
@@ -1422,12 +1435,31 @@
                       <span id="bush-density-value" class="setting-value">0.05</span>
                     </div>
                   </div>
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="rocks-toggle" data-preview="rocks" data-group="scatter">
+                      <img src="images/previews/rocks-off.png" alt="" width="480" height="360">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <figcaption></figcaption>
+                    </figure>
+                  </div>
                 </div>
                 <div class="setting-choice setting-subgroup">
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_roads">Roads &amp; Buildings</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide has-preview">
+                  <div class="preview-block is-wide" data-group="roads">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="road-detail-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-route"></use></svg>
                       <span class="setting-text">
@@ -1438,15 +1470,31 @@
                         <span class="setting-desc" data-localize="road_detail_desc">How much road marking and minor ways to build.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="road-detail-select" name="road-detail-select" class="settings-select">
+                    <select id="road-detail-select" name="road-detail-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="max" selected data-localize="road_detail_max">Max</option>
                         <option value="clean" data-localize="road_detail_clean">Clean</option>
                         <option value="compact" data-localize="road_detail_compact">Compact</option>
                       </select>
+                    <div class="preview-options" data-select="road-detail-select">
+                      <button type="button" class="segment" data-value="max" data-localize="road_detail_max">Max</button>
+                      <button type="button" class="segment" data-value="clean" data-localize="road_detail_clean">Clean</button>
+                      <button type="button" class="segment" data-value="compact" data-localize="road_detail_compact">Compact</button>
                     </div>
-                    <figure class="option-preview" data-for="road-detail-select" data-preview="road-detail" data-group="roads">
-                      <img src="images/previews/road-detail-max.png" alt="" width="256" height="160" loading="lazy">
+                  </div>
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="road-detail-select" data-preview="road-detail" data-group="roads">
+                      <img src="images/previews/road-detail-max.png" alt="" width="480" height="360">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
                       <figcaption></figcaption>
                     </figure>
                   </div>
@@ -1488,7 +1536,9 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_fields">Fields &amp; Trees</span></span></span>
                 </div>
                 <div class="setting-grid">
-                  <div class="settings-row setting-tile is-wide has-preview">
+                  <div class="preview-block is-wide" data-group="fields">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="field-mix-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wheat"></use></svg>
                       <span class="setting-text">
@@ -1499,19 +1549,20 @@
                         <span class="setting-desc" data-localize="field_mix_desc">How farmland is split into parcels.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="field-mix-select" name="field-mix-select" class="settings-select">
+                    <select id="field-mix-select" name="field-mix-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="classic" selected data-localize="field_mix_classic">Classic</option>
                         <option value="smallholding" data-localize="field_mix_smallholding">Smallholding</option>
                         <option value="patchwork" data-localize="field_mix_patchwork">Patchwork</option>
                         <option value="prairie" data-localize="field_mix_prairie">Prairie</option>
                         <option value="pasture" data-localize="field_mix_pasture">Pasture</option>
                       </select>
+                    <div class="preview-options" data-select="field-mix-select">
+                      <button type="button" class="segment" data-value="classic" data-localize="field_mix_classic">Classic</button>
+                      <button type="button" class="segment" data-value="smallholding" data-localize="field_mix_smallholding">Smallholding</button>
+                      <button type="button" class="segment" data-value="patchwork" data-localize="field_mix_patchwork">Patchwork</button>
+                      <button type="button" class="segment" data-value="prairie" data-localize="field_mix_prairie">Prairie</button>
+                      <button type="button" class="segment" data-value="pasture" data-localize="field_mix_pasture">Pasture</button>
                     </div>
-                    <figure class="option-preview" data-for="field-mix-select" data-preview="field-mix" data-group="fields">
-                      <img src="images/previews/field-mix-classic.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption></figcaption>
-                    </figure>
                   </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="farm-crops-input" class="setting-label">
@@ -1544,7 +1595,26 @@
                       <span id="field-scale-value" class="setting-value">100%</span>
                     </div>
                   </div>
-                  <div class="settings-row setting-tile is-wide has-preview">
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="field-mix-select" data-preview="field-mix" data-group="fields">
+                      <img src="images/previews/field-mix-classic.png" alt="" width="480" height="360">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
+                      <figcaption></figcaption>
+                    </figure>
+                  </div>
+                  <div class="preview-block is-wide" data-group="trees">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
                     <label for="tree-realm-select" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-earth"></use></svg>
                       <span class="setting-text">
@@ -1555,8 +1625,7 @@
                         <span class="setting-desc" data-localize="tree_realm_desc">Which region&#x27;s trees to plant.</span>
                       </span>
                     </label>
-                    <div class="settings-control">
-                      <select id="tree-realm-select" name="tree-realm-select" class="settings-select">
+                    <select id="tree-realm-select" name="tree-realm-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="auto" selected data-localize="features_auto">Auto</option>
                         <option value="afr" data-localize="tree_realm_afr">Africa</option>
                         <option value="asn" data-localize="tree_realm_asn">Asia</option>
@@ -1569,94 +1638,79 @@
                         <option value="wna" data-localize="tree_realm_wna">Western North America</option>
                         <option value="vanilla-plus" data-localize="tree_realm_vanilla_plus">Vanilla Plus</option>
                       </select>
+                    <div class="preview-options realm-grid" data-select="tree-realm-select">
+                      <button type="button" class="segment realm-auto" data-value="auto"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-auto.png)"></span><span data-localize="features_auto">Auto</span><span class="realm-detected"></span></button>
+                      <button type="button" class="segment" data-value="afr" title="Africa"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-afr.png)"></span><span data-localize="tree_realm_short_afr">Africa</span></button>
+                      <button type="button" class="segment" data-value="asn" title="Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-asn.png)"></span><span data-localize="tree_realm_short_asn">Asia</span></button>
+                      <button type="button" class="segment" data-value="aus" title="Australia &amp; Oceania"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-aus.png)"></span><span data-localize="tree_realm_short_aus">Oceania</span></button>
+                      <button type="button" class="segment" data-value="ena" title="Eastern North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ena.png)"></span><span data-localize="tree_realm_short_ena">E. North America</span></button>
+                      <button type="button" class="segment" data-value="eur" title="Europe"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-eur.png)"></span><span data-localize="tree_realm_short_eur">Europe</span></button>
+                      <button type="button" class="segment" data-value="fl" title="Florida &amp; Caribbean"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-fl.png)"></span><span data-localize="tree_realm_short_fl">Caribbean</span></button>
+                      <button type="button" class="segment" data-value="ind" title="Tropical Asia"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-ind.png)"></span><span data-localize="tree_realm_short_ind">Tropical Asia</span></button>
+                      <button type="button" class="segment" data-value="sam" title="South America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-sam.png)"></span><span data-localize="tree_realm_short_sam">South America</span></button>
+                      <button type="button" class="segment" data-value="wna" title="Western North America"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-wna.png)"></span><span data-localize="tree_realm_short_wna">W. North America</span></button>
+                      <button type="button" class="segment" data-value="vanilla-plus" title="Vanilla Plus"><span class="realm-swatch" style="background-image: url(images/previews/tree-realm-vanilla-plus.png)"></span><span data-localize="tree_realm_short_vanilla_plus">Vanilla Plus</span></button>
                     </div>
-                    <figure class="option-preview" data-for="tree-realm-select" data-preview="tree-realm" data-group="trees">
-                      <img src="images/previews/tree-realm-auto.png" alt="" width="256" height="160" loading="lazy">
+                  </div>
+                  <div class="setting-tile tree-sizes">
+                    <span class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="tree_sizes">Tree Sizes</span>
+                          <span class="tooltip-icon" data-tooltip="Heights in blocks. Off leaves the size out; the slider is its popularity, 100% the usual mix. Trees placed from measured canopy heights keep their own size.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="tree_sizes_desc">Which sizes to plant, and how often.</span>
+                      </span>
+                    </span>
+                    <div class="tree-size-list">
+                      <div class="settings-row tree-size-row">
+                        <input type="checkbox" class="switch" data-weight="tree-weight-small-slider" aria-label="Small">
+                        <label for="tree-weight-small-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_small">Small</span></span><span class="tree-size-hint">≤ 6</span></label>
+                        <input type="range" id="tree-weight-small-slider" name="tree-weight-small-slider" min="0" max="200" step="10" value="100">
+                        <span id="tree-weight-small-value" class="setting-value">100%</span>
+                      </div>
+                      <div class="settings-row tree-size-row">
+                        <input type="checkbox" class="switch" data-weight="tree-weight-medium-slider" aria-label="Medium">
+                        <label for="tree-weight-medium-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_medium">Medium</span></span><span class="tree-size-hint">≤ 12</span></label>
+                        <input type="range" id="tree-weight-medium-slider" name="tree-weight-medium-slider" min="0" max="200" step="10" value="100">
+                        <span id="tree-weight-medium-value" class="setting-value">100%</span>
+                      </div>
+                      <div class="settings-row tree-size-row">
+                        <input type="checkbox" class="switch" data-weight="tree-weight-big-slider" aria-label="Big">
+                        <label for="tree-weight-big-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_big">Big</span></span><span class="tree-size-hint">≤ 20</span></label>
+                        <input type="range" id="tree-weight-big-slider" name="tree-weight-big-slider" min="0" max="200" step="10" value="100">
+                        <span id="tree-weight-big-value" class="setting-value">100%</span>
+                      </div>
+                      <div class="settings-row tree-size-row">
+                        <input type="checkbox" class="switch" data-weight="tree-weight-tall-slider" aria-label="Tall">
+                        <label for="tree-weight-tall-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_tall">Tall</span></span><span class="tree-size-hint">≤ 28</span></label>
+                        <input type="range" id="tree-weight-tall-slider" name="tree-weight-tall-slider" min="0" max="200" step="10" value="100">
+                        <span id="tree-weight-tall-value" class="setting-value">100%</span>
+                      </div>
+                      <div class="settings-row tree-size-row">
+                        <input type="checkbox" class="switch" data-weight="tree-weight-giant-slider" aria-label="Giant">
+                        <label for="tree-weight-giant-slider" class="tree-size-name"><span class="setting-heading"><span data-localize="tree_size_giant">Giant</span></span><span class="tree-size-hint">> 28</span></label>
+                        <input type="range" id="tree-weight-giant-slider" name="tree-weight-giant-slider" min="0" max="200" step="10" value="100">
+                        <span id="tree-weight-giant-value" class="setting-value">100%</span>
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="tree-realm-select" data-preview="tree-realm" data-group="trees">
+                      <img src="images/previews/tree-realm-auto.png" alt="" width="480" height="360">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">3D preview coming</span>
                       <figcaption></figcaption>
-                    </figure>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="tree-weight-small-slider" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="tree_weight_small">Small Trees</span>
-                          <span class="tooltip-icon" data-tooltip="Relative popularity of this tree size: 100% is the usual mix, 0% leaves the size out. Trees placed from measured canopy heights keep their own size.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="tree_weight_small_desc">Share of trees up to 6 blocks tall.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="range" id="tree-weight-small-slider" name="tree-weight-small-slider" min="0" max="200" step="10" value="100">
-                      <span id="tree-weight-small-value" class="setting-value">100%</span>
-                    </div>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="tree-weight-medium-slider" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="tree_weight_medium">Medium Trees</span>
-                          <span class="tooltip-icon" data-tooltip="Relative popularity of this tree size: 100% is the usual mix, 0% leaves the size out. Trees placed from measured canopy heights keep their own size.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="tree_weight_medium_desc">Share of trees up to 12 blocks tall.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="range" id="tree-weight-medium-slider" name="tree-weight-medium-slider" min="0" max="200" step="10" value="100">
-                      <span id="tree-weight-medium-value" class="setting-value">100%</span>
-                    </div>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="tree-weight-big-slider" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="tree_weight_big">Big Trees</span>
-                          <span class="tooltip-icon" data-tooltip="Relative popularity of this tree size: 100% is the usual mix, 0% leaves the size out. Trees placed from measured canopy heights keep their own size.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="tree_weight_big_desc">Share of trees up to 20 blocks tall.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="range" id="tree-weight-big-slider" name="tree-weight-big-slider" min="0" max="200" step="10" value="100">
-                      <span id="tree-weight-big-value" class="setting-value">100%</span>
-                    </div>
-                  </div>
-                  <div class="settings-row setting-tile is-wide">
-                    <label for="tree-weight-tall-slider" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="tree_weight_tall">Tall Trees</span>
-                          <span class="tooltip-icon" data-tooltip="Relative popularity of this tree size: 100% is the usual mix, 0% leaves the size out. Trees placed from measured canopy heights keep their own size.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="tree_weight_tall_desc">Share of trees up to 28 blocks tall.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="range" id="tree-weight-tall-slider" name="tree-weight-tall-slider" min="0" max="200" step="10" value="100">
-                      <span id="tree-weight-tall-value" class="setting-value">100%</span>
-                    </div>
-                  </div>
-                  <div class="settings-row setting-tile is-wide has-preview">
-                    <label for="tree-weight-giant-slider" class="setting-label">
-                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
-                      <span class="setting-text">
-                        <span class="setting-heading">
-                          <span data-localize="tree_weight_giant">Giant Trees</span>
-                          <span class="tooltip-icon" data-tooltip="Relative popularity of this tree size: 100% is the usual mix, 0% leaves the size out. Trees placed from measured canopy heights keep their own size.">?</span>
-                        </span>
-                        <span class="setting-desc" data-localize="tree_weight_giant_desc">Share of the largest trees.</span>
-                      </span>
-                    </label>
-                    <div class="settings-control">
-                      <input type="range" id="tree-weight-giant-slider" name="tree-weight-giant-slider" min="0" max="200" step="10" value="100">
-                      <span id="tree-weight-giant-value" class="setting-value">100%</span>
-                    </div>
-                    <figure class="option-preview">
-                      <img src="images/previews/tree-size-tiers.png" alt="" width="256" height="160" loading="lazy">
-                      <figcaption data-localize="preview_tree_tiers">Small to giant trees, left to right</figcaption>
                     </figure>
                   </div>
                 </div>

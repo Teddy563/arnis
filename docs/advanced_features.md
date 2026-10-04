@@ -157,6 +157,17 @@ is the option, e.g. `--field-mix=prairie`), then quantized to 128 colours:
 | Land Texture | `44.6000,25.7000,44.6050,25.7080` | |
 | Climate Sampling | `25.0,-5.0,65.0,45.0` | The `--climate-map` PNG; Origin is the centre's climate everywhere. |
 
+Snow, Rocks & Bushes, Road Detail, Field Layout and the trees (Tree Realm
+with Tree Sizes) show their controls as a list beside one 4:3 picture of the
+combination, captioned with it (e.g. "Europe · Tall + Giant"). Tree Sizes is a
+switch per size over its weight (off is 0, on from 0 is 100). The picture
+zooms (wheel, pinch, +/−) and pans by dragging; a double-click fits it again.
+A 2D | 3D switch over it, kept per viewer, picks the top-down card or an
+isometric one from `src/gui/images/previews/iso/<card>.webp`; where no 3D
+picture exists yet (live renders included) the 2D one shows with "3D preview
+coming". The 3D pictures are 1280x960, drawn by `iso_render.py` beside
+`make_previews.py`.
+
 The script that does all of this (`make_previews.py`, Python with Pillow and
 nbtlib) is kept with the Meld tooling, not in this repository; the table and
 the command above are enough to redo any card by hand.
