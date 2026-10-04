@@ -392,6 +392,12 @@ pub struct Args {
     #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
     pub blinear_level: i32,
 
+    /// EXPERIMENTAL. Java only: after the run, put the world border around the
+    /// generated area (its centre, the longer side as the size) so players
+    /// stay inside it. A One World uses the bounds of all its areas.
+    #[arg(long, default_value_t = false)]
+    pub world_border: bool,
+
     /// Readable image signs, Java only. `basic` covers public signage: street names,
     /// traffic signs, transit stops, information boards and billboards. `full` adds
     /// building signage: shop name plates, house numbers and crossing signs.
@@ -770,6 +776,7 @@ pub const CAPABILITIES: &[&str] = &[
     "osm-pbf",
     "local-tile-archive",
     "tree-pack-dir",
+    "world-border",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1219,6 +1226,10 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                     .to_string(),
             );
         }
+    }
+
+    if args.world_border && (args.bedrock || args.luanti) {
+        return Err("--world-border applies to Java worlds only.".to_string());
     }
 
     if args.one_world {

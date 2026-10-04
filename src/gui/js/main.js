@@ -2364,6 +2364,7 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('props-custom-input', on && props === 'custom');
   setSettingsRowAvailable('props-min-scale-input', on && props !== 'none');
   setSettingsRowAvailable('redraw-map-button', on && isOneWorldEnabled());
+  setSettingsRowAvailable('world-border-toggle', on && selectedWorldFormat === 'java');
   refreshSnapPreview();
 
   // OSM Data Source, not behind the switch: each source shows its own field.
@@ -2470,6 +2471,7 @@ function advancedFeatureArgs() {
     // Custom with nothing ticked places none.
     'props': props === 'custom' ? (text('props-custom-input') || 'none') : props,
     'props-min-scale': text('props-min-scale-input'),
+    'world-border': on('world-border-toggle'),
     // OSM Data Source: sent whatever the Extra Features switch says.
     'no-tile-archive': source === 'overpass' ? true : null,
     // Local Archive reads the baked folder through the same flag.

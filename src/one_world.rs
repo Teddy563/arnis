@@ -875,6 +875,27 @@ pub fn record_area(
     Ok(())
 }
 
+/// `--world-border`: the border around `rect`, the area just built, or for a
+/// One World around every area it holds. A failure is a warning: the world
+/// itself is written.
+pub fn apply_world_border(world_dir: &Path, rect: &XZBBox) {
+    let all = Manifest::load(world_dir)
+        .ok()
+        .flatten()
+        .and_then(|m| m.extent());
+    let rect = all.as_ref().unwrap_or(rect);
+    match crate::world_utils::set_world_border(world_dir, rect) {
+        Ok(()) => println!(
+            "World border set around {},{} to {},{}.",
+            rect.min_x(),
+            rect.min_z(),
+            rect.max_x(),
+            rect.max_z()
+        ),
+        Err(e) => eprintln!("Warning: Failed to set the world border: {e}"),
+    }
+}
+
 /// Stores the elevation mapping as soon as the first terrain area has one,
 /// so a run that fails later cannot leave chunks behind on another mapping.
 pub fn remember_elevation(run: &RunContext, elevation: ElevationAffine) -> Result<(), String> {
@@ -1021,6 +1042,80 @@ mod tests {
         let mut args = args_for(MUNICH, &["--aws-only-elevation"]);
         drop(prepare(&aws, &req, &mut args).unwrap());
         assert_eq!(Manifest::load(&aws).unwrap().unwrap().elevation_zoom, None);
+    }
+
+    /// `--world-border` reads back from level.dat: around the area of a plain
+    /// world, around every area of a One World, the rest of the border as
+    /// the template has it.
+    #[test]
+    fn the_world_border_holds_every_area() {
+        fn border(world: &Path) -> std::collections::HashMap<String, f64> {
+            let raw = std::fs::read(world.join("level.dat")).unwrap();
+            let mut buf = Vec::new();
+            flate2::read::GzDecoder::new(raw.as_slice())
+                .read_to_end(&mut buf)
+                .unwrap();
+            let fastnbt::Value::Compound(root) = fastnbt::from_bytes(&buf).unwrap() else {
+                panic!("root");
+            };
+            let Some(fastnbt::Value::Compound(data)) = root.get("Data") else {
+                panic!("Data");
+            };
+            data.iter()
+                .filter_map(|(k, v)| match v {
+                    fastnbt::Value::Double(d) if k.starts_with("Border") => Some((k.clone(), *d)),
+                    _ => None,
+                })
+                .collect()
+        }
+        let dir = tempfile::tempdir().unwrap();
+        // A plain world: its own area, 100 x 40 blocks, the longer side as the size.
+        let plain = crate::world_utils::create_new_world(dir.path()).unwrap();
+        let plain = Path::new(&plain);
+        let template = border(plain);
+        let area = XZBBox::rect_from_min_max(-50, 10, 49, 49).unwrap();
+        apply_world_border(plain, &area);
+        let b = border(plain);
+        assert_eq!((b["BorderCenterX"], b["BorderCenterZ"]), (0.0, 30.0));
+        assert_eq!((b["BorderSize"], b["BorderSizeLerpTarget"]), (100.0, 100.0));
+        for k in [
+            "BorderDamagePerBlock",
+            "BorderSafeZone",
+            "BorderWarningBlocks",
+            "BorderWarningTime",
+        ] {
+            assert_eq!(b[k], template[k], "{k} unchanged");
+        }
+        // A One World with two areas side by side: the union of both.
+        let world = dir.path().join("w");
+        let mut args = args_for(MUNICH, &[]);
+        let session = prepare(&world, &LLBBox::from_str(MUNICH).unwrap(), &mut args).unwrap();
+        let first = rect(&args, &session);
+        record(&args, &session, None);
+        drop(session);
+        let east = "48.130,11.585,48.145,11.610";
+        let mut args2 = args_for(east, &[]);
+        let session2 = prepare(&world, &LLBBox::from_str(east).unwrap(), &mut args2).unwrap();
+        let second = rect(&args2, &session2);
+        record(&args2, &session2, None);
+        drop(session2);
+        assert!(
+            second.max_x() > first.max_x(),
+            "the second area reaches further east"
+        );
+        apply_world_border(&world, &second);
+        let (x0, z0) = (
+            first.min_x().min(second.min_x()),
+            first.min_z().min(second.min_z()),
+        );
+        let (x1, z1) = (
+            first.max_x().max(second.max_x()),
+            first.max_z().max(second.max_z()),
+        );
+        let b = border(&world);
+        assert_eq!(b["BorderCenterX"], f64::from(x0 + x1 + 1) / 2.0);
+        assert_eq!(b["BorderCenterZ"], f64::from(z0 + z1 + 1) / 2.0);
+        assert_eq!(b["BorderSize"], f64::from((x1 + 1 - x0).max(z1 + 1 - z0)));
     }
 
     /// `--origin` pins block (0, 0) of a new world; an existing world keeps its own.

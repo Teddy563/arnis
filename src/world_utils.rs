@@ -779,6 +779,45 @@ fn raise_superflat_floor(root: &mut Value, base_y: i32, min_y: i32) {
 
 /// Sets `LastPlayed` to now, which lists the world first in Minecraft.
 pub fn touch_last_played(world_path: &Path) -> Result<(), String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to read the clock: {e}"))?
+        .as_millis() as i64;
+    edit_level_data(world_path, |data| {
+        data.insert("LastPlayed".to_string(), Value::Long(now_ms));
+    })
+}
+
+/// Centres the world border on `rect`, with its longer side as the border's
+/// size, so players stay inside the generated area. Damage and warnings keep
+/// the world's values.
+pub fn set_world_border(
+    world_path: &Path,
+    rect: &crate::coordinate_system::cartesian::XZBBox,
+) -> Result<(), String> {
+    let (min_x, min_z) = (f64::from(rect.min_x()), f64::from(rect.min_z()));
+    let (max_x, max_z) = (f64::from(rect.max_x()) + 1.0, f64::from(rect.max_z()) + 1.0);
+    let size = (max_x - min_x).max(max_z - min_z);
+    edit_level_data(world_path, |data| {
+        data.insert(
+            "BorderCenterX".to_string(),
+            Value::Double((min_x + max_x) / 2.0),
+        );
+        data.insert(
+            "BorderCenterZ".to_string(),
+            Value::Double((min_z + max_z) / 2.0),
+        );
+        data.insert("BorderSize".to_string(), Value::Double(size));
+        data.insert("BorderSizeLerpTarget".to_string(), Value::Double(size));
+        data.insert("BorderSizeLerpTime".to_string(), Value::Long(0));
+    })
+}
+
+/// Rewrites the `Data` compound of `level.dat` in place.
+fn edit_level_data(
+    world_path: &Path,
+    edit: impl FnOnce(&mut std::collections::HashMap<String, Value>),
+) -> Result<(), String> {
     let level_path = world_path.join("level.dat");
     let raw = fs::read(&level_path).map_err(|e| format!("Failed to read level.dat: {e}"))?;
     let mut decompressed = Vec::new();
@@ -793,11 +832,7 @@ pub fn touch_last_played(world_path: &Path) -> Result<(), String> {
     let Some(Value::Compound(data)) = top.get_mut("Data") else {
         return Err("level.dat missing Data compound".to_string());
     };
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("Failed to read the clock: {e}"))?
-        .as_millis() as i64;
-    data.insert("LastPlayed".to_string(), Value::Long(now_ms));
+    edit(data);
 
     let serialized =
         fastnbt::to_bytes(&root).map_err(|e| format!("Failed to serialize level.dat: {e}"))?;

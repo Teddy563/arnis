@@ -510,6 +510,10 @@ fn finish(
             eprintln!("Warning: Failed to set the spawn point: {e}");
         }
     }
+    // Once for the job, around every area the world now holds.
+    if args.world_border {
+        one_world::apply_world_border(world_dir, rect);
+    }
     Ok(())
 }
 

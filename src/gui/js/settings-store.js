@@ -115,6 +115,7 @@ const SETTINGS = [
   { id: 'props-min-scale-input', kind: 'text', store: OWN },
   { id: 'tree-pack-dir-input', kind: 'text', store: OWN },
   { id: 'tree-pack-mode-select', kind: 'select', store: OWN },
+  { id: 'world-border-toggle', kind: 'checkbox', store: OWN },
 
   // OSM Data Source
   { id: 'osm-source-select', kind: 'select', store: OWN },

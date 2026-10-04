@@ -2459,6 +2459,7 @@ fn gui_start_generation(
                     crate::args::RegionFormat::Mca
                 },
                 blinear_level: meld.blinear_level,
+                world_border: meld.world_border && world_format == WorldFormat::JavaAnvil,
                 map_item,
                 // Frontend refuses previews for rotated worlds, skip the work there.
                 map_preview: world_format != WorldFormat::LuantiWorld
@@ -2970,6 +2971,7 @@ mod piece_tests {
             "--max-downloads=8",
             "--one-world-workers=auto",
             "--unit-regions=2",
+            "--world-border",
         ]
         .map(String::from);
         let meld = meld_args(&flags, true).unwrap();
@@ -2995,6 +2997,7 @@ mod piece_tests {
         args.props_min_scale = meld.props_min_scale;
         args.process = meld.process;
         args.units = meld.units;
+        args.world_border = meld.world_border;
         let back = base(&piece_argv(
             &args,
             Some(&dir.path().join("My World")),

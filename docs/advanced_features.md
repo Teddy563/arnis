@@ -111,6 +111,7 @@ greyed out or hidden, sends no flag.
 | Tree Pack Folder | `--tree-pack-dir` | Empty (`tree-packs` next to Arnis) | Your own tree schematics, see [Tree Pack Folder](#tree-pack-folder). Sent only when the folder exists; the status line under the rows reads "*n* custom trees found (*m* skipped)". |
 | Tree Pack Mode | `--tree-pack-mode` | Add to Built-in | Add to Built-in or Replace Built-in. Sent with the folder. |
 | Tree Pack Layout: Create Folder Structure / Export Built-in Trees | `--init-tree-pack-dir` / `--export-tree-packs` | | Run in the window on the Tree Pack Folder. |
+| World Border | `--world-border` | Off | Sets the world border around the generated area after the run. Java only. |
 | Redraw One World Map: Redraw | `--map-item-only` | | Repaints the One World's map item over every area. Needs One World. |
 
 The window applies what the CLI does for these: the seed, the tall
@@ -408,6 +409,13 @@ changes), in `.mca` as well; two runs compare equal as NBT, not as bytes.
   `--file`.
 - `--osm-pbf-url URL`: the extract `--osm-pbf geofabrik` downloads, instead of
   the one it would pick.
+- `--world-border`: Java only. After the run, writes the world border into
+  `level.dat` (`Data.BorderCenterX`/`Z` at the centre of the generated area in
+  blocks, `BorderSize` and `BorderSizeLerpTarget` its longer side, so the
+  shorter side has room to spare), leaving damage and warning distances as
+  they were. For a One World the area is the bounds of every area the
+  manifest holds; a job in pieces sets it once, in the coordinator, after the
+  last piece.
 - `--capabilities`: print the feature names this build supports as one JSON
   array (`["progress-json","threads",...]`) and exit, so a program can probe
   the binary before using them. Names are only ever added.

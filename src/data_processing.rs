@@ -1922,6 +1922,12 @@ pub fn generate_world_with_options(
         }
     }
 
+    // After the area is recorded, so a One World's border holds all its areas.
+    // A piece leaves it to the coordinator.
+    if args.world_border && world_format == WorldFormat::JavaAnvil && unit.is_none() {
+        crate::one_world::apply_world_border(&output_path, &xzbbox);
+    }
+
     // An extended One World moves the spawn only to a marker inside this area.
     if extending && unit.is_none() {
         if let Some((sx, sz)) = options.spawn_point.filter(|&(x, z)| {
