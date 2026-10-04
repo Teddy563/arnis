@@ -28,7 +28,7 @@
   "area_extreme": "To območje je izredno veliko in morda preveliko za uspešno generiranje.",
   "area_extensive": "Območje je precej obsežno in lahko zahteva veliko časa ter sistemskih virov.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Izbira potrjena!",
   "select_area_prompt": "Izberite območje na zemljevidu z uporabo orodij.",
   "unknown_error": "Neznana napaka",

@@ -28,7 +28,7 @@
   "area_extreme": "Ez a terület rendkívül nagy, és lehet, hogy túl nagy ahhoz, hogy sikeresen legenerálható legyen.",
   "area_extensive": "A terület meglehetősen kiterjedt, és jelentős időt és erőforrásokat igényelhet.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Kiválasztás megerősítve",
   "select_area_prompt": "Jelölj ki egy területet a térképen az eszközökkel.",
   "unknown_error": "Ismeretlen hiba",

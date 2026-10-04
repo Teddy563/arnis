@@ -28,7 +28,7 @@
   "area_extreme": "Эта область чрезвычайно велика и, вероятно, слишком большая для успешной генерации.",
   "area_extensive": "Область довольно обширна и может потребовать значительного времени и ресурсов",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Выбор подтвержден!",
   "select_area_prompt": "Выберите область на карте с помощью инструментов.",
   "unknown_error": "Неизвестная ошибка",

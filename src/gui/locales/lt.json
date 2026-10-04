@@ -28,7 +28,7 @@
   "area_extreme": "Šis plotas yra itin didelis ir gali būti per didelis, kad būtų sėkmingai sugeneruotas.",
   "area_extensive": "Šis plotas yra pakankamai didelis kuriam reikėtų daug laiko ir resursų.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Pasirinkimas patvirtintas!",
   "select_area_prompt": "Pasirinkite plotą žemėlapyje naudodami įrankius.",
   "unknown_error": "Nežinoma klaida",

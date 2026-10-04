@@ -2530,10 +2530,10 @@ function drawSnapOverlay() {
     // Yellow dashes on a dark halo, readable on light tiles and dark ones.
     if (segments.length > 0) {
         L.polyline(segments, {
-            renderer: snapRenderer, color: '#000000', weight: 3, opacity: 0.5, interactive: false
+            renderer: snapRenderer, color: '#000000', weight: 3.5, opacity: 0.6, interactive: false
         }).addTo(snapLayer);
         L.polyline(segments, {
-            renderer: snapRenderer, color: '#fecc44', weight: 1.5, opacity: 0.85, dashArray: '4 4',
+            renderer: snapRenderer, color: '#fecc44', weight: 2, opacity: 1, dashArray: '4 4',
             interactive: false
         }).addTo(snapLayer);
     }

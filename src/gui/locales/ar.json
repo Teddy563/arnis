@@ -28,7 +28,7 @@
   "area_extreme": "هذه المنطقة ضخمة للغاية وقد تكون كبيرة جدًا بحيث يتعذّر توليدها بنجاح.",
   "area_extensive": "المنطقة واسعة جدًا وقد تتطلب الكثير من الوقت والموارد.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "تم تأكيد التحديد!",
   "select_area_prompt": "حدد منطقة على الخريطة باستخدام الأدوات.",
   "unknown_error": "خطأ غير معروف",

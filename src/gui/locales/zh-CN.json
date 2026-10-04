@@ -28,7 +28,7 @@
   "area_extreme": "此区域极大，可能过大而无法成功生成。",
   "area_extensive": "该区域相当广泛，可能需要大量时间和资源。",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "选择已确认！",
   "select_area_prompt": "使用工具在地图上选择一个区域。",
   "unknown_error": "未知错误",

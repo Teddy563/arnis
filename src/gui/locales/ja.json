@@ -28,7 +28,7 @@
   "area_extreme": "この範囲は極めて広く、正常に生成できない可能性があります。",
   "area_extensive": "この範囲はかなり広く、生成に長い時間と多くのリソースが必要になる場合があります。",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "選択を確認しました！",
   "select_area_prompt": "ツールを使って地図上で範囲を選択してください。",
   "unknown_error": "不明なエラー",

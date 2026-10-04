@@ -28,7 +28,7 @@
   "area_extreme": "Tämä alue on äärimmäisen suuri ja saattaa olla liian iso onnistunutta luomista varten.",
   "area_extensive": "Alue on aika laaja ja voi viedä pitkän ajan ja resursseja.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Valinta vahvistettu!",
   "select_area_prompt": "Valitse alue kartalta työkaluilla.",
   "unknown_error": "Tuntematon virhe",

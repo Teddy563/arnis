@@ -28,7 +28,7 @@
   "area_extreme": "Esta área é extremamente grande e pode ser grande demais para ser gerada com sucesso.",
   "area_extensive": "A área é bastante extensa e pode exigir bastante tempo e recursos.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "Seleção confirmada!",
   "select_area_prompt": "Selecione uma área no mapa usando as ferramentas.",
   "unknown_error": "Erro desconhecido",

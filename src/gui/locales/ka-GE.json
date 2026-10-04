@@ -35,7 +35,7 @@
   "area_extreme": "ეს ტერიტორია უკიდურესად დიდია და შესაძლოა, წარმატებით გენერირებისთვის ზედმეტად დიდი იყოს.",
   "area_extensive": "ტერიტორია საკმაოდ ვრცელია და შეიძლება მნიშვნელოვანი დრო და რესურსები დასჭირდეს.",
   "area_use_extra_features": "Use Extra Features to build it in pieces",
-  "area_pieces_info": "Builds in {n} pieces · {w} workers",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "selection_confirmed": "არჩევანი დადასტურებულია!",
   "select_area_prompt": "რუკაზე აირჩიეთ ტერიტორია ინსტრუმენტების გამოყენებით.",
   "unknown_error": "უცნობი შეცდომა",
