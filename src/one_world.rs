@@ -527,9 +527,14 @@ pub fn frame_for(
         Some(manifest) => manifest.projection(),
         None => {
             let (lat, lon) = new_origin(requested, args);
-            Manifest::new(args, lat, lon).projection()
+            new_frame(args, lat, lon)
         }
     })
+}
+
+/// The frame of a world created with block (0, 0) at `lat, lon`.
+pub fn new_frame(args: &Args, lat: f64, lon: f64) -> WebMercatorProjection {
+    Manifest::new(args, lat, lon).projection()
 }
 
 /// Block (0, 0) of a world created for `requested`: `--origin`, or the

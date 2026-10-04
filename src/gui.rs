@@ -466,6 +466,10 @@ struct SelectionSnap {
     origin: [f64; 2],
     /// The run must be given `origin` as `--origin`.
     new_world: bool,
+    /// Fit Inside found no whole cell on a side and took one.
+    fallback: bool,
+    /// East-west and north-south size in kilometres on the ground.
+    size_km: [f64; 2],
 }
 
 /// Past this many cells the map shows the outline and the count only.
@@ -478,13 +482,27 @@ fn gui_snap_selection(
     world_name: String,
     scale: f64,
     unit_regions: i32,
+    snap_mode: Option<String>,
+    square: Option<bool>,
 ) -> Result<SelectionSnap, String> {
+    use crate::work_units::SnapMode;
     use clap::Parser;
     let args = Args::try_parse_from(["arnis".to_string(), format!("--scale={scale}")])
         .map_err(|e| e.to_string())?;
     let requested = LLBBox::from_str(&bbox_text)?;
     let world = one_world_dir(&save_path, &world_name);
-    let snap = crate::work_units::snap_to_cells(&world, &requested, &args, unit_regions)?;
+    let mode = match snap_mode.as_deref() {
+        Some("cover") => SnapMode::Cover,
+        _ => SnapMode::FitInside,
+    };
+    let snap = crate::work_units::snap_to_cells(
+        &world,
+        &requested,
+        &args,
+        unit_regions,
+        mode,
+        square.unwrap_or(false),
+    )?;
     let (rect, frame) = (&snap.rect, &snap.frame);
     let outline = crate::projection::llbbox_for_rect(frame, rect)?;
     let cell = 512 * unit_regions;
@@ -523,6 +541,12 @@ fn gui_snap_selection(
         ],
         origin: [frame.origin_lat, frame.origin_lon],
         new_world: snap.new_world,
+        fallback: snap.fallback,
+        // A block is 1/scale metres at the frame's origin.
+        size_km: [
+            f64::from(rect.max_x() + 1 - rect.min_x()) / scale / 1000.0,
+            f64::from(rect.max_z() + 1 - rect.min_z()) / scale / 1000.0,
+        ],
     })
 }
 
@@ -3207,6 +3231,45 @@ mod tests {
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&bytes).unwrap();
         fs::write(world.join("level.dat"), encoder.finish().unwrap()).unwrap();
+    }
+
+    /// The readout's numbers: regions are cells times the cell size, pieces
+    /// are cells, and kilometres are blocks over the scale.
+    #[test]
+    fn the_selection_readout_counts_regions_cells_and_kilometres() {
+        let tmp = tempfile::tempdir().unwrap();
+        let save = tmp.path().to_string_lossy().to_string();
+        let bbox = "44.43 26.0 44.46 26.15".to_string();
+        for (scale, n) in [(1.0, 4), (0.5, 2)] {
+            for (mode, square) in [("fit", false), ("cover", false), ("fit", true)] {
+                let snap = gui_snap_selection(
+                    bbox.clone(),
+                    save.clone(),
+                    String::new(),
+                    scale,
+                    n,
+                    Some(mode.to_string()),
+                    Some(square),
+                )
+                .unwrap();
+                let what = format!("scale {scale} n {n} {mode} square {square}");
+                assert!(snap.new_world, "{what}");
+                assert_eq!(snap.regions[0], snap.cells[0] * n, "{what}");
+                assert_eq!(snap.regions[1], snap.cells[1] * n, "{what}");
+                for i in 0..2 {
+                    let km = f64::from(snap.regions[i]) * 512.0 / scale / 1000.0;
+                    assert!((snap.size_km[i] - km).abs() < 1e-9, "{what}");
+                }
+                if square {
+                    assert_eq!(snap.cells[0], snap.cells[1], "{what}");
+                } else {
+                    // About 12 km by 3.3 km: wider than tall.
+                    assert!(snap.cells[0] > snap.cells[1], "{what}");
+                }
+            }
+        }
+        // Nothing was created: the snap only reads.
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
     }
 
     #[test]
