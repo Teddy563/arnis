@@ -1858,19 +1858,18 @@ pub fn generate_world_with_options(
     }
 
     // Map id 0 is the first map; branding is id 1 with the preview on, else id 0.
-    if place_branding {
+    // In a piece the frame is a block entity, so the piece holding it places it;
+    // the coordinator writes the maps it shows.
+    let branding = if place_branding {
         let (sx, sz) = options
             .spawn_point
             .or_else(|| crate::map_item::read_spawn_xz(&output_path))
             .unwrap_or((xzbbox.min_x() + 1, xzbbox.min_z() + 1));
-        if wants_map_item {
-            editor.place_map_item_frame(sx, sz, 0, 1);
-        } else {
-            editor.place_branding_map_only(sx, sz, 0);
-        }
-    } else if let Some((sx, sz, with_map_item)) = unit.and_then(|u| u.branding) {
-        // The frame is a block entity, so the piece holding it places it; the
-        // coordinator writes the maps it shows.
+        Some((sx, sz, wants_map_item))
+    } else {
+        unit.and_then(|u| u.branding)
+    };
+    if let Some((sx, sz, with_map_item)) = branding {
         if with_map_item {
             editor.place_map_item_frame(sx, sz, 0, 1);
         } else {

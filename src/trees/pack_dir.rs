@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::trees::schematic::load_schem;
+use crate::trees::size_weights::NAMES;
 use crate::trees::tree_library::{size_for_height, TreeSize};
 use crate::trees::tree_pack::{embedded_read, REALMS};
 
@@ -31,14 +32,6 @@ pub const USER: &str = "user:";
 const MAX_FILE_BYTES: u64 = 8 << 20;
 /// No model side may exceed this many blocks.
 const MAX_SIDE: i32 = 256;
-
-const TIERS: [(TreeSize, &str); 5] = [
-    (TreeSize::Small, "small"),
-    (TreeSize::Medium, "medium"),
-    (TreeSize::Big, "big"),
-    (TreeSize::Tall, "tall"),
-    (TreeSize::Giant, "giant"),
-];
 
 struct UserTree {
     realm: String,
@@ -74,22 +67,14 @@ fn species_files(sp: &Value) -> impl Iterator<Item = &str> {
 
 /// The size a folder name stands for.
 pub fn tier_named(name: &str) -> Option<TreeSize> {
-    TIERS
-        .iter()
-        .find(|(_, n)| n.eq_ignore_ascii_case(name))
-        .map(|&(t, _)| t)
+    clap::ValueEnum::from_str(name, true).ok()
 }
 
 /// The size a manifest path's folder sets, for user files in a size folder.
 pub fn tier_of(rel: &str) -> Option<TreeSize> {
-    let rel = rel.strip_prefix(USER)?;
-    let mut parts = rel.rsplit('/');
-    parts.next();
-    // realm/community/species/size/file: the size folder is the fifth part.
-    (rel.split('/').count() == 5)
-        .then(|| parts.next())
-        .flatten()
-        .and_then(tier_named)
+    // realm/community/species/size/file: the size folder is the fourth part.
+    let parts: Vec<&str> = rel.strip_prefix(USER)?.split('/').collect();
+    (parts.len() == 5).then(|| tier_named(parts[3])).flatten()
 }
 
 /// Every file under `dir`, recursively.
@@ -334,7 +319,7 @@ pub fn init(root: &Path) -> Result<usize, String> {
             let cdir = realm_dir.join(c["name"].as_str().unwrap_or_default());
             for sp in c["species"].as_array().into_iter().flatten() {
                 let sdir = cdir.join(sp["name"].as_str().unwrap_or_default());
-                for (_, tier) in TIERS {
+                for tier in NAMES {
                     mkdir(&sdir.join(tier))?;
                 }
                 types += 1;
@@ -368,7 +353,7 @@ pub fn export(root: &Path) -> Result<usize, String> {
                     if !schem.has_leaves() {
                         continue;
                     }
-                    let tier = TIERS[size_for_height(schem.height) as usize].1;
+                    let tier = NAMES[size_for_height(schem.height) as usize];
                     let name = rel.rsplit('/').next().unwrap_or(rel);
                     let dest = sdir.join(tier).join(name);
                     fs::write(&dest, &bytes).map_err(|e| format!("{}: {e}", dest.display()))?;
@@ -416,13 +401,6 @@ pub fn default_folder() -> PathBuf {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("arnis-pack-dir-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
-    }
-
     #[test]
     fn tiers_come_from_the_size_folder_only() {
         assert_eq!(tier_of("user:eur/C/Sp/big/x.schem"), Some(TreeSize::Big));
@@ -433,10 +411,11 @@ mod tests {
 
     #[test]
     fn export_round_trips_and_skips_what_does_not_fit() {
-        let root = tmp("export");
-        let written = export(&root).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let written = export(root).unwrap();
         assert!(written > 3000, "{written}");
-        let all = PackDir::scan(&root, TreePackMode::Add);
+        let all = PackDir::scan(root, TreePackMode::Add);
         assert_eq!(
             all.found(),
             written,
@@ -454,15 +433,15 @@ mod tests {
         fs::create_dir_all(root.join("eur/No such forest/T")).unwrap();
         fs::write(root.join("eur/No such forest/T/a.schem"), b"x").unwrap();
         fs::write(sp.join("notes.txt"), b"ignored").unwrap();
-        let again = PackDir::scan(&root, TreePackMode::Add);
+        let again = PackDir::scan(root, TreePackMode::Add);
         assert_eq!(again.found(), written);
         assert_eq!(again.skipped.len(), 4, "{:?}", again.skipped);
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn manifest_adds_or_replaces_per_realm() {
-        let root = tmp("merge");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
         let sp = root.join("eur/EUR - Alpine forest (mature)/My_tree/small");
         fs::create_dir_all(&sp).unwrap();
         let bytes = embedded_read("eur/4. europe/Abies_alba1.schem").unwrap();
@@ -477,7 +456,7 @@ mod tests {
         };
         let n_base = files(&base).len();
 
-        let add = PackDir::scan(&root, TreePackMode::Add);
+        let add = PackDir::scan(root, TreePackMode::Add);
         assert_eq!(add.found(), 1);
         assert!(add.manifest("ena", &base).is_none());
         let added = files(&add.manifest("eur", &base).unwrap());
@@ -488,8 +467,7 @@ mod tests {
         assert!(add.read(&user[USER.len()..]).is_some());
         assert!(add.read("../escape.schem").is_none());
 
-        let replace = PackDir::scan(&root, TreePackMode::Replace);
+        let replace = PackDir::scan(root, TreePackMode::Replace);
         assert_eq!(files(&replace.manifest("eur", &base).unwrap()), vec![user]);
-        let _ = fs::remove_dir_all(&root);
     }
 }

@@ -245,14 +245,13 @@ pub fn print_plan(
 ) -> Result<(), String> {
     let proj = crate::one_world::frame_for(world_dir, requested, args)?;
     let (sel, units) = plan_units(&proj, requested, n)?;
-    let rect = |r: &XZBBox| [r.min_x(), r.min_z(), r.max_x(), r.max_z()];
     let units: Vec<_> = units
         .iter()
         .map(|u| {
             serde_json::json!({
                 "index": u.index,
                 "key": format!("{},{}", u.gx, u.gz),
-                "rect": rect(&u.rect),
+                "rect": u.rect.to_array(),
                 "bbox": u.bbox_arg(),
                 "chunks": u.chunks(),
                 "existing_chunks": crate::one_world::existing_chunks(world_dir, &u.rect),
@@ -263,7 +262,7 @@ pub fn print_plan(
         "v": 1,
         "type": "plan",
         "unit_regions": n,
-        "rect": rect(&sel),
+        "rect": sel.to_array(),
         "units": units,
     });
     println!("{plan}");

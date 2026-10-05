@@ -652,29 +652,9 @@ fn cut(elements: &[OsmElement], b: E7Box) -> OsmData {
             members: Vec::new(),
         }
     }));
-    out.extend(way_ids.iter().map(|id| copy(ways[id])));
-    out.extend(keep_rels.into_iter().map(copy));
+    out.extend(way_ids.iter().map(|id| ways[id].clone()));
+    out.extend(keep_rels.into_iter().cloned());
     OsmData::from_elements(out)
-}
-
-fn copy(e: &OsmElement) -> OsmElement {
-    OsmElement {
-        r#type: e.r#type.clone(),
-        id: e.id,
-        lat: e.lat,
-        lon: e.lon,
-        nodes: e.nodes.clone(),
-        tags: e.tags.clone(),
-        members: e
-            .members
-            .iter()
-            .map(|m| OsmMember {
-                r#type: m.r#type.clone(),
-                r#ref: m.r#ref,
-                role: m.role.clone(),
-            })
-            .collect(),
-    }
 }
 
 /// Runs `f` over every data block of the extract on the rayon pool, so `--threads` and

@@ -63,15 +63,6 @@ impl Drop for NewWorldCleanup {
     }
 }
 
-/// Runs `work` on `pool` when Advanced Features asked for a thread count,
-/// else on the global pool.
-fn in_pool<T: Send>(pool: Option<rayon::ThreadPool>, work: impl FnOnce() -> T + Send) -> T {
-    match pool {
-        Some(pool) => pool.install(work),
-        None => work(),
-    }
-}
-
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -613,7 +604,7 @@ fn gui_data_plan(
     args.overture = overture_enabled;
     args.aws_only_elevation = aws_only_elevation;
     let bbox = LLBBox::from_str(&bbox_text)?;
-    let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
+    let root = cache_root();
     Ok(crate::data_plan::plan(&root, &args, bbox))
 }
 
@@ -688,16 +679,16 @@ fn gui_prepare_plan(
     folder: String,
     tiles_path: String,
 ) -> Result<PreparePlan, String> {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
-    static PLANS: Mutex<Option<HashMap<String, crate::arnis_tiles::Prepare>>> = Mutex::new(None);
+    static PLANS: Mutex<BTreeMap<String, crate::arnis_tiles::Prepare>> =
+        Mutex::new(BTreeMap::new());
 
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
     let cached = PLANS
         .lock()
         .map_err(|e| e.to_string())?
-        .get_or_insert_with(HashMap::new)
         .get(&bbox_text)
         .cloned();
     let plan = match cached {
@@ -708,7 +699,6 @@ fn gui_prepare_plan(
             PLANS
                 .lock()
                 .map_err(|e| e.to_string())?
-                .get_or_insert_with(HashMap::new)
                 .insert(bbox_text, p.clone());
             p
         }
@@ -730,10 +720,7 @@ fn gui_prepare_plan(
     })
 }
 
-fn bake_cancel() -> &'static std::sync::atomic::AtomicBool {
-    static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    &CANCEL
-}
+static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Download & Bake: `arnis-tiles prepare` for the selection into the folder,
 /// on the Extra Features threads (`flags`, as for a generation) or 75 % of the
@@ -757,7 +744,7 @@ fn gui_bake_archive(
     let folder = archive_folder(&folder)?;
     let exe = arnis_tiles_exe(&tiles_path)?;
     let _slot = BusySlot::acquire(BUSY_BAKE)?;
-    let cancel = bake_cancel();
+    let cancel = &BAKE_CANCEL;
     cancel.store(false, std::sync::atomic::Ordering::Release);
     progress::reset_progress_floor();
     progress::emit_gui_progress_update(0.0, "Choosing the extracts to bake...");
@@ -784,7 +771,7 @@ fn gui_bake_archive(
 /// Stops a running bake. Harmless when nothing runs.
 #[tauri::command]
 fn gui_cancel_bake() {
-    bake_cancel().store(true, std::sync::atomic::Ordering::Release);
+    BAKE_CANCEL.store(true, std::sync::atomic::Ordering::Release);
 }
 
 /// A live option preview card for one settings group, as a PNG data URL:
@@ -794,7 +781,7 @@ fn gui_cancel_bake() {
 #[tauri::command(async)]
 fn gui_render_preview(group: String, flags: Vec<String>, offline: bool) -> Result<String, String> {
     use crate::option_preview::{render, Failure};
-    let root = crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."));
+    let root = cache_root();
     let exe = env::current_exe().map_err(|e| e.to_string())?;
     match render(&root, &exe, &group, &flags, offline) {
         Ok(png) => Ok(format!(
@@ -2889,7 +2876,12 @@ fn gui_start_generation(
                 }
             }
         };
-        if let Err(e) = tokio::task::spawn_blocking(move || in_pool(pool, work)).await {
+        // On `pool` when Extra Features asked for a thread count, else the global pool.
+        let blocking = move || match pool {
+            Some(pool) => pool.install(work),
+            None => work(),
+        };
+        if let Err(e) = tokio::task::spawn_blocking(blocking).await {
             let error_msg = format!("Error in blocking task: {e}");
             eprintln!("{error_msg}");
             emit_gui_error(&error_msg);

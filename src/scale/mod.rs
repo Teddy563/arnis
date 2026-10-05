@@ -200,16 +200,8 @@ pub fn run(
             nonce: job.nonce.clone(),
             piece: u.index,
             area_id: run.area_id,
-            rect: [
-                u.rect.min_x(),
-                u.rect.min_z(),
-                u.rect.max_x(),
-                u.rect.max_z(),
-            ],
-            build: {
-                let b = one_world::piece_build_rect(&u.rect, &rect);
-                [b.min_x(), b.min_z(), b.max_x(), b.max_z()]
-            },
+            rect: u.rect.to_array(),
+            build: one_world::piece_build_rect(&u.rect, &rect).to_array(),
             tiled,
             first_map_id: job.map_base + u.index as i32 * MAP_IDS_PER_PIECE,
             map_id_end: job.map_base + (u.index as i32 + 1) * MAP_IDS_PER_PIECE,
@@ -222,18 +214,21 @@ pub fn run(
             preview: job.preview_path(u.index),
         })
         .collect();
+    let lease_file = |i: usize| -> Result<PathBuf, String> {
+        let path = job.dir.join(format!("piece-{i}.lease.json"));
+        write(
+            &path,
+            &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
+        )?;
+        Ok(path)
+    };
 
     // `--prewarm-first`: one piece at a time, each with the job's whole download
     // allowance, so N workers then read the caches instead of all fetching at once.
     if args.process.prewarm || args.process.prewarm_first {
         for unit in units.iter().filter(|u| job.finished(u.index).is_none()) {
             let i = unit.index;
-            let lease_path = job.dir.join(format!("piece-{i}.lease.json"));
-            write(
-                &lease_path,
-                &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
-            )?;
-            let mut argv = child_args(argv.iter().cloned(), unit, &lease_path);
+            let mut argv = child_args(argv.iter().cloned(), unit, &lease_file(i)?);
             let downloads = args.process.max_downloads.unwrap_or(16).to_string();
             argv.extend([
                 "--prewarm".into(),
@@ -333,12 +328,7 @@ pub fn run(
                 break;
             };
             let unit = &units[i];
-            let lease_path = job.dir.join(format!("piece-{i}.lease.json"));
-            write(
-                &lease_path,
-                &serde_json::to_value(&leases[i]).map_err(|e| e.to_string())?,
-            )?;
-            let argv = sizing.child_args(child_args(argv.iter().cloned(), unit, &lease_path));
+            let argv = sizing.child_args(child_args(argv.iter().cloned(), unit, &lease_file(i)?));
             let mut attempt = 0;
             let r = loop {
                 println!(

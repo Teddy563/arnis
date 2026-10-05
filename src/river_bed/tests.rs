@@ -113,7 +113,7 @@ fn cross_section_is_a_smooth_symmetric_u() {
 
 #[test]
 fn off_and_lake_only_renders_build_nothing() {
-    assert!(RiverBedField::empty().depth_override(100, 100).is_none());
+    assert!(RiverBedField::default().depth_override(100, 100).is_none());
     let els = vec![
         rect(1, &[("natural", "water")], 40, 160, 40, 160),
         rect(2, &[("natural", "water"), ("water", "oxbow")], 0, 30, 0, 30),

@@ -60,49 +60,33 @@ pub enum RiverBed {
 }
 
 /// Baked per-block river bed depth over a lattice around the river geometry.
+#[derive(Default)]
 pub struct RiverBedField {
-    min_x: i32,
-    min_z: i32,
-    w: usize,
-    h: usize,
+    lat: Lat,
     depth: Vec<u8>,
     mask: Vec<bool>,
 }
 
 impl RiverBedField {
-    pub fn empty() -> Self {
-        Self {
-            min_x: 0,
-            min_z: 0,
-            w: 0,
-            h: 0,
-            depth: Vec::new(),
-            mask: Vec::new(),
-        }
-    }
-
     /// River bed depth at this column, or `None` where the legacy bed owns it.
     #[inline]
     pub fn depth_override(&self, x: i32, z: i32) -> Option<i32> {
-        let lx = i64::from(x) - i64::from(self.min_x);
-        let lz = i64::from(z) - i64::from(self.min_z);
-        if lx < 0 || lz < 0 || lx as usize >= self.w || lz as usize >= self.h {
-            return None;
-        }
-        let i = lz as usize * self.w + lx as usize;
+        let i = self.lat.idx(x, z)?;
         self.mask[i].then(|| i32::from(self.depth[i]))
     }
 
     #[cfg(test)]
     fn override_count(&self) -> usize {
-        (0..self.w * self.h).filter(|&i| self.mask[i]).count()
+        self.mask.iter().filter(|&&m| m).count()
     }
 
     #[cfg(test)]
     fn max_override_depth(&self) -> i32 {
-        (0..self.w * self.h)
-            .filter(|&i| self.mask[i])
-            .map(|i| i32::from(self.depth[i]))
+        self.mask
+            .iter()
+            .zip(&self.depth)
+            .filter(|(&m, _)| m)
+            .map(|(_, &d)| i32::from(d))
             .max()
             .unwrap_or(0)
     }
@@ -123,7 +107,7 @@ pub fn compute_river_bed_field(
     channel_width_cap: Option<i32>,
 ) -> RiverBedField {
     if mode == RiverBed::Off {
-        return RiverBedField::empty();
+        return RiverBedField::default();
     }
     let (off_x, off_z) = (xzbbox.min_x(), xzbbox.min_z());
     // Reads past the area repeat its border row; that only reaches the blend band and the
@@ -183,12 +167,12 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
         &mut nonriver_polys,
     );
     if lines.is_empty() && river_polys.is_empty() {
-        return RiverBedField::empty();
+        return RiverBedField::default();
     }
     // Room for the banks, the half-width window and the confluence band around the river.
     let halo = ((64.0 * scale).ceil() as i32 + 32).clamp(1, 96);
     let Some(lat) = lattice_for(&lines, &river_polys, halo, inp.bb) else {
-        return RiverBedField::empty();
+        return RiverBedField::default();
     };
     let n = lat.w * lat.h;
 
@@ -249,7 +233,7 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
         }
     }
     if !mask.contains(&true) {
-        return RiverBedField::empty();
+        return RiverBedField::default();
     }
 
     // Distance from the bank. The lattice ends where geometry is clipped, so a truncated
@@ -338,14 +322,7 @@ fn build_field(elements: &[ProcessedElement], inp: &FieldInputs) -> RiverBedFiel
         }
     }
 
-    RiverBedField {
-        min_x: lat.min_x,
-        min_z: lat.min_z,
-        w: lat.w,
-        h: lat.h,
-        depth,
-        mask,
-    }
+    RiverBedField { lat, depth, mask }
 }
 
 #[inline]
@@ -473,6 +450,7 @@ fn classify<'a>(
     }
 }
 
+#[derive(Default)]
 struct Lat {
     min_x: i32,
     min_z: i32,

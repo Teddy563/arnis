@@ -819,12 +819,7 @@ pub fn prepare_unit(
     args.aws_only_elevation = manifest.aws_only_elevation;
     keep_cave_settings(&manifest, args);
     let (xzbbox, _) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
-    let rect = [
-        xzbbox.min_x(),
-        xzbbox.min_z(),
-        xzbbox.max_x(),
-        xzbbox.max_z(),
-    ];
+    let rect = xzbbox.to_array();
     if rect != lease.rect {
         return Err(format!(
             "piece {} snaps to {rect:?}, not to its planned {:?}",
@@ -840,12 +835,7 @@ pub fn prepare_unit(
     let build = XZBBox::rect_from_min_max(x0, z0, x1, z1)?;
     let llbbox = crate::projection::llbbox_for_rect(&manifest.projection(), &build)?;
     let (snapped, _) = snap_bbox_to_chunks(&manifest.projection(), &llbbox)?;
-    let built = [
-        snapped.min_x(),
-        snapped.min_z(),
-        snapped.max_x(),
-        snapped.max_z(),
-    ];
+    let built = snapped.to_array();
     if built != lease.build {
         return Err(format!(
             "piece {} builds {built:?}, not its planned {:?}",

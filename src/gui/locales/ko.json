@@ -186,7 +186,6 @@
   "enable_luanti_desc": "Luanti(Mineclonia)를 출력 형식으로 추가합니다. 실험적.",
   "advanced_features": "추가 기능",
   "advanced_features_desc": "아래 옵션을 표시합니다. 끄면 Arnis가 평소처럼 실행됩니다.",
-  "presets": "프리셋",
   "preset_save_button": "프리셋 저장",
   "preset_load_button": "프리셋 불러오기",
   "features_group_performance": "성능 및 대형 월드",

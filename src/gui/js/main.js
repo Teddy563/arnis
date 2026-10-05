@@ -1795,6 +1795,19 @@ function formatPlanBytes(bytes) {
   return Math.max(1, Math.round(bytes / 1e3)) + ' KB';
 }
 
+// A plan list row: name, status (green when `done`) and size.
+function planRow(cells, done) {
+  const li = document.createElement('li');
+  cells.forEach((text, i) => {
+    const span = document.createElement('span');
+    span.textContent = text;
+    if (i === 1 && done) span.className = 'is-cached';
+    if (i === 2) span.className = 'data-plan-size';
+    li.appendChild(span);
+  });
+  return li;
+}
+
 function renderDataPlan() {
   const list = document.getElementById('data-plan-list');
   const extractLine = document.getElementById('data-plan-extract');
@@ -1818,17 +1831,9 @@ function renderDataPlan() {
     } else {
       status = t('data_plan_missing', 'Missing');
     }
-    const cells = [names[item.source] || item.source, status,
-      item.cached < item.total && item.missing_bytes ? '~' + formatPlanBytes(item.missing_bytes) : ''];
-    const li = document.createElement('li');
-    cells.forEach((text, i) => {
-      const span = document.createElement('span');
-      span.textContent = text;
-      if (i === 1 && item.total > 0 && item.cached === item.total) span.className = 'is-cached';
-      if (i === 2) span.className = 'data-plan-size';
-      li.appendChild(span);
-    });
-    return li;
+    return planRow([names[item.source] || item.source, status,
+      item.cached < item.total && item.missing_bytes ? '~' + formatPlanBytes(item.missing_bytes) : ''],
+    item.total > 0 && item.cached === item.total);
   }));
   const e = dataPlan.extract;
   let line = '';
@@ -1947,17 +1952,8 @@ async function checkPreparePlan() {
 function renderPreparePlan() {
   const t = oneWorldText;
   const rows = preparePlan ? preparePlan.extracts : [];
-  document.getElementById('prepare-list').replaceChildren(...rows.map((e) => {
-    const li = document.createElement('li');
-    [e.name, e.baked ? t('prepare_baked', 'Baked ✓') : '', formatPlanBytes(e.bytes)].forEach((text, i) => {
-      const span = document.createElement('span');
-      span.textContent = text;
-      if (i === 1 && e.baked) span.className = 'is-cached';
-      if (i === 2) span.className = 'data-plan-size';
-      li.appendChild(span);
-    });
-    return li;
-  }));
+  document.getElementById('prepare-list').replaceChildren(...rows.map((e) =>
+    planRow([e.name, e.baked ? t('prepare_baked', 'Baked ✓') : '', formatPlanBytes(e.bytes)], e.baked)));
   if (preparePlan && !rows.length) {
     setPrepareStatus(t('prepare_none', 'No Geofabrik extract covers the selection.'));
   }
@@ -2046,7 +2042,7 @@ const PREVIEW_GROUPS = {
 };
 const TREE_SIZES = ['small', 'medium', 'big', 'tall', 'giant'];
 
-// The shipped picture (work/previews/iso_render.py, option B: one per
+// The shipped picture (work/previews/final_render.py, option B: one per
 // option) a frame's current settings match, as a file under images/previews/
 // (the 3D one, if any, has the same name under iso/), or null when only a
 // live 2D render shows them: any custom value. Rocks and Bushes are drawn at
@@ -2643,7 +2639,7 @@ const MELD_SLIDERS = [
 const MELD_ALWAYS = [
   'snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'road-detail-select', 'no-buildings-toggle',
   'field-mix-select', 'farm-crops-input', 'tree-realm-select', 'river-bed-select', 'water-detail-select',
-  ...['small', 'medium', 'big', 'tall', 'giant'].map((size) => 'tree-weight-' + size + '-slider'),
+  ...TREE_SIZES.map((size) => 'tree-weight-' + size + '-slider'),
   'climate-mode-select', 'climate-preview-button', 'grass-texture-toggle', 'land-texture-toggle',
   'world-seed-input', 'props-select',
   'tree-pack-dir-input', 'tree-pack-mode-select', 'tree-pack-create-button', 'tree-pack-export-button',
@@ -2774,8 +2770,7 @@ function advancedFeatureArgs() {
     const t = text(id);
     return t === null ? null : parseInt(t, 10);
   };
-  const sizes = ['small', 'medium', 'big', 'tall', 'giant'];
-  const weights = sizes.map((size) => enabled('tree-weight-' + size + '-slider'));
+  const weights = TREE_SIZES.map((size) => enabled('tree-weight-' + size + '-slider'));
   const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
   const treePackDir = enabled('tree-pack-dir-input') && treePack && treePack.exists ? treePack.folder : null;
   const workers = enabled('one-world-workers-select');
@@ -2808,7 +2803,7 @@ function advancedFeatureArgs() {
     'field-scale': changed('field-scale-slider'),
     'tree-realm': changed('tree-realm-select'),
     'tree-size-weights': weighted
-      ? sizes.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
+      ? TREE_SIZES.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
       : null,
     // Only a folder that is there; an empty field means the default one.
     'tree-pack-dir': treePackDir,

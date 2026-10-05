@@ -186,7 +186,6 @@
   "enable_luanti_desc": "将 Luanti（Mineclonia）添加为输出格式。实验性。",
   "advanced_features": "扩展功能",
   "advanced_features_desc": "显示下方选项。关闭时 Arnis 照常运行。",
-  "presets": "预设",
   "preset_save_button": "保存预设",
   "preset_load_button": "加载预设",
   "features_group_performance": "性能与大型世界",

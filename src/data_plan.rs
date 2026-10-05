@@ -151,12 +151,12 @@ mod tests {
 
     #[test]
     fn counts_what_a_temp_cache_root_holds() {
-        let root = std::env::temp_dir().join(format!("arnis-data-plan-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
         let bbox = LLBBox::from_str(BBOX).unwrap();
         let a = args(&["--canopy-height=true"]);
 
-        let empty = plan(&root, &a, bbox);
+        let empty = plan(root, &a, bbox);
         let elev = item(&empty, "elevation");
         assert!(elev.total > 0 && elev.cached == 0);
         assert_eq!(
@@ -172,13 +172,13 @@ mod tests {
         // One of each source's files cached: partly cached, and the estimate
         // follows the cached file's size.
         let (_, _, gw, gh) = crate::elevation::compute_grid_dims(&bbox, a.scale);
-        let dir = crate::elevation::cache::provider_cache_dir(&root, "mapterhorn");
+        let dir = crate::elevation::cache::provider_cache_dir(root, "mapterhorn");
         let elev_files = crate::elevation::providers::mapterhorn::cache_files(&dir, &bbox, gw, gh);
         touch(&elev_files[0], 1000);
-        for f in crate::land_cover::cache_files(&root, &bbox) {
+        for f in crate::land_cover::cache_files(root, &bbox) {
             touch(&f, 10);
         }
-        let partly = plan(&root, &a, bbox);
+        let partly = plan(root, &a, bbox);
         let elev = item(&partly, "elevation");
         assert_eq!(elev.cached, 1);
         assert_eq!(elev.missing_bytes, Some(1000 * (elev.total as u64 - 1)));
@@ -194,27 +194,26 @@ mod tests {
                 "coordinates": [[[25.0, 44.0], [27.0, 44.0], [27.0, 45.0], [25.0, 45.0], [25.0, 44.0]]]}
         }]});
         let osm_pbf = root.join("arnis").join("osm-pbf");
-        touch(&osm_pbf.join("geofabrik-index.json"), 0);
+        std::fs::create_dir_all(&osm_pbf).unwrap();
         std::fs::write(osm_pbf.join("geofabrik-index.json"), index.to_string()).unwrap();
-        let e = plan(&root, &pbf, bbox).extract.unwrap();
+        let e = plan(root, &pbf, bbox).extract.unwrap();
         assert_eq!(e.name.as_deref(), Some("Test Region"));
         assert!(!e.downloaded && !e.baked && e.bytes.is_none());
         touch(&osm_pbf.join("downloads").join("test-latest.osm.pbf"), 4321);
-        let p = plan(&root, &pbf, bbox);
+        let p = plan(root, &pbf, bbox);
         assert_eq!(p.extract.as_ref().unwrap().bytes, Some(4321));
         assert_eq!(item(&p, "osm").cached, 1, "downloaded, not baked");
 
         // Local Archive: the folder's cells, nothing to download.
         let local = root.join("local-archive");
         let flag = format!("--osm-tiles-url={}", local.display());
-        let empty = plan(&root, &args(&[flag.as_str()]), bbox);
+        let empty = plan(root, &args(&[flag.as_str()]), bbox);
         assert_eq!(item(&empty, "osm").cached, 0);
         assert!(item(&empty, "osm").total > 0);
         assert!(empty.local_archive.unwrap().archives.is_empty());
 
         // Terrain-only builds no objects, so OSM is not part of the plan.
-        let terrain_only = plan(&root, &args(&["--mode=terrain-only"]), bbox);
+        let terrain_only = plan(root, &args(&["--mode=terrain-only"]), bbox);
         assert!(terrain_only.items.iter().all(|i| i.source != "osm"));
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

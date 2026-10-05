@@ -15,7 +15,7 @@ const CHEST_SLOTS: usize = 27;
 /// The built-in table, in the format `--loot-table` reads. Items are weighted
 /// common 9, uncommon 3, rare 1; stackables come in bigger counts, tools,
 /// armour and treasure single.
-const BUILT_IN_JSON: &str = include_str!("buildings_loot.json");
+pub const BUILT_IN_JSON: &str = include_str!("buildings_loot.json");
 
 /// What a chest mostly holds. `Mixed` is the household spread.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,11 +145,6 @@ pub fn set_loot_table(table: Option<LootTable>) {
     *ACTIVE.write().unwrap_or_else(PoisonError::into_inner) = table.map(Arc::new);
 }
 
-/// The built-in table as JSON, in the format `--loot-table` reads.
-pub fn built_in_loot_table_json() -> &'static str {
-    BUILT_IN_JSON
-}
-
 fn active_table() -> Arc<LootTable> {
     ACTIVE
         .read()
@@ -246,10 +241,6 @@ mod tests {
     use super::*;
 
     // FNV-1a over every (slot, id, count) a grid of chests rolls.
-    fn fingerprint(table: &LootTable) -> u64 {
-        themed_fingerprint(table, LootTheme::Mixed)
-    }
-
     fn themed_fingerprint(table: &LootTable, theme: LootTheme) -> u64 {
         use std::hash::Hasher;
         let mut h = fnv::FnvHasher::default();
@@ -267,16 +258,11 @@ mod tests {
     }
 
     #[test]
-    fn built_in_table_rolls_what_the_hardcoded_themes_rolled() {
-        // Captured from the const THEMES code before the table became data.
-        assert_eq!(fingerprint(&BUILT_IN), 0x44e0_ead9_45e0_1a04);
-    }
-
-    #[test]
     fn built_in_table_rolls_what_the_hardcoded_themed_chests_rolled() {
-        // Captured from upstream's const THEMES `themed_chest_loot`, before the table
-        // became data.
+        // Captured from upstream's const THEMES code (`themed_chest_loot` for the
+        // themes), before the table became data.
         for (theme, want) in [
+            (LootTheme::Mixed, 0x44e0_ead9_45e0_1a04),
             (LootTheme::Food, 0x6ccd_dd56_2332_b436),
             (LootTheme::Resources, 0xc1a2_9493_104e_d375),
             (LootTheme::Tools, 0xd822_619d_003b_6ff9),

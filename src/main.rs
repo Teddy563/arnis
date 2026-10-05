@@ -305,8 +305,7 @@ fn run_cli() {
         return;
     }
     if let Some(path) = &args.dump_loot_table {
-        let json = buildings_loot::built_in_loot_table_json();
-        if let Err(e) = fs::write(path, json) {
+        if let Err(e) = fs::write(path, buildings_loot::BUILT_IN_JSON) {
             eprintln!(
                 "{} Cannot write {}: {e}",
                 "Error:".red().bold(),

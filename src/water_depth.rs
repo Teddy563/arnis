@@ -95,7 +95,7 @@ impl BigWaterField {
             height: 0,
             min_x: 0,
             min_z: 0,
-            river: crate::river_bed::RiverBedField::empty(),
+            river: crate::river_bed::RiverBedField::default(),
         }
     }
 
@@ -276,7 +276,7 @@ pub fn compute_big_water_field(
         height: sh,
         min_x: smin_x,
         min_z: smin_z,
-        river: crate::river_bed::RiverBedField::empty(),
+        river: crate::river_bed::RiverBedField::default(),
     }
 }
 
@@ -906,7 +906,7 @@ mod tests {
             height: 4,
             min_x: 0,
             min_z: 0,
-            river: crate::river_bed::RiverBedField::empty(),
+            river: crate::river_bed::RiverBedField::default(),
         };
         assert_eq!(
             bwf.body_max_7x7(0, 0),

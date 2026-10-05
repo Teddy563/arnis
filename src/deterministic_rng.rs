@@ -37,10 +37,7 @@ fn mix_seed(value: u64, seed: u64) -> u64 {
         return value;
     }
     // SplitMix64 of the seed, so nearby seeds give unrelated looks.
-    let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    value ^ z ^ (z >> 31)
+    value ^ crate::building_facades::choose::hash64(seed)
 }
 
 /// Creates a deterministic RNG seeded from an element ID.

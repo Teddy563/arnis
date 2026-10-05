@@ -186,7 +186,6 @@
   "enable_luanti_desc": "Lisää Luantin (Mineclonia) tulostusmuodoksi. Kokeellinen.",
   "advanced_features": "Lisäominaisuudet",
   "advanced_features_desc": "Näyttää alla olevat asetukset. Pois päältä Arnis toimii tavalliseen tapaan.",
-  "presets": "Esiasetukset",
   "preset_save_button": "Tallenna esiasetus",
   "preset_load_button": "Lataa esiasetus",
   "features_group_performance": "Suorituskyky & suuret maailmat",

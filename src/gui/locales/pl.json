@@ -186,7 +186,6 @@
   "enable_luanti_desc": "Dodaje Luanti (Mineclonia) jako format wyjściowy. Eksperymentalne.",
   "advanced_features": "Dodatkowe funkcje",
   "advanced_features_desc": "Pokazuje opcje poniżej. Gdy wyłączone, Arnis działa jak zwykle.",
-  "presets": "Ustawienia wstępne",
   "preset_save_button": "Zapisz ustawienia",
   "preset_load_button": "Wczytaj ustawienia",
   "features_group_performance": "Wydajność i duże światy",

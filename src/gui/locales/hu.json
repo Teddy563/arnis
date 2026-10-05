@@ -186,7 +186,6 @@
   "enable_luanti_desc": "Hozzáadja a Luantit (Mineclonia) kimeneti formátumként. Kísérleti.",
   "advanced_features": "Extra funkciók",
   "advanced_features_desc": "Megjeleníti a lenti beállításokat. Kikapcsolva az Arnis a szokásos módon fut.",
-  "presets": "Előbeállítások",
   "preset_save_button": "Előbeállítás mentése",
   "preset_load_button": "Előbeállítás betöltése",
   "features_group_performance": "Teljesítmény és nagy világok",

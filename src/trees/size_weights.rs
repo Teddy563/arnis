@@ -5,14 +5,10 @@
 //! tile. Left at their defaults they reproduce the band thresholds exactly.
 
 use crate::trees::tree_library::{SizeFilter, TreeSize};
+use clap::ValueEnum;
 
-const ORDER: [TreeSize; 5] = [
-    TreeSize::Small,
-    TreeSize::Medium,
-    TreeSize::Big,
-    TreeSize::Tall,
-    TreeSize::Giant,
-];
+/// The tiers' names, smallest to largest, as `TreeSize` parses them.
+pub const NAMES: [&str; 5] = ["small", "medium", "big", "tall", "giant"];
 
 /// Percent per tier, smallest to largest: 100 keeps the default share, 0 turns the tier off.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,11 +24,7 @@ impl SizeWeights {
     /// Parse `name=percent` pairs (small, medium, big, tall, giant), each 0-200.
     /// Omitted tiers stay at 100.
     pub fn parse(spec: &str) -> Result<SizeWeights, String> {
-        let w = crate::element_processing::field_texture::parse_weights(
-            spec,
-            &["small", "medium", "big", "tall", "giant"],
-            100,
-        )?;
+        let w = crate::element_processing::field_texture::parse_weights(spec, &NAMES, 100)?;
         if w.iter().any(|&pct| pct > 200) {
             return Err(format!("{spec}: each percent must be 0-200"));
         }
@@ -76,7 +68,7 @@ pub fn pick(roll: u64, scale: f64, weights: Option<&SizeWeights>) -> TreeSize {
     // Exact for the defaults: every share is a whole number and the sum is 1000.
     let target = roll as f64 * sum / 1000.0;
     let mut cum = 0.0;
-    for (size, share) in ORDER.iter().zip(&shares) {
+    for (size, share) in TreeSize::value_variants().iter().zip(&shares) {
         cum += share;
         if target < cum {
             return *size;
@@ -120,7 +112,7 @@ mod tests {
             } else {
                 &[200, 600, 880, 975, 1000]
             };
-            ORDER[cuts.iter().position(|&c| roll < c).unwrap()]
+            TreeSize::value_variants()[cuts.iter().position(|&c| roll < c).unwrap()]
         };
         let d = SizeWeights::default();
         for scale in [0.1, 0.5, 0.8, 1.0] {

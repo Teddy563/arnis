@@ -104,6 +104,21 @@ fn default_cell_zoom() -> u8 {
     CELL_ZOOM
 }
 
+impl Manifest {
+    /// The index in `dir`, if this build reads it.
+    fn read(dir: &Path) -> Option<Manifest> {
+        let m: Manifest =
+            serde_json::from_slice(&std::fs::read(dir.join("archives.json")).ok()?).ok()?;
+        (m.zoom == ZOOM && m.cell_zoom <= ZOOM).then_some(m)
+    }
+
+    /// The coverage cell of z13 tile `(x, y)`.
+    fn cell(&self, x: u32, y: u32) -> u32 {
+        let shift = ZOOM - self.cell_zoom;
+        (y >> shift) * (1u32 << self.cell_zoom) + (x >> shift)
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct ArchiveEntry {
     file: String,
@@ -189,18 +204,12 @@ fn url_dir(base_url: &str) -> String {
 /// sea) are never cached, so they count as missing.
 pub(crate) fn cache_files(root: &Path, base_url: &str, bbox: &LLBBox) -> Option<Vec<PathBuf>> {
     let dir = cache_root_in(root).join(url_dir(base_url));
-    let manifest: Manifest =
-        serde_json::from_slice(&std::fs::read(dir.join("archives.json")).ok()?).ok()?;
-    if manifest.zoom != ZOOM || manifest.cell_zoom > ZOOM {
-        return None;
-    }
+    let manifest = Manifest::read(&dir)?;
     let (xs, xe, ys, ye) = tile_range(bbox)?;
-    let shift = ZOOM - manifest.cell_zoom;
-    let side = 1u32 << manifest.cell_zoom;
     let mut out = Vec::new();
     for x in xs..=xe {
         for y in ys..=ye {
-            let cell = HashSet::from([(y >> shift) * side + (x >> shift)]);
+            let cell = HashSet::from([manifest.cell(x, y)]);
             let paths: Vec<PathBuf> = manifest
                 .archives
                 .iter()
@@ -259,11 +268,7 @@ pub struct LocalCoverage {
 pub(crate) fn local_coverage(dir: &Path, bbox: &LLBBox) -> Option<LocalCoverage> {
     let (xs, xe, ys, ye) = tile_range(bbox)?;
     let tiles = (xe - xs + 1) as usize * (ye - ys + 1) as usize;
-    let manifest = std::fs::read(dir.join("archives.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Manifest>(&b).ok())
-        .filter(|m| m.zoom == ZOOM && m.cell_zoom <= ZOOM);
-    let Some(manifest) = manifest else {
+    let Some(manifest) = Manifest::read(dir) else {
         return Some(LocalCoverage {
             tiles,
             ..LocalCoverage::default()
@@ -275,13 +280,11 @@ pub(crate) fn local_coverage(dir: &Path, bbox: &LLBBox) -> Option<LocalCoverage>
         .iter()
         .filter(|a| a.file_is_safe() && dir.join(&a.file).is_file())
         .collect();
-    let shift = ZOOM - manifest.cell_zoom;
-    let side = 1u32 << manifest.cell_zoom;
     let mut covering = vec![false; present.len()];
     let mut covered = 0;
     for x in xs..=xe {
         for y in ys..=ye {
-            let cell = HashSet::from([(y >> shift) * side + (x >> shift)]);
+            let cell = HashSet::from([manifest.cell(x, y)]);
             let mut any = false;
             for (i, a) in present.iter().enumerate() {
                 if a.covers(&cell, bbox) {
@@ -613,12 +616,7 @@ fn relation_records(
     bbox: &LLBBox,
     tiles: &[(u32, u32)],
 ) -> Vec<PathBuf> {
-    let shift = ZOOM - manifest.cell_zoom;
-    let side = 1u32 << manifest.cell_zoom;
-    let cells: HashSet<u32> = tiles
-        .iter()
-        .map(|(x, y)| (y >> shift) * side + (x >> shift))
-        .collect();
+    let cells: HashSet<u32> = tiles.iter().map(|&(x, y)| manifest.cell(x, y)).collect();
     let archives: Vec<pmtiles::CachedArchive> = manifest
         .archives
         .iter()

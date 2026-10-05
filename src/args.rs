@@ -1450,10 +1450,13 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
-        // The probe and the cave preview write no world, so they need no output directory.
-    } else if args.mapillary_probe || cave_preview || args.process.prewarm {
-        // The probe, the cave preview and a prewarm write no world, so they need no output directory.
+    } else if args.mapillary_probe
+        || cave_preview
+        || args.climate_map.is_some()
+        || args.process.prewarm
+    {
+        // The probe, the cave preview, the climate map and a prewarm write no world, so
+        // they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.

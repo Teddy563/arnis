@@ -186,7 +186,6 @@
   "enable_luanti_desc": "Добавляет Luanti (Mineclonia) как формат вывода. Экспериментально.",
   "advanced_features": "Доп. функции",
   "advanced_features_desc": "Показывает настройки ниже. Когда выключено, Arnis работает как обычно.",
-  "presets": "Пресеты",
   "preset_save_button": "Сохранить пресет",
   "preset_load_button": "Загрузить пресет",
   "features_group_performance": "Производительность и большие миры",

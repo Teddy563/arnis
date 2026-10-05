@@ -841,13 +841,7 @@ fn edit_level_data(
     edit: impl FnOnce(&mut std::collections::HashMap<String, Value>),
 ) -> Result<(), String> {
     let level_path = world_path.join("level.dat");
-    let raw = fs::read(&level_path).map_err(|e| format!("Failed to read level.dat: {e}"))?;
-    let mut decompressed = Vec::new();
-    GzDecoder::new(raw.as_slice())
-        .read_to_end(&mut decompressed)
-        .map_err(|e| format!("Failed to decompress level.dat: {e}"))?;
-    let mut root: Value = fastnbt::from_bytes(&decompressed)
-        .map_err(|e| format!("Failed to parse level.dat NBT: {e}"))?;
+    let mut root = read_gzip_nbt(&level_path)?;
     let Value::Compound(ref mut top) = root else {
         return Err("level.dat root is not a compound".to_string());
     };
@@ -855,17 +849,7 @@ fn edit_level_data(
         return Err("level.dat missing Data compound".to_string());
     };
     edit(data);
-
-    let serialized =
-        fastnbt::to_bytes(&root).map_err(|e| format!("Failed to serialize level.dat: {e}"))?;
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder
-        .write_all(&serialized)
-        .map_err(|e| format!("Failed to compress level.dat: {e}"))?;
-    let compressed = encoder
-        .finish()
-        .map_err(|e| format!("Failed to compress level.dat: {e}"))?;
-    replace_file_atomically(&level_path, &compressed)
+    write_gzip_nbt(&level_path, &root)
 }
 
 /// DataVersion of 26.1, which keeps dimensions under `dimensions/` and maps under

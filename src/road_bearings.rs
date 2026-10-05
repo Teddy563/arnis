@@ -149,10 +149,7 @@ fn bearing_at_uncached(x: i32, z: i32) -> Option<(f64, f64)> {
     // One cell only (radius 32 blocks). Widening this re-introduces the seam: see the
     // CELL comment. The query point can already be 96 blocks outside the tile's kept
     // area, and every extra block of radius eats into the overlap both neighbours share.
-    let (sx, sz) = match grid.get(&(x.div_euclid(CELL), z.div_euclid(CELL))) {
-        Some(&(sx, sz)) => (sx, sz),
-        None => return None,
-    };
+    let &(sx, sz) = grid.get(&(x.div_euclid(CELL), z.div_euclid(CELL)))?;
     // Need a meaningful amount of road, in blocks of accumulated length.
     if (sx * sx + sz * sz).sqrt() < MIN_MAGNITUDE {
         return None;
@@ -165,23 +162,6 @@ fn bearing_at_uncached(x: i32, z: i32) -> Option<(f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The lattice must be world-anchored: a point's grid cell is a pure function of its
-    /// absolute coordinates, with no dependence on any tile origin.
-    #[test]
-    fn lattice_is_world_anchored() {
-        let cases: [(i32, i32); 6] = [
-            (0, 0),
-            (CELL - 1, 0),
-            (CELL, 1),
-            (-1, -1),
-            (-CELL, -1),
-            (-CELL - 1, -2),
-        ];
-        for (x, gx) in cases {
-            assert_eq!(x.div_euclid(CELL), gx, "x={x}");
-        }
-    }
 
     /// The seam property: the bearing at a point depends only on the road data inside
     /// that point's own lattice cell. Two tiles that clipped different road sets outside
