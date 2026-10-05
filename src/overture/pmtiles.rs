@@ -344,6 +344,62 @@ pub fn tile_cache_path(dir: &std::path::Path, z: u8, x: u32, y: u32) -> PathBuf 
         .join(format!("{y}.bin"))
 }
 
+/// Where an archive cached in `dir` keeps a leaf directory.
+fn leaf_cache_path(dir: &std::path::Path, offset: u64, length: u32) -> PathBuf {
+    dir.join("leaf").join(format!("{offset}_{length}.bin"))
+}
+
+/// Where an archive cached in `dir` keeps an [`Archive::entry`].
+fn entry_cache_path(dir: &std::path::Path, tile_id: u64) -> PathBuf {
+    dir.join("id").join(format!("{tile_id}.bin"))
+}
+
+/// What an archive's cache in `dir` answers with no request, as an offline run reads it.
+pub struct CachedArchive {
+    dir: PathBuf,
+    header: Header,
+}
+
+impl CachedArchive {
+    /// `None` until a run has cached the header.
+    pub fn open(dir: PathBuf, allowed: &[u8]) -> Option<CachedArchive> {
+        let header =
+            Header::parse_allowing(&cache::read(&dir.join("header.bin"))?, allowed).ok()?;
+        Some(CachedArchive { dir, header })
+    }
+
+    /// Tile `z/x/y`, decompressed, if it is cached.
+    pub fn tile(&self, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+        let raw = cache::read(&tile_cache_path(&self.dir, z, x, y))?;
+        decompress(self.header.tile_compression, raw, MAX_TILE_BYTES).ok()
+    }
+
+    /// The file [`Archive::entry`] caches `tile_id` in, and its length on the wire;
+    /// `Ok(None)` when the archive has no such entry, `Err` with the first directory
+    /// on the way to it that is not cached.
+    pub fn entry(&self, tile_id: u64) -> std::result::Result<Option<(PathBuf, u32)>, PathBuf> {
+        let mut path = self.dir.join("root.bin");
+        for _ in 0..MAX_LEAF_DEPTH {
+            let Some(entries) = cache::read(&path)
+                .and_then(|raw| {
+                    decompress(self.header.internal_compression, raw, MAX_DIRECTORY_BYTES).ok()
+                })
+                .and_then(|d| decode_directory(&d).ok())
+            else {
+                return Err(path);
+            };
+            match find_entry(&entries, tile_id) {
+                Some(e) if e.run_length > 0 => {
+                    return Ok(Some((entry_cache_path(&self.dir, tile_id), e.length)))
+                }
+                Some(e) if e.length > 0 => path = leaf_cache_path(&self.dir, e.offset, e.length),
+                _ => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// Web-Mercator tile containing a coordinate at the given zoom.
 pub fn lonlat_to_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
     let n = f64::from(1u32 << z);
@@ -513,10 +569,9 @@ impl Archive {
                     client,
                     absolute,
                     u64::from(entry.length),
-                    self.cache_dir.as_ref().map(|d| {
-                        d.join("leaf")
-                            .join(format!("{}_{}.bin", entry.offset, entry.length))
-                    }),
+                    self.cache_dir
+                        .as_ref()
+                        .map(|d| leaf_cache_path(d, entry.offset, entry.length)),
                 )?;
                 let decoded = decode_directory(&decompress(
                     self.header.internal_compression,
@@ -578,7 +633,7 @@ impl Archive {
         let path = self
             .cache_dir
             .as_ref()
-            .map(|d| d.join("id").join(format!("{tile_id}.bin")));
+            .map(|d| entry_cache_path(d, tile_id));
         let raw = self.read_cached(client, location.offset, u64::from(location.length), path)?;
         decompress(self.header.tile_compression, raw, MAX_TILE_BYTES)
     }
