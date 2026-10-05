@@ -1,9 +1,9 @@
 //! Live option previews: a sample area built with one settings group's
 //! current flags (stock defaults for the rest), drawn top-down whole for the
 //! group's picture in the window. The same areas and base flags as the
-//! shipped pictures (work/previews/final_render.py,
-//! docs/advanced_features.md), so a live picture and a shipped one show the
-//! same place. Results are cached on disk per group, flags and Arnis version.
+//! shipped pictures (work/previews/final_render.py), so a live picture and a
+//! shipped one show the same place. Results are cached on disk per group, flags
+//! and Arnis version.
 
 use image::{imageops, Rgb, RgbImage};
 use sha2::{Digest, Sha256};

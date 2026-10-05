@@ -3,7 +3,7 @@
 //! The world pins a Web Mercator frame (origin and scale in the manifest next
 //! to `level.dat`). Every requested area is snapped outward to whole chunks in
 //! that frame and written into the existing region files, so areas generated
-//! at different times line up block for block. See `docs/one_world.md`.
+//! at different times line up block for block.
 
 use crate::args::Args;
 use crate::coordinate_system::cartesian::XZBBox;
@@ -268,10 +268,13 @@ impl Manifest {
 pub fn existing_chunks(world_dir: &Path, rect: &XZBBox) -> u64 {
     let (cx0, cz0) = (rect.min_x() >> 4, rect.min_z() >> 4);
     let (cx1, cz1) = (rect.max_x() >> 4, rect.max_z() >> 4);
+    let region_dir = crate::world_utils::WorldLayout::of(world_dir)
+        .overworld_dir(world_dir)
+        .join("region");
     let mut count = 0;
     for rz in (cz0 >> 5)..=(cz1 >> 5) {
         for rx in (cx0 >> 5)..=(cx1 >> 5) {
-            let path = world_dir.join("region").join(format!("r.{rx}.{rz}.mca"));
+            let path = region_dir.join(format!("r.{rx}.{rz}.mca"));
             let mut header = [0u8; 4096];
             let read = std::fs::File::open(&path).and_then(|mut f| f.read_exact(&mut header));
             if read.is_err() {

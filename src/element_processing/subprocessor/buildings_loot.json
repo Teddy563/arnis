@@ -4,6 +4,7 @@
   "rolls_max": 8,
   "themes": [
     {
+      "kind": "food",
       "weight": 25,
       "items": [
         {
@@ -87,6 +88,7 @@
       ]
     },
     {
+      "kind": "mixed",
       "weight": 20,
       "items": [
         {
@@ -158,6 +160,7 @@
       ]
     },
     {
+      "kind": "resources",
       "weight": 18,
       "items": [
         {
@@ -211,6 +214,7 @@
       ]
     },
     {
+      "kind": "tools",
       "weight": 15,
       "items": [
         {
@@ -270,6 +274,7 @@
       ]
     },
     {
+      "kind": "valuables",
       "weight": 12,
       "items": [
         {
@@ -317,6 +322,7 @@
       ]
     },
     {
+      "kind": "mixed",
       "weight": 10,
       "items": [
         {

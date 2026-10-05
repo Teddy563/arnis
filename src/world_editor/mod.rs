@@ -265,9 +265,10 @@ pub struct WorldEditor<'a> {
     strict_bounds: Option<(i32, i32, i32, i32)>,
     /// Cells holding a decal frame. Frames are entities, so `set_block` reads them as empty.
     frame_cells: FnvHashSet<(i32, i32, i32)>,
-    /// Block bounds whose chunks are merged into the existing world; `None` writes fresh
+    /// Set for a One World run: the block bounds whose chunks are merged into the
+    /// world's existing regions, and where that world keeps them. `None` writes fresh
     /// regions. A One World piece builds past its own chunks and writes only these.
-    merge_into_existing: Option<XZBBox>,
+    merge_into_existing: Option<(XZBBox, crate::world_utils::WorldLayout)>,
     climate_anchor: Option<(f64, f64)>,
     metadata_extent: Option<(XZBBox, LLBBox)>,
     /// Java: `Some(zstd level)` writes EXPERIMENTAL B_Linear regions instead of Anvil.
@@ -431,8 +432,12 @@ impl<'a> WorldEditor<'a> {
         }
     }
 
-    pub fn set_merge_into_existing(&mut self, rect: XZBBox) {
-        self.merge_into_existing = Some(rect);
+    pub fn set_merge_into_existing(
+        &mut self,
+        rect: XZBBox,
+        layout: crate::world_utils::WorldLayout,
+    ) {
+        self.merge_into_existing = Some((rect, layout));
     }
 
     pub fn set_climate_anchor(&mut self, lat: f64, lon: f64) {
@@ -449,11 +454,12 @@ impl<'a> WorldEditor<'a> {
 
     pub(crate) fn region_write_mode(&self) -> java::RegionWriteMode {
         match &self.merge_into_existing {
-            Some(rect) => java::RegionWriteMode::Merge {
+            Some((rect, layout)) => java::RegionWriteMode::Merge {
                 min_x: rect.min_x(),
                 min_z: rect.min_z(),
                 max_x: rect.max_x(),
                 max_z: rect.max_z(),
+                layout: *layout,
             },
             None => java::RegionWriteMode::Fresh,
         }
@@ -550,6 +556,15 @@ impl<'a> WorldEditor<'a> {
     #[inline]
     pub fn ecoregion(&self, x: i32, z: i32) -> Option<crate::ecoregion::Ecoregion> {
         self.ground.as_ref()?.ecoregion(self.ground_point(x, z))
+    }
+
+    /// True where the land cover keeps (x, z) as land too steep to hold water, like a gorge wall.
+    pub fn is_steep_land(&self, x: i32, z: i32) -> bool {
+        self.ground.as_ref().is_some_and(|g| {
+            let p = self.ground_point(x, z);
+            let cover = g.cover_class(p);
+            cover != 0 && cover != crate::land_cover::LC_WATER && g.slope(p) > 4
+        })
     }
 
     /// True if (x, z) is an ESA land-cover water cell (predicts water carved after trees).

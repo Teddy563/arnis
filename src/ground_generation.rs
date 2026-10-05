@@ -18,9 +18,9 @@ use crate::block_definitions::{
     AIR, BEDROCK, BLACK_CONCRETE, BRICK, CARROTS, CLAY, COARSE_DIRT, COBBLESTONE,
     CRACKED_STONE_BRICKS, CYAN_TERRACOTTA, DEAD_BUSH, DIRT, DIRT_PATH, FARMLAND, FERN, GRASS,
     GRASS_BLOCK, GRAVEL, GRAY_CONCRETE, GRAY_CONCRETE_POWDER, HAY_BALE, LIGHT_GRAY_CONCRETE,
-    MOSS_BLOCK, MUD, OAK_LEAVES, OAK_PLANKS, PACKED_ICE, PODZOL, POTATOES, SAND, SANDSTONE,
-    SMOOTH_STONE, SNOW_BLOCK, STONE, STONE_BRICKS, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, WATER, WHEAT,
-    WHITE_CONCRETE,
+    MOSS_BLOCK, MUD, OAK_PLANKS, PACKED_ICE, PODZOL, POTATOES, SAND, SANDSTONE, SMOOTH_STONE,
+    SNOW_BLOCK, STONE, STONE_BRICKS, TALL_GRASS_BOTTOM, TALL_GRASS_TOP, WATER, WHEAT,
+    WHITE_CONCRETE, YELLOW_CONCRETE,
 };
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
 use crate::element_processing::bridges::BridgeSurfaceMap;
@@ -885,6 +885,7 @@ pub fn generate_ground_region(
                                         GRAY_CONCRETE,
                                         LIGHT_GRAY_CONCRETE,
                                         WHITE_CONCRETE,
+                                        YELLOW_CONCRETE,
                                         DIRT_PATH,
                                         STONE_BRICKS,
                                         BRICK,
@@ -1187,13 +1188,11 @@ pub fn generate_ground_region(
                                     land_cover::LC_SHRUBLAND if ground_is_natural => {
                                         let choice = rng.random_range(0..100);
                                         if choice < 2 {
-                                            editor.set_block_absolute(
-                                                OAK_LEAVES,
+                                            crate::element_processing::bush::place_bush(
+                                                editor,
                                                 x,
-                                                ground_y + 1,
                                                 z,
-                                                None,
-                                                None,
+                                                crate::element_processing::bush::BushKind::Wild,
                                             );
                                         } else if undergrowth_roll(
                                             x,
@@ -1364,13 +1363,11 @@ pub fn generate_ground_region(
                                                     None,
                                                     None,
                                                 ),
-                                                6..=8 => editor.set_block_absolute(
-                                                    OAK_LEAVES,
+                                                6..=8 => crate::element_processing::bush::place_bush(
+                                                    editor,
                                                     x,
-                                                    ground_y + 1,
                                                     z,
-                                                    None,
-                                                    None,
+                                                    crate::element_processing::bush::BushKind::Low,
                                                 ),
                                                 9 => editor.set_block_absolute(
                                                     DEAD_BUSH,
@@ -1453,6 +1450,7 @@ pub fn generate_ground_region(
                             GRAY_CONCRETE,
                             LIGHT_GRAY_CONCRETE,
                             WHITE_CONCRETE,
+                            YELLOW_CONCRETE,
                             DIRT_PATH,
                             WATER,
                         ]),

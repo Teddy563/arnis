@@ -6,13 +6,14 @@ use crate::decals::DecalRegistry;
 use crate::map_item_palette::{nearest_map_color, TRANSPARENT};
 use crate::map_renderer::PreviewAccumulator;
 use crate::progress::emit_gui_progress_update;
+use crate::world_utils::WorldLayout;
 use fastnbt::{ByteArray, Value};
 use flate2::read::GzDecoder;
 use image::RgbImage;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MAP_SIZE: i32 = 128;
@@ -22,17 +23,66 @@ const DATA_VERSION: i32 = crate::world_editor::java::DATA_VERSION;
 /// arnismc.com branding image, placed as a locked map at spawn.
 static BRANDING_MAP_PNG: &[u8] = include_bytes!("../assets/branding/arnismc_map.png");
 
-// The map must carry the same DataVersion as the world so a newer client upgrades it
-// with the rest of the save rather than treating it as a stale file.
-fn world_data_version(world_path: &Path) -> i32 {
-    if let Ok(Value::Compound(root)) = read_gzip_nbt(&world_path.join("level.dat")) {
-        if let Some(Value::Compound(data)) = root.get("Data") {
-            if let Some(Value::Int(v)) = data.get("DataVersion") {
-                return *v;
-            }
+// 1.21.4, the format these maps are written in. A newer world upgrades them on load.
+const MAP_FORMAT_DATA_VERSION: i32 = 4189;
+
+/// A world's map folder, in the layout the world is in.
+struct MapStore {
+    dir: PathBuf,
+    layout: WorldLayout,
+    data_version: i32,
+}
+
+impl MapStore {
+    fn open(world_path: &Path) -> Result<Self, String> {
+        let layout = WorldLayout::of(world_path);
+        let dir = layout.maps_dir(world_path);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+        // The world's own version where it is older, so its save upgrades as one.
+        let data_version = crate::world_utils::level_data_version(world_path)
+            .unwrap_or(DATA_VERSION)
+            .min(MAP_FORMAT_DATA_VERSION);
+        Ok(Self {
+            dir,
+            layout,
+            data_version,
+        })
+    }
+
+    fn next_id(&self) -> i32 {
+        next_map_id(&self.dir)
+    }
+
+    fn map_path(&self, map_id: i32) -> PathBuf {
+        self.dir.join(match self.layout {
+            WorldLayout::Legacy => format!("map_{map_id}.dat"),
+            WorldLayout::Dimensions => format!("{map_id}.dat"),
+        })
+    }
+
+    /// The map id a file in the map folder holds, if it is a map.
+    fn map_id_of(&self, file_name: &str) -> Option<i32> {
+        let stem = file_name.strip_suffix(".dat")?;
+        match self.layout {
+            WorldLayout::Legacy => stem.strip_prefix("map_")?.parse().ok(),
+            WorldLayout::Dimensions => stem.parse().ok(),
         }
     }
-    DATA_VERSION
+
+    fn write_map(&self, map_id: i32, map_dat: &Value) -> Result<(), String> {
+        write_gzip_nbt(&self.map_path(map_id), map_dat)
+    }
+
+    fn write_counter(&self, last_id: i32) -> Result<(), String> {
+        let name = match self.layout {
+            WorldLayout::Legacy => "idcounts.dat",
+            WorldLayout::Dimensions => "last_id.dat",
+        };
+        write_gzip_nbt(
+            &self.dir.join(name),
+            &build_idcounts(last_id, self.data_version),
+        )
+    }
 }
 
 /// Reads the world spawn XZ from level.dat so callers can align features with it.
@@ -261,16 +311,6 @@ fn insert_into_inventory(world_path: &Path, map_id: i32) -> Result<(), String> {
     write_gzip_nbt(&level_path, &root)
 }
 
-// Write the map .dat under both the pre- and post-26.1 filenames.
-fn write_map_dat_files(data_dir: &Path, map_id: i32, map_dat: &Value) -> Result<(), String> {
-    // Both filenames get identical bytes, so encode once.
-    let prefixed = data_dir.join(format!("map_{map_id}.dat"));
-    let compressed = gzip_nbt_bytes(&prefixed, map_dat)?;
-    std::fs::write(&prefixed, &compressed).map_err(|e| format!("write {prefixed:?}: {e}"))?;
-    let bare = data_dir.join(format!("{map_id}.dat"));
-    std::fs::write(&bare, &compressed).map_err(|e| format!("write {bare:?}: {e}"))
-}
-
 // Quantize a bundled PNG to a locked 128x128 map; alpha below 128 stays transparent.
 fn image_map_dat(png: &[u8], data_version: i32) -> Result<Value, String> {
     let img = image::load_from_memory(png)
@@ -352,22 +392,24 @@ pub fn write_map_item_image(
         img, origin.0, origin.1, origin.2, xzbbox, bpp, x_center, z_center,
     );
 
-    let data_version = world_data_version(world_path);
-    let data_dir = world_path.join("data");
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("create data dir: {e}"))?;
-    let map_id = next_map_id(&data_dir);
+    let store = MapStore::open(world_path)?;
+    let map_id = store.next_id();
 
-    let map_dat = build_map_dat(colors, scale, tracking, x_center, z_center, data_version);
-    write_map_dat_files(&data_dir, map_id, &map_dat)?;
+    let map_dat = build_map_dat(
+        colors,
+        scale,
+        tracking,
+        x_center,
+        z_center,
+        store.data_version,
+    );
+    store.write_map(map_id, &map_dat)?;
 
     // Branding map is id+1; a decode failure yields a blank map so the frame never breaks.
     let branding_id = map_id + 1;
-    let branding_dat = image_map_dat_or_blank(BRANDING_MAP_PNG, data_version);
-    write_map_dat_files(&data_dir, branding_id, &branding_dat)?;
-
-    let idcounts = build_idcounts(branding_id, data_version);
-    write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
-    write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)?;
+    let branding_dat = image_map_dat_or_blank(BRANDING_MAP_PNG, store.data_version);
+    store.write_map(branding_id, &branding_dat)?;
+    store.write_counter(branding_id)?;
 
     // Only the preview goes in the hotbar; branding is world-only.
     insert_into_inventory(world_path, map_id)
@@ -375,18 +417,12 @@ pub fn write_map_item_image(
 
 /// Writes only the arnismc.com branding map (the world's first map) when the preview map is off.
 pub fn write_branding_map_only(world_path: &Path) -> Result<(), String> {
-    let data_version = world_data_version(world_path);
-    let data_dir = world_path.join("data");
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("create data dir: {e}"))?;
-    let map_id = next_map_id(&data_dir);
+    let store = MapStore::open(world_path)?;
+    let map_id = store.next_id();
 
-    let branding_dat = image_map_dat_or_blank(BRANDING_MAP_PNG, data_version);
-    write_map_dat_files(&data_dir, map_id, &branding_dat)?;
-
-    let idcounts = build_idcounts(map_id, data_version);
-    write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
-    write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)?;
-    Ok(())
+    let branding_dat = image_map_dat_or_blank(BRANDING_MAP_PNG, store.data_version);
+    store.write_map(map_id, &branding_dat)?;
+    store.write_counter(map_id)
 }
 
 /// Writes one locked map per decal tile and, with `update_counter`, bumps the
@@ -400,9 +436,7 @@ pub fn write_decal_maps(
     if registry.is_empty() {
         return Ok(0);
     }
-    let data_version = world_data_version(world_path);
-    let data_dir = world_path.join("data");
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("create data dir: {e}"))?;
+    let store = MapStore::open(world_path)?;
 
     let preview_img = preview.map(|p| (p.render_image(), p.min_x(), p.min_z(), p.step()));
     let raster = preview_img
@@ -431,8 +465,9 @@ pub fn write_decal_maps(
             for row in 0..entry.rows {
                 for col in 0..entry.cols {
                     let id = entry.tile_id(col, row);
-                    let dat = build_map_dat(canvas.tile(col, row), 0, false, 0, 0, data_version);
-                    write_map_dat_files(&data_dir, id, &dat)?;
+                    let dat =
+                        build_map_dat(canvas.tile(col, row), 0, false, 0, 0, store.data_version);
+                    store.write_map(id, &dat)?;
                     highest = highest.max(id);
                     written += 1;
                 }
@@ -447,7 +482,7 @@ pub fn write_decal_maps(
             Ok((highest, written))
         })
         .collect();
-    let mut highest = next_map_id(&data_dir) - 1;
+    let mut highest = store.next_id() - 1;
     let mut written = 0usize;
     for r in results {
         let (h, w) = r?;
@@ -458,33 +493,21 @@ pub fn write_decal_maps(
         return Ok(written);
     }
 
-    let idcounts = build_idcounts(highest, data_version);
-    write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
-    write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)?;
+    store.write_counter(highest)?;
     Ok(written)
 }
 
 /// Moves the map id counter past every `map_<id>.dat` in the world, for a job
 /// whose pieces wrote their maps without touching it.
 pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
-    let data_dir = world_path.join("data");
-    let highest = std::fs::read_dir(&data_dir)
+    let store = MapStore::open(world_path)?;
+    let highest = std::fs::read_dir(&store.dir)
         .into_iter()
         .flatten()
-        .filter_map(|e| {
-            let name = e.ok()?.file_name().into_string().ok()?;
-            name.strip_prefix("map_")?
-                .strip_suffix(".dat")?
-                .parse::<i32>()
-                .ok()
-        })
+        .filter_map(|e| store.map_id_of(&e.ok()?.file_name().into_string().ok()?))
         .max();
     match highest {
-        Some(h) if h >= next_map_id(&data_dir) => {
-            let idcounts = build_idcounts(h, world_data_version(world_path));
-            write_gzip_nbt(&data_dir.join("idcounts.dat"), &idcounts)?;
-            write_gzip_nbt(&data_dir.join("last_id.dat"), &idcounts)
-        }
+        Some(h) if h >= store.next_id() => store.write_counter(h),
         _ => Ok(()),
     }
 }
@@ -549,23 +572,22 @@ pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
         return Err("no area of this One World has a preview to draw from".to_string());
     }
 
-    let data_dir = world_path.join("data");
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("create data dir: {e}"))?;
-    let existing = hotbar_map_id(world_path).filter(|id| {
-        matches!(read_gzip_nbt(&data_dir.join(format!("map_{id}.dat"))),
+    let store = MapStore::open(world_path)?;
+    let existing = hotbar_map_id(world_path).filter(|&id| {
+        matches!(read_gzip_nbt(&store.map_path(id)),
             Ok(Value::Compound(root)) if matches!(root.get("data"),
                 Some(Value::Compound(d)) if d.get("locked") == Some(&Value::Byte(1))))
     });
-    let map_id = existing.unwrap_or_else(|| next_map_id(&data_dir));
+    let map_id = existing.unwrap_or_else(|| store.next_id());
     let map_dat = build_map_dat(
         colors,
         scale,
         tracking,
         x_center,
         z_center,
-        world_data_version(world_path),
+        store.data_version,
     );
-    write_map_dat_files(&data_dir, map_id, &map_dat)?;
+    store.write_map(map_id, &map_dat)?;
     if existing.is_none() {
         sync_map_counter(world_path)?;
         insert_into_inventory(world_path, map_id)?;
@@ -871,6 +893,43 @@ mod tests {
             panic!("idcounts data");
         };
         assert_eq!(iddata.get("map"), Some(&Value::Int(registry.max_id())));
+    }
+
+    #[test]
+    fn decal_maps_follow_a_world_minecraft_has_upgraded() {
+        use crate::decals::{DecalKey, TextStyle};
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let mut level = read_gzip_nbt(&world.join("level.dat")).unwrap();
+        if let Value::Compound(ref mut root) = level {
+            if let Some(Value::Compound(data)) = root.get_mut("Data") {
+                data.insert("DataVersion".to_string(), Value::Int(5023));
+            }
+        }
+        write_gzip_nbt(&world.join("level.dat"), &level).unwrap();
+        // The game's own counter, past maps crafted in game.
+        let maps = world.join("data/minecraft/maps");
+        std::fs::create_dir_all(&maps).unwrap();
+        write_gzip_nbt(&maps.join("last_id.dat"), &build_idcounts(900, 5023)).unwrap();
+
+        let mut keys = std::collections::BTreeSet::new();
+        keys.insert(DecalKey::Pictogram("bus_stop"));
+        keys.insert(DecalKey::text(TextStyle::Fascia, "Bakery", 2));
+        let registry = DecalRegistry::from_keys(keys);
+        write_decal_maps(&world, &registry, None, true).unwrap();
+
+        for id in DecalRegistry::FIRST_ID..=registry.max_id() {
+            let Value::Compound(root) = read_gzip_nbt(&maps.join(format!("{id}.dat"))).unwrap()
+            else {
+                panic!("decal map {id} root");
+            };
+            // Upgraded by the game on load, from the format it is written in.
+            assert_eq!(root.get("DataVersion"), Some(&Value::Int(4189)));
+            assert!(!world.join(format!("data/map_{id}.dat")).exists());
+        }
+        assert!(!world.join("data/idcounts.dat").exists());
+        assert_eq!(next_map_id(&maps), 901);
     }
 
     fn inventory_items(world: &std::path::Path) -> Vec<Value> {

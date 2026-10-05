@@ -257,6 +257,14 @@ pub fn to_bedrock_block(block: Block) -> BedrockBlock {
                 ("update_bit", BedrockBlockStateValue::Bool(false)),
             ],
         ),
+        "melon" => BedrockBlock::simple("melon_block"),
+        "flowering_azalea_leaves" => BedrockBlock::with_states(
+            "azalea_leaves_flowered",
+            vec![
+                ("persistent_bit", BedrockBlockStateValue::Bool(true)),
+                ("update_bit", BedrockBlockStateValue::Bool(false)),
+            ],
+        ),
 
         // Slabs and stairs share their name/state handling with the
         // property-aware path so both entry points stay in sync.

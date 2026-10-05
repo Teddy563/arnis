@@ -201,6 +201,7 @@ pub(crate) enum RegionWriteMode {
         min_z: i32,
         max_x: i32,
         max_z: i32,
+        layout: crate::world_utils::WorldLayout,
     },
 }
 
@@ -213,6 +214,7 @@ impl RegionWriteMode {
                 min_z,
                 max_x,
                 max_z,
+                ..
             } => {
                 let bx0 = abs_chunk_x * 16;
                 let bz0 = abs_chunk_z * 16;
@@ -232,6 +234,7 @@ impl RegionWriteMode {
                 min_z,
                 max_x,
                 max_z,
+                ..
             } => {
                 let (bx0, bz0) = (region_x * 512, region_z * 512);
                 bx0 + 511 >= min_x && bx0 <= max_x && bz0 + 511 >= min_z && bz0 <= max_z
@@ -244,11 +247,11 @@ impl RegionWriteMode {
 /// template: its placeholder chunks carry another region's positions, and
 /// Minecraft refuses to load the ones a merge leaves standing.
 fn open_region_file_for_merge(
-    world_dir: &std::path::Path,
+    overworld_dir: &std::path::Path,
     region_x: i32,
     region_z: i32,
 ) -> Result<Region<File>, Box<dyn std::error::Error + Send + Sync>> {
-    let region_dir = world_dir.join("region");
+    let region_dir = overworld_dir.join("region");
     let out_path = region_dir.join(format!("r.{}.{}.mca", region_x, region_z));
     if out_path.is_file() {
         let file = File::options().read(true).write(true).open(&out_path)?;
@@ -270,7 +273,9 @@ fn open_region_file_for_merge(
 /// Removes chunks whose stored position does not match their slot, as left
 /// by the first One World build. Returns how many.
 pub(crate) fn drop_misplaced_chunks(world_dir: &std::path::Path) -> std::io::Result<usize> {
-    let region_dir = world_dir.join("region");
+    let region_dir = crate::world_utils::WorldLayout::of(world_dir)
+        .overworld_dir(world_dir)
+        .join("region");
     if !region_dir.is_dir() {
         return Ok(0);
     }
@@ -320,13 +325,13 @@ pub(crate) fn drop_misplaced_chunks(world_dir: &std::path::Path) -> std::io::Res
 /// Minecraft moves a chunk's entities into `entities/` on first load. Drop
 /// them for rewritten chunks so they do not linger over the new blocks.
 fn strip_stale_side_chunks(
-    world_dir: &std::path::Path,
+    overworld_dir: &std::path::Path,
     region_x: i32,
     region_z: i32,
     chunks: &[(i32, i32)],
 ) {
     for folder in ["entities", "poi"] {
-        let path = world_dir
+        let path = overworld_dir
             .join(folder)
             .join(format!("r.{}.{}.mca", region_x, region_z));
         if !path.is_file() {
@@ -407,17 +412,24 @@ fn write_region_to_disk(
     if let Some(preview) = preview {
         preview.ingest_region(region_x, region_z, region_to_modify);
     }
-    let merge = matches!(mode, RegionWriteMode::Merge { .. });
-    let mut region = match blinear_level {
+    // A merge goes where the world keeps its overworld, which 26.1 moves.
+    let merge_dir = match *mode {
+        RegionWriteMode::Merge { layout, .. } => Some(layout.overworld_dir(world_dir)),
+        RegionWriteMode::Fresh => None,
+    };
+    let merge = merge_dir.is_some();
+    let mut region = match (blinear_level, &merge_dir) {
         // B_Linear has no reader here, so it cannot merge; the CLI refuses One World.
-        Some(_) if merge => return Err("--region-format blinear cannot merge into a world".into()),
-        Some(level) => RegionSink::Blinear(super::blinear::BlinearRegionWriter::create(
+        (Some(_), Some(_)) => {
+            return Err("--region-format blinear cannot merge into a world".into())
+        }
+        (Some(level), None) => RegionSink::Blinear(super::blinear::BlinearRegionWriter::create(
             world_dir, region_x, region_z, level, void_world,
         )?),
-        None if merge => {
-            RegionSink::Anvil(open_region_file_for_merge(world_dir, region_x, region_z)?)
+        (None, Some(dir)) => {
+            RegionSink::Anvil(open_region_file_for_merge(dir, region_x, region_z)?)
         }
-        None => RegionSink::Anvil(create_region_file(
+        (None, None) => RegionSink::Anvil(create_region_file(
             world_dir, region_x, region_z, void_world,
         )?),
     };
@@ -553,9 +565,9 @@ fn write_region_to_disk(
 
     if let RegionSink::Blinear(writer) = region {
         writer.finish()?;
-    } else if merge && !written_chunks.is_empty() {
+    } else if let Some(dir) = merge_dir.filter(|_| !written_chunks.is_empty()) {
         drop(region);
-        strip_stale_side_chunks(world_dir, region_x, region_z, &written_chunks);
+        strip_stale_side_chunks(&dir, region_x, region_z, &written_chunks);
     }
 
     Ok(())
@@ -2203,6 +2215,7 @@ mod merge_tests {
             min_z: 0,
             max_x: 15,
             max_z: 15,
+            layout: crate::world_utils::WorldLayout::Legacy,
         };
         assert!(write_region_to_disk(
             bl_dir.path(),
@@ -2289,6 +2302,7 @@ mod merge_tests {
                 min_z: 0,
                 max_x: 31,
                 max_z: 31,
+                layout: crate::world_utils::WorldLayout::Legacy,
             },
         );
         let after_first = present_chunks(dir.path());
@@ -2306,6 +2320,7 @@ mod merge_tests {
                 min_z: 0,
                 max_x: 63,
                 max_z: 31,
+                layout: crate::world_utils::WorldLayout::Legacy,
             },
         );
         assert_eq!(
@@ -2333,6 +2348,7 @@ mod merge_tests {
                 min_z: 0,
                 max_x: 15,
                 max_z: 15,
+                layout: crate::world_utils::WorldLayout::Legacy,
             },
         );
         assert_eq!(
@@ -2425,6 +2441,7 @@ mod merge_tests {
                 min_z: 0,
                 max_x: 15,
                 max_z: 15,
+                layout: crate::world_utils::WorldLayout::Legacy,
             },
         );
         let file = File::open(entities.join("r.0.0.mca")).unwrap();
@@ -2440,12 +2457,32 @@ mod merge_tests {
     }
 
     #[test]
+    fn a_merge_into_a_world_minecraft_has_upgraded_writes_where_it_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let overworld = dir.path().join("dimensions/minecraft/overworld");
+        write(
+            dir.path(),
+            &region_with(&[(0, 0)], SMOOTH_STONE),
+            RegionWriteMode::Merge {
+                min_x: 0,
+                min_z: 0,
+                max_x: 15,
+                max_z: 15,
+                layout: crate::world_utils::WorldLayout::Dimensions,
+            },
+        );
+        assert_eq!(present_chunks(&overworld), vec![(0, 0)]);
+        assert!(!dir.path().join("region").exists());
+    }
+
+    #[test]
     fn merge_bounds_are_inclusive_block_coordinates() {
         let m = RegionWriteMode::Merge {
             min_x: -32,
             min_z: 0,
             max_x: 31,
             max_z: 15,
+            layout: crate::world_utils::WorldLayout::Legacy,
         };
         assert!(m.writes_chunk(-2, 0));
         assert!(m.writes_chunk(1, 0));

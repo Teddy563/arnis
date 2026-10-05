@@ -4,6 +4,7 @@ use crate::bresenham::bresenham_line;
 use crate::climate::Climate;
 use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::bush::{self, place_bush, BushKind};
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFillCache};
@@ -209,6 +210,7 @@ pub fn generate_natural(
                     .then(|| FieldProfile::grassland(&args.fields, args.scale))
                     .flatten();
 
+                let mut shrubbery_species: Option<Block> = None;
                 let mut rng = element_rng(way.id);
                 for &(x, z) in filled_area.iter() {
                     // One World keys these by the block alone (plain runs keep the
@@ -306,7 +308,7 @@ pub fn generate_natural(
                                 if random_choice <= 2 {
                                     editor.set_block(COBBLESTONE, x, 0, z, None, None);
                                 } else if random_choice < 6 {
-                                    editor.set_block(OAK_LEAVES, x, 1, z, None, None);
+                                    place_bush(editor, x, z, BushKind::Low);
                                 } else {
                                     editor.set_block(GRASS, x, 1, z, None, None);
                                 }
@@ -332,10 +334,7 @@ pub fn generate_natural(
                                     crate::ground_decoration::FlowerSetting::Meadow,
                                 );
                             } else if random_choice < 40 {
-                                editor.set_block(OAK_LEAVES, x, 1, z, None, None);
-                                if random_choice < 15 {
-                                    editor.set_block(OAK_LEAVES, x, 2, z, None, None);
-                                }
+                                place_bush(editor, x, z, BushKind::Wild);
                             } else if random_choice < 300 {
                                 if random_choice < 250 {
                                     editor.set_block(GRASS, x, 1, z, None, None);
@@ -538,10 +537,12 @@ pub fn generate_natural(
                                                             None,
                                                         );
                                                     } else if vegetation_chance < 25 {
-                                                        // 10% chance for oak leaves
-                                                        editor.set_block(
-                                                            OAK_LEAVES, cluster_x, 1, cluster_z,
-                                                            None, None,
+                                                        // 10% chance for a low bush
+                                                        place_bush(
+                                                            editor,
+                                                            cluster_x,
+                                                            cluster_z,
+                                                            BushKind::Low,
                                                         );
                                                     }
                                                 }
@@ -590,14 +591,26 @@ pub fn generate_natural(
                                     editor.set_block(GRASS, x, 1, z, None, None);
                                 } else if vegetation_chance < 25 {
                                     // 5% chance for small shrubs
-                                    editor.set_block(OAK_LEAVES, x, 1, z, None, None);
+                                    place_bush(editor, x, z, BushKind::Low);
                                 }
                             }
                         }
                         "shrubbery" => {
-                            // Manicured shrubs and decorative vegetation
-                            editor.set_block(OAK_LEAVES, x, 1, z, None, None);
-                            editor.set_block(OAK_LEAVES, x, 2, z, None, None);
+                            // Manicured shrubs, one species per bed
+                            let species = *shrubbery_species.get_or_insert_with(|| {
+                                let anchor = way.nodes.first().map_or((x, z), |n| (n.x, n.z));
+                                bush::shrubbery_species(editor, anchor.0, anchor.1)
+                            });
+                            for y in 1..=2 {
+                                editor.set_block(
+                                    bush::shrubbery_leaf(species, x, y, z),
+                                    x,
+                                    y,
+                                    z,
+                                    None,
+                                    None,
+                                );
+                            }
                         }
                         "tundra" => {
                             // Treeless habitat with low vegetation, mosses, lichens

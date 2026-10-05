@@ -3,6 +3,8 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::bush::{place_bush, BushKind};
+use crate::element_processing::construction_site;
 use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache, RoadMaskBitmap};
@@ -114,6 +116,7 @@ pub fn generate_landuse(
             Some("training_area" | "range" | "danger_area" | "trench")
         );
     let climate = editor.climate();
+    let site_arid = construction_site::is_arid(climate);
     // Farmland parcels (--field-mix / --farm-crops) and grassland parcels
     // (--grass-texture). None keeps the stock surface.
     let fields = match landuse_tag.as_str() {
@@ -195,7 +198,13 @@ pub fn generate_landuse(
 
         if landuse_tag == "traffic_island" {
             editor.set_block(actual_block, x, 1, z, None, None);
-        } else if landuse_tag == "construction" || landuse_tag == "railway" {
+        } else if landuse_tag == "construction" {
+            // Roads, paved yards and water in the site keep their surface.
+            if !is_protected {
+                let ground = construction_site::ground_block(x, z, site_arid);
+                editor.set_block(ground, x, 0, z, None, Some(&[SPONGE]));
+            }
+        } else if landuse_tag == "railway" {
             editor.set_block(actual_block, x, 0, z, None, Some(&[SPONGE]));
         } else if !is_protected {
             editor.set_block(actual_block, x, 0, z, None, None);
@@ -228,7 +237,7 @@ pub fn generate_landuse(
                         Some(bridge_surface),
                     );
                 } else if !is_protected && (33..35).contains(&random_choice) {
-                    editor.set_block(OAK_LEAVES, x, 1, z, None, None);
+                    place_bush(editor, x, z, BushKind::Garden);
                 } else if !is_protected && (35..37).contains(&random_choice) {
                     editor.set_block(FERN, x, 1, z, None, None);
                 } else if !is_protected && (37..41).contains(&random_choice) {
@@ -257,7 +266,7 @@ pub fn generate_landuse(
                     let random_choice: i32 = rng.random_range(0..30);
                     if random_choice == 2 {
                         match rng.random_range(1..=6) {
-                            1 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),
+                            1 => place_bush(editor, x, z, BushKind::Wild),
                             5 => editor.set_block(FERN, x, 1, z, None, None),
                             _ => crate::ground_decoration::place_scattered_flower(
                                 editor,
@@ -307,7 +316,7 @@ pub fn generate_landuse(
                     if special_choice <= 4 {
                         editor.set_block(HAY_BALE, x, 1, z, None, Some(&[SPONGE]));
                     } else {
-                        editor.set_block(OAK_LEAVES, x, 1, z, None, Some(&[SPONGE]));
+                        place_bush(editor, x, z, BushKind::Low);
                     }
                 } else {
                     // Set crops only if the block below is farmland
@@ -317,81 +326,9 @@ pub fn generate_landuse(
                     }
                 }
             }
-            "construction" => {
-                let random_choice: i32 = rng.random_range(0..1501);
-                if random_choice < 15 {
-                    editor.set_block(SCAFFOLDING, x, 1, z, None, None);
-                    if random_choice < 2 {
-                        editor.set_block(SCAFFOLDING, x, 2, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 3, z, None, None);
-                    } else if random_choice < 4 {
-                        editor.set_block(SCAFFOLDING, x, 2, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 3, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 4, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 1, z + 1, None, None);
-                    } else {
-                        editor.set_block(SCAFFOLDING, x, 2, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 3, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 4, z, None, None);
-                        editor.set_block(SCAFFOLDING, x, 5, z, None, None);
-                        editor.set_block(SCAFFOLDING, x - 1, 1, z, None, None);
-                        editor.set_block(SCAFFOLDING, x + 1, 1, z - 1, None, None);
-                    }
-                } else if random_choice < 55 {
-                    let construction_items: [Block; 13] = [
-                        OAK_LOG,
-                        COBBLESTONE,
-                        GRAVEL,
-                        GLOWSTONE,
-                        STONE,
-                        COBBLESTONE_WALL,
-                        BLACK_CONCRETE,
-                        SAND,
-                        OAK_PLANKS,
-                        DIRT,
-                        BRICK,
-                        CRAFTING_TABLE,
-                        FURNACE,
-                    ];
-                    editor.set_block(
-                        construction_items[rng.random_range(0..construction_items.len())],
-                        x,
-                        1,
-                        z,
-                        None,
-                        None,
-                    );
-                } else if random_choice < 65 {
-                    if random_choice < 60 {
-                        editor.set_block(DIRT, x, 1, z, None, None);
-                        editor.set_block(DIRT, x, 2, z, None, None);
-                        editor.set_block(DIRT, x + 1, 1, z, None, None);
-                        editor.set_block(DIRT, x, 1, z + 1, None, None);
-                    } else {
-                        editor.set_block(DIRT, x, 1, z, None, None);
-                        editor.set_block(DIRT, x, 2, z, None, None);
-                        editor.set_block(DIRT, x - 1, 1, z, None, None);
-                        editor.set_block(DIRT, x, 1, z - 1, None, None);
-                    }
-                } else if random_choice < 100 {
-                    editor.set_block(GRAVEL, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 115 {
-                    editor.set_block(SAND, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 125 {
-                    editor.set_block(DIORITE, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 145 {
-                    editor.set_block(BRICK, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 155 {
-                    editor.set_block(GRANITE, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 180 {
-                    editor.set_block(ANDESITE, x, 0, z, None, Some(&[SPONGE]));
-                } else if random_choice < 565 {
-                    editor.set_block(COBBLESTONE, x, 0, z, None, Some(&[SPONGE]));
-                }
-            }
             "grass" if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) => {
                 match rng.random_range(0..200) {
-                    0 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),
+                    0 => place_bush(editor, x, z, BushKind::Garden),
                     1..=8 => editor.set_block(FERN, x, 1, z, None, None),
                     9..=170 => editor.set_block(GRASS, x, 1, z, None, None),
                     _ => {}
@@ -402,7 +339,7 @@ pub fn generate_landuse(
             }
             "greenfield" if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) => {
                 match rng.random_range(0..200) {
-                    0 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),
+                    0 => place_bush(editor, x, z, BushKind::Wild),
                     1..=2 => editor.set_block(FERN, x, 1, z, None, None),
                     3..=16 => editor.set_block(GRASS, x, 1, z, None, None),
                     _ => {}
@@ -425,7 +362,7 @@ pub fn generate_landuse(
                         crate::ground_decoration::FlowerSetting::Meadow,
                     );
                 } else if random_choice < 9 {
-                    editor.set_block(OAK_LEAVES, x, 1, z, None, None);
+                    place_bush(editor, x, z, BushKind::Wild);
                 } else if random_choice < 40 {
                     editor.set_block(FERN, x, 1, z, None, None);
                 } else if random_choice < 65 {
@@ -445,7 +382,7 @@ pub fn generate_landuse(
                     );
                 } else if editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                     match rng.random_range(0..100) {
-                        0 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),
+                        0 => place_bush(editor, x, z, BushKind::Wild),
                         1..=2 => editor.set_block(FERN, x, 1, z, None, None),
                         3..=20 => editor.set_block(GRASS, x, 1, z, None, None),
                         _ => {}
@@ -462,7 +399,7 @@ pub fn generate_landuse(
                 // (Skipped for landfill spoil heaps — those are GRAVEL, not
                 // COARSE_DIRT, and the guard above filters them out.)
                 match rng.random_range(0..150) {
-                    0..=3 => editor.set_block(OAK_LEAVES, x, 1, z, None, None),
+                    0..=3 => place_bush(editor, x, z, BushKind::Low),
                     4 => editor.set_block(DEAD_BUSH, x, 1, z, None, None),
                     5..=15 => editor.set_block(GRASS, x, 1, z, None, None),
                     _ => {}
@@ -506,10 +443,12 @@ pub fn generate_landuse(
         generate_cemetery_fence(editor, element);
     }
 
-    // Large construction sites get a centre crane plus scattered excavators.
+    // Large construction sites get a centre crane plus scattered excavators, and
+    // every site its fence and props, which keep clear of both.
     if landuse_tag == "construction" {
         crate::structures::crane::maybe_place_crane(editor, floor_area.as_slice());
         crate::structures::excavator::scatter_excavators(editor, floor_area.as_slice());
+        construction_site::furnish(editor, element, floor_area.as_slice(), building_footprints);
     }
 
     // Farmland fields rarely get a tractor.
