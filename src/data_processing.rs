@@ -976,13 +976,14 @@ pub fn generate_world_with_options(
 
     // Build highway connectivity map once before processing
     let highway_connectivity = highways::build_highway_connectivity_map(&elements);
-    let road_markings = road_markings::RoadMarkingIndex::build(
+    let road_markings = road_markings::RoadMarkingIndex::build_with(
         &elements,
         args.scale,
         crate::decals::region::SignRegion::detect(
             (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
             (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
         ),
+        args.road_detail.paints_crossings(),
     );
 
     // Collect underground railway centerline points for post-ground-fill air carving (phase 2).

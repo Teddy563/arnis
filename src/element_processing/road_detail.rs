@@ -119,6 +119,13 @@ impl RoadDetail {
             i.rem_euclid(4) < 2
         }
     }
+
+    /// Whether pedestrian crossings are painted across roads. `compact` drops the
+    /// crossing ways and nodes, so their paint, and the lane-line gaps and stop lines
+    /// kept for them, go too.
+    pub fn paints_crossings(self) -> bool {
+        self != RoadDetail::Compact
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +208,8 @@ mod tests {
         for x in -8..=8 {
             assert_eq!(RoadDetail::Max.bar(x), x.rem_euclid(2) == 0);
         }
+        assert!(RoadDetail::Max.paints_crossings() && RoadDetail::Clean.paints_crossings());
+        assert!(!RoadDetail::Compact.paints_crossings());
     }
 
     #[test]

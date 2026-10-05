@@ -3638,11 +3638,20 @@ mod tests {
 
     /// Renders `ways` with road paint resolved over all of them, as a real run does.
     fn build_marked_ways(editor: &mut WorldEditor, ways: &[ProcessedWay]) {
-        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+        build_marked_ways_at(editor, ways, "max");
+    }
+
+    /// [`build_marked_ways`] with `--road-detail <detail>`.
+    fn build_marked_ways_at(editor: &mut WorldEditor, ways: &[ProcessedWay], detail: &str) {
+        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4", "--road-detail", detail].iter());
         let elements: Vec<ProcessedElement> =
             ways.iter().cloned().map(ProcessedElement::Way).collect();
-        let markings =
-            RoadMarkingIndex::build(&elements, 1.0, crate::decals::region::SignRegion::Europe);
+        let markings = RoadMarkingIndex::build_with(
+            &elements,
+            1.0,
+            crate::decals::region::SignRegion::Europe,
+            args.road_detail.paints_crossings(),
+        );
         let outlines = crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&[]);
         let structures = BridgeStructureMap::build(&[], editor, &outlines, 1.0);
         let surface = BridgeSurfaceMap::build(&[], &structures, 1.0);
@@ -3665,6 +3674,47 @@ mod tests {
                 &markings,
             );
         }
+    }
+
+    #[test]
+    fn road_detail_thins_the_junction_paint() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(200.0, 100.0).unwrap();
+        let road = way_through(
+            1,
+            &[(10, 10, 50), (2, 100, 50), (11, 190, 50)],
+            &[("highway", "primary"), ("lanes", "4")],
+        );
+        let crossing = way_through(
+            2,
+            &[(20, 100, 30), (2, 100, 50), (21, 100, 70)],
+            &[
+                ("highway", "footway"),
+                ("footway", "crossing"),
+                ("crossing", "zebra"),
+            ],
+        );
+        // Rows with lane paint well away from the crossing, and whether the zebra is there.
+        let paint = |detail: &str| {
+            let mut editor = test_editor(&xzbbox);
+            build_marked_ways_at(&mut editor, &[road.clone(), crossing.clone()], detail);
+            let white = |x: i32, z: i32| editor.check_for_block(x, 0, z, Some(&[WHITE_CONCRETE]));
+            let rows: Vec<i32> = (30..=70)
+                .filter(|&z| (20..70).any(|x| white(x, z)))
+                .collect();
+            // Bars on the crossing's column, off the centre line's row.
+            (rows, (44..=56).any(|z| z != 50 && white(100, z)))
+        };
+        let (max_rows, max_zebra) = paint("max");
+        assert_eq!(max_rows.len(), 3, "{max_rows:?}");
+        assert!(max_zebra);
+        // Clean keeps the centre line alone and the zebra.
+        let (clean_rows, clean_zebra) = paint("clean");
+        assert_eq!(clean_rows, vec![50]);
+        assert!(clean_zebra);
+        // Compact also leaves the crossing unpainted.
+        let (compact_rows, compact_zebra) = paint("compact");
+        assert_eq!(compact_rows, vec![50]);
+        assert!(!compact_zebra);
     }
 
     #[test]
