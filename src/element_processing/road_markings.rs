@@ -494,24 +494,31 @@ impl RoadMarkingIndex {
     /// Every crossing painted; runs call [`RoadMarkingIndex::build_with`] for `--road-detail`.
     #[cfg(test)]
     pub fn build(elements: &[ProcessedElement], scale: f64, region: SignRegion) -> Self {
-        Self::build_with(elements, scale, region, true)
+        Self::build_with(elements, scale, region, true, true)
     }
 
     /// [`RoadMarkingIndex::build`]; `crossings` false leaves pedestrian crossings unpainted,
-    /// with no lane-line gaps or stop lines kept for them (`--road-detail compact`).
+    /// with no lane-line gaps or stop lines kept for them (`--road-detail compact`). `vote`
+    /// lets the area's own tagged signalised crossings pick edge lines or zebras; One World
+    /// passes false, since a piece sees only its clipped share of them, and every piece then
+    /// paints the region's default.
     pub fn build_with(
         elements: &[ProcessedElement],
         scale: f64,
         region: SignRegion,
         crossings: bool,
+        vote: bool,
     ) -> Self {
         let mut index = Self {
             drives_on_left: region.drives_on_left(),
             yellow_centre: matches!(region, SignRegion::NorthAmerica | SignRegion::Canada),
-            signal_crossing_lines: signal_crossings_have_lines(elements).unwrap_or(matches!(
-                region,
-                SignRegion::Germanic | SignRegion::UkIreland
-            )),
+            signal_crossing_lines: vote
+                .then(|| signal_crossings_have_lines(elements))
+                .flatten()
+                .unwrap_or(matches!(
+                    region,
+                    SignRegion::Germanic | SignRegion::UkIreland
+                )),
             ..Self::default()
         };
 

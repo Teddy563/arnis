@@ -979,11 +979,9 @@ pub fn generate_world_with_options(
     let road_markings = road_markings::RoadMarkingIndex::build_with(
         &elements,
         args.scale,
-        crate::decals::region::SignRegion::detect(
-            (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
-            (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
-        ),
+        crate::decals::region::SignRegion::for_run(args, &llbbox),
         args.road_detail.paints_crossings(),
+        one_world.is_none(),
     );
 
     // Collect underground railway centerline points for post-ground-fill air carving (phase 2).

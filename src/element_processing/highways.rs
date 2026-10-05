@@ -3666,6 +3666,7 @@ mod tests {
             1.0,
             crate::decals::region::SignRegion::Europe,
             args.road_detail.paints_crossings(),
+            true,
         );
         let outlines = crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&[]);
         let structures = BridgeStructureMap::build(&[], editor, &outlines, 1.0);
