@@ -2208,7 +2208,18 @@ fn generate_highways_internal(
                             // Lane lines, dashed by path position so curves and short
                             // segments keep the rhythm.
                             if !way_marks.is_some_and(|m| m.in_gap(t)) {
-                                let phase = way_marks.map_or(t as i64, |m| m.dash_phase(t));
+                                // A One World piece clips a way where one run or the next
+                                // piece does not, which shifts its path positions; there the
+                                // dashes count along the segment's axis in the world frame.
+                                let phase = if args.one_world_run.is_some() {
+                                    if dir_horizontal {
+                                        i64::from(*x) * i64::from((x2 - x1).signum())
+                                    } else {
+                                        i64::from(*z) * i64::from((z2 - z1).signum())
+                                    }
+                                } else {
+                                    way_marks.map_or(t as i64, |m| m.dash_phase(t))
+                                };
                                 let dash = phase.rem_euclid(dash_period as i64) < dash_on as i64;
                                 for line in lines.iter().filter(|l| l.solid || dash) {
                                     // Offset rounded on its own, so lines sit symmetrically.
@@ -3644,6 +3655,10 @@ mod tests {
     /// [`build_marked_ways`] with `--road-detail <detail>`.
     fn build_marked_ways_at(editor: &mut WorldEditor, ways: &[ProcessedWay], detail: &str) {
         let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4", "--road-detail", detail].iter());
+        build_marked_ways_with(editor, ways, &args);
+    }
+
+    fn build_marked_ways_with(editor: &mut WorldEditor, ways: &[ProcessedWay], args: &Args) {
         let elements: Vec<ProcessedElement> =
             ways.iter().cloned().map(ProcessedElement::Way).collect();
         let markings = RoadMarkingIndex::build_with(
@@ -3661,7 +3676,7 @@ mod tests {
             generate_highways(
                 editor,
                 element,
-                &args,
+                args,
                 &HighwayConnectivityMap::new(),
                 &FloodFillCache::new(),
                 &empty,
@@ -3674,6 +3689,40 @@ mod tests {
                 &markings,
             );
         }
+    }
+
+    #[test]
+    fn one_world_dashes_do_not_move_with_the_clip() {
+        // The same road whole, and clipped 37 cells in as a neighbouring piece's bbox cuts it.
+        let xzbbox = XZBBox::rect_from_xz_lengths(200.0, 100.0).unwrap();
+        let tags = [("highway", "secondary")];
+        let whole = way_along(1, (10, 50), (190, 50), &tags);
+        let clipped = way_along(1, (47, 50), (190, 50), &tags);
+        let dashes = |way: &ProcessedWay, one_world: bool| -> Vec<bool> {
+            let mut args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+            if one_world {
+                args.one_world_run = Some(crate::one_world::RunContext {
+                    world_dir: std::path::PathBuf::new(),
+                    origin_lat: 0.0,
+                    origin_lon: 0.0,
+                    extending: false,
+                    elevation: None,
+                    elevation_zoom: None,
+                    replaced_chunks: 0,
+                    area_id: 0,
+                    unit: None,
+                });
+            }
+            let mut editor = test_editor(&xzbbox);
+            build_marked_ways_with(&mut editor, std::slice::from_ref(way), &args);
+            (60..180)
+                .map(|x| editor.check_for_block(x, 0, 50, Some(&[WHITE_CONCRETE])))
+                .collect()
+        };
+        assert!(dashes(&whole, true).iter().any(|&w| w));
+        assert_eq!(dashes(&whole, true), dashes(&clipped, true));
+        // A plain run keeps upstream's rhythm from the way's start.
+        assert_ne!(dashes(&whole, false), dashes(&clipped, false));
     }
 
     #[test]
