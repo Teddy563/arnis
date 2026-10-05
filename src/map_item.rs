@@ -279,18 +279,44 @@ fn item_slot(entry: &Value) -> Option<i8> {
 // Puts the map into slot 0, only ever replacing a filled map there; other items
 // (including the player's own maps in other slots) are left untouched. If slot 0
 // holds something else, the map goes into the first free slot instead.
+/// The singleplayer player: `Data.Player` in level.dat before 26.1, a file of their
+/// own after (`world_utils::singleplayer_file`). `None` for the level.dat one.
+fn player_file(world_path: &Path) -> Result<Option<PathBuf>, String> {
+    let Value::Compound(root) = read_gzip_nbt(&world_path.join("level.dat"))? else {
+        return Err("level.dat root is not a compound".to_string());
+    };
+    let Some(Value::Compound(data)) = root.get("Data") else {
+        return Err("level.dat missing Data compound".to_string());
+    };
+    if data.contains_key("Player") {
+        return Ok(None);
+    }
+    crate::world_utils::singleplayer_file(world_path, data)
+        .filter(|p| p.is_file())
+        .map(Some)
+        .ok_or_else(|| "level.dat has no player".to_string())
+}
+
 fn insert_into_inventory(world_path: &Path, map_id: i32) -> Result<(), String> {
-    let level_path = world_path.join("level.dat");
-    let mut root = read_gzip_nbt(&level_path)?;
+    let own_file = player_file(world_path)?;
+    let path = own_file
+        .clone()
+        .unwrap_or_else(|| world_path.join("level.dat"));
+    let mut root = read_gzip_nbt(&path)?;
     {
         let Value::Compound(ref mut r) = root else {
-            return Err("level.dat root is not a compound".to_string());
+            return Err(format!("{} root is not a compound", path.display()));
         };
-        let Some(Value::Compound(ref mut data)) = r.get_mut("Data") else {
-            return Err("level.dat missing Data compound".to_string());
-        };
-        let Some(Value::Compound(ref mut player)) = data.get_mut("Player") else {
-            return Err("level.dat missing Player compound".to_string());
+        let player = if own_file.is_some() {
+            r
+        } else {
+            let Some(Value::Compound(ref mut data)) = r.get_mut("Data") else {
+                return Err("level.dat missing Data compound".to_string());
+            };
+            let Some(Value::Compound(ref mut player)) = data.get_mut("Player") else {
+                return Err("level.dat missing Player compound".to_string());
+            };
+            player
         };
         let inventory = player
             .entry("Inventory".to_string())
@@ -308,7 +334,7 @@ fn insert_into_inventory(world_path: &Path, map_id: i32) -> Result<(), String> {
         };
         items.push(map_item_entry(map_id, slot));
     }
-    write_gzip_nbt(&level_path, &root)
+    write_gzip_nbt(&path, &root)
 }
 
 // Quantize a bundled PNG to a locked 128x128 map; alpha below 128 stays transparent.
@@ -598,13 +624,19 @@ pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
 /// The id of the filled map in the player's first hotbar slot, where
 /// `insert_into_inventory` puts the world map.
 fn hotbar_map_id(world_path: &Path) -> Option<i32> {
-    let Ok(Value::Compound(root)) = read_gzip_nbt(&world_path.join("level.dat")) else {
-        return None;
+    let player = match player_file(world_path).ok()? {
+        Some(path) => read_gzip_nbt(&path).ok()?,
+        None => {
+            let Ok(Value::Compound(mut root)) = read_gzip_nbt(&world_path.join("level.dat")) else {
+                return None;
+            };
+            let Some(Value::Compound(mut data)) = root.remove("Data") else {
+                return None;
+            };
+            data.remove("Player")?
+        }
     };
-    let Some(Value::Compound(data)) = root.get("Data") else {
-        return None;
-    };
-    let Some(Value::Compound(player)) = data.get("Player") else {
+    let Value::Compound(player) = player else {
         return None;
     };
     let Some(Value::List(items)) = player.get("Inventory") else {
@@ -814,6 +846,61 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    /// A fresh world as Minecraft 26.1+ leaves it after opening it once: no
+    /// `Data.Player`, the player in a file of their own, maps under data/minecraft/maps.
+    fn upgraded_world(dir: &Path) -> (PathBuf, PathBuf) {
+        let world = PathBuf::from(crate::world_utils::create_new_world(dir).unwrap());
+        let mut level = read_gzip_nbt(&world.join("level.dat")).unwrap();
+        let Value::Compound(ref mut root) = level else {
+            panic!("level root");
+        };
+        let Some(Value::Compound(data)) = root.get_mut("Data") else {
+            panic!("level data");
+        };
+        data.remove("Player");
+        data.insert("DataVersion".to_string(), Value::Int(5023));
+        data.insert(
+            "singleplayer_uuid".to_string(),
+            Value::IntArray(fastnbt::IntArray::new(vec![1, 2, 3, 4])),
+        );
+        write_gzip_nbt(&world.join("level.dat"), &level).unwrap();
+        let player = world.join("players/data/00000001-0000-0002-0000-000300000004.dat");
+        std::fs::create_dir_all(player.parent().unwrap()).unwrap();
+        let body = HashMap::from([("Inventory".to_string(), Value::List(Vec::new()))]);
+        write_gzip_nbt(&player, &Value::Compound(body)).unwrap();
+        (world, player)
+    }
+
+    #[test]
+    fn the_map_item_goes_to_the_player_file_of_an_upgraded_world() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (world, player) = upgraded_world(tmp.path());
+        insert_into_inventory(&world, 7).unwrap();
+        assert_eq!(hotbar_map_id(&world), Some(7));
+        let Value::Compound(p) = read_gzip_nbt(&player).unwrap() else {
+            panic!("player");
+        };
+        assert!(matches!(p.get("Inventory"), Some(Value::List(items)) if items.len() == 1));
+        // Replaced in place, not stacked up.
+        insert_into_inventory(&world, 9).unwrap();
+        assert_eq!(hotbar_map_id(&world), Some(9));
+    }
+
+    #[test]
+    fn the_counter_of_an_upgraded_world_is_synced_in_its_map_folder() {
+        use crate::decals::DecalKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let (world, _) = upgraded_world(tmp.path());
+        let maps = world.join("data/minecraft/maps");
+        let keys = [DecalKey::Pictogram("bus_stop")];
+        let registry = DecalRegistry::from_keys_starting_at(keys.into_iter().collect(), 500);
+        assert_eq!(write_decal_maps(&world, &registry, None, false).unwrap(), 1);
+        assert!(maps.join("500.dat").is_file());
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&maps), 501);
+        assert!(!world.join("data/idcounts.dat").exists());
     }
 
     #[test]

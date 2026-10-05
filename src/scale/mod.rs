@@ -147,7 +147,8 @@ pub fn run(
     let (rect, units) = plan_units(&proj, selection, n)?;
     let fresh = !run.extending;
 
-    let data_dir = world_dir.join("data");
+    // The map folder of the world's layout, which Minecraft 26.1+ moves.
+    let maps_dir = crate::world_utils::WorldLayout::of(world_dir).maps_dir(world_dir);
     let extras = match (fresh, args.map_item) {
         (false, _) => 0,
         (true, true) => 2,
@@ -157,7 +158,7 @@ pub fn run(
         world_dir,
         &rect,
         n,
-        crate::map_item::next_map_id(&data_dir) + extras,
+        crate::map_item::next_map_id(&maps_dir) + extras,
     )?;
     if i64::from(job.map_base) + units.len() as i64 * i64::from(MAP_IDS_PER_PIECE)
         > i64::from(i32::MAX)
