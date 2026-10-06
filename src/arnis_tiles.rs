@@ -56,6 +56,22 @@ fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>, setting: &str) -> Opt
         .find(|p| p.is_file())
 }
 
+/// Where `prepare` into `folder` keeps the download of `e`; it takes a
+/// file already there as downloaded.
+pub fn pbf_path(folder: &Path, e: &Extract) -> Option<PathBuf> {
+    let name = e.url.rsplit('/').next()?;
+    (name.ends_with(".pbf") && !name.contains(['/', '\\', ':']) && !name.starts_with('.'))
+        .then(|| folder.join("work").join("pbf").join(name))
+}
+
+/// `prepare` into `folder` has published `id` and will skip it.
+pub fn finalized(folder: &Path, id: &str) -> bool {
+    folder
+        .join("work")
+        .join(format!("{id}.finalized"))
+        .is_file()
+}
+
 /// The default archive folder under the cache root.
 pub fn default_folder(root: &Path) -> PathBuf {
     root.join("arnis").join("local-archive")
@@ -281,18 +297,27 @@ impl BakeProgress {
         }
     }
 
-    /// Where the bake is, for the panel's bar: `extracts` give the sizes.
-    pub fn transfer(&self, extracts: &[Extract], rate_bps: f64, threads: usize) -> Transfer {
+    /// Where the bake is, for the panel's bar: `extracts` give the sizes, and
+    /// `from` is the job's percent done before arnis-tiles started (its
+    /// downloads, when the window fetched them).
+    pub fn transfer(
+        &self,
+        extracts: &[Extract],
+        from: f64,
+        rate_bps: f64,
+        threads: usize,
+    ) -> Transfer {
         let pbf = extracts
             .iter()
             .find(|e| e.id == self.id)
             .map_or(0, |e| e.bytes);
         let (stage, frac) = self.stage_fraction(pbf);
-        let percent = if self.stage == Stage::Planning {
+        let own = if self.stage == Stage::Planning {
             0.0
         } else {
             crate::transfer::job_percent(self.index, self.total, stage, frac)
         };
+        let percent = from + (100.0 - from) * own / 100.0;
         Transfer {
             stage,
             name: self.id.clone(),
@@ -407,8 +432,9 @@ fn clock(d: Duration) -> String {
 }
 
 /// `prepare` for `bbox` into `folder` on `threads` threads, reporting
-/// `(percent, message, transfer)` to `report` twice a second. `extracts` is
-/// the dry run's plan, for the sizes. Stops the child when `cancel` is set.
+/// `(percent, message, transfer)` to `report` twice a second, the job's
+/// percent going on from `from`. `extracts` is the dry run's plan, for the
+/// sizes. Stops the child when `cancel` is set.
 /// `Ok(false)` when cancelled; the countries finished are kept, arnis-tiles
 /// resumes from its chunk store, and anything cut off mid-write is removed.
 #[allow(clippy::too_many_arguments)]
@@ -418,6 +444,7 @@ pub fn bake(
     folder: &Path,
     bbox: &crate::coordinate_system::geographic::LLBBox,
     extracts: &[Extract],
+    from: f64,
     threads: usize,
     cancel: &AtomicBool,
     report: &mut dyn FnMut(f64, &str, &Transfer),
@@ -522,7 +549,7 @@ pub fn bake(
             } else {
                 0.0
             };
-            let t = progress.transfer(extracts, bps, threads);
+            let t = progress.transfer(extracts, from, bps, threads);
             let msg = format!("{} {}", progress.message(), clock(start.elapsed()));
             report(t.percent, &msg, &t);
         }
@@ -586,7 +613,7 @@ mod tests {
 
     #[test]
     fn progress_follows_the_output_lines() {
-        let pct = |p: &BakeProgress| p.transfer(&[], 0.0, 1).percent;
+        let pct = |p: &BakeProgress| p.transfer(&[], 0.0, 0.0, 1).percent;
         let mut p = BakeProgress::default();
         assert_eq!(pct(&p), 0.0);
         p.line("[1/2] liechtenstein (3 MB)");
@@ -634,7 +661,7 @@ mod tests {
         )
         .unwrap();
         p.observe(folder, &li, since);
-        let t = p.transfer(&all, 500.0, 6);
+        let t = p.transfer(&all, 0.0, 500.0, 6);
         assert_eq!(
             (t.stage, t.item, t.items, t.done_bytes, t.total_bytes),
             (crate::transfer::Stage::Download, 2, 2, 1_000, 4_000)
@@ -657,7 +684,7 @@ mod tests {
         )
         .unwrap();
         p.observe(folder, &li, since);
-        let t = p.transfer(&all, 0.0, 6);
+        let t = p.transfer(&all, 0.0, 0.0, 6);
         assert_eq!(
             (t.stage, t.done_bytes, t.total_bytes),
             (crate::transfer::Stage::Bake, 1_800, 0)
@@ -676,14 +703,39 @@ mod tests {
         )
         .unwrap();
         p.observe(folder, &li, since);
-        let t = p.transfer(&all, 0.0, 6);
+        let t = p.transfer(&all, 0.0, 0.0, 6);
         assert_eq!(
             (t.stage, t.done_bytes),
             (crate::transfer::Stage::Finalize, 700)
         );
         // Another extract's files say nothing about this one.
         p.observe(folder, &all[0], since);
-        assert_eq!(p.transfer(&all, 0.0, 6).done_bytes, 700);
+        assert_eq!(p.transfer(&all, 0.0, 0.0, 6).done_bytes, 700);
+    }
+
+    #[test]
+    fn the_window_downloads_where_prepare_looks() {
+        let folder = Path::new("arch");
+        let e = extract("liechtenstein", 1);
+        assert_eq!(
+            pbf_path(folder, &e),
+            Some(
+                folder
+                    .join("work")
+                    .join("pbf")
+                    .join("liechtenstein-latest.osm.pbf")
+            )
+        );
+        let bad = Extract {
+            url: "https://example.invalid/x/..\\evil.pbf".into(),
+            ..e.clone()
+        };
+        assert_eq!(pbf_path(folder, &bad), None);
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!finalized(dir.path(), "liechtenstein"));
+        std::fs::create_dir_all(dir.path().join("work")).unwrap();
+        std::fs::write(dir.path().join("work").join("liechtenstein.finalized"), b"").unwrap();
+        assert!(finalized(dir.path(), "liechtenstein"));
     }
 
     #[test]

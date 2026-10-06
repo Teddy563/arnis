@@ -146,10 +146,15 @@ pub fn sizing(args: &Args, pieces: usize, piece_regions: u64) -> Sizing {
 }
 
 /// Threads a one-process job (a download-and-bake) runs on: what a job of
-/// one piece gets, so it follows the same --threads / --cpu-target and the
-/// same defaults as the generation workers.
+/// one piece gets from --threads / --cpu-target, and without either the
+/// share `auto` plans for (75 %), so a bake uses most of the machine and
+/// leaves it usable. The window passes the bake's own CPU share as
+/// --cpu-target.
 pub fn bake_threads(args: &Args) -> usize {
-    sizing(args, 1, 1).threads
+    match args.process.thread_count() {
+        Some(_) => sizing(args, 1, 1).threads,
+        None => (crate::transfer::cores() * AUTO_CPU_TARGET / 100).max(1),
+    }
 }
 
 #[cfg(test)]
@@ -254,8 +259,8 @@ mod tests {
             bake_threads(&parse(&["--cpu-target", "50"])),
             (cores / 2).max(1)
         );
-        // With no setting, a single run's 90 %, or the 75 % auto plans for.
-        assert_eq!(bake_threads(&parse(&[])), (cores * 9 / 10).max(1));
+        // With no setting, the 75 % auto plans for, whatever the workers.
+        assert_eq!(bake_threads(&parse(&[])), (cores * 3 / 4).max(1));
         assert_eq!(
             bake_threads(&parse(&["--one-world-workers", "auto"])),
             (cores * 3 / 4).max(1)

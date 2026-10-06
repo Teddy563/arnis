@@ -1746,11 +1746,15 @@ function initOsmSource() {
   ['prewarm-button', 'osm-pbf-bake-button', 'data-plan-button'].forEach((id) =>
     document.getElementById(id).addEventListener('click', startDownload));
   document.getElementById('transfer-stop-button').addEventListener('click', () => {
+    if (!transferJob) return;
     document.getElementById('transfer-stop-button').disabled = true;
     document.getElementById('transfer-stage').textContent = oneWorldText('transfer_stopping', 'Stopping...');
     invoke('gui_cancel_bake').catch((error) => console.warn('Stop failed:', error));
   });
   document.getElementById('storage-refresh-button').addEventListener('click', refreshStorage);
+  const bakeCpuSlider = document.getElementById('bake-cpu-slider');
+  bakeCpuSlider.addEventListener('input', formatBakeCpu);
+  formatBakeCpu();
   initLocalArchive();
   // Any setting can change what a run reads; the check is debounced and skips
   // a request it has already answered.
@@ -1941,8 +1945,23 @@ function renderDataPlan() {
   setPlanLine('data-plan-total', total, short);
 }
 
-/* Bake threads: what a bake runs on with the Extra Features CPU setting,
-   the same share a generation worker gets. */
+/* Bake CPU: downloads and bakes run on their own share of the cores (default
+   75 %), passed as --cpu-target in place of the generation's CPU setting, so
+   the backend sizes them with the same model. */
+function bakeCpu() {
+  return parseInt(document.getElementById('bake-cpu-slider').value, 10) || 75;
+}
+
+function formatBakeCpu() {
+  document.getElementById('bake-cpu-value').textContent = bakeCpu() + '%';
+}
+
+// The Extra Features flags with the bake's CPU share for the generation's.
+function bakeFlags(flags) {
+  return flags.filter((f) => !/^--(threads|cpu-target)(=|$)/.test(f)).concat('--cpu-target=' + bakeCpu());
+}
+
+/* Bake threads: what a bake runs on with the Bake CPU Usage. */
 let bakeThreadsKey = null;
 
 async function checkBakeThreads() {
@@ -1952,7 +1971,7 @@ async function checkBakeThreads() {
     line.style.display = 'none';
     return;
   }
-  const flags = advancedFeatureArgs().flags;
+  const flags = bakeFlags(advancedFeatureArgs().flags);
   const key = JSON.stringify(flags);
   if (key === bakeThreadsKey && line.textContent) {
     line.style.display = '';
@@ -2316,7 +2335,7 @@ async function bakeCountries() {
       bboxText: selectedBBox,
       folder: localArchiveFolder() || '',
       tilesPath: arnisTilesPath(),
-      flags: advancedFeatureArgs().flags,
+      flags: bakeFlags(advancedFeatureArgs().flags),
     });
     if (!done) bakeNote = oneWorldText('prepare_stopped', 'Stopped. Countries already baked are kept.');
     finished = done;
@@ -5175,8 +5194,9 @@ async function startGeneration(options = {}) {
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? runSelection.worldName : "",
         // A download refuses --offline, which only reads what it fetches.
+        // A download runs on the Bake CPU Usage.
         flags: (prewarm
-          ? advancedFeatureArgs().flags.filter((f) => f !== '--offline').concat('--prewarm')
+          ? bakeFlags(advancedFeatureArgs().flags.filter((f) => f !== '--offline')).concat('--prewarm')
           : advancedFeatureArgs().flags).concat(runSelection.flags)
     });
 

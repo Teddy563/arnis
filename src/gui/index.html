@@ -2431,6 +2431,23 @@
                     <button type="button" id="osm-pbf-bake-button" class="clear-cache-button" data-localize="osm_pbf_bake_button">Bake Now</button>
                   </div>
                 </div>
+                <!-- Downloads and bakes run on their own share of the cores -->
+                <div class="settings-row setting-tile is-wide" id="bake-cpu-row">
+                  <label for="bake-cpu-slider" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-gauge"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="bake_cpu">Bake CPU Usage</span>
+                        <span class="tooltip-icon" data-tooltip="Region Download and Prepare Countries download and bake on this share of the cores, apart from the generation CPU Usage. 75% uses most of the machine and leaves it usable. The Region Download bake and arnis-tiles' archive writing use every thread it allows; arnis-tiles reads an extract on one thread whatever the setting.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="bake_cpu_desc">Share of the cores downloads and bakes may use.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="range" id="bake-cpu-slider" name="bake-cpu-slider" min="10" max="100" step="5" value="75">
+                    <span id="bake-cpu-value" class="setting-value">75%</span>
+                  </div>
+                </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="offline-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wifi-off"></use></svg>

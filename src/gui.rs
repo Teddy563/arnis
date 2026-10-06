@@ -804,6 +804,46 @@ fn gui_extract_size(url: String) -> Result<u64, String> {
     crate::osm_pbf::remote_size(&url)
 }
 
+/// The share of a country bake's bar its downloads take.
+const COUNTRY_DOWNLOAD_SHARE: f64 = 40.0;
+
+/// Downloads the extracts arnis-tiles has still to bake into its work folder,
+/// over parallel connections within --max-downloads (arnis-tiles fetches
+/// over one, and takes a file already there as downloaded). `Ok(false)` when
+/// stopped; the half-done file is removed.
+fn fetch_countries(
+    folder: &Path,
+    extracts: &[crate::arnis_tiles::Extract],
+    args: &Args,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<bool, String> {
+    crate::net::set_max_requests(
+        args.process
+            .max_downloads
+            .map_or(crate::net::MAX_CONCURRENT_REQUESTS, |n| n as usize),
+    );
+    let todo: Vec<(&crate::arnis_tiles::Extract, PathBuf)> = extracts
+        .iter()
+        .filter(|e| !crate::arnis_tiles::finalized(folder, &e.id))
+        .filter_map(|e| crate::arnis_tiles::pbf_path(folder, e).map(|p| (e, p)))
+        .collect();
+    let all: u64 = todo.iter().map(|(e, _)| e.bytes).sum::<u64>().max(1);
+    let mut before = 0u64;
+    for (i, (e, dest)) in todo.iter().enumerate() {
+        let span = |b: u64| COUNTRY_DOWNLOAD_SHARE * b as f64 / all as f64;
+        let range = (span(before), span(before + e.bytes));
+        before += e.bytes;
+        if dest.is_file() {
+            continue;
+        }
+        let item = (i + 1, todo.len());
+        if !crate::osm_pbf::fetch_extract(&e.url, dest, item, range, Some(cancel), None)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Set by Stop: ends a country bake, or a Region Download / offline download.
 static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -830,16 +870,22 @@ fn gui_bake_archive(
     let extracts = prepare_dry_run(&bbox_text, &tiles_path)
         .map(|p| p.extracts)
         .unwrap_or_default();
-    let result = crate::arnis_tiles::bake(
-        &exe,
-        &arnis_tiles_state(),
-        &folder,
-        &bbox,
-        &extracts,
-        threads,
-        cancel,
-        &mut |pct, msg, t| progress::emit_gui_transfer(pct, msg, t),
-    );
+    let result = fetch_countries(&folder, &extracts, &args, cancel).and_then(|fetched| {
+        if !fetched {
+            return Ok(false);
+        }
+        crate::arnis_tiles::bake(
+            &exe,
+            &arnis_tiles_state(),
+            &folder,
+            &bbox,
+            &extracts,
+            COUNTRY_DOWNLOAD_SHARE,
+            threads,
+            cancel,
+            &mut |pct, msg, t| progress::emit_gui_transfer(pct, msg, t),
+        )
+    });
     match &result {
         Ok(true) => progress::emit_gui_progress_update(100.0, "Done! The local archive is ready."),
         Ok(false) => progress::emit_gui_progress_update(

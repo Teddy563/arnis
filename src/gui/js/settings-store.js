@@ -128,6 +128,7 @@ const SETTINGS = [
   { id: 'osm-pbf-input', kind: 'text', store: OWN },
   { id: 'offline-toggle', kind: 'checkbox', store: OWN },
   { id: 'prewarm-first-toggle', kind: 'checkbox', store: OWN },
+  { id: 'bake-cpu-slider', kind: 'number', store: OWN },
 
   // Map & Input. #bbox-coords is the area selection, not a preference, so it
   // is intentionally absent.

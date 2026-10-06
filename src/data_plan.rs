@@ -68,20 +68,20 @@ pub fn archive_bytes(pbf: u64) -> u64 {
     times(pbf, ARCHIVE_PER_PBF)
 }
 
-/// The most disk `arnis-tiles prepare` holds at once while it bakes extracts
-/// of these sizes, in its order (largest first): each extract downloads
-/// while the previous bakes, its chunk store then grows beside it, the .pbf
-/// goes, the archive is written and the store goes. Taken at the largest
-/// measured ratios, as it decides whether the disk is big enough.
+/// The most disk a country bake holds at once for extracts of these sizes,
+/// in arnis-tiles' order (largest first): the window downloads them all
+/// first, then each one's chunk store grows beside them, its .pbf goes, its
+/// archive is written and the store goes. Taken at the largest measured
+/// ratios, as it decides whether the disk is big enough.
 pub fn archive_peak_bytes(pbfs: &[u64]) -> u64 {
     let mut sorted = pbfs.to_vec();
     sorted.sort_unstable_by(|a, b| b.cmp(a));
     let (mut done, mut peak) = (0u64, 0u64);
     for (i, &pbf) in sorted.iter().enumerate() {
-        let next = sorted.get(i + 1).copied().unwrap_or(0);
+        let later: u64 = sorted[i + 1..].iter().sum();
         let store = times(pbf, STORE_PER_PBF_MAX);
         let archive = times(pbf, ARCHIVE_PER_PBF_MAX);
-        peak = peak.max(done + next + store + pbf.max(archive));
+        peak = peak.max(done + later + store + pbf.max(archive));
         done += archive;
     }
     peak
@@ -385,8 +385,8 @@ mod tests {
         assert_eq!(archive_bytes(1_000_000), 700_000);
         // One extract: the .pbf and its store, or the store and the archive.
         assert_eq!(archive_peak_bytes(&[100]), 175 + 140);
-        // Two: the second downloads while the first bakes; the first
-        // archive then stays while the second bakes (140 + 18 + 14).
+        // Two: both downloaded first; the first archive then stays while the
+        // second bakes (140 + 18 + 14).
         assert_eq!(archive_peak_bytes(&[10, 100]), 10 + 175 + 140);
         // Equal extracts: the archives written so far add up.
         assert_eq!(archive_peak_bytes(&[100, 100]), 140 + 175 + 140);
