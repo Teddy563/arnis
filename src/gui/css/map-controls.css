@@ -393,3 +393,30 @@
     transition: none;
   }
 }
+
+/* Big Worlds: W and H dimension labels outside the cell outline */
+
+.snap-dim {
+  width: 0;
+  height: 0;
+}
+
+.snap-dim span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--map-surface-solid);
+  border: 1px solid var(--map-accent);
+  color: var(--map-accent);
+  font: 600 11px/1.4 var(--map-font);
+  pointer-events: none;
+}
+
+/* Read bottom to top along the right edge, as a drawing does. */
+.snap-dim-h span {
+  transform: translate(-50%, -50%) rotate(-90deg);
+}

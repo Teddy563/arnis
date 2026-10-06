@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Atšaukti",
   "one_world_confirm_ok": "Generuoti",
   "snap_regions_info": "{x} × {z} regionų · {cx} × {cz} langelių · {pieces} dalių · {w} × {h} km",
+  "snap_dim": "{n} langelių · {km} km",
   "snap_fallback": "Joks sveikas langelis netelpa, todėl naudojamas vienas.",
   "snap_as_one_world": "Statoma kaip Vienas pasaulis",
   "snap_single_run": "Statoma vienu vykdymu"

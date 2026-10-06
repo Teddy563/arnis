@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "취소",
   "one_world_confirm_ok": "생성",
   "snap_regions_info": "{x} × {z} 리전 · {cx} × {cz} 셀 · {pieces}개 조각 · {w} × {h} km",
+  "snap_dim": "{n} 셀 · {km} km",
   "snap_fallback": "안에 들어가는 온전한 셀이 없어 셀 하나를 사용합니다.",
   "snap_as_one_world": "하나의 월드로 생성",
   "snap_single_run": "한 번의 실행으로 생성"

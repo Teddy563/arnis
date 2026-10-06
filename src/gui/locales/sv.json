@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Avbryt",
   "one_world_confirm_ok": "Generera",
   "snap_regions_info": "{x} × {z} regioner · {cx} × {cz} celler · {pieces} delar · {w} × {h} km",
+  "snap_dim": "{n} celler · {km} km",
   "snap_fallback": "Ingen hel cell får plats inuti, så en används.",
   "snap_as_one_world": "Byggs som En värld",
   "snap_single_run": "Byggs i en körning"

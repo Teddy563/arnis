@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "取消",
   "one_world_confirm_ok": "生成",
   "snap_regions_info": "{x} × {z} 个区域文件 · {cx} × {cz} 个单元格 · {pieces} 块 · {w} × {h} km",
+  "snap_dim": "{n} 个单元格 · {km} km",
   "snap_fallback": "内部容不下完整单元格，因此使用一个。",
   "snap_as_one_world": "作为单一世界构建",
   "snap_single_run": "一次运行构建"

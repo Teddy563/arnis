@@ -3952,7 +3952,11 @@ async function drawSnapPreview() {
       ? ' · ' + oneWorldText('snap_fallback', 'No whole cell fits inside, so one is used.')
       : '') + (how ? ' · ' + how : '')
     : '';
-  postToMap({ type: 'snapOverlay', snap, label: text });
+  // The map marks the outline's width (W) and height (H) like a drawing.
+  const dims = snap ? [0, 1].map((i) => (i ? 'H ' : 'W ') + oneWorldText('snap_dim', '{n} cells · {km} km', {
+    n: snap.cells[i], km: snap.size_km[i].toFixed(1),
+  })) : null;
+  postToMap({ type: 'snapOverlay', snap, dims });
   refreshBboxSelectionInfo();
   const info = document.getElementById('bbox-snap-info');
   if (!info) return;

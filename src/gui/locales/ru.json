@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Отмена",
   "one_world_confirm_ok": "Создать",
   "snap_regions_info": "{x} × {z} регионов · {cx} × {cz} ячеек · {pieces} частей · {w} × {h} км",
+  "snap_dim": "{n} ячеек · {km} км",
   "snap_fallback": "Ни одна целая ячейка не помещается, поэтому используется одна.",
   "snap_as_one_world": "Строится как «Единый мир»",
   "snap_single_run": "Строится за один запуск"

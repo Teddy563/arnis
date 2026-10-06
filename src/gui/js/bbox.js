@@ -1485,7 +1485,7 @@ $(document).ready(function () {
         // Large worlds: the selection grown to whole regions, with the region
         // and piece lines inside it. null clears it.
         if (event.data && event.data.type === 'snapOverlay') {
-            showSnapOverlay(event.data.snap, event.data.label);
+            showSnapOverlay(event.data.snap, event.data.dims);
         }
         if (event.data && event.data.type === 'snapGridControl') {
             snapGridControlVisible = !!event.data.visible;
@@ -2496,19 +2496,22 @@ function syncGridToggleButton() {
     _gridToggleBtn.setAttribute('aria-pressed', String(snapGridShown));
     if (window.refreshMapToolLabel) window.refreshMapToolLabel(_gridToggleBtn);
 }
-// Cell lines are drawn only once a cell is this wide on screen.
+// Drawn cell lines stay at least this far apart on screen.
 var SNAP_MIN_CELL_PX = 8;
+// How far outside the outline the W and H dimension lines sit.
+var SNAP_DIM_GAP_PX = 16;
 
-function showSnapOverlay(snap, label) {
-    snapState = snap ? { snap: snap, label: label } : null;
+function showSnapOverlay(snap, dims) {
+    snapState = snap ? { snap: snap, dims: dims } : null;
     drawSnapOverlay();
 }
 
 // One canvas-drawn polyline holds every cell line, so a grid of a couple of
 // thousand cells costs one layer; Leaflet reprojects it on zoom by itself.
-// Zoomed out until a cell is under SNAP_MIN_CELL_PX (and past the cell count
-// the Rust side draws lines for), only the outline, its readout and the origin
-// are drawn. Redrawn on zoomend and on a new snap, never while panning.
+// Zoomed out, every 2nd, 4th, ... line is drawn so lines stay SNAP_MIN_CELL_PX
+// apart; past the cell count the Rust side sends lines for, only the outline.
+// The width and height are marked outside the outline, top and right, like a
+// drawing's dimensions. Redrawn on zoomend and on a new snap, never while panning.
 function drawSnapOverlay() {
     if (!snapLayer) {
         snapLayer = L.layerGroup().addTo(map);
@@ -2520,13 +2523,17 @@ function drawSnapOverlay() {
     }
     snapLayer.clearLayers();
     if (!snapState || !snapGridShown) return;
-    var snap = snapState.snap, label = snapState.label;
+    var snap = snapState.snap, dims = snapState.dims;
     var s = snap.outline[0], w = snap.outline[1], n = snap.outline[2], e = snap.outline[3];
     var nw = map.latLngToContainerPoint([n, w]), se = map.latLngToContainerPoint([s, e]);
     var cellPx = Math.min((se.x - nw.x) / snap.cells[0], (se.y - nw.y) / snap.cells[1]);
-    var segments = cellPx < SNAP_MIN_CELL_PX ? [] :
-        snap.lon_lines.map(function (lon) { return [[s, lon], [n, lon]]; })
-            .concat(snap.lat_lines.map(function (lat) { return [[lat, w], [lat, e]]; }));
+    // Every stride-th cell line, stride a power of two, counted from the
+    // outline's west and north edges (line i is the edge of cell i + 1).
+    var stride = 1;
+    while (cellPx * stride < SNAP_MIN_CELL_PX) stride *= 2;
+    var kept = function (_, i) { return (i + 1) % stride === 0; };
+    var segments = snap.lon_lines.filter(kept).map(function (lon) { return [[s, lon], [n, lon]]; })
+        .concat(snap.lat_lines.filter(kept).map(function (lat) { return [[lat, w], [lat, e]]; }));
     // Yellow dashes on a dark halo, readable on light tiles and dark ones.
     if (segments.length > 0) {
         L.polyline(segments, {
@@ -2540,18 +2547,45 @@ function drawSnapOverlay() {
     L.rectangle([[s, w], [n, e]], {
         renderer: snapRenderer, color: '#000000', weight: 4.5, opacity: 0.5, fill: false, interactive: false
     }).addTo(snapLayer);
-    var outline = L.rectangle([[s, w], [n, e]], {
+    L.rectangle([[s, w], [n, e]], {
         renderer: snapRenderer, color: '#fecc44', weight: 2.5, fill: false, interactive: false
     }).addTo(snapLayer);
-    if (segments.length === 0 && label) {
-        outline.bindTooltip(label, { permanent: true, direction: 'center' });
-    }
+    if (dims) drawSnapDimensions(nw, se, dims);
     // Block (0, 0), the world's origin, which a new world's run is pinned to:
     // the centre, or half a cell off it on a side Fit Inside made odd.
     L.circleMarker(snap.origin, {
         renderer: snapRenderer, radius: 5, color: '#1c1c1c', weight: 2,
         fillColor: '#fecc44', fillOpacity: 1, interactive: false
     }).addTo(snapLayer);
+}
+
+// Dimension lines with end ticks above the outline (W) and right of it (H),
+// each labelled in the middle. Placed in screen pixels at this zoom.
+function drawSnapDimensions(nw, se, dims) {
+    var at = function (x, y) { return map.containerPointToLatLng([x, y]); };
+    var g = SNAP_DIM_GAP_PX, t = 5;
+    var top = nw.y - g, right = se.x + g;
+    var lines = [
+        [at(nw.x, top), at(se.x, top)],
+        [at(nw.x, top - t), at(nw.x, top + t)], [at(se.x, top - t), at(se.x, top + t)],
+        [at(right, nw.y), at(right, se.y)],
+        [at(right - t, nw.y), at(right + t, nw.y)], [at(right - t, se.y), at(right + t, se.y)]
+    ];
+    L.polyline(lines, {
+        renderer: snapRenderer, color: '#000000', weight: 3, opacity: 0.5, interactive: false
+    }).addTo(snapLayer);
+    L.polyline(lines, {
+        renderer: snapRenderer, color: '#fecc44', weight: 1.5, interactive: false
+    }).addTo(snapLayer);
+    [[at((nw.x + se.x) / 2, top), dims[0], 'snap-dim'],
+     [at(right, (nw.y + se.y) / 2), dims[1], 'snap-dim snap-dim-h']].forEach(function (d) {
+        var label = document.createElement('span');
+        label.textContent = d[1];
+        L.marker(d[0], {
+            icon: L.divIcon({ className: d[2], html: label, iconSize: null }),
+            interactive: false, keyboard: false
+        }).addTo(snapLayer);
+    });
 }
 
 function notifyBboxUpdate() {

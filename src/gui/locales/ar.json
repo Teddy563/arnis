@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "إلغاء",
   "one_world_confirm_ok": "إنشاء",
   "snap_regions_info": "{x} × {z} منطقة · {cx} × {cz} خلية · {pieces} أجزاء · {w} × {h} كم",
+  "snap_dim": "{n} خلية · {km} كم",
   "snap_fallback": "لا تتسع أي خلية كاملة داخله، لذا تُستخدم خلية واحدة.",
   "snap_as_one_world": "يُبنى كعالم واحد",
   "snap_single_run": "يُبنى في تشغيل واحد"

@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "გაუქმება",
   "one_world_confirm_ok": "გენერირება",
   "snap_regions_info": "{x} × {z} რეგიონი · {cx} × {cz} უჯრა · {pieces} ნაწილი · {w} × {h} კმ",
+  "snap_dim": "{n} უჯრა · {km} კმ",
   "snap_fallback": "მთელი უჯრა შიგნით არ ეტევა, ამიტომ ერთი გამოიყენება.",
   "snap_as_one_world": "შენდება როგორც ერთი სამყარო",
   "snap_single_run": "შენდება ერთი გაშვებით"

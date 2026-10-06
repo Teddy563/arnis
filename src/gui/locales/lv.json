@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Atcelt",
   "one_world_confirm_ok": "Ģenerēt",
   "snap_regions_info": "{x} × {z} reģioni · {cx} × {cz} šūnas · {pieces} daļas · {w} × {h} km",
+  "snap_dim": "{n} šūnas · {km} km",
   "snap_fallback": "Neviena vesela šūna neietilpst, tāpēc izmanto vienu.",
   "snap_as_one_world": "Tiek būvēts kā Viena pasaule",
   "snap_single_run": "Tiek būvēts vienā palaišanā"

@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Mégse",
   "one_world_confirm_ok": "Generálás",
   "snap_regions_info": "{x} × {z} régió · {cx} × {cz} cella · {pieces} rész · {w} × {h} km",
+  "snap_dim": "{n} cella · {km} km",
   "snap_fallback": "Egy egész cella sem fér bele, ezért egyet használ.",
   "snap_as_one_world": "Egy világként épül",
   "snap_single_run": "Egy futásban épül"

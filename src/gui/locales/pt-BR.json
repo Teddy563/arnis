@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Cancelar",
   "one_world_confirm_ok": "Gerar",
   "snap_regions_info": "{x} × {z} regiões · {cx} × {cz} células · {pieces} partes · {w} × {h} km",
+  "snap_dim": "{n} células · {km} km",
   "snap_fallback": "Nenhuma célula inteira cabe dentro, então uma é usada.",
   "snap_as_one_world": "Construído como Mundo único",
   "snap_single_run": "Construído em uma execução"

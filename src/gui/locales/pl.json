@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Anuluj",
   "one_world_confirm_ok": "Generuj",
   "snap_regions_info": "{x} × {z} regionów · {cx} × {cz} komórek · {pieces} części · {w} × {h} km",
+  "snap_dim": "{n} komórek · {km} km",
   "snap_fallback": "Żadna cała komórka się nie mieści, więc użyto jednej.",
   "snap_as_one_world": "Budowane jako Jeden świat",
   "snap_single_run": "Budowane w jednym przebiegu"

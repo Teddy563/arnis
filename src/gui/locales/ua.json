@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Скасувати",
   "one_world_confirm_ok": "Створити",
   "snap_regions_info": "{x} × {z} регіонів · {cx} × {cz} комірок · {pieces} частин · {w} × {h} км",
+  "snap_dim": "{n} комірок · {km} км",
   "snap_fallback": "Жодна ціла комірка не вміщується, тому використано одну.",
   "snap_as_one_world": "Будується як «Єдиний світ»",
   "snap_single_run": "Будується за один запуск"

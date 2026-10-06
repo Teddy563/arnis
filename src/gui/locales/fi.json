@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "Peruuta",
   "one_world_confirm_ok": "Luo",
   "snap_regions_info": "{x} × {z} regionia · {cx} × {cz} solua · {pieces} osaa · {w} × {h} km",
+  "snap_dim": "{n} solua · {km} km",
   "snap_fallback": "Kokonainen solu ei mahdu sisään, joten käytetään yhtä.",
   "snap_as_one_world": "Rakennetaan Yhtenä maailmana",
   "snap_single_run": "Rakennetaan yhdellä ajolla"

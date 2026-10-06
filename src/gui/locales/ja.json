@@ -482,6 +482,7 @@
   "one_world_confirm_cancel": "キャンセル",
   "one_world_confirm_ok": "生成",
   "snap_regions_info": "{x} × {z} リージョン · {cx} × {cz} セル · {pieces} ピース · {w} × {h} km",
+  "snap_dim": "{n} セル · {km} km",
   "snap_fallback": "内側に収まるセルがないため、1 セルを使用します。",
   "snap_as_one_world": "ワンワールドとして構築",
   "snap_single_run": "1 回の実行で構築"
