@@ -2282,7 +2282,7 @@ const FIELD_PRESETS = {
 // Cave Biomes: each theme's percent of its default amount. A style is one
 // amount for every theme (CaveStyle::amount in src/caves/mod.rs).
 const CAVE_THEMES = ['lush', 'dripstone', 'deepdark', 'mushroom', 'ice', 'amethyst', 'volcanic', 'coral'];
-const CAVE_STYLES = { vanilla: 0, 'more-vanilla': 18, 'more-mix': 76, 'all-mix': 100 };
+const CAVE_STYLES = { vanilla: 0, 'more-vanilla': 18, 'all-mix': 100, 'more-mix': 180 };
 // `layout`: the select whose value is the preset (else the Field Layout).
 // `all`: every part is sent, 0 included, as --cave-biomes keeps the style's
 // amount for a part left out; `max` is a part's top.

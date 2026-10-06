@@ -146,8 +146,9 @@ pub struct Args {
     pub cave_biomes: Option<String>,
 
     /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
-    /// more-vanilla (about 30% themed), more-mix (about 70% themed) or all-mix (every theme at
-    /// its default amount, the default). --cave-biomes amounts override the style's per theme.
+    /// more-vanilla (about 30% themed), all-mix (every theme at its default amount, about 77%
+    /// themed, the default) or more-mix (about 89% themed). --cave-biomes amounts override the
+    /// style's per theme.
     #[arg(long = "cave-style", value_enum)]
     pub cave_style: Option<crate::caves::CaveStyle>,
 

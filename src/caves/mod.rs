@@ -83,10 +83,11 @@ const SEED: i64 = 0xCA7E_CA7E;
 /// Vanilla's world floor; every depth constant in the cave passes is written against it.
 pub(crate) const VANILLA_FLOOR: i32 = -64;
 /// The theme amounts of More Vanilla and More Mix: every theme at this share of its default.
-/// Calibrated on `--cave-zone-map` (three areas and seeds, upper and deep band averaged) to
-/// about 30% and 70% themed; All Mix, every theme at its default, measures about 77%.
+/// Calibrated on `--cave-zone-map` (three areas and seeds, upper and deep band averaged): More
+/// Vanilla is about 30% themed, All Mix (every theme at its default) about 77%, More Mix about
+/// 89%. More Mix stays under the 200% top of `--cave-biomes`, so the window's rows reach it.
 const MORE_VANILLA: f64 = 0.18;
-const MORE_MIX: f64 = 0.76;
+const MORE_MIX: f64 = 1.8;
 /// Carve only this many blocks below the column's surface (the roof seal — keeps caves from breaching
 /// the surface / exposing grass).
 const TOP_GATE: i32 = 6;
@@ -161,11 +162,11 @@ pub enum CaveStyle {
     Vanilla,
     /// About 70% plain caves, 30% themed.
     MoreVanilla,
-    /// About 30% plain caves, 70% themed.
-    MoreMix,
-    /// Every theme at its default amount.
+    /// Every theme at its default amount, about 77% themed.
     #[default]
     AllMix,
+    /// Every theme past its default, about 89% themed.
+    MoreMix,
 }
 
 impl CaveStyle {
@@ -843,6 +844,9 @@ mod tests {
             amounts(&["--cave-style", "more-mix"]),
             BiomeAmounts::uniform(MORE_MIX)
         );
+        // The window's rows (a --cave-biomes list, 0-200%) reach every style's amount.
+        let top = BiomeAmounts::parse(&format!("lush={}", MORE_MIX * 100.0)).unwrap();
+        assert_eq!(top.lush, MORE_MIX);
         let mixed = amounts(&["--cave-style", "vanilla", "--cave-biomes", "lush=150"]);
         assert_eq!(
             mixed,
