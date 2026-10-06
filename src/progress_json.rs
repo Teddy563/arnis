@@ -22,6 +22,14 @@
 //! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","peak_rss_mb":2310,"wall_s":40.1}
 //! ```
 //!
+//! A download or bake of an `.osm.pbf` extract adds `transfer` records: its
+//! stage (`download`, `bake`, `finalize`), bytes done and total, rate, the
+//! threads it bakes on and the job's own percentage (`transfer::Transfer`):
+//!
+//! ```text
+//! {"v":1,"type":"transfer","stage":"download","name":"liechtenstein","item":1,"items":1,"done_bytes":1048576,"total_bytes":3463268,"rate_bps":2100000.0,"threads":0,"cpu_pct":0,"downloads":16,"percent":12.1}
+//! ```
+//!
 //! Records come from the same emit points that drive the GUI progress bar, so
 //! nothing here is called unless `enable` was.
 

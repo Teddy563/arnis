@@ -72,6 +72,7 @@ mod terrain_surface;
 #[cfg(test)]
 mod test_utilities;
 mod tile;
+mod transfer;
 mod trees;
 mod version_check;
 mod voxy;
@@ -114,6 +115,10 @@ mod progress {
     }
     pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
         crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_transfer(progress: f64, message: &str, t: &crate::transfer::Transfer) {
+        crate::progress_json::progress(progress, message);
+        crate::progress_json::record("transfer", serde_json::json!(t));
     }
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}

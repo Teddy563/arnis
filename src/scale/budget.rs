@@ -145,6 +145,13 @@ pub fn sizing(args: &Args, pieces: usize, piece_regions: u64) -> Sizing {
     }
 }
 
+/// Threads a one-process job (a download-and-bake) runs on: what a job of
+/// one piece gets, so it follows the same --threads / --cpu-target and the
+/// same defaults as the generation workers.
+pub fn bake_threads(args: &Args) -> usize {
+    sizing(args, 1, 1).threads
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,6 +244,27 @@ mod tests {
         // Sequential: the job's own knobs, nothing invented.
         let s = sizing(&parse(&["--unit-regions", "2", "--threads", "6"]), 9, 4);
         assert_eq!((s.workers, s.threads, s.ram_mb), (1, 6, None));
+    }
+
+    #[test]
+    fn a_bake_runs_on_one_workers_share_of_the_cpu_setting() {
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        assert_eq!(bake_threads(&parse(&["--threads", "6"])), 6);
+        assert_eq!(
+            bake_threads(&parse(&["--cpu-target", "50"])),
+            (cores / 2).max(1)
+        );
+        // With no setting, a single run's 90 %, or the 75 % auto plans for.
+        assert_eq!(bake_threads(&parse(&[])), (cores * 9 / 10).max(1));
+        assert_eq!(
+            bake_threads(&parse(&["--one-world-workers", "auto"])),
+            (cores * 3 / 4).max(1)
+        );
+        // A fixed worker count does not split a one-process job.
+        assert_eq!(
+            bake_threads(&parse(&["--one-world-workers", "4", "--threads", "20"])),
+            20
+        );
     }
 
     #[test]

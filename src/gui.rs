@@ -131,6 +131,9 @@ pub fn run_gui() -> Result<(), String> {
             gui_prepare_plan,
             gui_bake_archive,
             gui_cancel_bake,
+            gui_bake_threads,
+            gui_storage_info,
+            gui_extract_size,
             gui_render_preview,
             gui_tree_pack_status,
             gui_tree_pack_layout,
@@ -661,6 +664,8 @@ struct PrepareRow {
     extract: crate::arnis_tiles::Extract,
     /// The folder already holds its archive.
     baked: bool,
+    /// Its archive: on disk once baked, else estimated from the download.
+    archive_bytes: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -668,63 +673,143 @@ struct PreparePlan {
     extracts: Vec<PrepareRow>,
     total_bytes: u64,
     uncovered_points: u64,
+    /// The folder the archives go to, and the free space on its disk.
+    folder: String,
+    free_bytes: Option<u64>,
+    /// The most a bake of the extracts not yet baked holds on disk at once.
+    peak_bytes: u64,
 }
 
-/// Prepare Countries: the Geofabrik extracts covering the selection, from
-/// `arnis-tiles prepare --dry-run` (kept per bbox for the session), each
-/// marked baked when the folder already holds its archive.
+/// `arnis-tiles prepare --dry-run` for a selection, kept per bbox for the
+/// session: the first asks the Geofabrik index and HEADs a few extracts.
+fn prepare_dry_run(
+    bbox_text: &str,
+    tiles_path: &str,
+) -> Result<crate::arnis_tiles::Prepare, String> {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    static PLANS: Mutex<BTreeMap<String, crate::arnis_tiles::Prepare>> =
+        Mutex::new(BTreeMap::new());
+
+    let cached = PLANS
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(bbox_text)
+        .cloned();
+    if let Some(p) = cached {
+        return Ok(p);
+    }
+    let bbox = LLBBox::from_str(bbox_text)?;
+    let exe = arnis_tiles_exe(tiles_path)?;
+    let p = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
+    PLANS
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(bbox_text.to_string(), p.clone());
+    Ok(p)
+}
+
+/// Prepare Countries: the Geofabrik extracts covering the selection, each
+/// marked baked when the folder already holds its archive, with the sizes of
+/// what a bake downloads and leaves.
 #[tauri::command(async)]
 fn gui_prepare_plan(
     bbox_text: String,
     folder: String,
     tiles_path: String,
 ) -> Result<PreparePlan, String> {
-    use std::collections::BTreeMap;
-    use std::sync::Mutex;
-    static PLANS: Mutex<BTreeMap<String, crate::arnis_tiles::Prepare>> =
-        Mutex::new(BTreeMap::new());
-
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
-    let cached = PLANS
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&bbox_text)
-        .cloned();
-    let plan = match cached {
-        Some(p) => p,
-        None => {
-            let exe = arnis_tiles_exe(&tiles_path)?;
-            let p = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
-            PLANS
-                .lock()
-                .map_err(|e| e.to_string())?
-                .insert(bbox_text, p.clone());
-            p
-        }
-    };
-    let baked: Vec<String> = crate::osm_tiles::local_coverage(&folder, &bbox)
-        .map(|c| c.archives.into_iter().map(|a| a.name).collect())
+    let plan = prepare_dry_run(&bbox_text, &tiles_path)?;
+    let archives = crate::osm_tiles::local_coverage(&folder, &bbox)
+        .map(|c| c.archives)
         .unwrap_or_default();
+    let on_disk = |id: &str| archives.iter().find(|a| a.name == id);
+    let todo: Vec<u64> = plan
+        .extracts
+        .iter()
+        .filter(|e| on_disk(&e.id).is_none())
+        .map(|e| e.bytes)
+        .collect();
     Ok(PreparePlan {
         extracts: plan
             .extracts
             .into_iter()
-            .map(|e| PrepareRow {
-                baked: baked.contains(&e.id),
-                extract: e,
+            .map(|e| {
+                let baked = on_disk(&e.id);
+                PrepareRow {
+                    baked: baked.is_some(),
+                    archive_bytes: baked
+                        .and_then(|a| a.bytes)
+                        .unwrap_or_else(|| crate::data_plan::archive_bytes(e.bytes)),
+                    extract: e,
+                }
             })
             .collect(),
         total_bytes: plan.total_bytes,
         uncovered_points: plan.uncovered_points,
+        free_bytes: crate::data_plan::free_bytes(&folder),
+        folder: folder.display().to_string(),
+        peak_bytes: crate::data_plan::archive_peak_bytes(&todo),
     })
 }
 
+/// The threads a bake gets and what that is of the machine, for the panel.
+#[derive(serde::Serialize)]
+struct BakeThreads {
+    threads: usize,
+    cpu_pct: u32,
+    cores: usize,
+    /// Downloads a Region Download prewarm keeps in flight at once.
+    downloads: u32,
+}
+
+/// [`BakeThreads`] for the Extra Features `flags`, as a bake would use them.
+#[tauri::command]
+fn gui_bake_threads(flags: Vec<String>) -> Result<BakeThreads, String> {
+    let args = meld_args(&flags, false)?;
+    let threads = crate::scale::budget::bake_threads(&args);
+    let cores = crate::transfer::cores();
+    Ok(BakeThreads {
+        threads,
+        cpu_pct: crate::transfer::cpu_pct(threads, cores),
+        cores,
+        downloads: args
+            .process
+            .max_downloads
+            .unwrap_or(crate::net::MAX_CONCURRENT_REQUESTS as u32),
+    })
+}
+
+/// Where the OSM sources keep their downloads and bakes, with sizes. Walks
+/// the folders, so off the webview thread.
+#[tauri::command(async)]
+fn gui_storage_info(folder: String) -> Result<Vec<crate::data_plan::Location>, String> {
+    use crate::elevation::cache::dir_size_bytes;
+    let archive = archive_folder(&folder)?;
+    let root = cache_root();
+    // What Clear Cache counts, plus the OSM sources' own, which it keeps:
+    // Region Download extracts and bakes, and arnis-tiles' index.
+    let arnis = root.join("arnis");
+    let all = cache_size_bytes()
+        + dir_size_bytes(&arnis.join("osm-pbf"))
+        + dir_size_bytes(&arnis.join("arnis-tiles"));
+    Ok(crate::data_plan::locations(&root, &archive, all))
+}
+
+/// The download size of a Region Download extract, asked once with a HEAD
+/// request and kept for the Download Plan.
+#[tauri::command(async)]
+fn gui_extract_size(url: String) -> Result<u64, String> {
+    crate::osm_pbf::remote_size(&url)
+}
+
+/// Set by Stop: ends a country bake, or a Region Download / offline download.
 static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Download & Bake: `arnis-tiles prepare` for the selection into the folder,
-/// on the Extra Features threads (`flags`, as for a generation) or 75 % of the
-/// cores, with its progress on the main bar. `Ok(false)` when stopped.
+/// on the threads a generation worker gets (`flags`, as for a generation),
+/// with its progress on the main bar and the panel's. `Ok(false)` when stopped.
 #[tauri::command(async)]
 fn gui_bake_archive(
     bbox_text: String,
@@ -732,14 +817,8 @@ fn gui_bake_archive(
     tiles_path: String,
     flags: Vec<String>,
 ) -> Result<bool, String> {
-    use clap::Parser;
-    let args =
-        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
-            .map_err(|e| e.to_string())?;
-    let threads = args.process.thread_count().unwrap_or_else(|| {
-        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-        (cores * 3 / 4).max(1)
-    });
+    let args = meld_args(&flags, false)?;
+    let threads = crate::scale::budget::bake_threads(&args);
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
     let exe = arnis_tiles_exe(&tiles_path)?;
@@ -748,27 +827,31 @@ fn gui_bake_archive(
     cancel.store(false, std::sync::atomic::Ordering::Release);
     progress::reset_progress_floor();
     progress::emit_gui_progress_update(0.0, "Choosing the extracts to bake...");
+    let extracts = prepare_dry_run(&bbox_text, &tiles_path)
+        .map(|p| p.extracts)
+        .unwrap_or_default();
     let result = crate::arnis_tiles::bake(
         &exe,
         &arnis_tiles_state(),
         &folder,
         &bbox,
+        &extracts,
         threads,
         cancel,
-        &mut |pct, msg| progress::emit_gui_progress_update(pct, msg),
+        &mut |pct, msg, t| progress::emit_gui_transfer(pct, msg, t),
     );
     match &result {
         Ok(true) => progress::emit_gui_progress_update(100.0, "Done! The local archive is ready."),
         Ok(false) => progress::emit_gui_progress_update(
             progress::MESSAGE_ONLY,
-            "Bake stopped. Finished countries are kept.",
+            "Bake stopped. Finished countries are kept; nothing half written was left.",
         ),
         Err(e) => progress::emit_gui_error(e),
     }
     result
 }
 
-/// Stops a running bake. Harmless when nothing runs.
+/// Stops a running bake or download. Harmless when nothing runs.
 #[tauri::command]
 fn gui_cancel_bake() {
     BAKE_CANCEL.store(true, std::sync::atomic::Ordering::Release);
@@ -1318,7 +1401,12 @@ async fn gui_get_cache_size() -> Result<String, String> {
 
 /// Every cache root's size added up, as a short human string.
 fn cache_size_string() -> String {
-    use crate::elevation::cache::{dir_size_bytes, format_size, get_base_cache_dir};
+    crate::elevation::cache::format_size(cache_size_bytes())
+}
+
+/// Every cache root's size added up.
+fn cache_size_bytes() -> u64 {
+    use crate::elevation::cache::{dir_size_bytes, get_base_cache_dir};
 
     // The tile cache root already contains the Mapillary facade cache, which
     // lives under it as its own provider directory.
@@ -1333,7 +1421,7 @@ fn cache_size_string() -> String {
     for root in crate::models_3d::model_cache_roots() {
         total = total.saturating_add(dir_size_bytes(&root));
     }
-    format_size(total)
+    total
 }
 
 /// The Mapillary imagery this generation used, one row per photograph, for the
@@ -1984,9 +2072,24 @@ fn offline_complete() -> Result<(), String> {
 
 /// `--prewarm` lives in the CLI, so the window runs it there, on the same
 /// command line a piece gets, with its progress on the window's bar.
+/// Stop (`gui_cancel_bake`) kills the child; its half-done extract download
+/// is removed, and a bake is written whole or not at all.
 fn prewarm_in_child(argv: &[std::ffi::OsString], bbox_text: &str) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    BAKE_CANCEL.store(false, Ordering::Release);
     emit_gui_progress_update(0.0, "Downloading for offline use...");
-    match crate::scale::run_piece(argv, &[], |p| emit_gui_progress_update(p * 100.0, "")) {
+    let run = crate::scale::run_piece_until(argv, &[], Some(&BAKE_CANCEL), |p| {
+        emit_gui_progress_update(p * 100.0, "")
+    });
+    if BAKE_CANCEL.swap(false, Ordering::AcqRel) {
+        crate::osm_pbf::remove_partial_downloads();
+        emit_gui_progress_update(
+            progress::MESSAGE_ONLY,
+            "Stopped. What finished is cached; nothing half written was left.",
+        );
+        return Ok(());
+    }
+    match run {
         Ok(_) => {
             emit_gui_progress_update(100.0, &format!("Done! Cached for offline use: {bbox_text}"));
             Ok(())
@@ -2554,6 +2657,11 @@ fn gui_start_generation(
                     format!("--bbox={bbox_text}").into(),
                     "--progress=json".into(),
                 ]);
+                // A bake in the child runs on what a generation worker gets.
+                if args.process.thread_count().is_none() {
+                    let threads = crate::scale::budget::bake_threads(&args);
+                    argv.push(format!("--threads={threads}").into());
+                }
                 return prewarm_in_child(&argv, &bbox_text);
             }
 
