@@ -1,6 +1,6 @@
 //! Live option previews: a sample area built with one settings group's
 //! current flags (stock defaults for the rest), drawn top-down whole for the
-//! group's picture in the window. The same areas and base flags as the
+//! group's picture in the window; for the caves, the area's cave zone map. The same areas and base flags as the
 //! shipped pictures (work/previews/final_render.py), so a live picture and a
 //! shipped one show the same place. Results are cached on disk per group, flags
 //! and Arnis version.
@@ -22,6 +22,8 @@ struct Sample {
     flags: &'static [&'static str],
     /// Water shaded by depth: a river bed cannot be seen from above.
     depth: bool,
+    /// The cave zone map instead of a world.
+    zone: bool,
 }
 
 fn sample(group: &str) -> Option<Sample> {
@@ -30,6 +32,7 @@ fn sample(group: &str) -> Option<Sample> {
         base: &[],
         flags,
         depth: false,
+        zone: false,
     };
     Some(match group {
         // Baragan plain: open cropland.
@@ -83,6 +86,14 @@ fn sample(group: &str) -> Option<Sample> {
             "44.59981,25.70021,44.60519,25.70779",
             &["land-texture", "land-mix"],
         ),
+        // The foot of the Eiger, the shipped cave pictures' area.
+        "caves" => Sample {
+            zone: true,
+            ..s(
+                "46.580000,8.000000,46.581725,8.005019",
+                &["cave-style", "cave-biomes"],
+            )
+        },
         _ => return None,
     })
 }
@@ -186,12 +197,19 @@ fn build(
     flags: &[String],
     offline: bool,
 ) -> Result<RgbImage, Failure> {
+    let zone = tmp.join("zone");
     let mut cmd = std::process::Command::new(exe);
-    cmd.arg(format!("--bbox={}", sample.bbox))
-        .arg("--output-dir")
-        .arg(tmp)
-        .args(["--map-preview", "--no-3d"])
-        .args(sample.base)
+    cmd.arg(format!("--bbox={}", sample.bbox));
+    if sample.zone {
+        cmd.arg("--cave-zone-map")
+            .arg(&zone)
+            .arg("--cave-zone-map-step=1");
+    } else {
+        cmd.arg("--output-dir")
+            .arg(tmp)
+            .args(["--map-preview", "--no-3d"]);
+    }
+    cmd.args(sample.base)
         .args(flags)
         .args(offline.then_some("--offline"))
         .stdout(std::process::Stdio::null())
@@ -207,6 +225,9 @@ fn build(
             Failure::Other(format!("the sample run failed ({status})"))
         });
     }
+    if sample.zone {
+        return zone_picture(&zone).map_err(Failure::Other);
+    }
     let world = std::fs::read_dir(tmp)
         .ok()
         .and_then(|mut d| d.find_map(|e| e.ok().map(|e| e.path())))
@@ -218,6 +239,31 @@ fn build(
         shade_water(&world, &mut map);
     }
     Ok(map)
+}
+
+/// The cave zone map as the shipped pictures draw it: the upper caves over the deep ones with a
+/// thin gap between, plain rock in stone grey above and deepslate grey below.
+fn zone_picture(prefix: &Path) -> Result<RgbImage, String> {
+    const GAP: u32 = 2;
+    let layer = |tag: &str, bg: [u8; 3]| -> Result<RgbImage, String> {
+        let path = format!("{}-{tag}.png", prefix.display());
+        let top = image::open(&path).map_err(|e| format!("{path}: {e}"))?;
+        let top = top.to_rgba8();
+        let mut out = RgbImage::from_pixel(top.width(), top.height(), Rgb(bg));
+        for (o, t) in out.pixels_mut().zip(top.pixels()) {
+            let a = u16::from(t[3]);
+            for c in 0..3 {
+                o[c] = ((u16::from(t[c]) * a + u16::from(o[c]) * (255 - a)) / 255) as u8;
+            }
+        }
+        Ok(out)
+    };
+    let upper = layer("upper", [118, 118, 118])?;
+    let deep = layer("deep", [72, 72, 80])?;
+    let mut out = RgbImage::from_pixel(upper.width(), upper.height() * 2 + GAP, Rgb([30, 30, 34]));
+    imageops::replace(&mut out, &upper, 0, 0);
+    imageops::replace(&mut out, &deep, 0, i64::from(upper.height() + GAP));
+    Ok(out)
 }
 
 /// The whole map, scaled down to fit W x H when it is bigger.
@@ -341,7 +387,7 @@ mod tests {
         assert_eq!(tall.dimensions(), (500, H));
         // Every group's area parses as four numbers.
         for g in [
-            "fields", "trees", "snow", "scatter", "roads", "water", "grass", "land",
+            "fields", "trees", "snow", "scatter", "roads", "water", "grass", "land", "caves",
         ] {
             let b: Vec<f64> = sample(g)
                 .unwrap()

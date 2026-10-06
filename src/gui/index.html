@@ -1722,6 +1722,93 @@
                   <span class="setting-label"><span class="setting-heading"><span data-localize="features_group_caves">Caves &amp; Water</span></span></span>
                 </div>
                 <div class="setting-grid">
+                  <div class="preview-block is-wide" data-group="caves">
+                  <div class="preview-controls">
+                  <div class="settings-row setting-tile has-options">
+                    <label for="cave-style-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-cave"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="cave_style">Cave Style</span>
+                          <span class="tooltip-icon" data-tooltip="Vanilla: plain caves only. More Vanilla: about 30% of the caves themed. More Mix: about 70%. All Mix: every cave biome at its default amount. The 2D picture is the biome layout, upper caves above deep caves; 3D shows the caves with the rock cut away.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="cave_style_desc">How much of the underground the cave biomes take. Requires Caves.</span>
+                      </span>
+                    </label>
+                    <select id="cave-style-select" name="cave-style-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                        <option value="vanilla" data-localize="cave_style_vanilla">Vanilla</option>
+                        <option value="more-vanilla" data-localize="cave_style_more_vanilla">More Vanilla</option>
+                        <option value="more-mix" data-localize="cave_style_more_mix">More Mix</option>
+                        <option value="all-mix" selected data-localize="cave_style_all_mix">All Mix</option>
+                      </select>
+                    <div class="preview-options" data-select="cave-style-select">
+                      <button type="button" class="segment" data-value="vanilla" data-localize="cave_style_vanilla">Vanilla</button>
+                      <button type="button" class="segment" data-value="more-vanilla" data-localize="cave_style_more_vanilla">More Vanilla</button>
+                      <button type="button" class="segment" data-value="more-mix" data-localize="cave_style_more_mix">More Mix</button>
+                      <button type="button" class="segment" data-value="all-mix" data-localize="cave_style_all_mix">All Mix</button>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile has-options">
+                    <label for="cave-ores-select" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-pickaxe"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="cave_ores">Ores</span>
+                          <span class="tooltip-icon" data-tooltip="Normal is the vanilla ore table. More doubles the veins of every metal and gem ore, at vanilla&#x27;s heights and vein sizes.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="cave_ores_desc">How many ore veins the rock holds. Requires Caves.</span>
+                      </span>
+                    </label>
+                    <select id="cave-ores-select" name="cave-ores-select" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                        <option value="normal" selected data-localize="cave_ores_normal">Normal</option>
+                        <option value="more" data-localize="cave_ores_more">More</option>
+                      </select>
+                    <div class="preview-options" data-select="cave-ores-select">
+                      <button type="button" class="segment" data-value="normal" data-localize="cave_ores_normal">Normal</button>
+                      <button type="button" class="segment" data-value="more" data-localize="cave_ores_more">More</button>
+                    </div>
+                  </div>
+                  <div class="settings-row setting-tile is-wide has-mix">
+                    <label for="cave-biomes-input" class="setting-label">
+                      <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                      <span class="setting-text">
+                        <span class="setting-heading">
+                          <span data-localize="cave_biomes">Cave Biomes</span>
+                          <span class="tooltip-icon" data-tooltip="Each biome&#x27;s amount against its default: 100% is the default, 0 turns it off, 200% about doubles its area. Starts from the Cave Style&#x27;s own; a change makes it custom. Volcanic stays at the bottom, deep dark deep, ice under mountains, coral in flooded pools.">?</span>
+                        </span>
+                        <span class="setting-desc" data-localize="cave_biomes_desc">Each cave biome&#x27;s amount, from the style&#x27;s own.</span>
+                      </span>
+                    </label>
+                    <input type="text" id="cave-biomes-input" name="cave-biomes-input" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                    <div class="mix-list" data-mix="cave-biomes-input">
+                      <div class="mix-row" data-key="lush"><input type="checkbox" class="switch" aria-label="Lush"><span class="mix-name" data-localize="cave_lush">Lush</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Lush"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="dripstone"><input type="checkbox" class="switch" aria-label="Dripstone"><span class="mix-name" data-localize="cave_dripstone">Dripstone</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Dripstone"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="deepdark"><input type="checkbox" class="switch" aria-label="Deep Dark"><span class="mix-name" data-localize="cave_deepdark">Deep Dark</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Deep Dark"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="mushroom"><input type="checkbox" class="switch" aria-label="Mushroom"><span class="mix-name" data-localize="cave_mushroom">Mushroom</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Mushroom"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="ice"><input type="checkbox" class="switch" aria-label="Ice"><span class="mix-name" data-localize="cave_ice">Ice</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Ice"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="amethyst"><input type="checkbox" class="switch" aria-label="Amethyst"><span class="mix-name" data-localize="cave_amethyst">Amethyst</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Amethyst"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="volcanic"><input type="checkbox" class="switch" aria-label="Volcanic"><span class="mix-name" data-localize="cave_volcanic">Volcanic</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Volcanic"><span class="mix-unit">%</span></div>
+                      <div class="mix-row" data-key="coral"><input type="checkbox" class="switch" aria-label="Coral"><span class="mix-name" data-localize="cave_coral">Coral</span><span class="mix-hint"></span><input type="number" min="0" max="200" step="1" aria-label="Coral"><span class="mix-unit">%</span></div>
+                      <button type="button" class="mix-reset" data-localize="mix_reset">Reset to preset</button>
+                    </div>
+                  </div>
+                  </div>
+                    <figure class="option-preview preview-frame" data-for="cave-style-select" data-preview="cave-style" data-group="caves">
+                      <img src="images/previews/cave-style-all-mix.webp" alt="" width="480" height="480">
+                      <div class="preview-tools">
+                        <div class="preview-zoom" role="group" aria-label="Zoom">
+                          <button type="button" data-zoom="-1" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                          <button type="button" data-zoom="1" aria-label="Zoom in" title="Zoom in">+</button>
+                        </div>
+                        <div class="preview-mode" role="group" aria-label="2D / 3D">
+                          <button type="button" data-mode="2d">2D</button>
+                          <button type="button" data-mode="3d">3D</button>
+                        </div>
+                      </div>
+                      <span class="preview-coming" data-localize="preview_coming">Custom settings: 2D preview</span>
+                      <figcaption></figcaption>
+                    </figure>
+                  </div>
                   <div class="settings-row setting-tile is-wide">
                     <label for="cave-seed-input" class="setting-label">
                       <svg class="icon setting-icon" aria-hidden="true"><use href="#i-cave"></use></svg>

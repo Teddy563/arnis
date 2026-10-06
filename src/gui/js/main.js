@@ -2039,6 +2039,8 @@ const PREVIEW_GROUPS = {
   water: ['river-bed', 'water-detail'],
   grass: ['grass-texture', 'grass-mix'],
   land: ['land-texture', 'land-mix'],
+  // The ores do not change the cave zone map.
+  caves: ['cave-style', 'cave-biomes'],
 };
 const TREE_SIZES = ['small', 'medium', 'big', 'tall', 'giant'];
 
@@ -2099,6 +2101,11 @@ function blockPictureKey(card) {
       return mixPicture('land', 'patchwork');
     case 'climate-mode-select':
       return 'climate-mode-' + el('climate-mode-select').value + '.webp';
+    case 'cave-style-select':
+      return el('cave-biomes-input').value.trim() === ''
+        ? 'cave-style-' + el('cave-style-select').value
+          + (el('cave-ores-select').value === 'more' ? '-more-ores' : '') + '.webp'
+        : null;
     default:
       return null;
   }
@@ -2272,6 +2279,13 @@ const FIELD_PRESETS = {
   // --grass-mix's own default (FieldMix::GRASS).
   default: { shares: [6, 64, 22, 0, 8] },
 };
+// Cave Biomes: each theme's percent of its default amount. A style is one
+// amount for every theme (CaveStyle::amount in src/caves/mod.rs).
+const CAVE_THEMES = ['lush', 'dripstone', 'deepdark', 'mushroom', 'ice', 'amethyst', 'volcanic', 'coral'];
+const CAVE_STYLES = { vanilla: 0, 'more-vanilla': 18, 'more-mix': 76, 'all-mix': 100 };
+// `layout`: the select whose value is the preset (else the Field Layout).
+// `all`: every part is sent, 0 included, as --cave-biomes keeps the style's
+// amount for a part left out; `max` is a part's top.
 const MIXES = {
   'farm-crops-input': {
     keys: CROP_KEYS,
@@ -2290,6 +2304,14 @@ const MIXES = {
     original: (name) => FIELD_PRESETS[name].shares,
     encode: (name) => (name === 'patchwork' ? '' : name),
   },
+  'cave-biomes-input': {
+    keys: CAVE_THEMES,
+    layout: 'cave-style-select',
+    all: true,
+    max: 200,
+    original: (name) => CAVE_THEMES.map(() => CAVE_STYLES[name]),
+    encode: () => '',
+  },
 };
 
 function initMixRows() {
@@ -2298,7 +2320,8 @@ function initMixRows() {
     const list = document.querySelector('.mix-list[data-mix="' + id + '"]');
     if (!field || !list) return;
     const select = document.querySelector('.mix-preset[data-mix="' + id + '"]');
-    const layout = document.getElementById('field-mix-select');
+    const layout = document.getElementById(mix.layout || 'field-mix-select');
+    const max = mix.max || 100;
     const rows = mix.keys.map((k) => list.querySelector('.mix-row[data-key="' + k + '"]'));
     const reset = list.querySelector('.mix-reset');
     const presetName = () => (select ? select.value : layout.value);
@@ -2306,7 +2329,7 @@ function initMixRows() {
     const same = (a, b) => a.every((v, i) => v === b[i]);
     const values = () => rows.map((r) => {
       const v = Math.round(parseFloat(r.querySelector('input[type="number"]').value));
-      return r.querySelector('.switch').checked && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
+      return r.querySelector('.switch').checked && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 0;
     });
     const show = (vals) => {
       rows.forEach((r, i) => {
@@ -2327,7 +2350,7 @@ function initMixRows() {
       show(vals);
       write(same(vals, original())
         ? mix.encode(presetName())
-        : mix.keys.map((k, i) => (vals[i] > 0 ? k + '=' + vals[i] : null)).filter(Boolean).join(','));
+        : mix.keys.map((k, i) => (vals[i] > 0 || mix.all ? k + '=' + vals[i] : null)).filter(Boolean).join(','));
     };
     // Text to rows: restore, reset and preset files write the field.
     const read = () => {
@@ -2340,11 +2363,11 @@ function initMixRows() {
       }
       let vals = original();
       if (text.includes('=')) {
-        vals = mix.keys.map(() => 0);
+        if (!mix.all) vals = mix.keys.map(() => 0);
         text.split(',').forEach((pair) => {
           const [k, v] = pair.split('=').map((t) => t.trim());
           const i = mix.keys.indexOf(k);
-          if (i >= 0) vals[i] = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
+          if (i >= 0) vals[i] = Math.min(max, Math.max(0, parseInt(v, 10) || 0));
         });
       }
       show(vals);
@@ -2353,14 +2376,14 @@ function initMixRows() {
       const box = r.querySelector('.switch');
       const num = r.querySelector('input[type="number"]');
       box.addEventListener('change', () => {
-        if (box.checked && !(parseFloat(num.value) > 0)) num.value = original()[i] || 10;
-        // One part stays on: an all-zero list is refused.
-        if (!values().some((v) => v > 0)) box.checked = true;
+        if (box.checked && !(parseFloat(num.value) > 0)) num.value = original()[i] || (mix.all ? 100 : 10);
+        // One part stays on: an all-zero list is refused (but no cave biome is Vanilla).
+        if (!mix.all && !values().some((v) => v > 0)) box.checked = true;
         commit();
       });
       num.addEventListener('change', () => {
         box.checked = parseFloat(num.value) > 0;
-        if (!values().some((v) => v > 0)) {
+        if (!mix.all && !values().some((v) => v > 0)) {
           num.value = original()[i] || 10;
           box.checked = true;
         }
@@ -2423,6 +2446,10 @@ function previewName(card) {
   } else if (switches.length && !picked.length) {
     picked.push(on.join(' + '));
   }
+  // Rows changed from their preset's own.
+  const mixed = Array.from(block.querySelectorAll('.mix-list[data-mix]'))
+    .some((list) => document.getElementById(list.dataset.mix).value.includes('='));
+  if (mixed) picked.push(oneWorldText('mix_custom', 'Custom'));
   return picked.join(' · ');
 }
 
@@ -2702,6 +2729,9 @@ function refreshAdvancedFeatures() {
   setSettingsRowAvailable('field-scale-slider', on && parcels);
   setSettingsRowAvailable('cave-seed-input', on && checked('caves-toggle'));
   setSettingsRowAvailable('cave-datum-y-input', on && checked('caves-toggle'));
+  ['cave-style-select', 'cave-ores-select', 'cave-biomes-input'].forEach((id) => {
+    setSettingsRowAvailable(id, on && checked('caves-toggle'));
+  });
 
   // Experimental. A One World merges into Anvil files and fixes its own build
   // height, so the region format and the floor and ceiling are a single
@@ -2811,6 +2841,9 @@ function advancedFeatureArgs() {
     // A string, so a seed past 2^53 reaches the parser whole.
     'cave-seed': text('cave-seed-input'),
     'cave-datum-y': int('cave-datum-y-input'),
+    'cave-style': changed('cave-style-select'),
+    'cave-ores': changed('cave-ores-select'),
+    'cave-biomes': text('cave-biomes-input'),
     'river-bed': changed('river-bed-select'),
     'water-detail': changed('water-detail-select'),
     'region-format': changed('region-format-select'),

@@ -97,6 +97,9 @@ const SETTINGS = [
   { id: 'tree-weight-giant-slider', kind: 'number', store: OWN },
   { id: 'cave-seed-input', kind: 'text', store: OWN },
   { id: 'cave-datum-y-input', kind: 'text', store: OWN },
+  { id: 'cave-style-select', kind: 'select', store: OWN },
+  { id: 'cave-ores-select', kind: 'select', store: OWN },
+  { id: 'cave-biomes-input', kind: 'text', store: OWN },
   { id: 'river-bed-select', kind: 'select', store: OWN },
   { id: 'water-detail-select', kind: 'select', store: OWN },
   // Experimental. The fields that default to empty are text, as above; the
