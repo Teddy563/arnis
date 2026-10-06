@@ -2056,8 +2056,9 @@ function onTransferProgress(progress, message, transfer) {
     bake: t('transfer_bake', 'Baking {name} ({n}/{m})', vars),
     finalize: t('transfer_finalize', 'Writing {name} ({n}/{m})', vars),
   }[transfer.stage];
+  // No extract yet (arnis-tiles choosing them): its status line says more.
   if (!document.getElementById('transfer-stop-button').disabled) {
-    document.getElementById('transfer-stage').textContent = stage;
+    document.getElementById('transfer-stage').textContent = transfer.name ? stage : message || stage;
   }
   setTransferBar(transfer.percent);
   const parts = [];
