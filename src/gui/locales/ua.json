@@ -506,5 +506,20 @@
   "snap_dim": "{n} комірок · {km} км",
   "snap_fallback": "Жодна ціла комірка не вміщується, тому використано одну.",
   "snap_as_one_world": "Будується як «Єдиний світ»",
-  "snap_single_run": "Будується за один запуск"
+  "snap_single_run": "Будується за один запуск",
+  "run_estimate_size": "На диску: ~{size}",
+  "run_estimate_time": "Час побудови: {time}",
+  "run_elapsed": "Минуло: {time}",
+  "run_eta": "Залишилося: {time}",
+  "run_pieces": "Частини: {done}/{n}",
+  "run_workers": "Процесів: {w}",
+  "mini_mode": "Міні-режим",
+  "mini_mode_desc": "Під час закриття вікна Arnis згортається в маленьку панель. Генерація триває.",
+  "mini_shrink": "Згорнути в міні-панель",
+  "mini_expand": "Розгорнути",
+  "mini_close": "Закрити Arnis",
+  "mini_idle": "Готово",
+  "mini_confirm_close": "Зупинити генерацію та закрити Arnis?",
+  "mini_confirm_cancel": "Скасувати",
+  "mini_confirm_stop": "Зупинити й закрити"
 }

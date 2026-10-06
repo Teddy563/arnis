@@ -506,5 +506,20 @@
   "snap_dim": "{n} Zellen · {km} km",
   "snap_fallback": "Keine ganze Zelle passt hinein, daher wird eine verwendet.",
   "snap_as_one_world": "Wird als Eine Welt gebaut",
-  "snap_single_run": "Wird in einem Lauf gebaut"
+  "snap_single_run": "Wird in einem Lauf gebaut",
+  "run_estimate_size": "Auf der Festplatte: ~{size}",
+  "run_estimate_time": "Bauzeit: {time}",
+  "run_elapsed": "Vergangen: {time}",
+  "run_eta": "Verbleibend: {time}",
+  "run_pieces": "Teile: {done}/{n}",
+  "run_workers": "Worker: {w}",
+  "mini_mode": "Mini-Modus",
+  "mini_mode_desc": "Beim Schließen schrumpft Arnis zu einem kleinen Fenster. Läufe gehen weiter.",
+  "mini_shrink": "Zum Mini-Fenster verkleinern",
+  "mini_expand": "Vergrößern",
+  "mini_close": "Arnis schließen",
+  "mini_idle": "Bereit",
+  "mini_confirm_close": "Generierung stoppen und Arnis schließen?",
+  "mini_confirm_cancel": "Abbrechen",
+  "mini_confirm_stop": "Stoppen und schließen"
 }

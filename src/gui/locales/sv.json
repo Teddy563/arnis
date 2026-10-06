@@ -506,5 +506,20 @@
   "snap_dim": "{n} celler · {km} km",
   "snap_fallback": "Ingen hel cell får plats inuti, så en används.",
   "snap_as_one_world": "Byggs som En värld",
-  "snap_single_run": "Byggs i en körning"
+  "snap_single_run": "Byggs i en körning",
+  "run_estimate_size": "På disk: ~{size}",
+  "run_estimate_time": "Byggtid: {time}",
+  "run_elapsed": "Förflutet: {time}",
+  "run_eta": "Kvar: {time}",
+  "run_pieces": "Delar: {done}/{n}",
+  "run_workers": "Arbetare: {w}",
+  "mini_mode": "Miniläge",
+  "mini_mode_desc": "När fönstret stängs krymper Arnis till en liten panel. Körningen fortsätter.",
+  "mini_shrink": "Krymp till minipanel",
+  "mini_expand": "Expandera",
+  "mini_close": "Stäng Arnis",
+  "mini_idle": "Redo",
+  "mini_confirm_close": "Stoppa genereringen och stänga Arnis?",
+  "mini_confirm_cancel": "Avbryt",
+  "mini_confirm_stop": "Stoppa och stäng"
 }

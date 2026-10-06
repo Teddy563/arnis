@@ -506,5 +506,20 @@
   "snap_dim": "{n} solua · {km} km",
   "snap_fallback": "Kokonainen solu ei mahdu sisään, joten käytetään yhtä.",
   "snap_as_one_world": "Rakennetaan Yhtenä maailmana",
-  "snap_single_run": "Rakennetaan yhdellä ajolla"
+  "snap_single_run": "Rakennetaan yhdellä ajolla",
+  "run_estimate_size": "Levyllä: ~{size}",
+  "run_estimate_time": "Rakennusaika: {time}",
+  "run_elapsed": "Kulunut: {time}",
+  "run_eta": "Jäljellä: {time}",
+  "run_pieces": "Osat: {done}/{n}",
+  "run_workers": "Työprosessit: {w}",
+  "mini_mode": "Minitila",
+  "mini_mode_desc": "Ikkunan sulkeminen pienentää Arnisin pieneksi paneeliksi. Ajo jatkuu.",
+  "mini_shrink": "Pienennä minipaneeliksi",
+  "mini_expand": "Laajenna",
+  "mini_close": "Sulje Arnis",
+  "mini_idle": "Valmis",
+  "mini_confirm_close": "Pysäytetäänkö generointi ja suljetaanko Arnis?",
+  "mini_confirm_cancel": "Peruuta",
+  "mini_confirm_stop": "Pysäytä ja sulje"
 }

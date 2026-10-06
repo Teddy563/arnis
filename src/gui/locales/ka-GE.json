@@ -506,5 +506,20 @@
   "snap_dim": "{n} უჯრა · {km} კმ",
   "snap_fallback": "მთელი უჯრა შიგნით არ ეტევა, ამიტომ ერთი გამოიყენება.",
   "snap_as_one_world": "შენდება როგორც ერთი სამყარო",
-  "snap_single_run": "შენდება ერთი გაშვებით"
+  "snap_single_run": "შენდება ერთი გაშვებით",
+  "run_estimate_size": "დისკზე: ~{size}",
+  "run_estimate_time": "აგების დრო: {time}",
+  "run_elapsed": "გასული: {time}",
+  "run_eta": "დარჩენილი: {time}",
+  "run_pieces": "ნაწილები: {done}/{n}",
+  "run_workers": "პროცესები: {w}",
+  "mini_mode": "მინი რეჟიმი",
+  "mini_mode_desc": "ფანჯრის დახურვა Arnis-ს პატარა პანელად აქცევს. გენერაცია გრძელდება.",
+  "mini_shrink": "მინი პანელად შემცირება",
+  "mini_expand": "გაშლა",
+  "mini_close": "Arnis-ის დახურვა",
+  "mini_idle": "მზადაა",
+  "mini_confirm_close": "შევაჩეროთ გენერაცია და დავხუროთ Arnis?",
+  "mini_confirm_cancel": "გაუქმება",
+  "mini_confirm_stop": "შეჩერება და დახურვა"
 }

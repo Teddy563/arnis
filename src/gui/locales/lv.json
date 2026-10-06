@@ -506,5 +506,20 @@
   "snap_dim": "{n} šūnas · {km} km",
   "snap_fallback": "Neviena vesela šūna neietilpst, tāpēc izmanto vienu.",
   "snap_as_one_world": "Tiek būvēts kā Viena pasaule",
-  "snap_single_run": "Tiek būvēts vienā palaišanā"
+  "snap_single_run": "Tiek būvēts vienā palaišanā",
+  "run_estimate_size": "Diskā: ~{size}",
+  "run_estimate_time": "Būvēšanas laiks: {time}",
+  "run_elapsed": "Pagājis: {time}",
+  "run_eta": "Atlicis: {time}",
+  "run_pieces": "Daļas: {done}/{n}",
+  "run_workers": "Procesi: {w}",
+  "mini_mode": "Mini režīms",
+  "mini_mode_desc": "Aizverot logu, Arnis sarūk līdz mazam panelim. Ģenerēšana turpinās.",
+  "mini_shrink": "Samazināt līdz mini panelim",
+  "mini_expand": "Izvērst",
+  "mini_close": "Aizvērt Arnis",
+  "mini_idle": "Gatavs",
+  "mini_confirm_close": "Apturēt ģenerēšanu un aizvērt Arnis?",
+  "mini_confirm_cancel": "Atcelt",
+  "mini_confirm_stop": "Apturēt un aizvērt"
 }

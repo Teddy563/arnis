@@ -506,5 +506,20 @@
   "snap_dim": "{n} خلية · {km} كم",
   "snap_fallback": "لا تتسع أي خلية كاملة داخله، لذا تُستخدم خلية واحدة.",
   "snap_as_one_world": "يُبنى كعالم واحد",
-  "snap_single_run": "يُبنى في تشغيل واحد"
+  "snap_single_run": "يُبنى في تشغيل واحد",
+  "run_estimate_size": "على القرص: ~{size}",
+  "run_estimate_time": "مدة البناء: {time}",
+  "run_elapsed": "المنقضي: {time}",
+  "run_eta": "المتبقي: {time}",
+  "run_pieces": "الأجزاء: {done}/{n}",
+  "run_workers": "العمليات: {w}",
+  "mini_mode": "الوضع المصغّر",
+  "mini_mode_desc": "إغلاق النافذة يصغّر Arnis إلى لوحة صغيرة. يستمر التوليد.",
+  "mini_shrink": "تصغير إلى لوحة مصغّرة",
+  "mini_expand": "توسيع",
+  "mini_close": "إغلاق Arnis",
+  "mini_idle": "جاهز",
+  "mini_confirm_close": "إيقاف التوليد وإغلاق Arnis؟",
+  "mini_confirm_cancel": "إلغاء",
+  "mini_confirm_stop": "إيقاف وإغلاق"
 }

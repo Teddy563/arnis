@@ -506,5 +506,20 @@
   "snap_dim": "{n} cells · {km} km",
   "snap_fallback": "No whole cell fits inside, so one is used.",
   "snap_as_one_world": "Builds as a One World",
-  "snap_single_run": "Builds in one run"
+  "snap_single_run": "Builds in one run",
+  "run_estimate_size": "On disk: ~{size}",
+  "run_estimate_time": "Build time: {time}",
+  "run_elapsed": "Elapsed: {time}",
+  "run_eta": "Remaining: {time}",
+  "run_pieces": "Pieces: {done}/{n}",
+  "run_workers": "Workers: {w}",
+  "mini_mode": "Mini Mode",
+  "mini_mode_desc": "Closing the window shrinks Arnis to a small panel. Runs keep going.",
+  "mini_shrink": "Shrink to mini panel",
+  "mini_expand": "Expand",
+  "mini_close": "Close Arnis",
+  "mini_idle": "Ready",
+  "mini_confirm_close": "Stop generation and close Arnis?",
+  "mini_confirm_cancel": "Cancel",
+  "mini_confirm_stop": "Stop and close"
 }

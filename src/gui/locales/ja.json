@@ -506,5 +506,20 @@
   "snap_dim": "{n} セル · {km} km",
   "snap_fallback": "内側に収まるセルがないため、1 セルを使用します。",
   "snap_as_one_world": "ワンワールドとして構築",
-  "snap_single_run": "1 回の実行で構築"
+  "snap_single_run": "1 回の実行で構築",
+  "run_estimate_size": "ディスク容量: 約{size}",
+  "run_estimate_time": "生成時間: {time}",
+  "run_elapsed": "経過: {time}",
+  "run_eta": "残り: {time}",
+  "run_pieces": "ピース: {done}/{n}",
+  "run_workers": "ワーカー: {w}",
+  "mini_mode": "ミニモード",
+  "mini_mode_desc": "ウィンドウを閉じると Arnis は小さなパネルになります。生成は続きます。",
+  "mini_shrink": "ミニパネルに縮小",
+  "mini_expand": "展開",
+  "mini_close": "Arnis を閉じる",
+  "mini_idle": "準備完了",
+  "mini_confirm_close": "生成を停止して Arnis を閉じますか？",
+  "mini_confirm_cancel": "キャンセル",
+  "mini_confirm_stop": "停止して閉じる"
 }

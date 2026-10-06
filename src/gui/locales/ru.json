@@ -506,5 +506,20 @@
   "snap_dim": "{n} ячеек · {km} км",
   "snap_fallback": "Ни одна целая ячейка не помещается, поэтому используется одна.",
   "snap_as_one_world": "Строится как «Единый мир»",
-  "snap_single_run": "Строится за один запуск"
+  "snap_single_run": "Строится за один запуск",
+  "run_estimate_size": "На диске: ~{size}",
+  "run_estimate_time": "Время построения: {time}",
+  "run_elapsed": "Прошло: {time}",
+  "run_eta": "Осталось: {time}",
+  "run_pieces": "Части: {done}/{n}",
+  "run_workers": "Процессов: {w}",
+  "mini_mode": "Мини-режим",
+  "mini_mode_desc": "При закрытии окна Arnis сворачивается в маленькую панель. Генерация продолжается.",
+  "mini_shrink": "Свернуть в мини-панель",
+  "mini_expand": "Развернуть",
+  "mini_close": "Закрыть Arnis",
+  "mini_idle": "Готово",
+  "mini_confirm_close": "Остановить генерацию и закрыть Arnis?",
+  "mini_confirm_cancel": "Отмена",
+  "mini_confirm_stop": "Остановить и закрыть"
 }

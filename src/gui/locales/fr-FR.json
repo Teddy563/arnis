@@ -506,5 +506,20 @@
   "snap_dim": "{n} cellules · {km} km",
   "snap_fallback": "Aucune cellule entière ne tient dedans, donc une seule est utilisée.",
   "snap_as_one_world": "Construit en Monde unique",
-  "snap_single_run": "Construit en une seule exécution"
+  "snap_single_run": "Construit en une seule exécution",
+  "run_estimate_size": "Sur le disque : ~{size}",
+  "run_estimate_time": "Durée de construction : {time}",
+  "run_elapsed": "Écoulé : {time}",
+  "run_eta": "Restant : {time}",
+  "run_pieces": "Parties : {done}/{n}",
+  "run_workers": "Processus : {w}",
+  "mini_mode": "Mode Mini",
+  "mini_mode_desc": "Fermer la fenêtre réduit Arnis à un petit panneau. La génération continue.",
+  "mini_shrink": "Réduire en mini-panneau",
+  "mini_expand": "Agrandir",
+  "mini_close": "Fermer Arnis",
+  "mini_idle": "Prêt",
+  "mini_confirm_close": "Arrêter la génération et fermer Arnis ?",
+  "mini_confirm_cancel": "Annuler",
+  "mini_confirm_stop": "Arrêter et fermer"
 }

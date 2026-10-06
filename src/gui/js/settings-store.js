@@ -142,6 +142,7 @@ const SETTINGS = [
   { id: 'bedrock-save-path-input', kind: 'text', store: EXTERNAL, dynamicDefault: 'bedrockSavePath' },
   { id: 'luanti-save-path-input', kind: 'text', store: EXTERNAL, dynamicDefault: 'luantiSavePath' },
   { id: 'language-select', kind: 'select', store: EXTERNAL, dynamicDefault: 'language' },
+  { id: 'mini-mode-toggle', kind: 'checkbox', store: OWN },
 
   // Consent record, not a preference. The user answered it on first run and the
   // HTML default is off, so a revert or reset could only withdraw consent, which

@@ -506,5 +506,20 @@
   "snap_dim": "{n} 个单元格 · {km} km",
   "snap_fallback": "内部容不下完整单元格，因此使用一个。",
   "snap_as_one_world": "作为单一世界构建",
-  "snap_single_run": "一次运行构建"
+  "snap_single_run": "一次运行构建",
+  "run_estimate_size": "磁盘占用：约 {size}",
+  "run_estimate_time": "生成时间：{time}",
+  "run_elapsed": "已用时：{time}",
+  "run_eta": "剩余：{time}",
+  "run_pieces": "分块：{done}/{n}",
+  "run_workers": "工作进程：{w}",
+  "mini_mode": "迷你模式",
+  "mini_mode_desc": "关闭窗口时 Arnis 会缩成一个小面板，生成继续进行。",
+  "mini_shrink": "缩小为迷你面板",
+  "mini_expand": "展开",
+  "mini_close": "关闭 Arnis",
+  "mini_idle": "就绪",
+  "mini_confirm_close": "停止生成并关闭 Arnis？",
+  "mini_confirm_cancel": "取消",
+  "mini_confirm_stop": "停止并关闭"
 }
