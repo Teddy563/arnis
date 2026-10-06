@@ -485,5 +485,11 @@
   "snap_dim": "{n} células · {km} km",
   "snap_fallback": "Nenhuma célula inteira cabe dentro, então uma é usada.",
   "snap_as_one_world": "Construído como Mundo único",
-  "snap_single_run": "Construído em uma execução"
+  "snap_single_run": "Construído em uma execução",
+  "run_estimate_size": "No disco: ~{size}",
+  "run_estimate_time": "Tempo de construção: {time}",
+  "run_elapsed": "Decorrido: {time}",
+  "run_eta": "Restante: {time}",
+  "run_pieces": "Partes: {done}/{n}",
+  "run_workers": "Processos: {w}"
 }

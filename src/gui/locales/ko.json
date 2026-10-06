@@ -485,5 +485,11 @@
   "snap_dim": "{n} 셀 · {km} km",
   "snap_fallback": "안에 들어가는 온전한 셀이 없어 셀 하나를 사용합니다.",
   "snap_as_one_world": "하나의 월드로 생성",
-  "snap_single_run": "한 번의 실행으로 생성"
+  "snap_single_run": "한 번의 실행으로 생성",
+  "run_estimate_size": "디스크 용량: 약 {size}",
+  "run_estimate_time": "생성 시간: {time}",
+  "run_elapsed": "경과: {time}",
+  "run_eta": "남은 시간: {time}",
+  "run_pieces": "조각: {done}/{n}",
+  "run_workers": "작업자: {w}"
 }

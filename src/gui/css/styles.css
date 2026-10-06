@@ -880,3 +880,29 @@ input[type="range"] {
     opacity: 1;
   }
 }
+
+/* Under the progress bar: the run estimate, then elapsed time and pieces. */
+.run-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 14px;
+  min-height: 1.5em;
+  margin-top: 6px;
+  font-size: 0.8em;
+  line-height: 1.5em;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.run-stat .icon {
+  width: 14px;
+  height: 14px;
+}

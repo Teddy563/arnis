@@ -485,5 +485,11 @@
   "snap_dim": "{n} خلية · {km} كم",
   "snap_fallback": "لا تتسع أي خلية كاملة داخله، لذا تُستخدم خلية واحدة.",
   "snap_as_one_world": "يُبنى كعالم واحد",
-  "snap_single_run": "يُبنى في تشغيل واحد"
+  "snap_single_run": "يُبنى في تشغيل واحد",
+  "run_estimate_size": "على القرص: ~{size}",
+  "run_estimate_time": "مدة البناء: {time}",
+  "run_elapsed": "المنقضي: {time}",
+  "run_eta": "المتبقي: {time}",
+  "run_pieces": "الأجزاء: {done}/{n}",
+  "run_workers": "العمليات: {w}"
 }

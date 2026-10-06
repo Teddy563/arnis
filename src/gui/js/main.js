@@ -785,9 +785,8 @@ function registerMessageEvent() {
 // its own end from a least-squares rate, and budget the remaining bands via
 // per-regime time weights calibrated to this run. The backend tells us the
 // streaming regime via an optional `streaming` field (absent => non-streaming).
-// Starts once generation begins (progress >= ETA_START, downloads done) and
+// Starts once generation begins (the first band's lo: 20%, downloads done) and
 // ticks down once a second so it reads like a live countdown.
-const ETA_START = 20; // generation/terrain begins here, downloads done
 const ETA_WINDOW_MS = 16000; // sliding window for the rate (wider = steadier)
 const ETA_MIN_MS = 700; // min window span before trusting a rate
 const ETA_MIN_SAMPLES = 4; // keep at least this many samples in the window
@@ -813,11 +812,17 @@ const ETA_WPRIOR = {
   nonStreaming: [37, 2, 11, 20],
   streaming: [60, 0.3, 0.5, 3.0],
 };
+// A run in pieces reports one chunk-weighted 0-100% for the whole job (the
+// coordinator's `report` in scale/mod.rs), so it is one band from the start.
+const ETA_PIECED_PHASES = [{ id: "pieces", lo: 1, hi: 100 }];
 // Signage map tiles are what makes the finalize band long, and they are Java-only.
 // Without them the tail is just the map item and level.dat settings.
 const ETA_WFINALIZE_NO_SIGNAGE = 1.5;
 
 let eta = null;
+// Set by the coordinator's first "Building pieces..." line, cleared per run.
+let etaPieced = false;
+const etaPhases = () => (etaPieced ? ETA_PIECED_PHASES : ETA_PHASES);
 // Set from the generate handler; decides the finalize weight for the next run.
 let etaSignageExpected = true;
 
@@ -827,14 +832,16 @@ function setEtaSignageExpected(expected) {
 
 // Copy of the regime prior with the finalize weight adjusted for this run.
 function etaWeightsFor(streaming) {
+  if (etaPieced) return [1];
   const w = (streaming ? ETA_WPRIOR.streaming : ETA_WPRIOR.nonStreaming).slice();
   if (!etaSignageExpected) w[3] = ETA_WFINALIZE_NO_SIGNAGE;
   return w;
 }
 
 function etaPhaseIdx(p) {
-  for (let i = 0; i < ETA_PHASES.length; i++) if (p < ETA_PHASES[i].hi) return i;
-  return ETA_PHASES.length - 1;
+  const phases = etaPhases();
+  for (let i = 0; i < phases.length; i++) if (p < phases[i].hi) return i;
+  return phases.length - 1;
 }
 
 // Least-squares slope of progress over the window -> %/sec (null if not rising).
@@ -917,7 +924,8 @@ function etaTick() {
 
 function updateEta(progress, streaming) {
   // Reset before the generation phases and once finished / on a new run.
-  if (progress < ETA_START || progress >= 100) {
+  const phases = etaPhases();
+  if (progress < phases[0].lo || progress >= 100) {
     resetEta();
     return;
   }
@@ -935,7 +943,7 @@ function updateEta(progress, streaming) {
     eta.wprior = etaWeightsFor(streaming);
   }
 
-  const idx = etaPhaseIdx(progress), ph = ETA_PHASES[idx];
+  const idx = etaPhaseIdx(progress), ph = phases[idx];
   if (idx !== eta.phaseIdx) {
     // Bank the real duration (incl. any stall) of the phase we just left.
     if (eta.phaseIdx >= 0) {
@@ -978,7 +986,7 @@ function updateEta(progress, streaming) {
   if (remCur != null) {
     // In the last band this is just the measured rate; earlier ones budget the rest.
     raw = Math.max(0, remCur);
-    if (G != null) for (let j = idx + 1; j < ETA_PHASES.length; j++) raw += eta.wprior[j] * G;
+    if (G != null) for (let j = idx + 1; j < phases.length; j++) raw += eta.wprior[j] * G;
   }
 
   if (!stalled && raw != null && isFinite(raw) && raw <= ETA_MAX_S) {
@@ -1017,7 +1025,61 @@ function resetProgressUi(message) {
     info.style.color = "#ececec";
   }
   resetEta();
+  etaPieced = false;
+  runStats = { startedAt: performance.now(), pieces: selectionPieces(), done: 0, estimate: runEstimate() };
+  renderRunStats();
 }
+
+// The line under the bar: before a run, runEstimate() for the selection;
+// during one, the time since the click, the pieces done and the estimated
+// size. The time left stays on the bar (#progress-eta).
+let runStats = null; // { startedAt, pieces: { n, w } | null, done, estimate }
+
+function runStatParts(withEta) {
+  const parts = [];
+  const size = (e) => e && e.mb != null &&
+    parts.push(['hard-drive', oneWorldText('run_estimate_size', 'On disk: ~{size}', { size: formatEstimateSize(e.mb) })]);
+  if (!runStats) {
+    const e = runEstimate();
+    size(e);
+    if (e) parts.push(['hourglass', oneWorldText('run_estimate_time', 'Build time: {time}', { time: formatEstimateTime(e.lo, e.hi) })]);
+    return parts;
+  }
+  parts.push(['clock', oneWorldText('run_elapsed', 'Elapsed: {time}', {
+    time: formatEtaDuration((performance.now() - runStats.startedAt) / 1000),
+  })]);
+  if (withEta && eta && eta.shown != null) {
+    parts.push(['hourglass', oneWorldText('run_eta', 'Remaining: {time}', { time: formatEtaDuration(Math.max(1, eta.shown)) })]);
+  }
+  const p = runStats.pieces;
+  if (p) {
+    let text = oneWorldText('run_pieces', 'Pieces: {done}/{n}', { done: runStats.done, n: p.n });
+    if (p.w) text += ' · ' + oneWorldText('run_workers', 'Workers: {w}', { w: p.w });
+    parts.push(['layers', text]);
+  }
+  size(runStats.estimate);
+  return parts;
+}
+
+let runStatsKey = '';
+function renderRunStats() {
+  const el = document.getElementById('run-stats');
+  if (!el) return;
+  const parts = runStatParts(false);
+  const key = JSON.stringify(parts);
+  if (key === runStatsKey) return;
+  runStatsKey = key;
+  el.replaceChildren(...parts.map(([icon, text]) => {
+    const span = document.createElement('span');
+    span.className = 'run-stat';
+    span.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-${icon}"></use></svg>`;
+    span.append(text);
+    return span;
+  }));
+}
+
+// For the mini panel (mini.js): what the main window shows, plus the time left.
+window.arnisRunState = () => ({ running: !!runStats, parts: runStatParts(true) });
 
 // Function to set up the progress bar listener
 function setupProgressListener() {
@@ -1025,8 +1087,21 @@ function setupProgressListener() {
   const progressInfo = document.getElementById("progress-info");
   const progressDetail = document.getElementById("progress-detail");
 
+  setInterval(renderRunStats, 1000);
   window.__TAURI__.event.listen("progress-update", (event) => {
     const { progress, message, streaming } = event.payload;
+    // "Building pieces... 3/16 done": the coordinator's count, and a one-band ETA.
+    if (message && message.startsWith("Building pieces")) {
+      // Anything the four-band model counted before this is not the job's.
+      if (!etaPieced) resetEta();
+      etaPieced = true;
+      const m = message.match(/(\d+)\/(\d+) done/);
+      if (runStats && m) {
+        runStats.done = +m[1];
+        if (!runStats.pieces || runStats.pieces.n !== +m[2]) runStats.pieces = { n: +m[2], w: runStats.pieces?.w };
+      }
+      renderRunStats();
+    }
 
     if (progress != -1) {
       progressBar.style.width = `${progress}%`;
@@ -1037,6 +1112,10 @@ function setupProgressListener() {
     if (message != "") {
       progressInfo.textContent = message;
 
+      if (message.startsWith("Error!") || message.startsWith("Done!")) {
+        runStats = null;
+        renderRunStats();
+      }
       if (message.startsWith("Error!")) {
         progressInfo.style.color = "#fa7878";
         setGenerationButtonEnabled(true);
@@ -3696,6 +3775,64 @@ const AREA_THRESHOLDS = {
   mars: { extensive: 1.5e12, large: 5e12, extreme: 1.5e13 }
 };
 
+// The run estimate under the progress bar extends the Earth numbers above with
+// Phase 6 runs on a 24-thread machine at scale 1:
+//   size  8x8 km, 256 regions (251k chunks): 984 MB of regions, so 15.4 MB per
+//         km2 of world (Munich above: 15.3-16.2) or 3.84 MB per whole region.
+//   time  cold single runs 8 km 34 s, 16 km 114 s, 80 km at scale 0.05 (16 km2
+//         of world on 6400 km2 of ground) 77 s: about 7 s, plus 0.42 s per km2
+//         of world, plus 0.01 s per km2 of ground for the data. Warm runs were
+//         ~15% faster (8 km 28.9 s, 16 km 105.8 s), Munich's dense centre ~1.6x
+//         slower, and pieces side by side 1.2-1.5x faster than one run.
+// ponytail: one machine's clock; a slower CPU lands past the top of the range.
+const EST_MB_PER_WORLD_KM2 = 984 / 64;
+const EST_MB_PER_REGION = 984 / 256;
+const EST_REGION_KM2 = 0.512 * 0.512;
+const EST_FIXED_S = 7;
+const EST_S_PER_WORLD_KM2 = 0.42;
+const EST_S_PER_GROUND_KM2 = 0.01;
+
+// { mb, lo, hi } for the selection and settings: megabytes of Java regions
+// (null for the other formats, which were not measured) and a range of
+// seconds. Null off Earth or with nothing selected.
+function runEstimate() {
+  if (!selectedBBox || selectedCelestialBody !== 'earth') return null;
+  const [lat1, lng1, lat2, lng2] = selectedBBox.trim().split(/[,\s]+/).map(Number);
+  let groundKm2 = calculateBBoxSize(lat1, lng1, lat2, lng2) / 1e6;
+  let worldKm2 = groundKm2 * earthScaleFactor();
+  let mb = worldKm2 * EST_MB_PER_WORLD_KM2;
+  // In pieces the snap knows the whole regions it builds and the ground they cover.
+  const pieced = !!selectionPieces();
+  if (pieced) {
+    const snap = lastSnap.snap;
+    const regions = snap.regions[0] * snap.regions[1];
+    mb = regions * EST_MB_PER_REGION;
+    worldKm2 = regions * EST_REGION_KM2;
+    groundKm2 = snap.size_km[0] * snap.size_km[1];
+  }
+  if (!(worldKm2 > 0)) return null;
+  const t = EST_FIXED_S + EST_S_PER_WORLD_KM2 * worldKm2 + EST_S_PER_GROUND_KM2 * groundKm2;
+  return {
+    mb: selectedWorldFormat === 'java' ? mb : null,
+    lo: (t * 0.85) / (pieced ? 1.5 : 1),
+    hi: (t * 1.6) / (pieced ? 1.2 : 1),
+  };
+}
+
+function formatEstimateSize(mb) {
+  if (mb >= 1000) return (mb / 1000).toFixed(mb >= 10000 ? 0 : 1) + ' GB';
+  return (mb >= 100 ? Math.round(mb / 10) * 10 : Math.max(1, Math.round(mb))) + ' MB';
+}
+
+// Rounded so a range never claims more than it knows: 5 s steps, then minutes,
+// then 10 minutes.
+function formatEstimateTime(lo, hi) {
+  const round = (s) => formatEtaDuration(
+    s < 90 ? Math.max(5, Math.round(s / 5) * 5) : s < 3600 ? Math.round(s / 60) * 60 : Math.round(s / 600) * 600);
+  const a = round(lo), b = round(hi);
+  return a === b ? '~' + a : a + '–' + b;
+}
+
 let selectedBBox = "";
 let mapSelectedBBox = "";  // Tracks bbox from map selection
 let customBBoxValid = false;  // Tracks if custom input is valid
@@ -3726,6 +3863,7 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  renderRunStats();
   const cta = document.getElementById("bbox-features-cta");
   if (cta) cta.style.display = warned && !snapActive() && selectedCelestialBody === "earth" ? "" : "none";
 }
@@ -3940,6 +4078,7 @@ async function drawSnapPreview() {
     if (!snap) snapPreviewKey = null;
   }
   lastSnap = snap ? { bbox: selectedBBox, snap } : null;
+  renderRunStats();
   const how = !snap ? ''
     : !snapRunsAsOneWorld(snap) ? oneWorldText('snap_single_run', 'Builds in one run')
       : isOneWorldEnabled() ? '' : oneWorldText('snap_as_one_world', 'Builds as a One World');
@@ -4849,6 +4988,8 @@ async function startGeneration(options = {}) {
       // clear it only if nothing else has taken the line since.
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
+      runStats = null;
+      renderRunStats();
       setGenerationButtonEnabled(true);
       window.arnisPreview3D?.setGenerationRunning(false);
     }

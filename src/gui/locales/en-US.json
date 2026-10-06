@@ -485,5 +485,11 @@
   "snap_dim": "{n} cells · {km} km",
   "snap_fallback": "No whole cell fits inside, so one is used.",
   "snap_as_one_world": "Builds as a One World",
-  "snap_single_run": "Builds in one run"
+  "snap_single_run": "Builds in one run",
+  "run_estimate_size": "On disk: ~{size}",
+  "run_estimate_time": "Build time: {time}",
+  "run_elapsed": "Elapsed: {time}",
+  "run_eta": "Remaining: {time}",
+  "run_pieces": "Pieces: {done}/{n}",
+  "run_workers": "Workers: {w}"
 }

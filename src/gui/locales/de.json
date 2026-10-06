@@ -485,5 +485,11 @@
   "snap_dim": "{n} Zellen · {km} km",
   "snap_fallback": "Keine ganze Zelle passt hinein, daher wird eine verwendet.",
   "snap_as_one_world": "Wird als Eine Welt gebaut",
-  "snap_single_run": "Wird in einem Lauf gebaut"
+  "snap_single_run": "Wird in einem Lauf gebaut",
+  "run_estimate_size": "Auf der Festplatte: ~{size}",
+  "run_estimate_time": "Bauzeit: {time}",
+  "run_elapsed": "Vergangen: {time}",
+  "run_eta": "Verbleibend: {time}",
+  "run_pieces": "Teile: {done}/{n}",
+  "run_workers": "Worker: {w}"
 }

@@ -485,5 +485,11 @@
   "snap_dim": "{n} celic · {km} km",
   "snap_fallback": "Nobena cela celica ne gre noter, zato se uporabi ena.",
   "snap_as_one_world": "Gradi se kot En svet",
-  "snap_single_run": "Gradi se v enem zagonu"
+  "snap_single_run": "Gradi se v enem zagonu",
+  "run_estimate_size": "Na disku: ~{size}",
+  "run_estimate_time": "Čas gradnje: {time}",
+  "run_elapsed": "Preteklo: {time}",
+  "run_eta": "Preostalo: {time}",
+  "run_pieces": "Deli: {done}/{n}",
+  "run_workers": "Procesi: {w}"
 }

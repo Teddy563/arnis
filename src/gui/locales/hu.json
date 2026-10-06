@@ -485,5 +485,11 @@
   "snap_dim": "{n} cella · {km} km",
   "snap_fallback": "Egy egész cella sem fér bele, ezért egyet használ.",
   "snap_as_one_world": "Egy világként épül",
-  "snap_single_run": "Egy futásban épül"
+  "snap_single_run": "Egy futásban épül",
+  "run_estimate_size": "Lemezen: ~{size}",
+  "run_estimate_time": "Építési idő: {time}",
+  "run_elapsed": "Eltelt: {time}",
+  "run_eta": "Hátralévő: {time}",
+  "run_pieces": "Részek: {done}/{n}",
+  "run_workers": "Feldolgozók: {w}"
 }

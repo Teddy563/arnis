@@ -485,5 +485,11 @@
   "snap_dim": "{n} langelių · {km} km",
   "snap_fallback": "Joks sveikas langelis netelpa, todėl naudojamas vienas.",
   "snap_as_one_world": "Statoma kaip Vienas pasaulis",
-  "snap_single_run": "Statoma vienu vykdymu"
+  "snap_single_run": "Statoma vienu vykdymu",
+  "run_estimate_size": "Diske: ~{size}",
+  "run_estimate_time": "Statymo laikas: {time}",
+  "run_elapsed": "Praėjo: {time}",
+  "run_eta": "Liko: {time}",
+  "run_pieces": "Dalys: {done}/{n}",
+  "run_workers": "Procesai: {w}"
 }
