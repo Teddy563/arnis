@@ -2377,7 +2377,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="data_plan">Download Plan</span>
-                        <span class="tooltip-icon" data-tooltip="Read from the caches on disk only, so it costs no download. Sizes are estimates from the files already cached. The button runs Download Area For Offline Use with these settings, then checks again.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Read from the caches on disk only, so it costs no download. On disk is what the cache holds for the area; To download is estimated from the files already cached. A Region Download bake is estimated at twice the extract's size times the selection's share of the extract's area, and needs about 4.5 times the extract's size in memory while it runs. The button runs Download Area For Offline Use with these settings, then checks again.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="data_plan_desc">What the selected area needs, and what is cached already.</span>
                     </span>
@@ -2387,16 +2387,31 @@
                   </div>
                   <ul id="data-plan-list" class="data-plan-list"></ul>
                   <p id="data-plan-extract" class="data-plan-extract" style="display: none;"></p>
+                  <p id="data-plan-total" class="data-plan-extract" style="display: none;"></p>
                   <!-- Local Archive only: the countries arnis-tiles would bake for the selection -->
                   <div id="prepare-panel" class="prepare-panel" style="display: none;">
                     <div class="prepare-head">
-                      <span class="prepare-title" data-localize="prepare_countries">Prepare Countries</span>
-                      <button type="button" id="prepare-stop-button" class="clear-cache-button" style="display: none;" data-localize="prepare_stop_button">Stop</button>
+                      <span class="prepare-title"><span data-localize="prepare_countries">Prepare Countries</span>
+                      <span class="tooltip-icon" data-tooltip="Archive sizes are estimated at 0.7 times the download (measured 0.6 to 1.4 on Geofabrik countries) until a country is baked; then they are the file's own. While it bakes, arnis-tiles keeps the download, a chunk store and the new archive in the folder's work folder; the room needed is worked out at the largest measured sizes.">?</span></span>
                       <button type="button" id="prepare-bake-button" class="clear-cache-button" data-localize="prepare_bake_button">Download &amp; Bake</button>
                     </div>
                     <ul id="prepare-list" class="data-plan-list"></ul>
+                    <p id="prepare-total" class="data-plan-extract" style="display: none;"></p>
                     <p id="prepare-status" class="data-plan-extract"></p>
                   </div>
+                  <!-- A running download or bake: its stage, bytes, rate and threads -->
+                  <div id="transfer-panel" class="transfer-panel" style="display: none;">
+                    <div class="prepare-head">
+                      <span id="transfer-stage" class="prepare-title"></span>
+                      <button type="button" id="transfer-stop-button" class="clear-cache-button" data-localize="prepare_stop_button">Stop</button>
+                    </div>
+                    <div class="progress-row">
+                      <div class="progress-bar-container"><div class="progress-bar" id="transfer-bar"></div></div>
+                      <span id="transfer-percent" class="transfer-percent">0%</span>
+                    </div>
+                    <p id="transfer-detail" class="data-plan-extract"></p>
+                  </div>
+                  <p id="bake-threads" class="data-plan-extract" style="display: none;"></p>
                 </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="osm-source-select" class="setting-label">
@@ -2530,6 +2545,23 @@
                     <button type="button" id="osm-pbf-bake-button" class="clear-cache-button" data-localize="osm_pbf_bake_button">Bake Now</button>
                   </div>
                 </div>
+                <!-- Downloads and bakes run on their own share of the cores -->
+                <div class="settings-row setting-tile is-wide" id="bake-cpu-row">
+                  <label for="bake-cpu-slider" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-gauge"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="bake_cpu">Bake CPU Usage</span>
+                        <span class="tooltip-icon" data-tooltip="Region Download and Prepare Countries download and bake on this share of the cores, apart from the generation CPU Usage. 75% uses most of the machine and leaves it usable. The Region Download bake and arnis-tiles' archive writing use every thread it allows; arnis-tiles reads an extract on one thread whatever the setting.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="bake_cpu_desc">Share of the cores downloads and bakes may use.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="range" id="bake-cpu-slider" name="bake-cpu-slider" min="10" max="100" step="5" value="75">
+                    <span id="bake-cpu-value" class="setting-value">75%</span>
+                  </div>
+                </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="offline-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-wifi-off"></use></svg>
@@ -2574,6 +2606,24 @@
                   <div class="settings-control">
                     <input type="checkbox" class="switch" id="prewarm-first-toggle" name="prewarm-first-toggle">
                   </div>
+                </div>
+                <!-- Where downloads and bakes are kept, as the save path rows show a folder -->
+                <div class="settings-row setting-tile is-wide data-plan" id="storage-row">
+                  <label for="storage-refresh-button" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-hard-drive"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="storage">Storage</span>
+                        <span class="tooltip-icon" data-tooltip="The Archive Folder holds the countries arnis-tiles bakes; its work folder holds the extract being baked and the chunk store a stopped bake resumes from. Region Download keeps each extract once and the areas cut from it. All of them sit under the cache folder unless the Archive Folder points elsewhere; ARNIS_CACHE_ROOT moves the cache folder before Arnis starts.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="storage_desc">Folders downloads and bakes are kept in, and what each holds.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <button type="button" id="storage-refresh-button" class="clear-cache-button" data-localize="storage_refresh">Refresh</button>
+                  </div>
+                  <ul id="storage-list" class="storage-list"></ul>
+                  <p class="data-plan-extract" data-localize="storage_fixed">Only the Archive Folder changes here. ARNIS_CACHE_ROOT moves the rest.</p>
                 </div>
               </div>
             </section>

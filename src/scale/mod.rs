@@ -681,6 +681,17 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 pub(crate) fn run_piece(
     argv: &[OsString],
     env: &[(&str, String)],
+    progress: impl FnMut(f64),
+) -> Result<PieceResult, PieceFailure> {
+    run_piece_until(argv, env, None, progress)
+}
+
+/// [`run_piece`], killed as soon as `cancel` is set. Its `transfer` records
+/// (a download or bake in the child) go on to the window as they come.
+pub(crate) fn run_piece_until(
+    argv: &[OsString],
+    env: &[(&str, String)],
+    cancel: Option<&AtomicBool>,
     mut progress: impl FnMut(f64),
 ) -> Result<PieceResult, PieceFailure> {
     let fail = |message: String| PieceFailure {
@@ -725,7 +736,26 @@ pub(crate) fn run_piece(
         })
     });
     let mut result = PieceResult::default();
-    if let Some(out) = child.stdout.take() {
+    let stdout = child.stdout.take();
+    let child = Mutex::new(child);
+    let finished = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        // Killing the child closes its pipes, which ends the read below.
+        if let Some(cancel) = cancel {
+            scope.spawn(|| {
+                while !finished.load(Ordering::Acquire) {
+                    if cancel.load(Ordering::Acquire) {
+                        let _ = lock(&child).kill();
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+        }
+        let Some(out) = stdout else {
+            finished.store(true, Ordering::Release);
+            return;
+        };
         for line in BufReader::new(out).split(b'\n').map_while(Result::ok) {
             let line = String::from_utf8_lossy(&line).trim_end().to_string();
             let Some(record) = line
@@ -749,11 +779,19 @@ pub(crate) fn run_piece(
                     result.chunks = record["chunks"].as_u64().unwrap_or(0);
                 }
                 Some("error") => push(&tail, line),
+                Some("transfer") => {
+                    if let Ok(t) =
+                        <crate::transfer::Transfer as serde::Deserialize>::deserialize(&record)
+                    {
+                        crate::progress::emit_gui_transfer(crate::progress::MESSAGE_ONLY, "", &t);
+                    }
+                }
                 _ => {}
             }
         }
-    }
-    let status = child.wait().map_err(|e| fail(e.to_string()))?;
+        finished.store(true, Ordering::Release);
+    });
+    let status = lock(&child).wait().map_err(|e| fail(e.to_string()))?;
     if let Some(t) = stderr {
         let _ = t.join();
     }

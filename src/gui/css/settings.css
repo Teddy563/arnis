@@ -994,6 +994,108 @@ label[for].setting-label {
   margin-left: 0;
 }
 
+/* Lists with sizes: name, status, then two size columns. */
+.settings-page .data-plan-list.has-sizes li {
+  grid-template-columns: 1fr auto 76px 84px;
+}
+
+.settings-page .data-plan-list li.data-plan-head {
+  padding-top: 0;
+  border-top: none;
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+.settings-page .data-plan-list li.data-plan-head span {
+  color: var(--ui-faint);
+}
+
+.settings-page .data-plan-extract.is-warn {
+  color: var(--ui-danger);
+}
+
+/* A running download or bake, on the main window's progress bar. */
+.settings-page .transfer-panel {
+  flex: 1 0 calc(100% - 34px);
+  margin: 8px 0 0 34px;
+}
+
+.settings-page .transfer-panel .progress-row {
+  margin: 2px 0 4px;
+}
+
+.settings-page .transfer-panel .data-plan-extract {
+  margin-left: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ended: the bar stops moving, and is grey unless the run finished. */
+.settings-page .transfer-panel.is-ended .progress-bar::after {
+  animation: none;
+}
+
+.settings-page .transfer-panel.is-ended:not(.is-done) .progress-bar {
+  background-color: var(--ui-faint);
+}
+
+.settings-page .transfer-percent {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+/* Storage: one folder per item, shown like a save path. */
+.settings-page .storage-list {
+  flex: 1 0 calc(100% - 34px);
+  margin: 0 0 0 34px;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-page .storage-item {
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.settings-page .storage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  color: var(--ui-text);
+}
+
+.settings-page .storage-size {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+}
+
+.settings-page .storage-path {
+  display: flex;
+}
+
+.settings-page .storage-path input.save-path-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.settings-page .storage-path .save-path-browse:not(:last-child) {
+  border-radius: 0;
+}
+
+.settings-page .save-path-browse:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: var(--ui-field);
+}
+
 .settings-page .climate-preview img {
   display: block;
   max-width: 100%;

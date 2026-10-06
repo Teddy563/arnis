@@ -11,6 +11,8 @@ pub struct Item {
     /// `osm`, `elevation`, `land_cover`, `canopy` or `overture`.
     pub source: &'static str,
     pub cached: usize,
+    /// What the cached files take on disk.
+    pub cached_bytes: u64,
     /// Files the run reads; 0 when nothing can be counted (Overpass, an area
     /// past what the source reads tile by tile, or no index on disk yet).
     pub total: usize,
@@ -25,6 +27,116 @@ pub struct DataPlan {
     pub extract: Option<crate::osm_pbf::ExtractPlan>,
     /// The local tile archive folder's archives, with Local Archive.
     pub local_archive: Option<crate::osm_tiles::LocalCoverage>,
+    /// Free space on the disk the caches are on.
+    pub free_bytes: Option<u64>,
+}
+
+// Bake sizes, as multiples of the .pbf they come from. Measured 2026-10 on
+// Geofabrik extracts (docs/11, work/p4-archive, the p6-bake measurements).
+
+/// A Region Download bake of a whole extract: Liechtenstein 3.46 MB to a
+/// 6.87 MB .json.zst. A selection bakes its share of the extract's area.
+const REGION_BAKE_PER_PBF: f64 = 2.0;
+/// Peak memory of a Region Download bake: 4-5x (Romania 330 MB to 1.3-1.6 GB).
+const BAKE_RAM_PER_PBF: f64 = 4.5;
+/// An arnis-tiles archive: Switzerland 0.58, Liechtenstein 0.63, Austria
+/// 0.67, Romania 1.39. The estimate takes a typical one; the room check the
+/// largest.
+pub const ARCHIVE_PER_PBF: f64 = 0.7;
+const ARCHIVE_PER_PBF_MAX: f64 = 1.4;
+/// arnis-tiles' chunk store while it bakes: Switzerland 0.81, Austria 0.92,
+/// Romania 1.73.
+pub const STORE_PER_PBF: f64 = 0.9;
+const STORE_PER_PBF_MAX: f64 = 1.75;
+
+fn times(bytes: u64, ratio: f64) -> u64 {
+    (bytes as f64 * ratio).round() as u64
+}
+
+/// The Region Download bake of `share` (0-1) of an extract of `pbf` bytes.
+pub fn region_bake_bytes(pbf: u64, share: f64) -> u64 {
+    times(pbf, REGION_BAKE_PER_PBF * share.clamp(0.0, 1.0))
+}
+
+/// Memory a Region Download bake of an extract of `pbf` bytes peaks at.
+pub fn bake_ram_bytes(pbf: u64) -> u64 {
+    times(pbf, BAKE_RAM_PER_PBF)
+}
+
+/// The archive arnis-tiles bakes from an extract of `pbf` bytes.
+pub fn archive_bytes(pbf: u64) -> u64 {
+    times(pbf, ARCHIVE_PER_PBF)
+}
+
+/// The most disk a country bake holds at once for extracts of these sizes,
+/// in arnis-tiles' order (largest first): the window downloads them all
+/// first, then each one's chunk store grows beside them, its .pbf goes, its
+/// archive is written and the store goes. Taken at the largest measured
+/// ratios, as it decides whether the disk is big enough.
+pub fn archive_peak_bytes(pbfs: &[u64]) -> u64 {
+    let mut sorted = pbfs.to_vec();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+    let (mut done, mut peak) = (0u64, 0u64);
+    for (i, &pbf) in sorted.iter().enumerate() {
+        let later: u64 = sorted[i + 1..].iter().sum();
+        let store = times(pbf, STORE_PER_PBF_MAX);
+        let archive = times(pbf, ARCHIVE_PER_PBF_MAX);
+        peak = peak.max(done + later + store + pbf.max(archive));
+        done += archive;
+    }
+    peak
+}
+
+/// Free space on the disk holding `path`, or its nearest existing parent.
+pub fn free_bytes(path: &Path) -> Option<u64> {
+    path.ancestors()
+        .find(|p| p.exists())
+        .and_then(|p| fs2::available_space(p).ok())
+}
+
+/// One place downloads or bakes are kept.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Location {
+    /// `local_archive`, `bake_scratch`, `pbf_downloads`, `pbf_bakes` or `cache_root`.
+    pub kind: &'static str,
+    pub path: String,
+    pub exists: bool,
+    /// What it holds.
+    pub bytes: u64,
+    pub free_bytes: Option<u64>,
+    /// The window can move it (the Local Archive folder field).
+    pub changeable: bool,
+}
+
+/// Where the OSM sources keep their downloads and bakes, under the cache
+/// root `root`, with the Local Archive in `archive`. The cache root's size is
+/// `cache_bytes`, every cache added up, as the window works it out.
+pub fn locations(root: &Path, archive: &Path, cache_bytes: u64) -> Vec<Location> {
+    use crate::elevation::cache::dir_size_bytes;
+    let at = |kind, path: PathBuf, bytes: Option<u64>, changeable| Location {
+        kind,
+        exists: path.is_dir(),
+        bytes: bytes.unwrap_or_else(|| dir_size_bytes(&path)),
+        free_bytes: free_bytes(&path),
+        path: path.display().to_string(),
+        changeable,
+    };
+    // arnis-tiles keeps its downloads and chunk stores in the folder's `work`.
+    let scratch = archive.join("work");
+    let scratch_bytes = dir_size_bytes(&scratch);
+    let pbf = root.join("arnis").join("osm-pbf");
+    vec![
+        at(
+            "local_archive",
+            archive.to_path_buf(),
+            Some(dir_size_bytes(archive).saturating_sub(scratch_bytes)),
+            true,
+        ),
+        at("bake_scratch", scratch, Some(scratch_bytes), false),
+        at("pbf_downloads", pbf.join("downloads"), None, false),
+        at("pbf_bakes", pbf.join("bakes"), None, false),
+        at("cache_root", root.to_path_buf(), Some(cache_bytes), false),
+    ]
 }
 
 /// Typical cached file per source, measured over a working cache (2026-10),
@@ -53,6 +165,7 @@ fn count(source: &'static str, files: Option<Vec<PathBuf>>, typical: u64) -> Ite
     Item {
         source,
         cached,
+        cached_bytes: bytes,
         total: files.len(),
         missing_bytes: (!files.is_empty()).then(|| per * (files.len() - cached) as u64),
     }
@@ -62,17 +175,25 @@ fn count(source: &'static str, files: Option<Vec<PathBuf>>, typical: u64) -> Ite
 pub fn plan(root: &Path, args: &Args, bbox: LLBBox) -> DataPlan {
     let (_, _, grid_w, grid_h) = crate::elevation::compute_grid_dims(&bbox, args.scale);
     let earth = args.body.is_earth();
-    let mut out = DataPlan::default();
+    let mut out = DataPlan {
+        free_bytes: free_bytes(root),
+        ..DataPlan::default()
+    };
     if !args.skip_objects() {
         if let Some(src) = crate::osm_pbf::Source::from_args(args) {
             let e = crate::osm_pbf::plan(root, &src, bbox);
             out.items.push(Item {
                 source: "osm",
                 cached: usize::from(e.downloaded) + usize::from(e.baked),
+                cached_bytes: e.bytes.unwrap_or(0) + e.bake_bytes.unwrap_or(0),
                 total: 2,
                 // A bake is cut locally; only the extract downloads, and its
-                // size is known once it is on disk.
-                missing_bytes: e.downloaded.then_some(0),
+                // size is known once on disk or once a download or HEAD saw it.
+                missing_bytes: if e.downloaded {
+                    Some(0)
+                } else {
+                    e.download_bytes
+                },
             });
             out.extract = Some(e);
         } else if let Some(file) = &args.file {
@@ -90,6 +211,13 @@ pub fn plan(root: &Path, args: &Args, bbox: LLBBox) -> DataPlan {
             out.items.push(Item {
                 source: "osm",
                 cached: cov.as_ref().map_or(0, |c| c.covered),
+                cached_bytes: cov.as_ref().map_or(0, |c| {
+                    c.archives
+                        .iter()
+                        .filter(|a| a.covers)
+                        .filter_map(|a| a.bytes)
+                        .sum()
+                }),
                 total: cov.as_ref().map_or(0, |c| c.tiles),
                 missing_bytes: None,
             });
@@ -199,10 +327,33 @@ mod tests {
         let e = plan(root, &pbf, bbox).extract.unwrap();
         assert_eq!(e.name.as_deref(), Some("Test Region"));
         assert!(!e.downloaded && !e.baked && e.bytes.is_none());
+        assert_eq!(
+            e.url.as_deref(),
+            Some("https://example.invalid/test-latest.osm.pbf")
+        );
+        assert_eq!((e.download_bytes, e.bake_estimate), (None, None));
+        // A size a HEAD saw names the download before it happens.
+        touch(&osm_pbf.join("downloads").join("sizes.json"), 0);
+        std::fs::write(
+            osm_pbf.join("downloads").join("sizes.json"),
+            r#"{"test-latest.osm.pbf": 2000000000}"#,
+        )
+        .unwrap();
+        let p = plan(root, &pbf, bbox);
+        let e = p.extract.as_ref().unwrap();
+        assert_eq!(e.download_bytes, Some(2_000_000_000));
+        assert_eq!(item(&p, "osm").missing_bytes, Some(2_000_000_000));
+        assert_eq!(e.ram_estimate, Some(9_000_000_000));
+        // The selection is a sliver of the 2 deg² region: its bake is too.
+        let bake = e.bake_estimate.unwrap();
+        assert!(bake > 0 && bake < 10_000_000, "{bake}");
         touch(&osm_pbf.join("downloads").join("test-latest.osm.pbf"), 4321);
         let p = plan(root, &pbf, bbox);
         assert_eq!(p.extract.as_ref().unwrap().bytes, Some(4321));
+        assert_eq!(p.extract.as_ref().unwrap().download_bytes, Some(4321));
         assert_eq!(item(&p, "osm").cached, 1, "downloaded, not baked");
+        assert_eq!(item(&p, "osm").cached_bytes, 4321);
+        assert!(p.free_bytes.is_some_and(|b| b > 0));
 
         // Local Archive: the folder's cells, nothing to download.
         let local = root.join("local-archive");
@@ -212,8 +363,59 @@ mod tests {
         assert!(item(&empty, "osm").total > 0);
         assert!(empty.local_archive.unwrap().archives.is_empty());
 
+        // Cached bytes are the files' own sizes.
+        assert_eq!(item(&partly, "elevation").cached_bytes, 1000);
+
         // Terrain-only builds no objects, so OSM is not part of the plan.
         let terrain_only = plan(root, &args(&["--mode=terrain-only"]), bbox);
         assert!(terrain_only.items.iter().all(|i| i.source != "osm"));
+    }
+
+    #[test]
+    fn bake_sizes_follow_the_measured_ratios() {
+        // Liechtenstein: a 3.46 MB extract baked whole came to 6.87 MB.
+        assert_eq!(region_bake_bytes(3_463_268, 1.0), 6_926_536);
+        assert_eq!(region_bake_bytes(1_000, 0.25), 500);
+        assert_eq!(
+            region_bake_bytes(1_000, 7.0),
+            2_000,
+            "never past the whole extract"
+        );
+        assert_eq!(bake_ram_bytes(330_000_000), 1_485_000_000);
+        assert_eq!(archive_bytes(1_000_000), 700_000);
+        // One extract: the .pbf and its store, or the store and the archive.
+        assert_eq!(archive_peak_bytes(&[100]), 175 + 140);
+        // Two: both downloaded first; the first archive then stays while the
+        // second bakes (140 + 18 + 14).
+        assert_eq!(archive_peak_bytes(&[10, 100]), 10 + 175 + 140);
+        // Equal extracts: the archives written so far add up.
+        assert_eq!(archive_peak_bytes(&[100, 100]), 140 + 175 + 140);
+        assert_eq!(archive_peak_bytes(&[100, 100, 100]), 2 * 140 + 175 + 140);
+        assert_eq!(archive_peak_bytes(&[]), 0);
+    }
+
+    #[test]
+    fn locations_name_each_folder_and_what_it_holds() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let archive = root.join("archive");
+        touch(&archive.join("x.pmtiles"), 300);
+        touch(&archive.join("work").join("pbf").join("x.osm.pbf"), 200);
+        touch(&root.join("arnis/osm-pbf/downloads/x-latest.osm.pbf"), 50);
+        let got = locations(root, &archive, 1234);
+        let at = |k: &str| got.iter().find(|l| l.kind == k).unwrap();
+        assert_eq!(
+            at("local_archive").bytes,
+            300,
+            "the scratch is counted apart"
+        );
+        assert!(at("local_archive").changeable && at("local_archive").exists);
+        assert_eq!(at("bake_scratch").bytes, 200);
+        assert_eq!(at("pbf_downloads").bytes, 50);
+        assert!(!at("pbf_bakes").exists && at("pbf_bakes").bytes == 0);
+        // A folder not made yet still names the disk it would be on.
+        assert!(at("pbf_bakes").free_bytes.is_some());
+        assert_eq!(at("cache_root").bytes, 1234);
+        assert!(got.iter().filter(|l| l.changeable).count() == 1);
     }
 }

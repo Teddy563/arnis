@@ -9,6 +9,7 @@ use crate::args::Args;
 use crate::coordinate_system::geographic::LLBBox;
 use crate::osm_parser::{OsmData, OsmElement, OsmMember};
 use crate::progress::emit_gui_progress_update;
+use crate::transfer::{RateMeter, Stage, Transfer};
 use colored::Colorize;
 use osmpbf::{BlobDecode, BlobReader, Element, PrimitiveBlock, RelMemberType};
 use rayon::prelude::*;
@@ -84,6 +85,16 @@ pub struct ExtractPlan {
     pub downloaded: bool,
     /// A bake holding the selection is on disk.
     pub baked: bool,
+    /// Where a Geofabrik extract downloads from.
+    pub url: Option<String>,
+    /// The download size: on disk, else as a download or HEAD last saw it.
+    pub download_bytes: Option<u64>,
+    /// The bake holding the selection, on disk.
+    pub bake_bytes: Option<u64>,
+    /// What a bake of the selection would take on disk, and in memory while
+    /// it runs; estimates from the download size.
+    pub bake_estimate: Option<u64>,
+    pub ram_estimate: Option<u64>,
 }
 
 /// [`ExtractPlan`] for `selection` from the caches under `root` alone: the
@@ -91,6 +102,8 @@ pub struct ExtractPlan {
 pub fn plan(root: &Path, src: &Source, selection: LLBBox) -> ExtractPlan {
     let cache = cache_root_in(root);
     let want = E7Box::around(&selection, src.pad_m);
+    let mut url_of = None;
+    let mut share = None;
     let (name, pbf) = if src.spec == GEOFABRIK {
         let index = std::fs::read(cache.join("geofabrik-index.json"))
             .ok()
@@ -98,6 +111,7 @@ pub fn plan(root: &Path, src: &Source, selection: LLBBox) -> ExtractPlan {
         let picked = match (&src.url, &index) {
             (Some(url), _) => Some((None, url.clone())),
             (None, Some(index)) => geofabrik_feature(index, &want).ok().map(|f| {
+                share = Some(want.area_deg2() / rings_area(&rings(&f["geometry"])).max(1e-12));
                 let name = f["properties"]["name"].as_str().map(str::to_string);
                 let url = f["properties"]["urls"]["pbf"].as_str().unwrap_or_default();
                 (name, url.to_string())
@@ -111,6 +125,7 @@ pub fn plan(root: &Path, src: &Source, selection: LLBBox) -> ExtractPlan {
             return ExtractPlan::default();
         };
         let region = region.or_else(|| Some(file.to_string()));
+        url_of = Some(url.clone());
         (region, cache.join("downloads").join(file))
     } else {
         let p = PathBuf::from(&src.spec);
@@ -120,14 +135,31 @@ pub fn plan(root: &Path, src: &Source, selection: LLBBox) -> ExtractPlan {
         .ok()
         .filter(|m| m.is_file())
         .map(|m| m.len());
-    let baked = bytes.is_some()
-        && pbf_key(&pbf)
-            .is_ok_and(|key| find_bake(&cache.join("bakes").join(key), &want).is_some());
+    let bake = bytes
+        .and_then(|_| pbf_key(&pbf).ok())
+        .and_then(|key| find_bake(&cache.join("bakes").join(key), &want));
+    let bake_bytes = bake
+        .and_then(|b| std::fs::metadata(b).ok())
+        .map(|m| m.len());
+    let download_bytes = bytes.or_else(|| {
+        let name = pbf.file_name()?.to_string_lossy().into_owned();
+        read_sizes(&cache.join("downloads"))
+            .get(&name)
+            .copied()
+            .filter(|&b| b > 0)
+    });
     ExtractPlan {
         name,
         bytes,
         downloaded: bytes.is_some(),
-        baked,
+        baked: bake_bytes.is_some(),
+        url: url_of,
+        download_bytes,
+        bake_bytes,
+        bake_estimate: download_bytes
+            .zip(share)
+            .map(|(pbf, share)| crate::data_plan::region_bake_bytes(pbf, share)),
+        ram_estimate: download_bytes.map(crate::data_plan::bake_ram_bytes),
     }
 }
 
@@ -141,6 +173,8 @@ fn bake(src: &Source, want: E7Box) -> Result<OsmData> {
     }
     let t = Instant::now();
     let data = cut_pbf(&pbf, want)?;
+    let label = extract_label(&pbf);
+    report_bake(&label, Stage::Finalize, 0.0, 0, 0);
     println!(
         "Baked {} elements from {} in {:.1}s on {} threads",
         data.elements().len(),
@@ -153,7 +187,51 @@ fn bake(src: &Source, want: E7Box) -> Result<OsmData> {
     let bytes = enc.finish().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     crate::world_utils::replace_file_atomically(&dir.join(want.file_name()), &bytes)?;
+    report_bake(
+        &label,
+        Stage::Finalize,
+        1.0,
+        bytes.len() as u64,
+        bytes.len() as u64,
+    );
     Ok(data)
+}
+
+/// The extract's short name: `liechtenstein` for `liechtenstein-latest.osm.pbf`.
+fn extract_label(pbf: &Path) -> String {
+    let name = pbf
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let name = name.strip_suffix(".pbf").unwrap_or(&name);
+    let name = name.strip_suffix(".osm").unwrap_or(name);
+    name.strip_suffix("-latest").unwrap_or(name).to_string()
+}
+
+/// Passes over the extract a bake may take; the third runs only when a
+/// relation needs ways from outside the area, so the bar may skip it.
+const BAKE_PASSES: f64 = 3.0;
+
+/// A Region Download bake is `frac` through `stage`, `done` of `total` bytes.
+fn report_bake(label: &str, stage: Stage, frac: f64, done: u64, total: u64) {
+    let threads = rayon::current_num_threads();
+    crate::progress::emit_gui_transfer(
+        crate::progress::MESSAGE_ONLY,
+        "",
+        &Transfer {
+            stage,
+            name: label.to_string(),
+            item: 1,
+            items: 1,
+            done_bytes: done,
+            total_bytes: total,
+            threads,
+            cpu_pct: crate::transfer::cpu_pct(threads, crate::transfer::cores()),
+            downloads: crate::net::max_requests() as u32,
+            percent: crate::transfer::job_percent(0, 1, stage, frac),
+            ..Transfer::default()
+        },
+    );
 }
 
 fn read_bake(path: &Path) -> Result<OsmData> {
@@ -222,6 +300,76 @@ fn download_name(url: &str) -> Option<&str> {
         .filter(|n| n.ends_with(".pbf") && !n.contains(['\\', ':']) && !n.starts_with('.'))
 }
 
+/// How often a download or bake reports where it is.
+const REPORT_EVERY: Duration = Duration::from_millis(500);
+
+/// Download sizes seen, by file name, so a plan can name one before the
+/// extract is on disk.
+const SIZES: &str = "sizes.json";
+
+fn read_sizes(downloads: &Path) -> HashMap<String, u64> {
+    std::fs::read(downloads.join(SIZES))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn remember_size(downloads: &Path, name: &str, bytes: u64) {
+    let mut sizes = read_sizes(downloads);
+    if sizes.get(name) == Some(&bytes) {
+        return;
+    }
+    sizes.insert(name.to_string(), bytes);
+    let _ = std::fs::create_dir_all(downloads);
+    if let Ok(body) = serde_json::to_vec(&sizes) {
+        let _ = crate::world_utils::replace_file_atomically(&downloads.join(SIZES), &body);
+    }
+}
+
+/// The download size of the extract at `url`, from one HEAD request, kept
+/// for later plans. Never asked offline.
+pub fn remote_size(url: &str) -> Result<u64> {
+    let name = download_name(url).ok_or_else(|| format!("not a .pbf url: {url}"))?;
+    crate::net::ensure_online("OpenStreetMap extract size")?;
+    let bytes = {
+        let _permit = crate::net::request_permit();
+        let resp = client()?
+            .head(url)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| format!("{url}: {e}"))?;
+        // The header itself: a HEAD has no body, so content_length() is 0.
+        content_length_header(resp.headers()).ok_or_else(|| format!("{url}: no size given"))?
+    };
+    remember_size(&cache_root()?.join("downloads"), name, bytes);
+    Ok(bytes)
+}
+
+/// The Content-Length a response declares, when it names a size.
+fn content_length_header(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+        .filter(|&n| n > 0)
+}
+
+/// Removes what a stopped download left half done (`*.part`).
+pub fn remove_partial_downloads() {
+    let Ok(root) = cache_root() else { return };
+    let Ok(entries) = std::fs::read_dir(root.join("downloads")) else {
+        return;
+    };
+    for e in entries.flatten() {
+        if e.file_name().to_string_lossy().ends_with(".part") {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
 fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(30))
@@ -232,53 +380,246 @@ fn client() -> Result<reqwest::blocking::Client> {
         .map_err(|e| e.to_string())
 }
 
-/// Streams `url` to `<dest>.part`, then renames: a half file never wears the real name.
+/// The Region Download extract: [`fetch_extract`] as the first 40 % of its
+/// job, on the prewarm bar's 1-4 %.
 fn download(url: &str, dest: &Path) -> Result<()> {
-    crate::net::ensure_online("OpenStreetMap extract (.pbf)")?;
+    fetch_extract(url, dest, (1, 1), (0.0, 40.0), None, Some((1.0, 4.0))).map(drop)
+}
+
+fn dir_of(path: &Path) -> Result<&Path> {
+    path.parent()
+        .ok_or_else(|| format!("{} has no folder", path.display()))
+}
+
+/// Bytes below which another connection is not worth opening.
+const MIN_SEGMENT: u64 = 8 << 20;
+/// Connections one extract is fetched over at most, within --max-downloads.
+const MAX_SEGMENTS: usize = 8;
+
+/// How many connections a download of `total` bytes gets: one per
+/// [`MIN_SEGMENT`], at most `allowed` (--max-downloads) and
+/// [`MAX_SEGMENTS`]; one when the server takes no ranges or names no size.
+fn segment_count(total: u64, ranges: bool, allowed: usize) -> usize {
+    if !ranges || total == 0 {
+        return 1;
+    }
+    ((total / MIN_SEGMENT) as usize).clamp(1, allowed.clamp(1, MAX_SEGMENTS))
+}
+
+/// Inclusive `(start, end)` byte ranges splitting `total` into `n` parts.
+fn segments(total: u64, n: usize) -> Vec<(u64, u64)> {
+    let step = total.div_ceil(n.max(1) as u64).max(1);
+    (0..total.div_ceil(step))
+        .map(|i| (i * step, ((i + 1) * step).min(total) - 1))
+        .collect()
+}
+
+/// One connection's share of a download: `span` (or the whole file) into
+/// `part` at its offset, counting into `done`. Stops early, without error,
+/// once `quit` says so.
+fn fetch_span(
+    client: &reqwest::blocking::Client,
+    source: &str,
+    part: &Path,
+    span: Option<(u64, u64)>,
+    done: &std::sync::atomic::AtomicU64,
+    quit: &dyn Fn() -> bool,
+) -> Result<()> {
+    use std::io::{Seek, SeekFrom};
     let _permit = crate::net::request_permit();
-    println!("Downloading {url}");
-    let mut resp = client()?
-        .get(url)
+    let mut req = client.get(source);
+    if let Some((start, end)) = span {
+        req = req.header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
+    }
+    let mut resp = req
         .send()
         .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("{url}: {e}"))?;
-    let total = resp.content_length().unwrap_or(0);
-    let dir = dest.parent().ok_or("download has no folder")?;
-    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let part = dest.with_extension("pbf.part");
-    let result = (|| {
-        let mut out = std::fs::File::create(&part).map_err(|e| e.to_string())?;
-        let mut buf = vec![0u8; 1 << 20];
-        let (mut done, mut shown) = (0u64, 0u64);
-        loop {
-            let n = resp.read(&mut buf).map_err(|e| format!("{url}: {e}"))?;
-            if n == 0 {
-                break;
-            }
-            out.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-            done += n as u64;
-            if done - shown >= 32 << 20 {
-                shown = done;
-                println!("  {:.0} / {:.0} MB", done as f64 / 1e6, total as f64 / 1e6);
-                if total > 0 {
-                    emit_gui_progress_update(1.0 + 3.0 * done as f64 / total as f64, "");
-                }
-            }
-        }
-        // A dropped connection can end as a clean EOF.
-        if total > 0 && done < total {
-            return Err(format!(
-                "{url}: connection dropped at {done} of {total} bytes"
-            ));
-        }
-        out.sync_all().map_err(|e| e.to_string())?;
-        drop(out);
-        std::fs::rename(&part, dest).map_err(|e| e.to_string())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&part);
+        .map_err(|e| format!("{source}: {e}"))?;
+    if span.is_some() && resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!("{source}: the server ignored the byte range"));
     }
-    result
+    let mut out = std::fs::OpenOptions::new()
+        .write(true)
+        .open(part)
+        .map_err(|e| format!("{}: {e}", part.display()))?;
+    out.seek(SeekFrom::Start(span.map_or(0, |s| s.0)))
+        .map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 1 << 20];
+    let mut got = 0u64;
+    while !quit() {
+        let k = resp.read(&mut buf).map_err(|e| format!("{source}: {e}"))?;
+        if k == 0 {
+            // A dropped connection can end as a clean EOF.
+            let want = span.map_or(0, |(a, b)| b - a + 1);
+            if want > 0 && got < want {
+                return Err(format!(
+                    "{source}: connection dropped at {got} of {want} bytes"
+                ));
+            }
+            break;
+        }
+        out.write_all(&buf[..k]).map_err(|e| e.to_string())?;
+        got += k as u64;
+        done.fetch_add(k as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// Streams the extract at `url` to `<dest>.part`, over several connections
+/// at once when the server takes byte ranges (Geofabrik does; four measured
+/// 1.6-2.1x one), then renames: a half file never wears the real name. Each
+/// connection takes a --max-downloads permit. Reports a download transfer for
+/// `item` (1-based, of that many) twice a second, moving the job's percent
+/// across `span`, and the main bar across `bar` or, without one, with the
+/// job's percent and a status line. `Ok(false)` when `cancel` stopped it;
+/// nothing is left behind then.
+pub fn fetch_extract(
+    url: &str,
+    dest: &Path,
+    item: (usize, usize),
+    span: (f64, f64),
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    bar: Option<(f64, f64)>,
+) -> Result<bool> {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    crate::net::ensure_online("OpenStreetMap extract (.pbf)")?;
+    println!("Downloading {url}");
+    let client = client()?;
+    // One HEAD names the size, the range support and the file a `-latest`
+    // link redirects to, so every connection reads the same version.
+    let head = {
+        let _permit = crate::net::request_permit();
+        client
+            .head(url)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| format!("{url}: {e}"))?
+    };
+    let total = content_length_header(head.headers()).unwrap_or(0);
+    let ranges = head
+        .headers()
+        .get(reqwest::header::ACCEPT_RANGES)
+        .is_some_and(|v| v.as_bytes() == b"bytes");
+    let source = head.url().to_string();
+    let n = segment_count(total, ranges, crate::net::max_requests());
+    let dir = dir_of(dest)?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    if total > 0 {
+        if let Some(name) = dest.file_name() {
+            remember_size(dir, &name.to_string_lossy(), total);
+        }
+    }
+    let label = extract_label(dest);
+    let (index, items) = (item.0.max(1) - 1, item.1.max(1));
+    let report = |done: u64, rate_bps: f64| {
+        let frac = if total > 0 {
+            done as f64 / total as f64
+        } else {
+            0.0
+        };
+        let percent = span.0 + (span.1 - span.0) * frac;
+        let (progress, message) = match bar {
+            Some((from, to)) => (from + (to - from) * frac, String::new()),
+            None => (
+                percent,
+                format!(
+                    "Downloading {label} ({}/{items}): {:.0}%",
+                    index + 1,
+                    100.0 * frac
+                ),
+            ),
+        };
+        crate::progress::emit_gui_transfer(
+            progress,
+            &message,
+            &Transfer {
+                stage: Stage::Download,
+                name: label.clone(),
+                item: index + 1,
+                items,
+                done_bytes: done,
+                total_bytes: total,
+                rate_bps,
+                downloads: n as u32,
+                percent,
+                ..Transfer::default()
+            },
+        );
+    };
+    report(0, 0.0);
+
+    let part = dest.with_extension("pbf.part");
+    let file = std::fs::File::create(&part).map_err(|e| format!("{}: {e}", part.display()))?;
+    if total > 0 {
+        file.set_len(total).map_err(|e| e.to_string())?;
+    }
+    let done = AtomicU64::new(0);
+    let failed = AtomicBool::new(false);
+    let stopped = || cancel.is_some_and(|c| c.load(Ordering::Acquire));
+    let quit = || stopped() || failed.load(Ordering::Acquire);
+    let spans: Vec<Option<(u64, u64)>> = if n > 1 {
+        segments(total, n).into_iter().map(Some).collect()
+    } else {
+        vec![None]
+    };
+    let fetched: Result<()> = std::thread::scope(|scope| {
+        let workers: Vec<_> = spans
+            .iter()
+            .map(|&span| {
+                let (client, source, part, done, failed, quit) =
+                    (&client, &source, &part, &done, &failed, &quit);
+                scope.spawn(move || {
+                    let r = fetch_span(client, source, part, span, done, quit);
+                    // A failed connection stops the others.
+                    if r.is_err() {
+                        failed.store(true, Ordering::Release);
+                    }
+                    r
+                })
+            })
+            .collect();
+        let started = Instant::now();
+        let mut rate = RateMeter::default();
+        let mut last = Instant::now();
+        while !workers.iter().all(|w| w.is_finished()) {
+            std::thread::sleep(Duration::from_millis(50));
+            if last.elapsed() >= REPORT_EVERY {
+                last = Instant::now();
+                let d = done.load(Ordering::Relaxed);
+                report(d, rate.add(started.elapsed().as_secs_f64(), d));
+            }
+        }
+        let d = done.load(Ordering::Relaxed);
+        report(d, rate.add(started.elapsed().as_secs_f64(), d));
+        // The scope joins any the first error leaves.
+        workers.into_iter().try_for_each(|w| {
+            w.join()
+                .unwrap_or_else(|_| Err("a download thread panicked".into()))
+        })
+    });
+    let outcome = if stopped() {
+        Ok(false)
+    } else {
+        fetched.and_then(|()| {
+            file.sync_all().map_err(|e| e.to_string())?;
+            let d = done.load(Ordering::Relaxed);
+            if total > 0 && d != total {
+                return Err(format!("{url}: got {d} of {total} bytes"));
+            }
+            Ok(true)
+        })
+    };
+    // Closed before the rename, which Windows refuses on an open file.
+    drop(file);
+    match outcome {
+        Ok(true) => std::fs::rename(&part, dest)
+            .map(|()| true)
+            .map_err(|e| e.to_string()),
+        other => {
+            let _ = std::fs::remove_file(&part);
+            other
+        }
+    }
 }
 
 /// The Geofabrik index, from a cached copy younger than a week (any age offline).
@@ -478,6 +819,11 @@ impl E7Box {
         i128::from(self.max_lat - self.min_lat) * i128::from(self.max_lon - self.min_lon)
     }
 
+    /// The area in square degrees, the unit of [`rings_area`].
+    fn area_deg2(&self) -> f64 {
+        self.area() as f64 / 1e14
+    }
+
     fn file_name(&self) -> String {
         format!(
             "{}_{}_{}_{}.json.zst",
@@ -657,13 +1003,49 @@ fn cut(elements: &[OsmElement], b: E7Box) -> OsmData {
     OsmData::from_elements(out)
 }
 
+/// The extract, read for pass `pass` (1-based) of a bake, reporting how far
+/// through the file the read is.
+struct Counted {
+    inner: std::fs::File,
+    read: u64,
+    total: u64,
+    pass: u32,
+    label: String,
+    last: Instant,
+}
+
+impl Read for Counted {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.read += n as u64;
+        if self.last.elapsed() >= REPORT_EVERY || n == 0 {
+            self.last = Instant::now();
+            let frac = (f64::from(self.pass - 1) + self.read as f64 / self.total.max(1) as f64)
+                / BAKE_PASSES;
+            report_bake(&self.label, Stage::Bake, frac, self.read, self.total);
+        }
+        Ok(n)
+    }
+}
+
 /// Runs `f` over every data block of the extract on the rayon pool, so `--threads` and
-/// the piece's thread share decide how many blocks decode at once.
+/// the piece's thread share decide how many blocks decode at once. `pass` numbers the
+/// read for the progress bar.
 fn par_blocks<T: Send>(
     pbf: &Path,
+    pass: u32,
     f: impl Fn(&PrimitiveBlock) -> T + Sync + Send,
 ) -> Result<Vec<T>> {
-    let reader = BlobReader::from_path(pbf).map_err(|e| format!("{}: {e}", pbf.display()))?;
+    let file = std::fs::File::open(pbf).map_err(|e| format!("{}: {e}", pbf.display()))?;
+    let total = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let reader = BlobReader::new(std::io::BufReader::new(Counted {
+        inner: file,
+        read: 0,
+        total,
+        pass,
+        label: extract_label(pbf),
+        last: Instant::now(),
+    }));
     reader
         .par_bridge()
         .filter_map(|blob| {
@@ -699,7 +1081,7 @@ fn node_element(id: i64, lat: i32, lon: i32, tags: Option<HashMap<String, String
 /// relations that meet the area.
 fn cut_pbf(pbf: &Path, want: E7Box) -> Result<OsmData> {
     type Pass1 = (Vec<(i64, i32, i32)>, Vec<OsmElement>, Vec<OsmElement>);
-    let pass1: Vec<Pass1> = par_blocks(pbf, |block| {
+    let pass1: Vec<Pass1> = par_blocks(pbf, 1, |block| {
         // A dense block holds 8000 nodes: reserved, then trimmed, it never doubles past that.
         let (mut locs, mut tagged, mut rels) = (Vec::with_capacity(8000), Vec::new(), Vec::new());
         let mut node = |id: i64, lat: i32, lon: i32, tags: Vec<(&str, &str)>| {
@@ -786,7 +1168,7 @@ fn cut_pbf(pbf: &Path, want: E7Box) -> Result<OsmData> {
     let members: HashSet<i64> = rels.iter().flat_map(way_ids).collect();
 
     type Pass2 = (Vec<OsmElement>, Vec<(i64, E7Box)>);
-    let pass2: Vec<Pass2> = par_blocks(pbf, |block| {
+    let pass2: Vec<Pass2> = par_blocks(pbf, 2, |block| {
         let (mut full, mut outside) = (Vec::new(), Vec::new());
         for el in block.elements() {
             let Element::Way(w) = el else { continue };
@@ -823,7 +1205,7 @@ fn cut_pbf(pbf: &Path, want: E7Box) -> Result<OsmData> {
         .collect();
     drop(outside);
     if !missing.is_empty() {
-        let pass3: Vec<Vec<OsmElement>> = par_blocks(pbf, |block| {
+        let pass3: Vec<Vec<OsmElement>> = par_blocks(pbf, 3, |block| {
             block
                 .elements()
                 .filter_map(|el| match el {
@@ -870,6 +1252,43 @@ fn way_element(w: &osmpbf::Way, refs: Vec<i64>) -> OsmElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_download_splits_into_whole_ranges_within_the_cap() {
+        let mb = 1u64 << 20;
+        // No ranges or no size: one connection.
+        assert_eq!(segment_count(100 * mb, false, 16), 1);
+        assert_eq!(segment_count(0, true, 16), 1);
+        // One per 8 MB, under --max-downloads and the cap of 8.
+        assert_eq!(segment_count(3 * mb, true, 16), 1);
+        assert_eq!(segment_count(48 * mb, true, 16), 6);
+        assert_eq!(segment_count(800 * mb, true, 16), 8);
+        assert_eq!(segment_count(800 * mb, true, 2), 2);
+        assert_eq!(segment_count(800 * mb, true, 0), 1);
+        // The ranges cover every byte once.
+        for (total, n) in [(47_647_983u64, 5usize), (10, 3), (7, 8), (1, 1), (16, 4)] {
+            let s = segments(total, n);
+            assert!(s.len() <= n && !s.is_empty(), "{total} {n}: {s:?}");
+            assert_eq!(s[0].0, 0);
+            assert_eq!(s.last().unwrap().1, total - 1);
+            assert!(s.windows(2).all(|w| w[1].0 == w[0].1 + 1), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn a_head_size_comes_from_the_header() {
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_LENGTH};
+        let mut h = HeaderMap::new();
+        assert_eq!(content_length_header(&h), None);
+        h.insert(CONTENT_LENGTH, HeaderValue::from_static("3463268"));
+        assert_eq!(content_length_header(&h), Some(3_463_268));
+        h.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
+        assert_eq!(
+            content_length_header(&h),
+            None,
+            "no size, not an empty extract"
+        );
+    }
 
     fn node(id: u64, lat: f64, lon: f64, tags: &[(&str, &str)]) -> OsmElement {
         OsmElement {
