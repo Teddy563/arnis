@@ -1067,9 +1067,20 @@ function setupProgressListener() {
       }
       // The facade pipeline reports its stages here whichever job is driving it.
       notePrecomputeStage(message);
-      if (bakeRunning) setPrepareStatus((progress >= 0 ? Math.round(progress) + '% · ' : '') + message);
       // A finished download (or a failed one) changed what the caches hold.
       if (message.startsWith("Done!") || message.startsWith("Error!")) refreshDataPlan(true);
+    }
+    onTransferProgress(progress, message, event.payload.transfer);
+    // A stopped download is over too, with nothing to colour.
+    if (message.startsWith("Stopped.")) {
+      progressInfo.style.color = "#ececec";
+      setGenerationButtonEnabled(true);
+      resetEta();
+      refreshDataPlan(true);
+    }
+    if (transferJob === 'prewarm' && /^(Done!|Error!|Stopped\.)/.test(message)) {
+      transferEnd(message, message.startsWith("Done!"));
+      refreshStorage();
     }
   });
 
@@ -1730,14 +1741,21 @@ function initOsmSource() {
   bindBrowse('osm-file-browse', file, 'gui_pick_osm_file', () => file.value.trim());
   const pbf = document.getElementById('osm-pbf-input');
   bindBrowse('osm-pbf-browse', pbf, 'gui_pick_pbf_file', () => pbf.value.trim());
-  document.getElementById('prewarm-button').addEventListener('click', () => startGeneration({ prewarm: true }));
-  // The bake is the OSM step of a prewarm: same settings, same threads, same progress.
-  document.getElementById('osm-pbf-bake-button').addEventListener('click', () => startGeneration({ prewarm: true }));
-  document.getElementById('data-plan-button').addEventListener('click', () => startGeneration({ prewarm: true }));
+  // The bake is the OSM step of a prewarm: same settings, same threads, same
+  // progress, and the panel's bar and Stop follow it.
+  ['prewarm-button', 'osm-pbf-bake-button', 'data-plan-button'].forEach((id) =>
+    document.getElementById(id).addEventListener('click', startDownload));
+  document.getElementById('transfer-stop-button').addEventListener('click', () => {
+    document.getElementById('transfer-stop-button').disabled = true;
+    document.getElementById('transfer-stage').textContent = oneWorldText('transfer_stopping', 'Stopping...');
+    invoke('gui_cancel_bake').catch((error) => console.warn('Stop failed:', error));
+  });
+  document.getElementById('storage-refresh-button').addEventListener('click', refreshStorage);
   initLocalArchive();
   // Any setting can change what a run reads; the check is debounced and skips
   // a request it has already answered.
   document.getElementById('settings-modal').addEventListener('change', () => refreshDataPlan());
+  refreshStorage();
 }
 
 /* Download Plan: what a run of the selection reads with these settings, and
@@ -1746,6 +1764,8 @@ function initOsmSource() {
 let dataPlanTimer = null;
 let dataPlanKey = null;
 let dataPlan = null;
+// The extract sizes already asked for with a HEAD, by url.
+const extractSizeAsked = new Set();
 
 // `force` asks again even for the same request: the caches changed under it.
 function refreshDataPlan(force) {
@@ -1775,6 +1795,7 @@ async function checkDataPlan() {
   const request = dataPlanRequest();
   document.getElementById('data-plan-row').style.display = request ? '' : 'none';
   checkPreparePlan();
+  checkBakeThreads();
   const key = request ? JSON.stringify(request) : null;
   if (!request || key === dataPlanKey) return;
   dataPlanKey = key;
@@ -1784,8 +1805,23 @@ async function checkDataPlan() {
     if (key !== dataPlanKey) return;
     dataPlan = plan;
     renderDataPlan();
+    askExtractSize(plan.extract);
   } catch (error) {
     console.warn('Download plan failed:', error);
+  }
+}
+
+// A Region Download extract not on disk yet: its size from one HEAD request,
+// kept by the backend, then the plan again. Never offline.
+async function askExtractSize(extract) {
+  if (!extract || !extract.url || extract.download_bytes != null) return;
+  if (document.getElementById('offline-toggle').checked || extractSizeAsked.has(extract.url)) return;
+  extractSizeAsked.add(extract.url);
+  try {
+    await invoke('gui_extract_size', { url: extract.url });
+    refreshDataPlan(true);
+  } catch (error) {
+    console.warn('Extract size failed:', error);
   }
 }
 
@@ -1795,22 +1831,41 @@ function formatPlanBytes(bytes) {
   return Math.max(1, Math.round(bytes / 1e3)) + ' KB';
 }
 
-// A plan list row: name, status (green when `done`) and size.
+// A size cell: nothing for zero, `~` for an estimate.
+function sizeCell(bytes, estimate) {
+  if (!bytes) return '—';
+  return (estimate ? '~' : '') + formatPlanBytes(bytes);
+}
+
+// A plan list row: name, status (green when `done`) and the size columns.
 function planRow(cells, done) {
   const li = document.createElement('li');
   cells.forEach((text, i) => {
     const span = document.createElement('span');
     span.textContent = text;
     if (i === 1 && done) span.className = 'is-cached';
-    if (i === 2) span.className = 'data-plan-size';
+    if (i >= 2) span.className = 'data-plan-size';
     li.appendChild(span);
   });
   return li;
 }
 
+function planHead(cells) {
+  const li = planRow(cells, false);
+  li.className = 'data-plan-head';
+  return li;
+}
+
+// A line under a list; `warn` turns it red.
+function setPlanLine(id, text, warn) {
+  const el = document.getElementById(id);
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+  el.classList.toggle('is-warn', !!warn);
+}
+
 function renderDataPlan() {
   const list = document.getElementById('data-plan-list');
-  const extractLine = document.getElementById('data-plan-extract');
   if (!list || !dataPlan) return;
   const t = oneWorldText;
   const names = {
@@ -1820,7 +1875,11 @@ function renderDataPlan() {
     canopy: t('data_plan_canopy', 'Canopy Height'),
     overture: t('data_plan_overture', 'Overture Buildings'),
   };
-  list.replaceChildren(...dataPlan.items.map((item) => {
+  let download = 0;
+  list.classList.add('has-sizes');
+  list.replaceChildren(planHead([t('data_plan_col_source', 'Source'), t('data_plan_col_status', 'Status'),
+    t('data_plan_col_on_disk', 'On Disk'), t('data_plan_col_download', 'To Download')]),
+  ...dataPlan.items.map((item) => {
     let status;
     if (item.total === 0) {
       status = t('data_plan_uncounted', 'Not counted');
@@ -1831,15 +1890,29 @@ function renderDataPlan() {
     } else {
       status = t('data_plan_missing', 'Missing');
     }
-    return planRow([names[item.source] || item.source, status,
-      item.cached < item.total && item.missing_bytes ? '~' + formatPlanBytes(item.missing_bytes) : ''],
-    item.total > 0 && item.cached === item.total);
+    const missing = item.cached < item.total && item.missing_bytes ? item.missing_bytes : 0;
+    download += missing;
+    return planRow([names[item.source] || item.source, status, sizeCell(item.cached_bytes),
+      sizeCell(missing, true)], item.total > 0 && item.cached === item.total);
   }));
   const e = dataPlan.extract;
   let line = '';
+  let bake = 0;
   if (e && e.name) {
-    line = e.bytes != null
-      ? t('data_plan_extract', 'Extract: {name}, {size}', { name: e.name, size: formatPlanBytes(e.bytes) })
+    const parts = [];
+    if (e.bytes != null) parts.push(t('data_plan_extract_on_disk', '{size} on disk', { size: formatPlanBytes(e.bytes) }));
+    else if (e.download_bytes != null) parts.push(t('data_plan_extract_download', '{size} to download', { size: formatPlanBytes(e.download_bytes) }));
+    if (e.bake_bytes != null) {
+      parts.push(t('data_plan_bake_on_disk', 'baked: {size}', { size: formatPlanBytes(e.bake_bytes) }));
+    } else {
+      if (e.bake_estimate) {
+        bake = e.bake_estimate;
+        parts.push(t('data_plan_bake_estimate', 'bake ~{size} on disk', { size: formatPlanBytes(e.bake_estimate) }));
+      }
+      if (e.ram_estimate) parts.push(t('data_plan_bake_ram', '~{size} memory while baking', { size: formatPlanBytes(e.ram_estimate) }));
+    }
+    line = parts.length
+      ? [t('data_plan_extract_name', 'Extract: {name}', { name: e.name })].concat(parts).join(' · ')
       : t('data_plan_extract_unknown', 'Extract: {name}, size known once downloaded', { name: e.name });
   } else if (e) {
     line = t('data_plan_no_index', 'The Geofabrik index is not downloaded yet; the button fetches it.');
@@ -1852,8 +1925,231 @@ function renderDataPlan() {
       ? t('data_plan_local', 'In the folder for this area: {names}', { names: here.join(', ') })
       : t('data_plan_local_none', 'No archive in the folder covers this area yet.');
   }
-  extractLine.textContent = line;
-  extractLine.style.display = line ? '' : 'none';
+  setPlanLine('data-plan-extract', line);
+  // What the button would add to the disk, against what the disk has left.
+  const need = download + bake;
+  const free = dataPlan.free_bytes;
+  let total = '';
+  let short = false;
+  if (free != null) {
+    short = need > free;
+    const vars = { download: formatPlanBytes(download), need: formatPlanBytes(need), free: formatPlanBytes(free) };
+    if (short) total = t('data_plan_short', 'Not enough room: ~{need} needed, {free} free on this disk.', vars);
+    else if (need > 0) total = t('data_plan_total', 'Total: ~{download} to download, ~{need} more on disk · {free} free', vars);
+    else total = t('data_plan_total_none', 'Nothing to download · {free} free on this disk', vars);
+  }
+  setPlanLine('data-plan-total', total, short);
+}
+
+/* Bake threads: what a bake runs on with the Extra Features CPU setting,
+   the same share a generation worker gets. */
+let bakeThreadsKey = null;
+
+async function checkBakeThreads() {
+  const source = document.getElementById('osm-source-select').value;
+  const line = document.getElementById('bake-threads');
+  if (source !== 'pbf' && source !== 'local') {
+    line.style.display = 'none';
+    return;
+  }
+  const flags = advancedFeatureArgs().flags;
+  const key = JSON.stringify(flags);
+  if (key === bakeThreadsKey && line.textContent) {
+    line.style.display = '';
+    return;
+  }
+  bakeThreadsKey = key;
+  try {
+    const b = await invoke('gui_bake_threads', { flags });
+    if (key !== bakeThreadsKey) return;
+    setPlanLine('bake-threads', oneWorldText('bake_threads',
+      'Bakes use {threads} of {cores} threads ({pct}% CPU), as the generation workers do; at most {downloads} downloads at once.',
+      { threads: b.threads, cores: b.cores, pct: b.cpu_pct, downloads: b.downloads }));
+  } catch (error) {
+    console.warn('Bake threads failed:', error);
+  }
+}
+
+/* The transfer panel: the bar and Stop of a running download or bake, fed by
+   the `transfer` field of progress-update. `transferJob` is 'prewarm' or
+   'bake' while one runs from this window. */
+let transferJob = null;
+let transferLast = null;
+
+function transferStart(job) {
+  transferJob = job;
+  transferLast = null;
+  const stop = document.getElementById('transfer-stop-button');
+  stop.disabled = false;
+  stop.style.display = '';
+  const panel = document.getElementById('transfer-panel');
+  panel.style.display = '';
+  panel.classList.remove('is-ended', 'is-done');
+  document.getElementById('transfer-stage').textContent = oneWorldText('transfer_starting', 'Starting...');
+  document.getElementById('transfer-detail').textContent = '';
+  setTransferBar(0);
+}
+
+// The run ended with `message`, `done` when it finished: the panel keeps the
+// last bar with the outcome in place of the stage.
+function transferEnd(message, done) {
+  if (!transferJob) return;
+  transferJob = null;
+  document.getElementById('transfer-stop-button').style.display = 'none';
+  if (message) document.getElementById('transfer-stage').textContent = message;
+  if (done) setTransferBar(100);
+  document.getElementById('transfer-panel').classList.add('is-ended');
+  document.getElementById('transfer-panel').classList.toggle('is-done', !!done);
+}
+
+function setTransferBar(percent) {
+  const p = Math.max(0, Math.min(100, percent));
+  document.getElementById('transfer-bar').style.width = p + '%';
+  document.getElementById('transfer-percent').textContent = Math.floor(p) + '%';
+}
+
+// A rate: one decimal under 10 MB/s, where whole megabytes say too little.
+function formatRate(bps) {
+  return (bps >= 1e6 && bps < 1e7 ? (bps / 1e6).toFixed(1) + ' MB' : formatPlanBytes(bps)) + '/s';
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// One progress-update while a job runs: `transfer` when the backend sent one.
+function onTransferProgress(progress, message, transfer) {
+  if (!transferJob) return;
+  const t = oneWorldText;
+  if (!transfer) {
+    // Before the first transfer (or between them), the bar follows the run.
+    if (!transferLast && progress >= 0) setTransferBar(progress);
+    if (!transferLast && message && !message.startsWith('Done!') && !message.startsWith('Error!')) {
+      document.getElementById('transfer-stage').textContent = message;
+    }
+    return;
+  }
+  transferLast = transfer;
+  const vars = { name: transfer.name, n: transfer.item, m: transfer.items };
+  const stage = {
+    download: t('transfer_download', 'Downloading {name} ({n}/{m})', vars),
+    bake: t('transfer_bake', 'Baking {name} ({n}/{m})', vars),
+    finalize: t('transfer_finalize', 'Writing {name} ({n}/{m})', vars),
+  }[transfer.stage];
+  if (!document.getElementById('transfer-stop-button').disabled) {
+    document.getElementById('transfer-stage').textContent = stage;
+  }
+  setTransferBar(transfer.percent);
+  const parts = [];
+  const done = formatPlanBytes(transfer.done_bytes);
+  if (transfer.total_bytes > 0) {
+    parts.push(t('transfer_bytes', '{done} of {total}', { done, total: formatPlanBytes(transfer.total_bytes) }));
+  } else if (transfer.done_bytes > 0) {
+    parts.push(t('transfer_written', '{done} written', { done }));
+  }
+  if (transfer.stage === 'download' && transfer.rate_bps > 0) {
+    parts.push(formatRate(transfer.rate_bps));
+    if (transfer.total_bytes > transfer.done_bytes) {
+      parts.push(t('transfer_left', 'about {time} left',
+        { time: formatClock((transfer.total_bytes - transfer.done_bytes) / transfer.rate_bps) }));
+    }
+  }
+  if (transfer.stage !== 'download' && transfer.threads > 0) {
+    parts.push(t('transfer_threads', 'Baking with {threads} threads ({pct}% CPU)',
+      { threads: transfer.threads, pct: transfer.cpu_pct }));
+  }
+  document.getElementById('transfer-detail').textContent = parts.join(' · ');
+  if (transferJob === 'bake') renderPreparePlan();
+}
+
+// The panel's download buttons: a prewarm with the panel's bar and Stop.
+async function startDownload() {
+  if (bakeRunning || generationButtonEnabled === false) return;
+  transferStart('prewarm');
+  await startGeneration({ prewarm: true });
+  // Refused before it started (no selection, say): nothing to follow.
+  if (generationButtonEnabled !== false) {
+    transferJob = null;
+    document.getElementById('transfer-panel').style.display = 'none';
+  }
+}
+
+/* Storage: each folder downloads and bakes go to, its size and the free space
+   on its disk, from gui_storage_info. Only the Archive Folder can move. */
+async function refreshStorage() {
+  try {
+    const folder = document.getElementById('local-archive-input').value.trim();
+    renderStorage(await invoke('gui_storage_info', { folder }));
+  } catch (error) {
+    console.warn('Storage info failed:', error);
+  }
+}
+
+function storageButton(icon, title, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'save-path-browse';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-' + icon + '"></use></svg>';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function renderStorage(locations) {
+  const t = oneWorldText;
+  const names = {
+    local_archive: t('storage_local_archive', 'Archive Folder (Local Archive)'),
+    bake_scratch: t('storage_bake_scratch', 'Bake Work Folder (arnis-tiles)'),
+    pbf_downloads: t('storage_pbf_downloads', 'Region Download Extracts'),
+    pbf_bakes: t('storage_pbf_bakes', 'Region Download Bakes'),
+    cache_root: t('storage_cache_root', 'Cache Folder (All Arnis Caches)'),
+  };
+  document.getElementById('storage-list').replaceChildren(...(locations || []).map((l) => {
+    const li = document.createElement('li');
+    li.className = 'storage-item';
+    const head = document.createElement('div');
+    head.className = 'storage-head';
+    const name = document.createElement('span');
+    name.textContent = names[l.kind] || l.kind;
+    const size = document.createElement('span');
+    size.className = 'storage-size';
+    const free = l.free_bytes != null ? formatPlanBytes(l.free_bytes) : '?';
+    size.textContent = l.exists && l.bytes > 0
+      ? t('storage_size', '{used} · {free} free', { used: formatPlanBytes(l.bytes), free })
+      : t('storage_empty', 'Empty · {free} free', { free });
+    head.append(name, size);
+    const control = document.createElement('div');
+    control.className = 'save-path-control storage-path';
+    const path = document.createElement('input');
+    path.type = 'text';
+    path.className = 'save-path-input';
+    path.readOnly = true;
+    path.value = l.path;
+    path.title = l.path;
+    path.spellcheck = false;
+    const open = storageButton('external', 'Open folder', () =>
+      invoke('gui_show_in_folder', { path: l.path }).catch((error) => console.warn('Open failed:', error)));
+    open.disabled = !l.exists;
+    control.append(path, open);
+    if (l.changeable) {
+      const field = document.getElementById('local-archive-input');
+      control.append(storageButton('folder-open', 'Change...', async () => {
+        try {
+          const picked = await invoke('gui_pick_save_directory', { startPath: l.path });
+          if (picked && picked !== l.path) {
+            field.value = picked;
+            fireInputChange(field);
+          }
+        } catch (error) {
+          console.warn('Change failed:', error);
+        }
+      }));
+    }
+    li.append(head, control);
+    return li;
+  }));
 }
 
 /* Local Archive: a folder of countries baked by arnis-tiles, read through
@@ -1866,6 +2162,8 @@ let preparePlan = null;
 let bakeRunning = false;
 // How the last bake ended, shown once the list is back.
 let bakeNote = '';
+// The extracts the running bake has reached, in order.
+let bakeSeen = [];
 
 function localArchiveFolder() {
   const typed = document.getElementById('local-archive-input').value.trim();
@@ -1893,10 +2191,8 @@ function initLocalArchive() {
   bindBrowse('local-archive-browse', document.getElementById('local-archive-input'),
     'gui_pick_save_directory', () => localArchiveFolder() || '', 'startPath');
   document.getElementById('arnis-tiles-path-input').addEventListener('change', refreshLocalArchiveInfo);
+  document.getElementById('local-archive-input').addEventListener('change', refreshStorage);
   document.getElementById('prepare-bake-button').addEventListener('click', bakeCountries);
-  document.getElementById('prepare-stop-button').addEventListener('click', () => {
-    invoke('gui_cancel_bake').catch((error) => console.warn('Stop failed:', error));
-  });
   refreshLocalArchiveInfo();
 }
 
@@ -1949,26 +2245,72 @@ async function checkPreparePlan() {
   renderPreparePlan();
 }
 
+// A country's status: baked, or where the running bake is with it.
+function prepareStatus(e) {
+  const t = oneWorldText;
+  if (e.baked) return t('prepare_baked', 'Baked ✓');
+  if (!bakeRunning || !transferLast) return '';
+  if (transferLast.name === e.id) {
+    return {
+      download: t('prepare_downloading', 'Downloading {pct}%', {
+        pct: transferLast.total_bytes ? Math.floor(100 * transferLast.done_bytes / transferLast.total_bytes) : 0,
+      }),
+      bake: t('prepare_baking', 'Baking'),
+      finalize: t('prepare_writing', 'Writing'),
+    }[transferLast.stage];
+  }
+  return bakeSeen.includes(e.id) ? t('prepare_baked', 'Baked ✓') : t('prepare_waiting', 'Waiting');
+}
+
 function renderPreparePlan() {
   const t = oneWorldText;
   const rows = preparePlan ? preparePlan.extracts : [];
-  document.getElementById('prepare-list').replaceChildren(...rows.map((e) =>
-    planRow([e.name, e.baked ? t('prepare_baked', 'Baked ✓') : '', formatPlanBytes(e.bytes)], e.baked)));
+  if (bakeRunning && transferLast && !bakeSeen.includes(transferLast.name)) bakeSeen.push(transferLast.name);
+  const list = document.getElementById('prepare-list');
+  list.classList.add('has-sizes');
+  list.replaceChildren(...(rows.length ? [planHead([t('prepare_col_country', 'Country'), t('data_plan_col_status', 'Status'),
+    t('prepare_col_download', 'Download'), t('prepare_col_archive', 'Archive')])] : []),
+  ...rows.map((e) => {
+    const status = prepareStatus(e);
+    const done = status === t('prepare_baked', 'Baked ✓');
+    return planRow([e.name, status, formatPlanBytes(e.bytes), sizeCell(e.archive_bytes, !e.baked)], done);
+  }));
   if (preparePlan && !rows.length) {
     setPrepareStatus(t('prepare_none', 'No Geofabrik extract covers the selection.'));
   }
+  // What a bake of the countries not baked yet takes, against the folder's disk.
+  const todo = rows.filter((e) => !e.baked);
+  let total = '';
+  let short = false;
+  if (preparePlan && todo.length && preparePlan.free_bytes != null) {
+    const vars = {
+      download: formatPlanBytes(todo.reduce((a, e) => a + e.bytes, 0)),
+      archive: formatPlanBytes(todo.reduce((a, e) => a + e.archive_bytes, 0)),
+      peak: formatPlanBytes(preparePlan.peak_bytes),
+      free: formatPlanBytes(preparePlan.free_bytes),
+    };
+    short = preparePlan.peak_bytes > preparePlan.free_bytes;
+    total = short
+      ? t('prepare_short', 'Not enough room: up to ~{peak} needed while baking, {free} free on this disk.', vars)
+      : t('prepare_total', 'To bake: {download} to download, ~{archive} of archives · up to ~{peak} on disk while baking · {free} free', vars);
+  }
+  setPlanLine('prepare-total', total, short);
   document.getElementById('prepare-bake-button').disabled =
     bakeRunning || !rows.length || rows.every((e) => e.baked);
-  document.getElementById('prepare-stop-button').style.display = bakeRunning ? '' : 'none';
 }
 
 async function bakeCountries() {
-  if (bakeRunning || !selectedBBox) return;
+  if (bakeRunning || !selectedBBox || transferJob) return;
   bakeRunning = true;
+  bakeSeen = [];
   setGenerationButtonEnabled(false);
+  transferStart('bake');
   renderPreparePlan();
   bakeNote = '';
-  setPrepareStatus(oneWorldText('prepare_starting', 'Starting arnis-tiles...'));
+  // The transfer panel below shows the bake from here on.
+  setPrepareStatus('');
+  let outcome = '';
+  let finished = false;
   try {
     const done = await invoke('gui_bake_archive', {
       bboxText: selectedBBox,
@@ -1977,13 +2319,18 @@ async function bakeCountries() {
       flags: advancedFeatureArgs().flags,
     });
     if (!done) bakeNote = oneWorldText('prepare_stopped', 'Stopped. Countries already baked are kept.');
+    finished = done;
+    outcome = done ? oneWorldText('prepare_done', 'Done! The local archive is ready.') : bakeNote;
   } catch (error) {
     bakeNote = String(error);
+    outcome = bakeNote;
   } finally {
     bakeRunning = false;
+    transferEnd(outcome, finished);
     setGenerationButtonEnabled(true);
     prepareKey = null;
     refreshDataPlan(true);
+    refreshStorage();
   }
 }
 
