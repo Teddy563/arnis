@@ -289,10 +289,12 @@ fn sample_y(dist: Dist, lo: i32, hi: i32, r: &mut XoroRandom) -> i32 {
 }
 
 /// Place all vanilla ores across the bbox (+1 chunk margin so edge blobs complete). Sequential
-/// (needs world read/write for discard-on-air).
+/// (needs world read/write for discard-on-air). `more` places every metal and gem ore twice as
+/// often (`--cave-ores more`); the stone variants, heights and vein sizes stay vanilla's.
 pub fn place_ores(
     editor: &mut WorldEditor,
     seed: i64,
+    more: bool,
     min_x: i32,
     max_x: i32,
     min_z: i32,
@@ -321,6 +323,12 @@ pub fn place_ores(
                             0
                         }
                     }
+                };
+                // An ore has a deepslate variant; the stone families, tuff and gravel do not.
+                let attempts = if more && ore.stone != ore.deep {
+                    attempts * 2
+                } else {
+                    attempts
                 };
                 for _ in 0..attempts {
                     let x = cx * 16 + r.next_int(16);
@@ -439,7 +447,7 @@ mod tests {
 
     /// Ores over a stone block whose rock starts at `bottom`, the way pieces with different
     /// floors see the same ground.
-    fn ores_over(xzbbox: &XZBBox, bottom: i32) -> Vec<(i32, i32, i32, Option<Block>)> {
+    fn ores_over(xzbbox: &XZBBox, bottom: i32, more: bool) -> Vec<(i32, i32, i32, Option<Block>)> {
         let llbbox = LLBBox::new(54.6, 9.9, 54.61, 9.91).unwrap();
         let mut editor =
             WorldEditor::new(std::path::PathBuf::from("/dev/null/unused"), xzbbox, llbbox);
@@ -449,7 +457,7 @@ mod tests {
                 editor.fill_column_absolute(STONE, x, z, bottom, TOP, false);
             }
         }
-        place_ores(&mut editor, 5, 0, SIDE - 1, 0, SIDE - 1);
+        place_ores(&mut editor, 5, more, 0, SIDE - 1, 0, SIDE - 1);
         let mut out = Vec::new();
         for x in 0..SIDE {
             for z in 0..SIDE {
@@ -472,7 +480,10 @@ mod tests {
         let xzbbox = XZBBox::rect_from_min_max(0, 0, SIDE - 1, SIDE - 1).unwrap();
         let pair = |datum| {
             super::super::set_datum_y(datum);
-            (ores_over(&xzbbox, -63), ores_over(&xzbbox, 16))
+            (
+                ores_over(&xzbbox, -63, false),
+                ores_over(&xzbbox, 16, false),
+            )
         };
         let (low, high) = pair(None);
         let unpinned_differs = low != high;
@@ -483,5 +494,25 @@ mod tests {
             "the test block no longer exercises the skip"
         );
         assert!(low == high);
+    }
+
+    /// More ores places more ore blocks over the same rock than the vanilla table does.
+    #[test]
+    fn more_ores_raises_the_ore_count() {
+        use crate::world_editor::{set_world_bounds, DEFAULT_MAX_Y, DEFAULT_MIN_Y};
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
+        super::super::set_datum_y(None);
+        let xzbbox = XZBBox::rect_from_min_max(0, 0, SIDE - 1, SIDE - 1).unwrap();
+        let ores = |more| {
+            ores_over(&xzbbox, -63, more)
+                .iter()
+                .filter(|c| c.3.is_some_and(|b| b.name().ends_with("_ore")))
+                .count()
+        };
+        let (normal, more) = (ores(false), ores(true));
+        assert!(normal > 0 && more > normal * 3 / 2, "{normal} -> {more}");
     }
 }

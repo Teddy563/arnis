@@ -82,6 +82,11 @@ use fnv::FnvHashSet as HashSet;
 const SEED: i64 = 0xCA7E_CA7E;
 /// Vanilla's world floor; every depth constant in the cave passes is written against it.
 pub(crate) const VANILLA_FLOOR: i32 = -64;
+/// The theme amounts of More Vanilla and More Mix: every theme at this share of its default.
+/// Calibrated on `--cave-zone-map` (three areas and seeds, upper and deep band averaged) to
+/// about 30% and 70% themed; All Mix, every theme at its default, measures about 77%.
+const MORE_VANILLA: f64 = 0.18;
+const MORE_MIX: f64 = 0.76;
 /// Carve only this many blocks below the column's surface (the roof seal — keeps caves from breaching
 /// the surface / exposing grass).
 const TOP_GATE: i32 = 6;
@@ -148,16 +153,53 @@ pub(crate) fn seed(args: &Args) -> i64 {
     args.cave_seed.or(world).map_or(SEED, |s| s as i64)
 }
 
-/// The `--cave-biomes` amounts for this run. `validate_args` has already rejected a bad list,
-/// so a parse failure here can only come from a caller that skipped it.
+/// `--cave-style`: how much of the underground the themed cave biomes take. A style is one
+/// amount for every theme, so every style runs through the same zone picker as `--cave-biomes`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, clap::ValueEnum)]
+pub enum CaveStyle {
+    /// Plain vanilla caves, no themed biomes.
+    Vanilla,
+    /// About 70% plain caves, 30% themed.
+    MoreVanilla,
+    /// About 30% plain caves, 70% themed.
+    MoreMix,
+    /// Every theme at its default amount.
+    #[default]
+    AllMix,
+}
+
+impl CaveStyle {
+    /// Every theme's amount (1.0 = its default), measured against `--cave-zone-map`'s shares.
+    pub fn amount(self) -> f64 {
+        match self {
+            CaveStyle::Vanilla => 0.0,
+            CaveStyle::MoreVanilla => MORE_VANILLA,
+            CaveStyle::MoreMix => MORE_MIX,
+            CaveStyle::AllMix => 1.0,
+        }
+    }
+}
+
+/// `--cave-ores`: the vanilla ore table as is, or with more veins of every metal and gem ore.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, clap::ValueEnum)]
+pub enum CaveOres {
+    #[default]
+    Normal,
+    /// Twice the veins of every metal and gem ore, at vanilla's heights and vein sizes.
+    More,
+}
+
+/// The `--cave-style` amounts with `--cave-biomes` over them. `validate_args` has already
+/// rejected a bad list, so a parse failure here can only come from a caller that skipped it.
 fn biome_amounts(args: &Args) -> BiomeAmounts {
-    match args.cave_biomes.as_deref().map(BiomeAmounts::parse) {
+    let style = BiomeAmounts::uniform(args.cave_style.unwrap_or_default().amount());
+    match args.cave_biomes.as_deref().map(|s| style.parse_onto(s)) {
         Some(Ok(amounts)) => amounts,
         Some(Err(e)) => {
-            eprintln!("Warning: --cave-biomes ignored ({e}); using defaults");
-            BiomeAmounts::default()
+            eprintln!("Warning: --cave-biomes ignored ({e}); using the style's amounts");
+            style
         }
-        None => BiomeAmounts::default(),
+        None => style,
     }
 }
 
@@ -455,7 +497,8 @@ pub fn carve_region(
 
     // 5) ORES — vanilla blob ores (+ stone variants), placed into the now-clean rock so
     //    discard-on-air-exposure leaves clean cave walls. deepslate variant matches host rock.
-    ores::place_ores(editor, seed, min_x, max_x, min_z, max_z);
+    let more_ores = args.cave_ores == Some(CaveOres::More);
+    ores::place_ores(editor, seed, more_ores, min_x, max_x, min_z, max_z);
 
     // 6) DECORATION — the biome themes (lush moss + cave-vines, dripstone, sculk, mushroom, ice,
     //    amethyst, volcanic, coral reefs in pools), glow lichen on all surfaces, and rare amethyst
@@ -771,6 +814,43 @@ mod tests {
         };
         set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
         set_terrain_floor_y(DEFAULT_MIN_Y + 2);
+    }
+
+    /// A style is one amount for every theme, no style is All Mix (today's defaults), and a
+    /// `--cave-biomes` value replaces the style's for its theme only.
+    #[test]
+    fn a_cave_style_maps_to_theme_amounts() {
+        use clap::Parser;
+        let amounts = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            biome_amounts(&Args::parse_from(cmd))
+        };
+        assert_eq!(amounts(&[]), BiomeAmounts::default());
+        assert_eq!(
+            amounts(&["--cave-style", "all-mix"]),
+            BiomeAmounts::default()
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "vanilla"]),
+            BiomeAmounts::uniform(0.0)
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "more-vanilla"]),
+            BiomeAmounts::uniform(MORE_VANILLA)
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "more-mix"]),
+            BiomeAmounts::uniform(MORE_MIX)
+        );
+        let mixed = amounts(&["--cave-style", "vanilla", "--cave-biomes", "lush=150"]);
+        assert_eq!(
+            mixed,
+            BiomeAmounts {
+                lush: 1.5,
+                ..BiomeAmounts::uniform(0.0)
+            }
+        );
     }
 
     /// No `--cave-seed` is the built-in seed; another seed moves the caves.

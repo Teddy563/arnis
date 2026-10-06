@@ -1962,6 +1962,10 @@ fn meld_args(flags: &[String], one_world: bool) -> Result<Args, String> {
     if let Some(y) = args.cave_datum_y {
         crate::args::check_cave_datum_y(y)?;
     }
+    if let Some(spec) = &args.cave_biomes {
+        crate::caves::decoration::BiomeAmounts::parse(spec)
+            .map_err(|e| format!("--cave-biomes: {e}"))?;
+    }
     Ok(args)
 }
 
@@ -2420,10 +2424,12 @@ fn gui_start_generation(
                 map_item_only: false,
                 fillground: fillground_enabled,
                 caves: caves_enabled,
-                // The asset pack, biome mix and zone preview are CLI aids; the GUI toggle
-                // carves with the defaults and a `cave-pack` folder next to the executable.
+                // The asset pack and zone preview are CLI aids; the GUI toggle carves with a
+                // `cave-pack` folder next to the executable.
                 cave_asset_pack: None,
-                cave_biomes: None,
+                cave_biomes: meld.cave_biomes,
+                cave_style: meld.cave_style,
+                cave_ores: meld.cave_ores,
                 cave_zone_map: None,
                 cave_zone_map_step: None,
                 cave_seed: meld.cave_seed,
@@ -2970,6 +2976,9 @@ mod piece_tests {
             "--tree-size-weights=small=50,tall=150,giant=0",
             "--cave-seed=12345",
             "--cave-datum-y=-128",
+            "--cave-style=more-mix",
+            "--cave-ores=more",
+            "--cave-biomes=lush=0,ice=150",
             "--river-bed=v1",
             "--water-detail=scaled",
             "--climate-mode=per-position",
@@ -3002,6 +3011,9 @@ mod piece_tests {
         args.tree_pack_mode = meld.tree_pack_mode;
         args.cave_seed = meld.cave_seed;
         args.cave_datum_y = meld.cave_datum_y;
+        args.cave_style = meld.cave_style;
+        args.cave_ores = meld.cave_ores;
+        args.cave_biomes = meld.cave_biomes;
         args.water = meld.water;
         args.climate_mode = meld.climate_mode;
         args.seed = meld.seed;
@@ -3054,6 +3066,7 @@ mod piece_tests {
         assert!(refused(&["--cave-datum-y=100"], false));
         assert!(refused(&["--farm-crops=wheat=x"], false));
         assert!(refused(&["--tree-realm=mars"], false));
+        assert!(refused(&["--cave-style=lush"], false));
         assert!(refused(&["--field-scale=500"], false));
     }
 }

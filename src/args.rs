@@ -145,6 +145,17 @@ pub struct Args {
     #[arg(long = "cave-biomes", value_name = "LIST")]
     pub cave_biomes: Option<String>,
 
+    /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
+    /// more-vanilla (about 30% themed), more-mix (about 70% themed) or all-mix (every theme at
+    /// its default amount, the default). --cave-biomes amounts override the style's per theme.
+    #[arg(long = "cave-style", value_enum)]
+    pub cave_style: Option<crate::caves::CaveStyle>,
+
+    /// Ore veins in --caves: normal (vanilla's ore table, the default) or more (twice the
+    /// veins of every metal and gem ore, at vanilla's heights).
+    #[arg(long = "cave-ores", value_enum)]
+    pub cave_ores: Option<crate::caves::CaveOres>,
+
     /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
     /// layout. Omitted keeps the built-in seed, so an area always gets the same caves. A One
     /// World keeps the seed its first area was built with.
@@ -758,6 +769,8 @@ pub const CAPABILITIES: &[&str] = &[
     "tree-size-weights",
     "cave-seed",
     "cave-datum-y",
+    "cave-style",
+    "cave-ores",
     "seed",
     "river-bed",
     "water-detail",
@@ -1372,6 +1385,12 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         if !args.caves && !cave_preview {
             return Err("--cave-biomes only applies to --caves or --cave-zone-map.".to_string());
         }
+    }
+    if args.cave_style.is_some() && !args.caves && !cave_preview {
+        return Err("--cave-style only applies to --caves or --cave-zone-map.".to_string());
+    }
+    if args.cave_ores.is_some() && !args.caves {
+        return Err("--cave-ores only applies to --caves.".to_string());
     }
     if let Some(dir) = &args.cave_asset_pack {
         if !args.caves {

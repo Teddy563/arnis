@@ -4,7 +4,7 @@
 //! band) and `<PREFIX>-deep.png` samples y=-48 (where deep dark and volcanic are live).
 //! Plain rock is transparent so the images work as map overlays; a JSON line with the
 //! measured share of every theme goes to stdout (prefix `ZONEMAP `). Uses the exact same
-//! `Decor::zone()` the real carve uses — same seed, same `--cave-biomes` multipliers — so
+//! `Decor::zone()` the real carve uses — same seed, same `--cave-style` and `--cave-biomes` amounts — so
 //! the preview IS the layout the world will get. The bands are vanilla Y; a raised floor moves
 //! the whole layout up with it, so the picture is the same.
 //!
@@ -12,7 +12,7 @@
 //! sampled with a high surface height so the ice blotches are VISIBLE — the map shows where
 //! ice would go wherever the terrain is mountainous enough.
 
-use super::decoration::{BiomeAmounts, Decor, Zone};
+use super::decoration::{Decor, Zone};
 use crate::args::Args;
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::projection::ProjectionSpec;
@@ -65,11 +65,7 @@ pub fn render(args: &Args, frame: Option<XZBBox>) -> Result<(), String> {
         xzbbox.min_z(),
         xzbbox.max_z(),
     );
-    let amounts = match args.cave_biomes.as_deref() {
-        Some(spec) => BiomeAmounts::parse(spec).map_err(|e| format!("--cave-biomes: {e}"))?,
-        None => BiomeAmounts::default(),
-    };
-    let decor = Decor::new(super::seed(args), amounts);
+    let decor = Decor::new(super::seed(args), super::biome_amounts(args));
 
     let span_x = (max_x - min_x + 1).max(1) as u32;
     let span_z = (max_z - min_z + 1).max(1) as u32;
