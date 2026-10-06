@@ -491,5 +491,14 @@
   "run_elapsed": "Eltelt: {time}",
   "run_eta": "Hátralévő: {time}",
   "run_pieces": "Részek: {done}/{n}",
-  "run_workers": "Feldolgozók: {w}"
+  "run_workers": "Feldolgozók: {w}",
+  "mini_mode": "Mini mód",
+  "mini_mode_desc": "Az ablak bezárása kis panellé zsugorítja az Arnist. A generálás folytatódik.",
+  "mini_shrink": "Kicsinyítés mini panellé",
+  "mini_expand": "Kibontás",
+  "mini_close": "Arnis bezárása",
+  "mini_idle": "Kész",
+  "mini_confirm_close": "Leállítod a generálást és bezárod az Arnist?",
+  "mini_confirm_cancel": "Mégse",
+  "mini_confirm_stop": "Leállítás és bezárás"
 }

@@ -491,5 +491,14 @@
   "run_elapsed": "Vergangen: {time}",
   "run_eta": "Verbleibend: {time}",
   "run_pieces": "Teile: {done}/{n}",
-  "run_workers": "Worker: {w}"
+  "run_workers": "Worker: {w}",
+  "mini_mode": "Mini-Modus",
+  "mini_mode_desc": "Beim Schließen schrumpft Arnis zu einem kleinen Fenster. Läufe gehen weiter.",
+  "mini_shrink": "Zum Mini-Fenster verkleinern",
+  "mini_expand": "Vergrößern",
+  "mini_close": "Arnis schließen",
+  "mini_idle": "Bereit",
+  "mini_confirm_close": "Generierung stoppen und Arnis schließen?",
+  "mini_confirm_cancel": "Abbrechen",
+  "mini_confirm_stop": "Stoppen und schließen"
 }

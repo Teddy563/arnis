@@ -491,5 +491,14 @@
   "run_elapsed": "Upłynęło: {time}",
   "run_eta": "Pozostało: {time}",
   "run_pieces": "Części: {done}/{n}",
-  "run_workers": "Procesy: {w}"
+  "run_workers": "Procesy: {w}",
+  "mini_mode": "Tryb mini",
+  "mini_mode_desc": "Zamknięcie okna zmniejsza Arnis do małego panelu. Generowanie trwa dalej.",
+  "mini_shrink": "Zmniejsz do mini panelu",
+  "mini_expand": "Rozwiń",
+  "mini_close": "Zamknij Arnis",
+  "mini_idle": "Gotowe",
+  "mini_confirm_close": "Zatrzymać generowanie i zamknąć Arnis?",
+  "mini_confirm_cancel": "Anuluj",
+  "mini_confirm_stop": "Zatrzymaj i zamknij"
 }

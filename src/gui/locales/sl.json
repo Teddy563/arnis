@@ -491,5 +491,14 @@
   "run_elapsed": "Preteklo: {time}",
   "run_eta": "Preostalo: {time}",
   "run_pieces": "Deli: {done}/{n}",
-  "run_workers": "Procesi: {w}"
+  "run_workers": "Procesi: {w}",
+  "mini_mode": "Mini način",
+  "mini_mode_desc": "Zapiranje okna skrči Arnis v majhno ploščo. Generiranje se nadaljuje.",
+  "mini_shrink": "Skrči v mini ploščo",
+  "mini_expand": "Razširi",
+  "mini_close": "Zapri Arnis",
+  "mini_idle": "Pripravljeno",
+  "mini_confirm_close": "Ustavim generiranje in zaprem Arnis?",
+  "mini_confirm_cancel": "Prekliči",
+  "mini_confirm_stop": "Ustavi in zapri"
 }

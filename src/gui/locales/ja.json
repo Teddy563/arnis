@@ -491,5 +491,14 @@
   "run_elapsed": "経過: {time}",
   "run_eta": "残り: {time}",
   "run_pieces": "ピース: {done}/{n}",
-  "run_workers": "ワーカー: {w}"
+  "run_workers": "ワーカー: {w}",
+  "mini_mode": "ミニモード",
+  "mini_mode_desc": "ウィンドウを閉じると Arnis は小さなパネルになります。生成は続きます。",
+  "mini_shrink": "ミニパネルに縮小",
+  "mini_expand": "展開",
+  "mini_close": "Arnis を閉じる",
+  "mini_idle": "準備完了",
+  "mini_confirm_close": "生成を停止して Arnis を閉じますか？",
+  "mini_confirm_cancel": "キャンセル",
+  "mini_confirm_stop": "停止して閉じる"
 }

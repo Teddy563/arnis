@@ -154,8 +154,22 @@ pub fn run_gui() -> Result<(), String> {
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_log,
-            gui_set_telemetry_consent
+            gui_set_telemetry_consent,
+            gui_set_mini_mode,
+            gui_mini_window,
+            gui_mini_drag,
+            gui_quit
         ])
+        // Mini mode on: the window's close becomes "shrink to the mini panel",
+        // or, when it already is the panel, the panel's own X. Off, nothing.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if MINI_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = tauri::Emitter::emit(window, "mini-close-requested", ());
+                }
+            }
+        })
         .setup(|app| {
             let app_handle = app.handle();
             let main_window = tauri::Manager::get_webview_window(app_handle, "main")
@@ -165,6 +179,91 @@ pub fn run_gui() -> Result<(), String> {
         })
         .run(tauri::generate_context!())
         .map_err(|e| format!("Error while starting the application UI (Tauri): {e}"))
+}
+
+/// Mini mode (Settings > Application). Set from the page on restore and on change.
+static MINI_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The full window before it shrank: inner size, outer position, maximized.
+type WindowPlace = (tauri::PhysicalSize<u32>, tauri::PhysicalPosition<i32>, bool);
+static MINI_RESTORE: std::sync::Mutex<Option<WindowPlace>> = std::sync::Mutex::new(None);
+/// The mini panel, in logical pixels.
+const MINI_SIZE: (f64, f64) = (360.0, 204.0);
+
+#[tauri::command]
+fn gui_set_mini_mode(enabled: bool) {
+    MINI_MODE.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Shrinks the window to the mini panel (no frame, on top, the 1000x650
+/// minimum lifted), or gives the full window back where it was.
+#[tauri::command]
+fn gui_mini_window(window: tauri::WebviewWindow, mini: bool) -> Result<(), String> {
+    use tauri::{LogicalSize, Size};
+    let e = |e: tauri::Error| e.to_string();
+    let restore = &mut *MINI_RESTORE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if mini {
+        let maximized = window.is_maximized().map_err(e)?;
+        if maximized {
+            window.unmaximize().map_err(e)?;
+        }
+        *restore = Some((
+            window.inner_size().map_err(e)?,
+            window.outer_position().map_err(e)?,
+            maximized,
+        ));
+        window.set_min_size(None::<Size>).map_err(e)?;
+        window.set_decorations(false).map_err(e)?;
+        window.set_resizable(false).map_err(e)?;
+        window
+            .set_size(LogicalSize::new(MINI_SIZE.0, MINI_SIZE.1))
+            .map_err(e)?;
+        window.set_always_on_top(true).map_err(e)?;
+    } else {
+        window.set_always_on_top(false).map_err(e)?;
+        window.set_decorations(true).map_err(e)?;
+        window.set_resizable(true).map_err(e)?;
+        // The minimum tauri.conf.json gives the window.
+        let config = tauri::Manager::config(&window);
+        let min = config
+            .app
+            .windows
+            .first()
+            .and_then(|w| Some(LogicalSize::new(w.min_width?, w.min_height?)));
+        match restore.take() {
+            Some((size, position, maximized)) => {
+                window.set_size(size).map_err(e)?;
+                window.set_position(position).map_err(e)?;
+                window.set_min_size(min).map_err(e)?;
+                if maximized {
+                    window.maximize().map_err(e)?;
+                }
+            }
+            None => {
+                if let Some(min) = min {
+                    window.set_size(min).map_err(e)?;
+                }
+                window.set_min_size(min).map_err(e)?;
+                window.center().map_err(e)?;
+            }
+        }
+        window.set_focus().map_err(e)?;
+    }
+    Ok(())
+}
+
+/// The mini panel has no title bar, so its header moves the window.
+#[tauri::command]
+fn gui_mini_drag(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+/// The mini panel's X, after its confirm when a run is going: the run's
+/// pieces are in a job object that goes with the process.
+#[tauri::command]
+fn gui_quit(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Detects the default Minecraft Java Edition saves directory for the current OS.

@@ -491,5 +491,14 @@
   "run_elapsed": "Praėjo: {time}",
   "run_eta": "Liko: {time}",
   "run_pieces": "Dalys: {done}/{n}",
-  "run_workers": "Procesai: {w}"
+  "run_workers": "Procesai: {w}",
+  "mini_mode": "Mini režimas",
+  "mini_mode_desc": "Uždarius langą, Arnis sumažėja iki mažo skydelio. Generavimas tęsiasi.",
+  "mini_shrink": "Sumažinti iki mini skydelio",
+  "mini_expand": "Išskleisti",
+  "mini_close": "Uždaryti Arnis",
+  "mini_idle": "Paruošta",
+  "mini_confirm_close": "Sustabdyti generavimą ir uždaryti Arnis?",
+  "mini_confirm_cancel": "Atšaukti",
+  "mini_confirm_stop": "Sustabdyti ir uždaryti"
 }

@@ -1061,14 +1061,15 @@ function runStatParts(withEta) {
   return parts;
 }
 
-let runStatsKey = '';
 function renderRunStats() {
-  const el = document.getElementById('run-stats');
+  fillRunStats(document.getElementById('run-stats'), runStatParts(false));
+}
+
+function fillRunStats(el, parts) {
   if (!el) return;
-  const parts = runStatParts(false);
   const key = JSON.stringify(parts);
-  if (key === runStatsKey) return;
-  runStatsKey = key;
+  if (key === el.dataset.key) return;
+  el.dataset.key = key;
   el.replaceChildren(...parts.map(([icon, text]) => {
     const span = document.createElement('span');
     span.className = 'run-stat';
@@ -1078,8 +1079,9 @@ function renderRunStats() {
   }));
 }
 
-// For the mini panel (mini.js): what the main window shows, plus the time left.
-window.arnisRunState = () => ({ running: !!runStats, parts: runStatParts(true) });
+// For the mini panel (mini.js): whether a run is going, and its line with the time left.
+window.arnisRunRunning = () => !!runStats;
+window.arnisFillRunStats = (el) => fillRunStats(el, runStatParts(true));
 
 // Function to set up the progress bar listener
 function setupProgressListener() {

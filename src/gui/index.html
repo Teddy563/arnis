@@ -14,6 +14,7 @@
   <script src="./js/logging.js"></script>
   <script src="./js/preview3d.js" defer></script>
   <script type="module" src="./js/main.js" defer></script>
+  <script type="module" src="./js/mini.js" defer></script>
   <script type="module" src="./js/license.js" defer></script>
   <script type="module" src="./js/language-selector.js" defer></script>
 </head>
@@ -69,6 +70,8 @@
     <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
     <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/></symbol>
     <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></symbol>
     <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
     <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
@@ -184,6 +187,10 @@
                 <span id="progress-eta" class="progress-eta-overlay" dir="ltr"></span>
               </div>
               <span id="progress-detail">0%</span>
+              <!-- Mini mode on: shrink to the mini panel (js/mini.js) -->
+              <button type="button" id="mini-shrink" class="mini-shrink" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-minimize"></use></svg>
+              </button>
             </div>
             <!-- Before a run the estimate for the selection, during one the elapsed time and pieces (main.js renderRunStats) -->
             <div id="run-stats" class="run-stats" dir="ltr"></div>
@@ -1010,6 +1017,22 @@
                   <div class="settings-control cache-control">
                     <span id="cache-size" class="cache-size"></span>
                     <button type="button" id="clear-cache-button" class="clear-cache-button" data-localize="clear_tile_cache_button">Clear</button>
+                  </div>
+                </div>
+
+                <div class="settings-row setting-tile is-wide">
+                  <label for="mini-mode-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-minimize"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="mini_mode">Mini Mode</span>
+                        <span class="tooltip-icon" data-tooltip="Closing the window, or the shrink button next to the progress bar, turns Arnis into a small always-on-top panel with the run's progress, stage, pieces, elapsed time, time left and estimated size. Expand brings the full window back; the panel's X quits, after asking if a generation is running.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="mini_mode_desc">Closing the window shrinks Arnis to a small panel. Runs keep going.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="mini-mode-toggle" name="mini-mode-toggle">
                   </div>
                 </div>
               </div>
@@ -2653,6 +2676,40 @@
       </a>
     </footer>
   </main>
+
+  <!-- Mini mode (Settings > Application, js/mini.js): the window shrunk to a
+       small panel with the run's stats. Shown only under body.mini-mode. -->
+  <div id="mini-panel" class="mini-panel">
+    <div id="mini-head" class="mini-head">
+      <img src="./images/logo.png" alt="Arnis" class="mini-logo" draggable="false">
+      <span id="mini-world" class="mini-world"></span>
+      <button type="button" id="mini-expand" class="mini-icon-button">
+        <svg class="icon" aria-hidden="true"><use href="#i-maximize"></use></svg>
+      </button>
+      <button type="button" id="mini-close" class="mini-icon-button">
+        <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+      </button>
+    </div>
+    <div id="mini-stage" class="mini-stage"></div>
+    <div class="progress-row">
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="mini-bar"></div>
+      </div>
+      <span id="mini-percent" class="mini-percent">0%</span>
+    </div>
+    <div id="mini-stats" class="run-stats mini-stats"></div>
+    <div id="mini-confirm" class="mini-confirm" hidden>
+      <div class="dialog" role="alertdialog" aria-labelledby="mini-confirm-text">
+        <div class="dialog-body">
+          <p id="mini-confirm-text" data-localize="mini_confirm_close">Stop generation and close Arnis?</p>
+        </div>
+        <footer class="dialog-footer">
+          <button type="button" class="dialog-button" id="mini-confirm-cancel" data-localize="mini_confirm_cancel">Cancel</button>
+          <button type="button" class="dialog-button is-danger" id="mini-confirm-stop" data-localize="mini_confirm_stop">Stop and close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

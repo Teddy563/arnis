@@ -491,5 +491,14 @@
   "run_elapsed": "Kulunut: {time}",
   "run_eta": "Jäljellä: {time}",
   "run_pieces": "Osat: {done}/{n}",
-  "run_workers": "Työprosessit: {w}"
+  "run_workers": "Työprosessit: {w}",
+  "mini_mode": "Minitila",
+  "mini_mode_desc": "Ikkunan sulkeminen pienentää Arnisin pieneksi paneeliksi. Ajo jatkuu.",
+  "mini_shrink": "Pienennä minipaneeliksi",
+  "mini_expand": "Laajenna",
+  "mini_close": "Sulje Arnis",
+  "mini_idle": "Valmis",
+  "mini_confirm_close": "Pysäytetäänkö generointi ja suljetaanko Arnis?",
+  "mini_confirm_cancel": "Peruuta",
+  "mini_confirm_stop": "Pysäytä ja sulje"
 }

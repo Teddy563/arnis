@@ -491,5 +491,14 @@
   "run_elapsed": "Decorrido: {time}",
   "run_eta": "Restante: {time}",
   "run_pieces": "Partes: {done}/{n}",
-  "run_workers": "Processos: {w}"
+  "run_workers": "Processos: {w}",
+  "mini_mode": "Modo Mini",
+  "mini_mode_desc": "Fechar a janela reduz o Arnis a um painel pequeno. A geração continua.",
+  "mini_shrink": "Reduzir para painel mini",
+  "mini_expand": "Expandir",
+  "mini_close": "Fechar o Arnis",
+  "mini_idle": "Pronto",
+  "mini_confirm_close": "Parar a geração e fechar o Arnis?",
+  "mini_confirm_cancel": "Cancelar",
+  "mini_confirm_stop": "Parar e fechar"
 }

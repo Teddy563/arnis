@@ -491,5 +491,14 @@
   "run_elapsed": "المنقضي: {time}",
   "run_eta": "المتبقي: {time}",
   "run_pieces": "الأجزاء: {done}/{n}",
-  "run_workers": "العمليات: {w}"
+  "run_workers": "العمليات: {w}",
+  "mini_mode": "الوضع المصغّر",
+  "mini_mode_desc": "إغلاق النافذة يصغّر Arnis إلى لوحة صغيرة. يستمر التوليد.",
+  "mini_shrink": "تصغير إلى لوحة مصغّرة",
+  "mini_expand": "توسيع",
+  "mini_close": "إغلاق Arnis",
+  "mini_idle": "جاهز",
+  "mini_confirm_close": "إيقاف التوليد وإغلاق Arnis؟",
+  "mini_confirm_cancel": "إلغاء",
+  "mini_confirm_stop": "إيقاف وإغلاق"
 }

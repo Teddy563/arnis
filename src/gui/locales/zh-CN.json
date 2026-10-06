@@ -491,5 +491,14 @@
   "run_elapsed": "已用时：{time}",
   "run_eta": "剩余：{time}",
   "run_pieces": "分块：{done}/{n}",
-  "run_workers": "工作进程：{w}"
+  "run_workers": "工作进程：{w}",
+  "mini_mode": "迷你模式",
+  "mini_mode_desc": "关闭窗口时 Arnis 会缩成一个小面板，生成继续进行。",
+  "mini_shrink": "缩小为迷你面板",
+  "mini_expand": "展开",
+  "mini_close": "关闭 Arnis",
+  "mini_idle": "就绪",
+  "mini_confirm_close": "停止生成并关闭 Arnis？",
+  "mini_confirm_cancel": "取消",
+  "mini_confirm_stop": "停止并关闭"
 }

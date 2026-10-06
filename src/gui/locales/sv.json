@@ -491,5 +491,14 @@
   "run_elapsed": "Förflutet: {time}",
   "run_eta": "Kvar: {time}",
   "run_pieces": "Delar: {done}/{n}",
-  "run_workers": "Arbetare: {w}"
+  "run_workers": "Arbetare: {w}",
+  "mini_mode": "Miniläge",
+  "mini_mode_desc": "När fönstret stängs krymper Arnis till en liten panel. Körningen fortsätter.",
+  "mini_shrink": "Krymp till minipanel",
+  "mini_expand": "Expandera",
+  "mini_close": "Stäng Arnis",
+  "mini_idle": "Redo",
+  "mini_confirm_close": "Stoppa genereringen och stänga Arnis?",
+  "mini_confirm_cancel": "Avbryt",
+  "mini_confirm_stop": "Stoppa och stäng"
 }
