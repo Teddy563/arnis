@@ -812,7 +812,7 @@ const ETA_WPRIOR = {
   nonStreaming: [37, 2, 11, 20],
   streaming: [60, 0.3, 0.5, 3.0],
 };
-// A run in pieces reports one chunk-weighted 0-100% for the whole job (the
+// A run in pieces reports one 0-100% for the whole job, each piece an equal share (the
 // coordinator's `report` in scale/mod.rs), so it is one band from the start.
 const ETA_PIECED_PHASES = [{ id: "pieces", lo: 1, hi: 100 }];
 // Signage map tiles are what makes the finalize band long, and they are Java-only.

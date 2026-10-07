@@ -262,7 +262,6 @@ pub fn run(
     // finished piece shows pieces need more memory than estimated.
     let running = Mutex::new(0usize);
     let cap = AtomicUsize::new(sizing.workers);
-    let total = units.iter().map(WorkUnit::chunks).sum::<u64>().max(1) as f64;
     let of = units.len();
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
@@ -280,23 +279,22 @@ pub fn run(
         }
     }
     let queue = Mutex::new(queue);
-    // Each piece's share done, weighted by its chunks for the job's bar.
-    let done: Mutex<Vec<f64>> = Mutex::new(
+    // Each piece's fraction done, and the highest job percentage sent.
+    let done: Mutex<(Vec<f64>, f64)> = Mutex::new((
         lock(&results)
             .iter()
             .map(|r| if r.is_some() { 1.0 } else { 0.0 })
             .collect(),
-    );
+        0.0,
+    ));
     let finished = AtomicUsize::new(of - lock(&queue).len());
     // Piece `i` is `f` done: moves the job's bar and, in the window, the count.
     let report = |i: usize, f: f64| {
         let mut d = lock(&done);
-        d[i] = f;
-        let sum: f64 = d
-            .iter()
-            .zip(&units)
-            .map(|(f, u)| f * u.chunks() as f64)
-            .sum();
+        d.0[i] = f;
+        // A retried piece starts over; the bar waits for it instead.
+        d.1 = d.1.max(job_percent(&d.0));
+        let percent = d.1;
         drop(d);
         // `--progress json` has its piece records, so its stream stays as it was.
         let message = if crate::progress::is_running_with_gui() {
@@ -307,7 +305,7 @@ pub fn run(
         } else {
             String::new()
         };
-        crate::progress::emit_gui_progress_update(sum / total * 100.0, &message);
+        crate::progress::emit_gui_progress_update(percent, &message);
     };
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
@@ -374,13 +372,14 @@ pub fn run(
             }
             write(&job.done_path(i), &json!(r))?;
             crate::keep_one_world();
+            let pieces_done = finished.fetch_add(1, Ordering::Relaxed) + 1;
             progress_json::record(
                 "piece",
                 json!({"piece": i, "of": of, "state": "done",
-                       "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s}),
+                       "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s,
+                       "pieces_done": pieces_done}),
             );
             progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, Ordering::Relaxed);
-            finished.fetch_add(1, Ordering::Relaxed);
             report(i, 1.0);
             lock(&results)[i] = Some(r);
         }
@@ -805,9 +804,33 @@ pub(crate) fn run_piece_until(
     })
 }
 
+/// The job's percentage: every piece is an equal share, so it reads n/N as
+/// "n/N done" does, plus the running pieces' own fractions. Not chunk-weighted:
+/// the large middle pieces go first, which put the bar far ahead of the count.
+fn job_percent(done: &[f64]) -> f64 {
+    done.iter().map(|f| f.clamp(0.0, 1.0)).sum::<f64>() / done.len().max(1) as f64 * 100.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_job_percentage_follows_the_pieces_done() {
+        // 2 of 16 done, two running at a half and a quarter.
+        let mut d = vec![0.0; 16];
+        d[0] = 1.0;
+        d[1] = 1.0;
+        d[2] = 0.5;
+        d[3] = 0.25;
+        assert!((job_percent(&d) - 2.75 / 16.0 * 100.0).abs() < 1e-9);
+        // Only finished pieces: exactly n/N.
+        d[2] = 1.0;
+        d[3] = 0.0;
+        assert!((job_percent(&d) - 18.75).abs() < 1e-9);
+        assert_eq!(job_percent(&[1.0; 16]), 100.0);
+        assert_eq!(job_percent(&[]), 0.0);
+    }
 
     #[test]
     fn a_piece_gets_the_jobs_options_but_its_own_bbox_and_lease() {

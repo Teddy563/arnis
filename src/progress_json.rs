@@ -15,11 +15,12 @@
 //! go to stdout around these, so a reader keeps the lines starting `{"v":`.
 //!
 //! A job built in pieces (`--unit-regions`) adds `piece` records, state
-//! `start`, `retry`, `done`, `skipped` or `failed`, and each piece's own run
-//! ends with a `result` record before its `done`:
+//! `start`, `retry`, `done` (with `pieces_done`, the count so far), `skipped`
+//! or `failed`, and each piece's own run ends with a `result` record before
+//! its `done`:
 //!
 //! ```text
-//! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","peak_rss_mb":2310,"wall_s":40.1}
+//! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","peak_rss_mb":2310,"wall_s":40.1,"pieces_done":5}
 //! ```
 //!
 //! A download or bake of an `.osm.pbf` extract adds `transfer` records: its
