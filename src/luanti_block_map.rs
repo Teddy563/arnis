@@ -801,6 +801,9 @@ fn to_mineclonia_node(block: Block, props: Option<&Value>) -> LuantiNode {
         484 => "mcl_farming:melon",
         485 => "mcl_loom:loom",
         486 => "mcl_smithing_table:table",
+        487 => "mcl_mud:packed_mud",
+        488 => "mcl_lush_caves:rooted_dirt",
+        489 => "mcl_farming:beetroot", // ripe; crop stages are not carried over
         _ => "mcl_core:stone",
     };
     LuantiNode { name, param2: 0 }

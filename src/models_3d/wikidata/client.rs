@@ -14,7 +14,7 @@ const MAX_MODEL_BYTES: u64 = 128 * 1024 * 1024;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 
 pub(crate) fn cache_root() -> PathBuf {
-    if let Some(dir) = dirs::cache_dir() {
+    if let Some(dir) = crate::elevation::cache::user_cache_dir() {
         dir.join(CACHE_SUBDIR)
     } else {
         PathBuf::from("./.arnis_wikidata_cache")
@@ -71,6 +71,7 @@ pub fn fetch_model(url: &str) -> Result<Vec<u8>, String> {
             return Ok(bytes);
         }
     }
+    crate::net::ensure_online("3D models (Wikimedia)")?;
     let client = client()?;
     let _permit = crate::net::request_permit();
     let resp = client.get(url).send().map_err(|e| e.to_string())?;
@@ -79,7 +80,7 @@ pub fn fetch_model(url: &str) -> Result<Vec<u8>, String> {
     }
     let bytes = read_capped(resp, MAX_MODEL_BYTES)?;
     let _ = fs::create_dir_all(&dir);
-    let _ = fs::write(&path, &bytes);
+    crate::overture::write_atomic(&path, &bytes);
     Ok(bytes)
 }
 

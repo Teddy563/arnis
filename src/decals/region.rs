@@ -1,4 +1,5 @@
-//! Sign style picked from the bbox centre: blade colour, speed sign shape, metro logo.
+//! Sign style picked from the bbox centre (One World: the world origin): blade colour, speed sign
+//! shape, metro logo.
 //! Falls back to the continental European look.
 
 use super::registry::SpeedStyle;
@@ -22,6 +23,21 @@ pub enum SignRegion {
 }
 
 impl SignRegion {
+    /// The region a run paints and signs for: its bbox centre, or in One World the
+    /// world's origin, so every piece of a world picks the same one.
+    pub fn for_run(
+        args: &crate::args::Args,
+        llbbox: &crate::coordinate_system::geographic::LLBBox,
+    ) -> SignRegion {
+        match &args.one_world_run {
+            Some(run) => SignRegion::detect(run.origin_lat, run.origin_lon),
+            None => SignRegion::detect(
+                (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
+                (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
+            ),
+        }
+    }
+
     /// Picks the region for a lat/lon (degrees).
     pub fn detect(lat: f64, lon: f64) -> SignRegion {
         if (15.0..85.0).contains(&lat) && (-170.0..-50.0).contains(&lon) {
@@ -114,6 +130,7 @@ pub enum BladeStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::coordinate_system::geographic::LLBBox;
 
     #[test]
     fn detects_major_regions() {
@@ -136,5 +153,29 @@ mod tests {
         assert_eq!(SignRegion::detect(35.68, 139.69), SignRegion::Japan); // Tokyo
         assert_eq!(SignRegion::detect(50.95, 1.85), SignRegion::Europe); // Calais
         assert_eq!(SignRegion::detect(52.37, 4.90), SignRegion::Europe); // Amsterdam
+    }
+
+    #[test]
+    fn one_world_pieces_take_the_world_origins_region() {
+        use clap::Parser;
+        // Two pieces of one world either side of the Germanic box's west edge (5.9 E).
+        let west = LLBBox::from_str("48.0,5.7,48.1,5.8").unwrap();
+        let east = LLBBox::from_str("48.0,6.0,48.1,6.1").unwrap();
+        let mut args = crate::args::Args::parse_from(["arnis", "--bbox", "48.0,5.7,48.1,5.8"]);
+        assert_eq!(SignRegion::for_run(&args, &west), SignRegion::Europe);
+        assert_eq!(SignRegion::for_run(&args, &east), SignRegion::Germanic);
+        args.one_world_run = Some(crate::one_world::RunContext {
+            world_dir: std::path::PathBuf::new(),
+            origin_lat: 48.05,
+            origin_lon: 6.0,
+            extending: false,
+            elevation: None,
+            elevation_zoom: None,
+            replaced_chunks: 0,
+            area_id: 0,
+            unit: None,
+        });
+        assert_eq!(SignRegion::for_run(&args, &west), SignRegion::Germanic);
+        assert_eq!(SignRegion::for_run(&args, &east), SignRegion::Germanic);
     }
 }

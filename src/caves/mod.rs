@@ -68,6 +68,7 @@ use decoration::{BiomeAmounts, Decor};
 use density::CaveGen;
 use rayon::prelude::*;
 use shape::{CaveShape, Rect};
+use std::sync::atomic::{AtomicI32, Ordering};
 // FnvHashSet, not std HashSet: std seeds its hasher randomly PER PROCESS, so
 // iterating one yields a different order every run. These sets are iterated to apply
 // world edits (despeckle, prune, decoration), and where those edits interact the write
@@ -76,10 +77,17 @@ use shape::{CaveShape, Rect};
 // every time.
 use fnv::FnvHashSet as HashSet;
 
-/// World seed for every cave pass. Fixed, so the same area always gets the same caves.
+/// Built-in seed for every cave pass, used unless `--cave-seed` is given. Fixed, so the same
+/// area always gets the same caves.
 const SEED: i64 = 0xCA7E_CA7E;
 /// Vanilla's world floor; every depth constant in the cave passes is written against it.
 pub(crate) const VANILLA_FLOOR: i32 = -64;
+/// The theme amounts of More Vanilla and More Mix: every theme at this share of its default.
+/// Calibrated on `--cave-zone-map` (three areas and seeds, upper and deep band averaged): More
+/// Vanilla is about 30% themed, All Mix (every theme at its default) about 77%, More Mix about
+/// 89%. More Mix stays under the 200% top of `--cave-biomes`, so the window's rows reach it.
+const MORE_VANILLA: f64 = 0.18;
+const MORE_MIX: f64 = 1.8;
 /// Carve only this many blocks below the column's surface (the roof seal — keeps caves from breaching
 /// the surface / exposing grass).
 const TOP_GATE: i32 = 6;
@@ -104,10 +112,33 @@ const CAVE_HOST: &[Block] = &[
     DIORITE,
 ];
 
-/// How far this world's bedrock plane sits above vanilla's.
+/// `--cave-datum-y`, or `i32::MIN` for none. Set from args at the start of every carve.
+static DATUM_Y: AtomicI32 = AtomicI32::new(i32::MIN);
+
+fn set_datum_y(y: Option<i32>) {
+    DATUM_Y.store(y.unwrap_or(i32::MIN), Ordering::Relaxed);
+}
+
+/// Where vanilla's floor sits for the cave passes: `--cave-datum-y` when given, so separate
+/// runs share one depth frame, else this world's bedrock plane.
+#[inline]
+pub(crate) fn datum_y() -> i32 {
+    match DATUM_Y.load(Ordering::Relaxed) {
+        i32::MIN => terrain_floor_y(),
+        y => y,
+    }
+}
+
+/// Whether `--cave-datum-y` pins the datum for this carve.
+#[inline]
+pub(crate) fn datum_pinned() -> bool {
+    DATUM_Y.load(Ordering::Relaxed) != i32::MIN
+}
+
+/// How far the cave datum sits above vanilla's floor.
 #[inline]
 pub(crate) fn y_shift() -> i32 {
-    terrain_floor_y() - VANILLA_FLOOR
+    datum_y() - VANILLA_FLOOR
 }
 
 /// A vanilla Y, translated into this world.
@@ -116,16 +147,60 @@ pub(crate) fn vy(y: i32) -> i32 {
     y + y_shift()
 }
 
-/// The `--cave-biomes` amounts for this run. `validate_args` has already rejected a bad list,
-/// so a parse failure here can only come from a caller that skipped it.
+/// This run's cave seed: `--cave-seed` (its bits, so every u64 is a distinct layout), else a
+/// non-zero `--seed`, else the built-in one.
+pub(crate) fn seed(args: &Args) -> i64 {
+    let world = args.seed.filter(|&s| s != 0);
+    args.cave_seed.or(world).map_or(SEED, |s| s as i64)
+}
+
+/// `--cave-style`: how much of the underground the themed cave biomes take. A style is one
+/// amount for every theme, so every style runs through the same zone picker as `--cave-biomes`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, clap::ValueEnum)]
+pub enum CaveStyle {
+    /// Plain vanilla caves, no themed biomes.
+    Vanilla,
+    /// About 70% plain caves, 30% themed.
+    MoreVanilla,
+    /// Every theme at its default amount, about 77% themed.
+    #[default]
+    AllMix,
+    /// Every theme past its default, about 89% themed.
+    MoreMix,
+}
+
+impl CaveStyle {
+    /// Every theme's amount (1.0 = its default), measured against `--cave-zone-map`'s shares.
+    pub fn amount(self) -> f64 {
+        match self {
+            CaveStyle::Vanilla => 0.0,
+            CaveStyle::MoreVanilla => MORE_VANILLA,
+            CaveStyle::MoreMix => MORE_MIX,
+            CaveStyle::AllMix => 1.0,
+        }
+    }
+}
+
+/// `--cave-ores`: the vanilla ore table as is, or with more veins of every metal and gem ore.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, clap::ValueEnum)]
+pub enum CaveOres {
+    #[default]
+    Normal,
+    /// Twice the veins of every metal and gem ore, at vanilla's heights and vein sizes.
+    More,
+}
+
+/// The `--cave-style` amounts with `--cave-biomes` over them. `validate_args` has already
+/// rejected a bad list, so a parse failure here can only come from a caller that skipped it.
 fn biome_amounts(args: &Args) -> BiomeAmounts {
-    match args.cave_biomes.as_deref().map(BiomeAmounts::parse) {
+    let style = BiomeAmounts::uniform(args.cave_style.unwrap_or_default().amount());
+    match args.cave_biomes.as_deref().map(|s| style.parse_onto(s)) {
         Some(Ok(amounts)) => amounts,
         Some(Err(e)) => {
-            eprintln!("Warning: --cave-biomes ignored ({e}); using defaults");
-            BiomeAmounts::default()
+            eprintln!("Warning: --cave-biomes ignored ({e}); using the style's amounts");
+            style
         }
-        None => BiomeAmounts::default(),
+        None => style,
     }
 }
 
@@ -155,10 +230,11 @@ pub fn carve_region(
     min_z: i32,
     max_z: i32,
 ) {
+    set_datum_y(args.cave_datum_y);
     // The ore variants and the lava rims match the host rock, so the deepslate line goes first.
     deepslate::apply_region(editor, min_x, max_x, min_z, max_z);
 
-    let seed = SEED;
+    let seed = seed(args);
     let floor = terrain_floor_y();
     let gen = CaveGen::new(seed);
     let decor = Decor::new(seed, biome_amounts(args));
@@ -171,11 +247,20 @@ pub fn carve_region(
         min_z,
         max_z,
     };
-    let world = Rect {
-        min_x: world.min_x(),
-        max_x: world.max_x(),
-        min_z: world.min_z(),
-        max_z: world.max_z(),
+    // Pools, rivers and geodes stop at the run's bbox, unless --cave-datum-y says this run is
+    // one of several that must line up: then they are planned past it, so a feature crossing
+    // into a neighbouring area or piece is the same feature on both sides and each writes its
+    // part. The surface they plan against comes from the One World ground pad, which reaches
+    // past the planning extent.
+    let world = if args.cave_datum_y.is_some() {
+        Rect::EVERYWHERE
+    } else {
+        Rect {
+            min_x: world.min_x(),
+            max_x: world.max_x(),
+            min_z: world.min_z(),
+            max_z: world.max_z(),
+        }
     };
     let shape = CaveShape::new(&gen, seed, world, region, |x, z| {
         editor.get_ground_level(x, z)
@@ -413,7 +498,8 @@ pub fn carve_region(
 
     // 5) ORES — vanilla blob ores (+ stone variants), placed into the now-clean rock so
     //    discard-on-air-exposure leaves clean cave walls. deepslate variant matches host rock.
-    ores::place_ores(editor, seed, min_x, max_x, min_z, max_z);
+    let more_ores = args.cave_ores == Some(CaveOres::More);
+    ores::place_ores(editor, seed, more_ores, min_x, max_x, min_z, max_z);
 
     // 6) DECORATION — the biome themes (lush moss + cave-vines, dripstone, sculk, mushroom, ice,
     //    amethyst, volcanic, coral reefs in pools), glow lichen on all surfaces, and rare amethyst
@@ -729,6 +815,105 @@ mod tests {
         };
         set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
         set_terrain_floor_y(DEFAULT_MIN_Y + 2);
+    }
+
+    /// A style is one amount for every theme, no style is All Mix (today's defaults), and a
+    /// `--cave-biomes` value replaces the style's for its theme only.
+    #[test]
+    fn a_cave_style_maps_to_theme_amounts() {
+        use clap::Parser;
+        let amounts = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            biome_amounts(&Args::parse_from(cmd))
+        };
+        assert_eq!(amounts(&[]), BiomeAmounts::default());
+        assert_eq!(
+            amounts(&["--cave-style", "all-mix"]),
+            BiomeAmounts::default()
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "vanilla"]),
+            BiomeAmounts::uniform(0.0)
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "more-vanilla"]),
+            BiomeAmounts::uniform(MORE_VANILLA)
+        );
+        assert_eq!(
+            amounts(&["--cave-style", "more-mix"]),
+            BiomeAmounts::uniform(MORE_MIX)
+        );
+        // The window's rows (a --cave-biomes list, 0-200%) reach every style's amount.
+        let top = BiomeAmounts::parse(&format!("lush={}", MORE_MIX * 100.0)).unwrap();
+        assert_eq!(top.lush, MORE_MIX);
+        let mixed = amounts(&["--cave-style", "vanilla", "--cave-biomes", "lush=150"]);
+        assert_eq!(
+            mixed,
+            BiomeAmounts {
+                lush: 1.5,
+                ..BiomeAmounts::uniform(0.0)
+            }
+        );
+    }
+
+    /// No `--cave-seed` is the built-in seed; another seed moves the caves.
+    #[test]
+    fn the_cave_seed_defaults_to_the_built_in_one() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd)
+        };
+        assert_eq!(seed(&parse(&[])), SEED);
+        assert_eq!(seed(&parse(&["--cave-seed", "3397307006"])), SEED);
+        let other = seed(&parse(&["--cave-seed", "7"]));
+        assert_eq!(other, 7);
+        // --seed stands in for a missing --cave-seed; 0 is no seed.
+        assert_eq!(seed(&parse(&["--seed", "7"])), 7);
+        assert_eq!(seed(&parse(&["--seed", "0"])), SEED);
+        assert_eq!(seed(&parse(&["--seed", "9", "--cave-seed", "7"])), 7);
+        let carve = |s| carver::carve_positions(s, -64, 63, -64, 63);
+        assert!(!carve(SEED).is_empty());
+        assert_ne!(carve(SEED), carve(other));
+    }
+
+    /// Two runs whose bedrock planes differ carve the same field once `--cave-datum-y` pins it,
+    /// and without it each follows its own floor.
+    #[test]
+    fn a_pinned_datum_ignores_the_floor() {
+        use crate::world_editor::{set_terrain_floor_y, terrain_floor_y};
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let gen_at = |ground: i32, datum: Option<i32>| {
+            set_terrain_floor_y(ground);
+            set_datum_y(datum);
+            (CaveGen::new(SEED), datum_y())
+        };
+        let (low, low_datum) = gen_at(-64, Some(-64));
+        let (high, high_datum) = gen_at(16, Some(-64));
+        let (own, own_datum) = gen_at(16, None);
+        let own_floor = terrain_floor_y();
+        set_datum_y(None);
+        vanilla_bounds();
+
+        assert_eq!((low_datum, high_datum), (-64, -64));
+        assert!(
+            own_datum == own_floor && own_floor > -64,
+            "unpinned, the datum is the floor"
+        );
+        let mut differs = false;
+        for (x, y, z) in [(3, -40, 9), (40, 0, -17), (-75, 60, 33), (8, 110, 8)] {
+            assert_eq!(
+                low.combined_density(x, y, z),
+                high.combined_density(x, y, z)
+            );
+            assert_eq!(low.noodle_density(x, y, z), high.noodle_density(x, y, z));
+            differs |= own.combined_density(x, y, z) != high.combined_density(x, y, z);
+        }
+        assert!(differs);
     }
 
     /// `CaveShape` must answer exactly what the carve does (noise caves plus carvers), or features

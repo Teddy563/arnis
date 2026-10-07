@@ -1,4 +1,6 @@
 use crate::coordinate_system::geographic::LLBBox;
+use crate::element_processing::road_detail::RoadDetail;
+use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -70,6 +72,12 @@ pub struct Args {
     #[arg(long)]
     pub world_name: Option<String>,
 
+    /// LAT,LON for block (0, 0) of a --one-world world this run creates,
+    /// instead of the centre of the first --bbox. A world that exists keeps
+    /// its own origin.
+    #[arg(long, value_name = "LAT,LON", value_parser = parse_origin, allow_hyphen_values = true)]
+    pub origin: Option<(f64, f64)>,
+
     /// Set by `one_world::prepare`.
     #[arg(skip)]
     pub one_world_run: Option<crate::one_world::RunContext>,
@@ -93,6 +101,22 @@ pub struct Args {
     /// Enable interior generation (optional, off unless requested)
     #[arg(long, default_value_t = false, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub interior: bool,
+
+    /// Chest loot table (JSON) for --interior, in place of the built-in one. A file that
+    /// cannot be read or fails validation is reported and the built-in table is used.
+    /// --dump-loot-table writes the built-in table in this format to start from.
+    #[arg(long = "loot-table", value_name = "FILE")]
+    pub loot_table: Option<PathBuf>,
+
+    /// Write the built-in chest loot table to FILE as JSON and exit.
+    #[arg(long = "dump-loot-table", value_name = "FILE")]
+    pub dump_loot_table: Option<PathBuf>,
+
+    /// Redraw the map item of the One World at --output-dir (the saves folder)
+    /// and --world-name from its recorded area previews, so it shows every
+    /// area instead of the first, and exit. Nothing is regenerated.
+    #[arg(long)]
+    pub map_item_only: bool,
 
     /// Enable filling ground (optional)
     #[arg(long, default_value_t = false)]
@@ -121,10 +145,48 @@ pub struct Args {
     #[arg(long = "cave-biomes", value_name = "LIST")]
     pub cave_biomes: Option<String>,
 
+    /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
+    /// more-vanilla (about 30% themed), all-mix (every theme at its default amount, about 77%
+    /// themed, the default) or more-mix (about 89% themed). --cave-biomes amounts override the
+    /// style's per theme.
+    #[arg(long = "cave-style", value_enum)]
+    pub cave_style: Option<crate::caves::CaveStyle>,
+
+    /// Ore veins in --caves: normal (vanilla's ore table, the default) or more (twice the
+    /// veins of every metal and gem ore, at vanilla's heights).
+    #[arg(long = "cave-ores", value_enum)]
+    pub cave_ores: Option<crate::caves::CaveOres>,
+
+    /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
+    /// layout. Omitted keeps the built-in seed, so an area always gets the same caves. A One
+    /// World keeps the seed its first area was built with.
+    #[arg(long = "cave-seed", value_name = "SEED")]
+    pub cave_seed: Option<u64>,
+
+    /// EXPERIMENTAL. World seed mixed into every per-element and per-block random choice
+    /// (building colours, trees, scatter, ground patches, ...), so the same area can be
+    /// rebuilt with a different but repeatable look. Also seeds --caves when --cave-seed is
+    /// omitted. Omitted or 0 keeps the default look. A One World keeps the seed its first
+    /// area was built with.
+    #[arg(long = "seed", value_name = "SEED")]
+    pub seed: Option<u64>,
+
+    /// Y the cave passes treat as vanilla's world floor (-64), a multiple of 16. Omitted, caves
+    /// follow each run's bedrock plane, which in a One World sits under each area's (and each
+    /// piece's) own lowest point, so neighbours with different floors do not line up
+    /// underground. One value for every run makes caves, the lava sea and the deepslate line
+    /// continuous across them: bedrock drops to the datum where a run's own floor sits above it,
+    /// and pools, rivers and geodes are planned past the run's edge. A run whose lowest point
+    /// needs bedrock below the datum keeps its own, so pick the lowest bedrock of the region or
+    /// below. A One World keeps the value its first area was built with.
+    #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
+    pub cave_datum_y: Option<i32>,
+
     /// Render the cave biome layout for --bbox and exit without generating a world: writes
     /// `<PREFIX>-upper.png` (upper caves) and `<PREFIX>-deep.png` (deep caves), transparent
     /// where the cave is plain rock, and prints a `ZONEMAP {json}` line with each theme's
-    /// share. Honours --scale and --cave-biomes, so it matches what --caves will carve.
+    /// share. Honours --scale, --cave-biomes, --cave-seed and a One World's frame (with
+    /// --one-world), so it matches what --caves will carve.
     #[arg(long = "cave-zone-map", value_name = "PREFIX")]
     pub cave_zone_map: Option<PathBuf>,
 
@@ -132,6 +194,19 @@ pub struct Args {
     /// keeps the image within 1536 pixels.
     #[arg(long = "cave-zone-map-step", value_name = "BLOCKS")]
     pub cave_zone_map_step: Option<u32>,
+
+    /// Experimental. Where the Köppen climate behind surfaces and biomes is read:
+    /// origin (once, at the bbox centre or the One World origin, default) or
+    /// per-position (at every block, with organic borders, so a large world
+    /// crosses climate zones; biome latitude follows each block too).
+    #[arg(long, value_enum, default_value_t = crate::climate_field::ClimateMode::Origin)]
+    pub climate_mode: crate::climate_field::ClimateMode,
+
+    /// Experimental. Render the per-position Köppen climate layout for --bbox to
+    /// `<PREFIX>.png` and exit without generating a world; prints a
+    /// `CLIMATEMAP {json}` line with each climate's share.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<PathBuf>,
 
     /// Use the legacy procedural trees instead of the bundled schematic tree pack.
     /// Schematic trees are on by default; this flag opts out.
@@ -144,6 +219,43 @@ pub struct Args {
     #[arg(long, value_enum, default_value_t = crate::trees::tree_library::TreeSize::Giant)]
     pub max_tree_size: crate::trees::tree_library::TreeSize,
 
+    /// Tree realm pack to use instead of the one the area's ecoregion or location picks:
+    /// auto, afr, asn, aus, ena, eur, fl, ind, sam, wna or vanilla-plus. A forced realm
+    /// skips the ecoregion mixes and keeps its palms.
+    #[arg(long, value_name = "REALM", value_parser = clap::builder::PossibleValuesParser::new(crate::trees::tree_pack::REALMS))]
+    pub tree_realm: Option<String>,
+
+    /// Relative popularity of the schematic tree sizes, as name=percent pairs
+    /// (small, medium, big, tall, giant; 0-200, omitted ones stay 100). 0 turns a
+    /// size off. Measured canopy heights still pick their own size.
+    /// Example: --tree-size-weights big=150,tall=50,giant=0
+    #[arg(long, value_name = "LIST", value_parser = crate::trees::size_weights::SizeWeights::parse)]
+    pub tree_size_weights: Option<crate::trees::size_weights::SizeWeights>,
+
+    /// Experimental. A folder of your own tree schematics, laid out like the
+    /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
+    /// The folders say what a file is; the size folder (small, medium, big,
+    /// tall, giant) is optional and otherwise measured from the height. A file
+    /// that does not load is skipped with a warning. See --init-tree-pack-dir.
+    #[arg(long, value_name = "FOLDER")]
+    pub tree_pack_dir: Option<PathBuf>,
+
+    /// With --tree-pack-dir: add the folder's trees to the built-in ones, or
+    /// replace a realm's built-in trees wherever the folder has any for it.
+    #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
+    pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
+
+    /// Create the empty --tree-pack-dir layout of every bundled pack (realm,
+    /// community, tree type and size folders, with README.txt files) in FOLDER
+    /// and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub init_tree_pack_dir: Option<PathBuf>,
+
+    /// Write every bundled tree schematic into the --tree-pack-dir layout in
+    /// FOLDER, to edit or adapt, and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub export_tree_packs: Option<PathBuf>,
+
     /// Place trees from the Meta/WRI global canopy height map instead of assuming
     /// every tree-cover cell is forest. Land cover still decides the surface.
     #[arg(long = "canopy-height", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
@@ -153,6 +265,11 @@ pub struct Args {
     /// Helps sparsely mapped areas; may occasionally add a satellite-detected false positive.
     #[arg(long = "overture", default_value_t = true, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub overture: bool,
+
+    /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
+    /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
+    #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
 
     /// Which Overture transport to read. Both carry the same buildings.
     /// auto: vector tiles, falling back to the Parquet partitions (default)
@@ -166,21 +283,48 @@ pub struct Args {
     #[arg(long = "no-3d", default_value_t = true, action = ArgAction::SetFalse)]
     pub use_3d: bool,
 
+    /// Bundled schematic prop families to place: all, none, or a comma list of
+    /// boat, car, crane, excavator, fountain, helicopter, jetbridge, landmark,
+    /// lighthouse, plane, playground, starship, tombstone, tractor, windturbine.
+    /// Given, it decides the props whatever --no-3d says; left out, they follow --no-3d.
+    #[arg(long, value_parser = crate::structures::PropSet::parse)]
+    pub props: Option<crate::structures::PropSet>,
+
+    /// Leave out every schematic prop below this world scale. Props keep their
+    /// block size at any scale, so on a small-scale world they tower over the
+    /// buildings around them.
+    #[arg(long, value_parser = parse_props_min_scale)]
+    pub props_min_scale: Option<f64>,
+
     /// Enable debug mode (optional)
     #[arg(long)]
     pub debug: bool,
 
-    /// Set floodfill timeout (seconds) (optional)
+    /// Set floodfill timeout (seconds) (optional). Counted as work, not wall
+    /// time (one second = 200 M point-in-polygon edge tests), so a fill is cut
+    /// at the same place however loaded the machine is.
     #[arg(long, value_parser = parse_duration)]
     pub timeout: Option<Duration>,
 
-    /// Base URL of the Arnis OSM tile archive, read instead of Overpass.
+    /// Base URL of the Arnis OSM tile archive, read instead of Overpass. A local folder or
+    /// file:// URL holding archives.json is read in place, with no network.
     #[arg(long = "osm-tiles-url", default_value = crate::osm_tiles::DEFAULT_OSM_TILES_URL)]
     pub osm_tiles_url: String,
 
     /// Query Overpass directly and skip the tile archive.
     #[arg(long, default_value_t = false)]
     pub no_tile_archive: bool,
+
+    /// Read OpenStreetMap from an .osm.pbf extract instead of the tile archive: a
+    /// file path, or `geofabrik` for the smallest Geofabrik region holding the area,
+    /// downloaded once. The area is cut out and kept (baked), so repeat runs and the
+    /// pieces of a job read the bake.
+    #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
+    pub osm_pbf: Option<String>,
+
+    /// The extract to download for `--osm-pbf geofabrik`, instead of picking one.
+    #[arg(long, value_name = "URL", requires = "osm_pbf")]
+    pub osm_pbf_url: Option<String>,
 
     /// Spawn point latitude (optional, must be within bbox)
     #[arg(long, allow_hyphen_values = true)]
@@ -198,6 +342,17 @@ pub struct Args {
     /// Bedrock 1.21.40+: Y=-512..512). Both are experimental.
     #[arg(long, default_value_t = false)]
     pub disable_height_limit: bool,
+
+    /// EXPERIMENTAL. World floor for --disable-height-limit (Java): a multiple
+    /// of 16 from -2032 to -64. Default -2032. Not with --one-world.
+    #[arg(long = "min-y", value_name = "Y", allow_hyphen_values = true)]
+    pub min_y: Option<i32>,
+
+    /// EXPERIMENTAL. World ceiling for --disable-height-limit (Java): 16n - 1
+    /// from 319 to 2031. Default 2031; taller terrain is compressed to fit.
+    /// Not with --one-world.
+    #[arg(long = "max-y", value_name = "Y", allow_hyphen_values = true)]
+    pub max_y: Option<i32>,
 
     /// Use only the legacy AWS Terrain Tiles source (~30m) instead of
     /// Mapterhorn.
@@ -239,11 +394,33 @@ pub struct Args {
     #[arg(long = "world-type", value_enum, default_value_t = WorldType::Void)]
     pub world_type: WorldType,
 
+    /// EXPERIMENTAL. Java region container. blinear writes Leaf's B_Linear v3
+    /// (r.X.Z.b_linear), which only Leaf 1.21.11+ / 26.x servers read: not Paper,
+    /// not older Leaf, not the vanilla client. Not with --one-world.
+    #[arg(long = "region-format", value_enum, default_value_t = RegionFormat::Mca)]
+    pub region_format: RegionFormat,
+
+    /// zstd level for --region-format blinear (Leaf's own default is 6).
+    #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
+    pub blinear_level: i32,
+
+    /// EXPERIMENTAL. Java only: after the run, put the world border around the
+    /// generated area (its centre, the longer side as the size) so players
+    /// stay inside it. A One World uses the bounds of all its areas.
+    #[arg(long, default_value_t = false)]
+    pub world_border: bool,
+
     /// Readable image signs, Java only. `basic` covers public signage: street names,
     /// traffic signs, transit stops, information boards and billboards. `full` adds
     /// building signage: shop name plates, house numbers and crossing signs.
     #[arg(long, value_enum, default_value_t = SignageLevel::Basic)]
     pub signage: SignageLevel,
+
+    /// Road markings and minor ways. `clean` simplifies lane markings, for
+    /// scales from about 0.7; `compact` also leaves out footways, paths, service
+    /// roads, tracks and crossings, for lower scales.
+    #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
+    pub road_detail: RoadDetail,
 
     /// Mapillary API token, from https://www.mapillary.com/developer. Required by
     /// --mapillary-facades and --mapillary-probe.
@@ -331,6 +508,319 @@ pub struct Args {
     /// replacement one.
     #[arg(long)]
     pub building_facades_dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub scatter: ScatterArgs,
+
+    #[command(flatten)]
+    pub fields: crate::element_processing::field_texture::FieldArgs,
+
+    #[command(flatten)]
+    pub process: ProcessArgs,
+
+    #[command(flatten)]
+    pub units: UnitArgs,
+
+    #[command(flatten)]
+    pub snow: crate::snow_mode::SnowArgs,
+
+    #[command(flatten)]
+    pub water: WaterArgs,
+}
+
+/// Rocks and bushes on open land. Off unless asked for.
+#[derive(clap::Args, Debug)]
+pub struct ScatterArgs {
+    /// Scatter small andesite and tuff rocks over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub rocks: bool,
+
+    /// Share of 16x16 chunks that get a rock with --rocks, from 0.0 to 1.0.
+    #[arg(long, default_value_t = 0.02, value_parser = parse_density)]
+    pub rock_density: f64,
+
+    /// Scatter small bushes of ten species over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub bushes: bool,
+
+    /// Share of 16x16 chunks that get a bush with --bushes, from 0.0 to 1.0.
+    /// Where a chunk rolls both, the rock wins.
+    #[arg(long, default_value_t = 0.05, value_parser = parse_density)]
+    pub bush_density: f64,
+}
+
+/// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+pub struct WaterArgs {
+    /// River bed shape. `v1` gives mapped rivers, canals and streams a smooth U-shaped
+    /// bed that deepens with their width; lakes and the sea keep their bed.
+    #[arg(long, value_enum, default_value_t = crate::river_bed::RiverBed::Off)]
+    pub river_bed: crate::river_bed::RiverBed,
+
+    /// Water detail. `scaled` rounds bed depths instead of flooring them and, on small
+    /// maps, carves narrow bodies as bowls, narrows streams and lets water flow over
+    /// roads not tagged as bridges.
+    #[arg(long, value_enum, default_value_t = crate::water_detail::WaterDetail::Default)]
+    pub water_detail: crate::water_detail::WaterDetail,
+}
+
+impl WaterArgs {
+    /// How far these options can carve beyond the land-cover estimate.
+    pub fn carve_depth(&self, scale: f64) -> crate::water_detail::CarveDepth {
+        crate::water_detail::CarveDepth {
+            floor: if self.river_bed == crate::river_bed::RiverBed::Off {
+                0
+            } else {
+                crate::water_depth::MAX_WATER_DEPTH
+            },
+            detail: self.water_detail,
+            scale,
+        }
+    }
+}
+
+fn parse_props_min_scale(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err(format!("{s}: expected a scale of 0 or more")),
+    }
+}
+
+fn parse_density(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if (0.0..=1.0).contains(&v) => Ok(v),
+        _ => Err(format!("{s}: expected a share from 0.0 to 1.0")),
+    }
+}
+
+/// Large One World jobs cut into region-group pieces. Off unless asked for,
+/// so the GUI runs on `UnitArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+#[command(next_help_heading = "Large worlds")]
+pub struct UnitArgs {
+    /// Print how --one-world would cut --bbox into pieces of at most N x N
+    /// regions (one JSON line on stdout) and exit without generating.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub plan_units: Option<i32>,
+
+    /// Build a --one-world selection piece by piece, each piece at most N x N
+    /// regions, so memory is bounded by the piece instead of the selection.
+    /// An interrupted job resumes where it stopped when run again.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub unit_regions: Option<i32>,
+
+    /// Build that many pieces at once, each in its own process, sharing the
+    /// job's threads, memory and downloads. auto picks 1 to 6 from the cores
+    /// (75% of them unless --cpu-target or --threads says otherwise) and the
+    /// free memory. Pieces are 4 x 4 regions unless --unit-regions says
+    /// otherwise.
+    #[arg(long, value_name = "auto|N", value_parser = parse_workers)]
+    pub one_world_workers: Option<Workers>,
+
+    /// One piece of a job, run by the job's coordinator.
+    #[arg(long, hide = true)]
+    pub one_world_unit: Option<PathBuf>,
+}
+
+impl UnitArgs {
+    /// Whether this run coordinates a job of pieces.
+    pub fn coordinates(&self) -> bool {
+        (self.unit_regions.is_some() || self.one_world_workers.is_some())
+            && self.one_world_unit.is_none()
+    }
+}
+
+/// `--one-world-workers`: sized from the machine, or a fixed count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Workers {
+    Auto,
+    Count(u32),
+}
+
+/// `--origin`: a point a Web Mercator frame can be centred on.
+fn parse_origin(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("{s}: expected LAT,LON with |LAT| <= 85 and |LON| <= 180");
+    let (lat, lon) = s.split_once(',').ok_or_else(bad)?;
+    let (lat, lon): (f64, f64) = (
+        lat.trim().parse().map_err(|_| bad())?,
+        lon.trim().parse().map_err(|_| bad())?,
+    );
+    if lat.abs() <= 85.0 && lon.abs() <= 180.0 {
+        Ok((lat, lon))
+    } else {
+        Err(bad())
+    }
+}
+
+pub fn parse_workers(s: &str) -> Result<Workers, String> {
+    match s {
+        "auto" => Ok(Workers::Auto),
+        _ => match s.parse::<u32>() {
+            Ok(n @ 1..=64) => Ok(Workers::Count(n)),
+            _ => Err(format!("{s}: expected auto or a count from 1 to 64")),
+        },
+    }
+}
+
+/// Knobs for scripted and multi-process runs. None of them changes what is
+/// generated, and each default is the stock behaviour, so the GUI runs on
+/// `ProcessArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+#[command(next_help_heading = "Process")]
+pub struct ProcessArgs {
+    /// Skip the check for a newer release on GitHub. A script starting many
+    /// runs would otherwise make the request once per process.
+    #[arg(long, env = "ARNIS_NO_UPDATE_CHECK", value_parser = FalseyValueParser::new())]
+    pub no_update_check: bool,
+
+    /// Skip the startup sweep that deletes cached files older than 30 days,
+    /// for a cache managed or kept offline elsewhere. ARNIS_CACHE_ROOT moves
+    /// every cache to one folder.
+    #[arg(long, env = "ARNIS_NO_CACHE_SWEEP", value_parser = FalseyValueParser::new())]
+    pub no_cache_sweep: bool,
+
+    /// Worker threads for generation. Defaults to 90% of the cores, or to
+    /// RAYON_NUM_THREADS when that is set; this flag wins over both.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "cpu_target")]
+    pub threads: Option<u32>,
+
+    /// Share of the cores to generate on, in percent (10-100). The same as
+    /// --threads, worked out from the core count; the default is 90.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(10..=100))]
+    pub cpu_target: Option<u32>,
+
+    /// Memory this run may assume it has, in MB. Used in place of the free-RAM
+    /// reading when deciding whether to stream regions to disk and how many
+    /// the flush queue holds, so several processes can split one machine.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    pub ram_budget_mb: Option<u64>,
+
+    /// Downloads this process keeps in flight at once (default 16). Covers
+    /// elevation, Mapillary, 3D models and the Overture fetch pool.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub max_downloads: Option<u32>,
+
+    /// Self-hosted Overpass instance(s) to ask instead of Arnis's own, tried
+    /// in order. Repeat the flag or separate with commas. Only used when the
+    /// OSM tile archive cannot answer (or with --no-tile-archive).
+    #[arg(
+        long,
+        env = "ARNIS_OVERPASS_URL",
+        value_name = "URL",
+        value_delimiter = ','
+    )]
+    pub overpass_url: Vec<String>,
+
+    /// Never use the network: read OSM, Overture, elevation, land cover,
+    /// canopy and 3D models from the caches only. A run that needs anything
+    /// they lack stops and lists it instead of building flat or empty ground.
+    /// Fill the caches first with --prewarm.
+    #[arg(long, env = "ARNIS_OFFLINE", value_parser = FalseyValueParser::new())]
+    pub offline: bool,
+
+    /// Download and cache every input this command would read for --bbox
+    /// (OSM, Overture, elevation, land cover, canopy, 3D models), then exit
+    /// without writing a world. Run it with the same options as the run it
+    /// warms. Mapillary imagery is not included.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm: bool,
+
+    /// With --unit-regions: warm the caches for every piece, one piece at a
+    /// time, before the pieces start building, so parallel workers read from
+    /// disk instead of all fetching at once.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm_first: bool,
+
+    /// Also report progress as JSON lines on stdout for programs driving the
+    /// CLI: `{"v":1,"type":"phase"|"progress"|"error"|"done",...}`, the last
+    /// with wall_s, cpu_s, peak_rss_mb and chunks. Other output is unchanged.
+    #[arg(long, value_enum)]
+    pub progress: Option<ProgressFormat>,
+
+    /// Print the features this build supports as one JSON line and exit, so
+    /// a program driving the CLI can probe before using them.
+    #[arg(long)]
+    pub capabilities: bool,
+}
+
+/// What `--capabilities` lists. Names only ever get added.
+pub const CAPABILITIES: &[&str] = &[
+    "progress-json",
+    "threads",
+    "cpu-target",
+    "ram-budget",
+    "max-downloads",
+    "cache-root",
+    "fill-budget",
+    "plan-units",
+    "unit-regions",
+    "one-world-workers",
+    "snow-mode",
+    "road-detail",
+    "rocks",
+    "bushes",
+    "no-buildings",
+    "loot-table",
+    "field-mix",
+    "grass-texture",
+    "land-texture",
+    "tree-realm",
+    "tree-size-weights",
+    "cave-seed",
+    "cave-datum-y",
+    "cave-style",
+    "cave-ores",
+    "seed",
+    "river-bed",
+    "water-detail",
+    "min-y",
+    "max-y",
+    "climate-mode",
+    "climate-map",
+    "overpass-url",
+    "offline",
+    "prewarm",
+    "props",
+    "props-min-scale",
+    "map-item-only",
+    "region-format",
+    "origin",
+    "osm-pbf",
+    "local-tile-archive",
+    "tree-pack-dir",
+    "world-border",
+];
+
+/// `--cave-datum-y` sits on a section boundary inside the tallest world.
+pub fn check_cave_datum_y(y: i32) -> Result<(), String> {
+    if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+        return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+    }
+    Ok(())
+}
+
+/// Machine-readable progress formats for `--progress`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum ProgressFormat {
+    /// NDJSON, protocol version 1
+    Json,
+}
+
+impl ProcessArgs {
+    /// The thread count asked for with --threads or --cpu-target, if either.
+    /// A percentage rounds down like the 90% default does, so
+    /// `--cpu-target 90` builds the same pool as no flag at all.
+    pub fn thread_count(&self) -> Option<usize> {
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        self.threads.map(|n| n as usize).or_else(|| {
+            self.cpu_target
+                .map(|pct| (cores * pct as usize / 100).max(1))
+        })
+    }
 }
 
 /// Accepts the panel resolutions the atlas budget logic can halve cleanly.
@@ -498,6 +988,11 @@ fn parse_scale(arg: &str) -> Result<f64, String> {
 }
 
 impl Args {
+    /// `Some(zstd level)` when regions are written as B_Linear.
+    pub fn blinear_level(&self) -> Option<i32> {
+        (self.region_format == RegionFormat::Blinear).then_some(self.blinear_level)
+    }
+
     /// Whether this run uses real elevation terrain rather than flat ground.
     pub fn terrain(&self) -> bool {
         self.mode.terrain()
@@ -506,6 +1001,20 @@ impl Args {
     /// Whether this run skips OSM/Overture objects (terrain-only, or too small a scale).
     pub fn skip_objects(&self) -> bool {
         self.mode.skip_objects() || self.scale < OBJECT_SKIP_SCALE
+    }
+
+    /// The prop families this run places: `--props`, else all or none by
+    /// `--no-3d`; none below `--props-min-scale`.
+    pub fn props(&self) -> crate::structures::PropSet {
+        use crate::structures::PropSet;
+        if self.props_min_scale.is_some_and(|min| self.scale < min) {
+            return PropSet::NONE;
+        }
+        self.props.unwrap_or(if self.use_3d {
+            PropSet::ALL
+        } else {
+            PropSet::NONE
+        })
     }
 
     /// Whether objects are being skipped only because the scale is below `OBJECT_SKIP_SCALE`.
@@ -592,6 +1101,15 @@ impl FacadeMode {
     pub fn places_displays(self) -> bool {
         matches!(self, FacadeMode::Photos)
     }
+}
+
+/// Java region container; the chunk NBT is the same in both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum RegionFormat {
+    /// Anvil r.X.Z.mca, read by every server and the client.
+    Mca,
+    /// Leaf B_Linear v3 r.X.Z.b_linear (experimental, Leaf servers only).
+    Blinear,
 }
 
 /// What a Java world generates past the area Arnis wrote.
@@ -707,6 +1225,27 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         return Err("--map-preview is not supported for Luanti worlds.".to_string());
     }
 
+    if args.region_format == RegionFormat::Blinear {
+        if args.bedrock || args.luanti {
+            return Err(
+                "--region-format blinear applies to Java worlds only; drop --bedrock/--luanti."
+                    .to_string(),
+            );
+        }
+        // One World (and its pieces) merges into existing .mca files, and nothing
+        // here reads B_Linear back.
+        if args.one_world || args.units.coordinates() || args.units.one_world_unit.is_some() {
+            return Err(
+                "--region-format blinear does not combine with --one-world, --unit-regions or --one-world-workers."
+                    .to_string(),
+            );
+        }
+    }
+
+    if args.world_border && (args.bedrock || args.luanti) {
+        return Err("--world-border applies to Java worlds only.".to_string());
+    }
+
     if args.one_world {
         if args.bedrock || args.luanti {
             return Err("--one-world is available for Java Edition worlds only.".to_string());
@@ -725,6 +1264,28 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         }
     } else if args.world_name.is_some() {
         return Err("--world-name only applies to --one-world.".to_string());
+    } else if args.origin.is_some() {
+        return Err("--origin only applies to --one-world.".to_string());
+    } else if args.units.plan_units.is_some()
+        || args.units.coordinates()
+        || args.units.one_world_unit.is_some()
+    {
+        return Err(
+            "--plan-units, --unit-regions and --one-world-workers only apply to --one-world."
+                .to_string(),
+        );
+    }
+    args.snow.validate(args.one_world)?;
+    if args.process.prewarm_first && !args.units.coordinates() {
+        return Err(
+            "--prewarm-first only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
+    if args.process.offline && args.mapillary_probe {
+        return Err("--mapillary-probe asks Mapillary, so it cannot run --offline.".to_string());
+    }
+    if args.units.coordinates() && args.save_json_file.is_some() {
+        return Err("--save-json-file does not combine with a job built in pieces.".to_string());
     }
     if args.projection == crate::projection::ProjectionKind::WebMercator && !args.one_world {
         println!(
@@ -826,6 +1387,12 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
             return Err("--cave-biomes only applies to --caves or --cave-zone-map.".to_string());
         }
     }
+    if args.cave_style.is_some() && !args.caves && !cave_preview {
+        return Err("--cave-style only applies to --caves or --cave-zone-map.".to_string());
+    }
+    if args.cave_ores.is_some() && !args.caves {
+        return Err("--cave-ores only applies to --caves.".to_string());
+    }
     if let Some(dir) = &args.cave_asset_pack {
         if !args.caves {
             return Err("--cave-asset-pack only applies to --caves.".to_string());
@@ -837,8 +1404,24 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
             ));
         }
     }
+    if args.cave_seed.is_some() && !args.caves && !cave_preview {
+        return Err("--cave-seed only applies to --caves or --cave-zone-map.".to_string());
+    }
+    if let Some(y) = args.cave_datum_y {
+        if !args.caves {
+            return Err("--cave-datum-y only applies to --caves.".to_string());
+        }
+        check_cave_datum_y(y)?;
+    }
     if args.cave_zone_map_step.is_some() && !cave_preview {
         return Err("--cave-zone-map-step only applies to --cave-zone-map.".to_string());
+    }
+    if args.climate_map.is_some() && args.bbox.is_none() {
+        return Err("--climate-map needs --bbox.".to_string());
+    }
+    // Rotation resamples the ground grids, which the per-position climate does not follow.
+    if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
+        return Err("--climate-mode per-position does not support --rotation.".to_string());
     }
     if cave_preview {
         if args.bbox.is_none() {
@@ -887,8 +1470,13 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview {
-        // The probe and the cave preview write no world, so they need no output directory.
+    } else if args.mapillary_probe
+        || cave_preview
+        || args.climate_map.is_some()
+        || args.process.prewarm
+    {
+        // The probe, the cave preview, the climate map and a prewarm write no world, so
+        // they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
@@ -941,6 +1529,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         return Err("Rotation angle must be between -90 and 90 degrees.".to_string());
     }
 
+    crate::y_bounds::check(args)?;
+
     let (floor, ceiling) = ground_level_bounds(args);
     if args.ground_level < floor || args.ground_level > ceiling {
         return Err(format!(
@@ -970,6 +1560,26 @@ fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn props_follow_no_3d_unless_given() {
+        use crate::structures::{Prop, PropSet};
+        let parse = |extra: &[&str]| {
+            let base = ["arnis", "--output-dir", ".", "--bbox", "1,2,3,4"];
+            Args::parse_from(base.iter().chain(extra))
+        };
+        assert_eq!(parse(&[]).props(), PropSet::ALL);
+        assert_eq!(parse(&["--no-3d"]).props(), PropSet::NONE);
+        let car = parse(&["--no-3d", "--props", "car"]).props();
+        assert!(car.has(Prop::Car) && !car.has(Prop::Landmark));
+        assert_eq!(parse(&["--props", "none"]).props(), PropSet::NONE);
+        // Below the minimum scale nothing is placed, at or above it the set holds.
+        let at = |scale: &str| parse(&["--scale", scale, "--props-min-scale", "0.5"]).props();
+        assert_eq!(at("0.4"), PropSet::NONE);
+        assert_eq!(at("0.5"), PropSet::ALL);
+        assert!(Args::try_parse_from(["arnis", "--props", "zeppelin"]).is_err());
+        assert!(Args::try_parse_from(["arnis", "--props-min-scale", "-1"]).is_err());
+    }
 
     #[test]
     fn test_generation_mode() {
@@ -1051,6 +1661,53 @@ mod tests {
     }
 
     #[test]
+    fn region_format_defaults_to_mca_and_blinear_refuses_what_it_cannot_do() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::try_parse_from(cmd.iter())
+        };
+
+        let default = parse(&[]).unwrap();
+        assert_eq!(default.region_format, RegionFormat::Mca);
+        assert_eq!(default.blinear_level(), None, "mca unless asked");
+        let bl = parse(&["--region-format", "blinear", "--blinear-level", "19"]).unwrap();
+        assert_eq!(bl.blinear_level(), Some(19));
+        assert!(validate_args(&bl).is_ok());
+        for bad in ["0", "23"] {
+            assert!(parse(&["--region-format", "blinear", "--blinear-level", bad]).is_err());
+        }
+        for extra in [
+            &["--bedrock"][..],
+            &["--luanti"],
+            &["--one-world"],
+            &["--one-world", "--unit-regions", "4"],
+            &["--one-world", "--one-world-workers", "2"],
+        ] {
+            let mut cmd = vec!["--region-format", "blinear"];
+            cmd.extend_from_slice(extra);
+            assert!(validate_args(&parse(&cmd).unwrap()).is_err(), "{extra:?}");
+        }
+    }
+
+    #[test]
+    fn climate_options_validate() {
+        let parse =
+            |cmd: &[&str]| Args::parse_from(std::iter::once("arnis").chain(cmd.iter().copied()));
+        let bbox = ["--bbox", "44.0,25.5,46.5,26.5"];
+        let rotated = [&bbox[..], &["--output-dir", ".", "--rotation", "10"]].concat();
+        assert!(validate_args(&parse(&rotated)).is_ok());
+        let per_position = [&rotated[..], &["--climate-mode", "per-position"]].concat();
+        assert!(validate_args(&parse(&per_position)).is_err());
+        // The preview writes no world, so it needs a bbox and nothing else.
+        let map = [&bbox[..], &["--climate-map", "out/climate"]].concat();
+        assert!(validate_args(&parse(&map)).is_ok());
+        assert!(validate_args(&parse(&["--climate-map", "out/climate"])).is_err());
+    }
+
+    #[test]
     fn one_world_is_java_earth_and_unrotated() {
         let tmpdir = tempfile::tempdir().unwrap();
         let tmp_path = tmpdir.path().to_str().unwrap();
@@ -1067,6 +1724,21 @@ mod tests {
         assert!(validate_args(&parse(&["--one-world", "--rotation", "15"])).is_err());
         assert!(validate_args(&parse(&["--one-world", "--body", "moon"])).is_err());
         assert!(validate_args(&parse(&["--world-name", "Home"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--plan-units", "4"])).is_ok());
+        assert!(validate_args(&parse(&["--plan-units", "4"])).is_err());
+        assert!(validate_args(&parse(&["--unit-regions", "4"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--unit-regions", "4"])).is_ok());
+        assert!(validate_args(&parse(&["--one-world-workers", "auto"])).is_err());
+        let w = parse(&["--one-world", "--one-world-workers", "auto"]);
+        assert!(validate_args(&w).is_ok() && w.units.coordinates());
+        assert_eq!(
+            parse(&["--one-world", "--one-world-workers", "3"])
+                .units
+                .one_world_workers,
+            Some(Workers::Count(3))
+        );
+        assert!(Args::try_parse_from(["arnis", "--one-world-workers", "0"]).is_err());
+        assert!(Args::try_parse_from(["arnis", "--plan-units", "0"]).is_err());
     }
 
     #[test]
@@ -1681,5 +2353,53 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn cache_flags_parse_and_validate() {
+        let parse = |extra: &[&str]| {
+            Args::try_parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra))
+        };
+        let args = parse(&["--overpass-url", "http://a/api,http://b/api"]).unwrap();
+        assert_eq!(args.process.overpass_url, ["http://a/api", "http://b/api"]);
+        let args = parse(&["--overpass-url=http://a/api", "--overpass-url=http://c/api"]).unwrap();
+        assert_eq!(args.process.overpass_url, ["http://a/api", "http://c/api"]);
+        // A prewarm writes no world, so it needs no --output-dir.
+        let args = parse(&["--prewarm"]).unwrap();
+        assert!(validate_args(&args).is_ok());
+        assert!(parse(&["--prewarm", "--offline"]).is_err());
+        let args = parse(&["--prewarm-first", "--output-dir", "."]).unwrap();
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn thread_flags_resolve_to_a_count() {
+        let parse = |extra: &[&str]| {
+            Args::try_parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra))
+        };
+        let cores = std::thread::available_parallelism().unwrap().get();
+        assert_eq!(parse(&[]).unwrap().process.thread_count(), None);
+        assert_eq!(
+            parse(&["--threads", "4"]).unwrap().process.thread_count(),
+            Some(4)
+        );
+        assert_eq!(
+            parse(&["--cpu-target", "100"])
+                .unwrap()
+                .process
+                .thread_count(),
+            Some(cores)
+        );
+        // The same floor the 90% default takes.
+        assert_eq!(
+            parse(&["--cpu-target", "90"])
+                .unwrap()
+                .process
+                .thread_count(),
+            Some((cores * 9 / 10).max(1))
+        );
+        assert!(parse(&["--cpu-target", "5"]).is_err());
+        assert!(parse(&["--threads", "0"]).is_err());
+        assert!(parse(&["--threads", "4", "--cpu-target", "50"]).is_err());
     }
 }

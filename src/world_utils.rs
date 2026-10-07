@@ -208,7 +208,7 @@ pub fn create_new_world_with_name(
 }
 
 /// Flat template chunks the skeleton writes as `region/r.0.0.mca`.
-const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
+pub(crate) const REGION_TEMPLATE: &[u8] = include_bytes!("../assets/minecraft/region.template");
 
 /// Deletes `region/r.0.0.mca` while it is still exactly the skeleton's template, so a void
 /// world keeps no flat chunks where its area never reaches. A file anything has written to
@@ -493,7 +493,7 @@ fn is_sharing_violation(e: &std::io::Error) -> bool {
 
 /// Generates a unique "Arnis World N" name.
 /// Checks for both "Arnis World X" and "Arnis World X: Location" patterns.
-fn generate_unique_default_world_name(base_path: &Path) -> String {
+pub fn generate_unique_default_world_name(base_path: &Path) -> String {
     let mut counter: i32 = 1;
     loop {
         let candidate_name: String = format!("Arnis World {counter}");
@@ -779,36 +779,77 @@ fn raise_superflat_floor(root: &mut Value, base_y: i32, min_y: i32) {
 
 /// Sets `LastPlayed` to now, which lists the world first in Minecraft.
 pub fn touch_last_played(world_path: &Path) -> Result<(), String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to read the clock: {e}"))?
+        .as_millis() as i64;
+    edit_level_data(world_path, |data| {
+        data.insert("LastPlayed".to_string(), Value::Long(now_ms));
+    })
+}
+
+/// Centres the world border on `rect`, with its longer side as the border's
+/// size, so players stay inside the generated area. Damage and warnings keep
+/// the world's values.
+pub fn set_world_border(
+    world_path: &Path,
+    rect: &crate::coordinate_system::cartesian::XZBBox,
+) -> Result<(), String> {
+    let (min_x, min_z) = (f64::from(rect.min_x()), f64::from(rect.min_z()));
+    let (max_x, max_z) = (f64::from(rect.max_x()) + 1.0, f64::from(rect.max_z()) + 1.0);
+    let size = (max_x - min_x).max(max_z - min_z);
+    if WorldLayout::of(world_path) == WorldLayout::Dimensions {
+        // 26.1+ keeps the border as the overworld's saved data, which the game writes
+        // when it upgrades the world; the old level.dat fields are no longer read.
+        let path = WorldLayout::Dimensions
+            .overworld_dir(world_path)
+            .join("data")
+            .join("minecraft")
+            .join("world_border.dat");
+        let mut root = read_gzip_nbt(&path)?;
+        let Value::Compound(ref mut top) = root else {
+            return Err(format!("{} root is not a compound", path.display()));
+        };
+        let Some(Value::Compound(border)) = top.get_mut("data") else {
+            return Err(format!("{} has no data compound", path.display()));
+        };
+        border.insert("center_x".to_string(), Value::Double((min_x + max_x) / 2.0));
+        border.insert("center_z".to_string(), Value::Double((min_z + max_z) / 2.0));
+        border.insert("size".to_string(), Value::Double(size));
+        border.insert("lerp_target".to_string(), Value::Double(size));
+        border.insert("lerp_time".to_string(), Value::Long(0));
+        return write_gzip_nbt(&path, &root);
+    }
+    edit_level_data(world_path, |data| {
+        data.insert(
+            "BorderCenterX".to_string(),
+            Value::Double((min_x + max_x) / 2.0),
+        );
+        data.insert(
+            "BorderCenterZ".to_string(),
+            Value::Double((min_z + max_z) / 2.0),
+        );
+        data.insert("BorderSize".to_string(), Value::Double(size));
+        data.insert("BorderSizeLerpTarget".to_string(), Value::Double(size));
+        data.insert("BorderSizeLerpTime".to_string(), Value::Long(0));
+    })
+}
+
+/// Rewrites the `Data` compound of `level.dat` in place.
+fn edit_level_data(
+    world_path: &Path,
+    edit: impl FnOnce(&mut std::collections::HashMap<String, Value>),
+) -> Result<(), String> {
     let level_path = world_path.join("level.dat");
-    let raw = fs::read(&level_path).map_err(|e| format!("Failed to read level.dat: {e}"))?;
-    let mut decompressed = Vec::new();
-    GzDecoder::new(raw.as_slice())
-        .read_to_end(&mut decompressed)
-        .map_err(|e| format!("Failed to decompress level.dat: {e}"))?;
-    let mut root: Value = fastnbt::from_bytes(&decompressed)
-        .map_err(|e| format!("Failed to parse level.dat NBT: {e}"))?;
+    let mut root = read_gzip_nbt(&level_path)?;
     let Value::Compound(ref mut top) = root else {
         return Err("level.dat root is not a compound".to_string());
     };
     let Some(Value::Compound(data)) = top.get_mut("Data") else {
         return Err("level.dat missing Data compound".to_string());
     };
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("Failed to read the clock: {e}"))?
-        .as_millis() as i64;
-    data.insert("LastPlayed".to_string(), Value::Long(now_ms));
-
-    let serialized =
-        fastnbt::to_bytes(&root).map_err(|e| format!("Failed to serialize level.dat: {e}"))?;
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder
-        .write_all(&serialized)
-        .map_err(|e| format!("Failed to compress level.dat: {e}"))?;
-    let compressed = encoder
-        .finish()
-        .map_err(|e| format!("Failed to compress level.dat: {e}"))?;
-    replace_file_atomically(&level_path, &compressed)
+    edit(data);
+    write_gzip_nbt(&level_path, &root)
 }
 
 /// DataVersion of 26.1, which keeps dimensions under `dimensions/` and maps under
@@ -890,7 +931,7 @@ pub(crate) fn level_data_version(world: &Path) -> Option<i32> {
 }
 
 /// The singleplayer player's file in a 26.1+ world, named by `Data.singleplayer_uuid`.
-fn singleplayer_file(
+pub(crate) fn singleplayer_file(
     world: &Path,
     data: &std::collections::HashMap<String, Value>,
 ) -> Option<PathBuf> {
@@ -1103,6 +1144,54 @@ fn move_player(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn the_world_border_of_an_upgraded_world_is_its_saved_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = PathBuf::from(create_new_world(dir.path()).unwrap());
+        let mut level = read_gzip_nbt(&world.join("level.dat")).unwrap();
+        if let Value::Compound(ref mut root) = level {
+            if let Some(Value::Compound(data)) = root.get_mut("Data") {
+                data.insert("DataVersion".to_string(), Value::Int(5023));
+            }
+        }
+        write_gzip_nbt(&world.join("level.dat"), &level).unwrap();
+        let level_before = fs::read(world.join("level.dat")).unwrap();
+        let rect = crate::coordinate_system::cartesian::XZBBox::rect_from_min_max(-50, 10, 49, 49)
+            .unwrap();
+        // The game writes the file when it upgrades the world; without it there is nothing to edit.
+        assert!(set_world_border(&world, &rect).is_err());
+
+        let path = world.join("dimensions/minecraft/overworld/data/minecraft/world_border.dat");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let saved = HashMap::from([
+            (
+                "data".to_string(),
+                Value::Compound(HashMap::from([
+                    ("size".to_string(), Value::Double(5.9e7)),
+                    ("safe_zone".to_string(), Value::Double(5.0)),
+                ])),
+            ),
+            ("DataVersion".to_string(), Value::Int(5023)),
+        ]);
+        write_gzip_nbt(&path, &Value::Compound(saved)).unwrap();
+        set_world_border(&world, &rect).unwrap();
+
+        let Value::Compound(root) = read_gzip_nbt(&path).unwrap() else {
+            panic!("root");
+        };
+        let Some(Value::Compound(border)) = root.get("data") else {
+            panic!("data");
+        };
+        assert_eq!(border.get("center_x"), Some(&Value::Double(0.0)));
+        assert_eq!(border.get("center_z"), Some(&Value::Double(30.0)));
+        assert_eq!(border.get("size"), Some(&Value::Double(100.0)));
+        assert_eq!(border.get("lerp_target"), Some(&Value::Double(100.0)));
+        assert_eq!(border.get("safe_zone"), Some(&Value::Double(5.0)));
+        assert_eq!(root.get("DataVersion"), Some(&Value::Int(5023)));
+        // level.dat is left alone.
+        assert_eq!(fs::read(world.join("level.dat")).unwrap(), level_before);
+    }
 
     #[test]
     fn a_spawn_move_follows_a_world_minecraft_has_upgraded() {

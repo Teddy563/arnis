@@ -9,6 +9,7 @@
 //! - `java` - Java Edition Anvil format saving
 //! - `bedrock` - Bedrock Edition .mcworld format saving
 
+pub(crate) mod blinear;
 pub(crate) mod common;
 pub(crate) mod java;
 mod luanti;
@@ -21,7 +22,7 @@ pub(crate) use common::FLOOR_TEST_LOCK;
 pub use common::{
     base_chunk_block, base_chunk_y, min_y, set_base_chunk_block, set_base_chunk_y,
     set_terrain_floor_y, set_world_bounds, terrain_floor_y, world_max_y, world_section_range,
-    DEFAULT_MAX_Y, DEFAULT_MIN_Y,
+    DEFAULT_MAX_Y, DEFAULT_MIN_Y, TERRAIN_FLOOR_DEPTH,
 };
 pub(crate) use common::{
     reset_section_counters, section_counters, BlockStorage, RegionToModify, SectionToModify,
@@ -247,9 +248,8 @@ pub struct WorldEditor<'a> {
     void_world: bool,
     /// Pre-generated voxy LOD cache, fed as regions are saved/flushed. Java only.
     voxy: Option<Arc<crate::voxy::VoxyWriter>>,
-    /// Place bundled schematic props (cars, boats, cranes, ...); off drops them all.
-    /// Driven by the same toggle as external 3D models (`args.use_3d`).
-    place_schematics: bool,
+    /// Bundled schematic prop families to place (cars, boats, cranes, ...); see `Args::props`.
+    props: crate::structures::PropSet,
     /// Map preview accumulator, fed as regions are saved/flushed.
     preview: Option<Arc<crate::map_renderer::PreviewAccumulator>>,
     game_mode: crate::args::GameMode,
@@ -265,10 +265,14 @@ pub struct WorldEditor<'a> {
     strict_bounds: Option<(i32, i32, i32, i32)>,
     /// Cells holding a decal frame. Frames are entities, so `set_block` reads them as empty.
     frame_cells: FnvHashSet<(i32, i32, i32)>,
-    /// Set for a One World run: merge into the world's existing regions.
-    merge_into_existing: Option<crate::world_utils::WorldLayout>,
+    /// Set for a One World run: the block bounds whose chunks are merged into the
+    /// world's existing regions, and where that world keeps them. `None` writes fresh
+    /// regions. A One World piece builds past its own chunks and writes only these.
+    merge_into_existing: Option<(XZBBox, crate::world_utils::WorldLayout)>,
     climate_anchor: Option<(f64, f64)>,
     metadata_extent: Option<(XZBBox, LLBBox)>,
+    /// Java: `Some(zstd level)` writes EXPERIMENTAL B_Linear regions instead of Anvil.
+    blinear_level: Option<i32>,
 }
 
 impl<'a> WorldEditor<'a> {
@@ -303,7 +307,7 @@ impl<'a> WorldEditor<'a> {
             luanti_game: LuantiGame::Mineclonia,
             bake_lighting: false,
             void_world: false,
-            place_schematics: true,
+            props: crate::structures::PropSet::ALL,
             preview: None,
             voxy: None,
             game_mode: crate::args::GameMode::Creative,
@@ -316,6 +320,7 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: None,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
@@ -356,7 +361,7 @@ impl<'a> WorldEditor<'a> {
             luanti_game: LuantiGame::Mineclonia,
             bake_lighting: false,
             void_world: false,
-            place_schematics: true,
+            props: crate::structures::PropSet::ALL,
             preview: None,
             voxy: None,
             game_mode: crate::args::GameMode::Creative,
@@ -369,6 +374,7 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: None,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
@@ -409,7 +415,7 @@ impl<'a> WorldEditor<'a> {
             luanti_game: game,
             bake_lighting: false,
             void_world: false,
-            place_schematics: true,
+            props: crate::structures::PropSet::ALL,
             preview: None,
             voxy: None,
             game_mode: crate::args::GameMode::Creative,
@@ -422,11 +428,16 @@ impl<'a> WorldEditor<'a> {
             merge_into_existing: None,
             climate_anchor: None,
             metadata_extent: None,
+            blinear_level: None,
         }
     }
 
-    pub fn set_merge_into_existing(&mut self, layout: crate::world_utils::WorldLayout) {
-        self.merge_into_existing = Some(layout);
+    pub fn set_merge_into_existing(
+        &mut self,
+        rect: XZBBox,
+        layout: crate::world_utils::WorldLayout,
+    ) {
+        self.merge_into_existing = Some((rect, layout));
     }
 
     pub fn set_climate_anchor(&mut self, lat: f64, lon: f64) {
@@ -442,13 +453,13 @@ impl<'a> WorldEditor<'a> {
     }
 
     pub(crate) fn region_write_mode(&self) -> java::RegionWriteMode {
-        match self.merge_into_existing {
-            Some(layout) => java::RegionWriteMode::Merge {
-                min_x: self.xzbbox.min_x(),
-                min_z: self.xzbbox.min_z(),
-                max_x: self.xzbbox.max_x(),
-                max_z: self.xzbbox.max_z(),
-                layout,
+        match &self.merge_into_existing {
+            Some((rect, layout)) => java::RegionWriteMode::Merge {
+                min_x: rect.min_x(),
+                min_z: rect.min_z(),
+                max_x: rect.max_x(),
+                max_z: rect.max_z(),
+                layout: *layout,
             },
             None => java::RegionWriteMode::Fresh,
         }
@@ -629,6 +640,11 @@ impl<'a> WorldEditor<'a> {
     /// Enables baking per-chunk lighting into Java chunks.
     pub fn set_bake_lighting(&mut self, enabled: bool) {
         self.bake_lighting = enabled;
+    }
+
+    /// Java: write `r.X.Z.b_linear` at this zstd level instead of Anvil `.mca`.
+    pub fn set_blinear_level(&mut self, level: Option<i32>) {
+        self.blinear_level = level;
     }
 
     /// Java: write only the chunks the area touches and leave the rest to a void generator.
@@ -998,14 +1014,14 @@ impl<'a> WorldEditor<'a> {
         out
     }
 
-    /// Toggle placement of bundled schematic props (cars, boats, cranes, ...).
-    pub fn set_place_schematics(&mut self, enabled: bool) {
-        self.place_schematics = enabled;
+    /// Which bundled schematic prop families to place (cars, boats, cranes, ...).
+    pub fn set_props(&mut self, props: crate::structures::PropSet) {
+        self.props = props;
     }
 
-    /// True if bundled schematic props should be placed (see `set_place_schematics`).
-    pub fn place_schematics(&self) -> bool {
-        self.place_schematics
+    /// True if props of this family should be placed (see `set_props`).
+    pub fn place_prop(&self, prop: crate::structures::Prop) -> bool {
+        self.props.has(prop)
     }
 
     /// Returns the current world format
@@ -1059,6 +1075,7 @@ impl<'a> WorldEditor<'a> {
             self.region_write_mode(),
             self.climate_lat(),
             (self.ground_origin_x, self.ground_origin_z),
+            self.blinear_level,
         )
     }
 
@@ -1118,6 +1135,12 @@ impl<'a> WorldEditor<'a> {
             Some((lat, lon)) => crate::climate::Climate::classify_at(lat, lon),
             None => crate::climate::Climate::classify(&self.llbbox),
         }
+    }
+
+    /// Climate at (x, z) under `--climate-mode per-position`; `None` keeps `climate()`.
+    #[inline]
+    pub fn local_climate(&self, x: i32, z: i32) -> Option<crate::climate::Climate> {
+        self.ground.as_ref()?.local_climate(self.ground_point(x, z))
     }
 
     /// Get the effective ground level at a world coordinate.
@@ -2543,9 +2566,11 @@ pub(crate) fn flush_pool_params(
     available_mb: u64,
     fillground: bool,
 ) -> (usize, usize) {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
+    let cores = crate::floodfill_cache::requested_threads().unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+    });
     // `capacity + threads + 1` regions are alive at once, so budget the total rather
     // than each knob. Shared with should_stream_to_disk; measured is ~7 on a vanilla run.
     let per_region_mb = per_region_estimate_mb(fillground);
@@ -2810,6 +2835,7 @@ mod eviction_guard_tests {
             java::RegionWriteMode::Fresh,
             None,
             (0, 0),
+            None,
         )
     }
 
@@ -2848,6 +2874,7 @@ mod eviction_guard_tests {
                 java::RegionWriteMode::Fresh,
                 None,
                 (0, 0),
+                None,
             )
             .write(0, 0, &flush_test_region())
             .unwrap();

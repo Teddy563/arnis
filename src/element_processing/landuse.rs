@@ -1,16 +1,20 @@
 use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
-use crate::deterministic_rng::element_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::bush::{place_bush, BushKind};
 use crate::element_processing::construction_site;
+use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{BuildingFootprintBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::prelude::IndexedRandom;
 use rand::Rng;
+
+/// Salt of the per-block random draws of landuse fills.
+const FILL_SALT: u64 = 0x4C41_4E44;
 
 pub fn generate_landuse(
     editor: &mut WorldEditor,
@@ -24,9 +28,6 @@ pub fn generate_landuse(
     // Determine block type based on landuse tag
     let binding: String = "".to_string();
     let landuse_tag: &String = element.tags.get("landuse").unwrap_or(&binding);
-
-    // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-    let mut rng = element_rng(element.id);
 
     let block_type = match landuse_tag.as_str() {
         "greenfield" | "meadow" | "grass" | "orchard" | "forest" => GRASS_BLOCK,
@@ -116,10 +117,32 @@ pub fn generate_landuse(
         );
     let climate = editor.climate();
     let site_arid = construction_site::is_arid(climate);
+    // Farmland parcels (--field-mix / --farm-crops) and grassland parcels
+    // (--grass-texture). None keeps the stock surface.
+    let fields = match landuse_tag.as_str() {
+        "farmland" => FieldProfile::from_args(&args.fields, args.scale),
+        "meadow" | "grass" | "greenfield" | "orchard" | "village_green" => {
+            FieldProfile::grassland(&args.fields, args.scale)
+        }
+        _ => None,
+    };
 
+    let mut rng = element_rng(element.id);
     for &(x, z) in floor_area.iter() {
+        // One World keys these by the block alone (plain runs keep the
+        // per-element stream), not drawn in fill order or by id: the cells a
+        // run fills depend on its area and tiles, and an assembled multipolygon
+        // ring's id on which member ways the run saw, so either would grow
+        // different plants on each side of a seam.
+        if args.one_world_run.is_some() {
+            rng = coord_rng(x, z, FILL_SALT);
+        }
+        // One resolution per block, shared by the surface and the decoration below.
+        let field_cell = fields.as_ref().map(|f| f.cell_at(x, z));
         // Apply per-block randomness for certain landuse types
-        let actual_block = if landuse_tag == "industrial" {
+        let actual_block = if let Some(cell) = &field_cell {
+            cell.surface
+        } else if landuse_tag == "industrial" {
             // Industrial: primarily stone, with some stone bricks and smooth stone
             let random_value = rng.random_range(0..100);
             if random_value < 70 {
@@ -130,6 +153,7 @@ pub fn generate_landuse(
                 SMOOTH_STONE
             }
         } else if is_military {
+            let climate = editor.local_climate(x, z).unwrap_or(climate);
             match military_ground(editor, climate, x, z, military_rough) {
                 Some(block) => block,
                 None => continue,
@@ -258,6 +282,29 @@ pub fn generate_landuse(
                             editor.set_block(GRASS, x, 1, z, None, None);
                         }
                     }
+                }
+            }
+            _ if field_cell.is_some() && !editor.check_for_block(x, 0, z, Some(&[WATER])) => {
+                let cell = field_cell.as_ref().unwrap();
+                // Textured grassland keeps the tag's own trees: the orchard grid and
+                // the odd meadow tree.
+                let tree = !cell.is_track
+                    && match landuse_tag.as_str() {
+                        "orchard" => x % 18 == 0 && z % 10 == 0,
+                        "meadow" => {
+                            rng.random_range(0..200) == 0 && editor.land_cover_backs_trees(x, z)
+                        }
+                        _ => false,
+                    };
+                if tree {
+                    Tree::create(
+                        editor,
+                        (x, 1, z),
+                        Some(building_footprints),
+                        Some(bridge_surface),
+                    );
+                } else {
+                    field_texture::decorate(editor, cell, x, z, &mut rng);
                 }
             }
             "farmland" if !editor.check_for_block(x, 0, z, Some(&[WATER])) => {

@@ -145,7 +145,7 @@ function initSelectCards(group) {
 export function initSettingsLayout() {
   initNav();
   document
-    .querySelectorAll('#settings-modal .choice-cards[data-select]')
+    .querySelectorAll('#settings-modal .choice-cards[data-select], #settings-modal .preview-options[data-select]')
     .forEach(initSelectCards);
 }
 

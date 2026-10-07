@@ -418,6 +418,10 @@ pub struct FloodFillCache {
     /// fetches are O(1) refcount bumps instead of deep clones).
     /// Releasable through `&self`, so tile threads can free fills mid-run.
     way_cache: FnvHashMap<u64, Mutex<Option<FloodFillResult>>>,
+    /// One World fills row-major, like the scanline path: the flood order follows the
+    /// ring's (clipped) bounding box, so whatever a fill places first (one tree over its
+    /// neighbour's crown) would differ across a seam. Plain runs keep the flood order.
+    row_major: bool,
 }
 
 impl FloodFillCache {
@@ -425,13 +429,18 @@ impl FloodFillCache {
     pub fn new() -> Self {
         Self {
             way_cache: FnvHashMap::default(),
+            row_major: false,
         }
     }
 
     /// Pre-computes flood fills for all elements that need them.
     ///
     /// This runs in parallel using Rayon, taking advantage of multiple CPU cores.
-    pub fn precompute(elements: &[ProcessedElement], timeout: Option<&Duration>) -> Self {
+    pub fn precompute(
+        elements: &[ProcessedElement],
+        timeout: Option<&Duration>,
+        row_major: bool,
+    ) -> Self {
         // Collect all ways that need flood fill
         let mut ways_needing_fill: Vec<&ProcessedWay> = elements
             .iter()
@@ -471,15 +480,17 @@ impl FloodFillCache {
             .map(|way| {
                 let polygon_coords: Vec<(i32, i32)> =
                     way.nodes.iter().map(|n| (n.x, n.z)).collect();
-                let filled = flood_fill_area(&polygon_coords, timeout);
-                (way.id, filled)
+                (way.id, fill(&polygon_coords, timeout, row_major))
             })
             .collect();
 
         // Build the cache. Empty flood-fill results (degenerate rings or
         // flood-fill timeouts) reuse the process-wide empty sentinel so a
         // noisy input doesn't spawn many distinct empty allocations.
-        let mut cache = Self::new();
+        let mut cache = Self {
+            row_major,
+            ..Self::new()
+        };
         for (id, filled) in way_results {
             let entry = if filled.is_empty() {
                 Arc::clone(empty_flood_fill_result())
@@ -532,7 +543,7 @@ impl FloodFillCache {
             // extra Arc allocation here is fine. Empty results still go through
             // the shared sentinel to stay consistent with the cached path.
             let polygon_coords: Vec<(i32, i32)> = way.nodes.iter().map(|n| (n.x, n.z)).collect();
-            let filled = flood_fill_area(&polygon_coords, timeout);
+            let filled = fill(&polygon_coords, timeout, self.row_major);
             if filled.is_empty() {
                 Arc::clone(empty_flood_fill_result())
             } else {
@@ -750,6 +761,14 @@ impl FloodFillCache {
     }
 }
 
+fn fill(coords: &[(i32, i32)], timeout: Option<&Duration>, row_major: bool) -> Vec<(i32, i32)> {
+    let mut filled = flood_fill_area(coords, timeout);
+    if row_major {
+        filled.sort_unstable_by_key(|&(x, z)| (z, x));
+    }
+    filled
+}
+
 impl Default for FloodFillCache {
     fn default() -> Self {
         Self::new()
@@ -790,6 +809,25 @@ fn for_relation_ring_cells(
             apply(x, z);
         }
     }
+}
+
+/// Thread count set with `configure_rayon_threads`, so the flush pool can size
+/// itself from the same budget instead of the whole machine.
+static REQUESTED_THREADS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+/// The thread count given on the command line, if any.
+pub fn requested_threads() -> Option<usize> {
+    REQUESTED_THREADS.get().copied()
+}
+
+/// Builds the global Rayon pool with exactly `threads` workers. An explicit
+/// count is the more specific request, so it overrides RAYON_NUM_THREADS.
+pub fn configure_rayon_threads(threads: usize) {
+    let threads = threads.max(1);
+    let _ = REQUESTED_THREADS.set(threads);
+    let _ = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global();
 }
 
 /// Configures the global Rayon thread pool with a CPU usage cap.
@@ -921,7 +959,7 @@ mod tests {
         );
         let elements = vec![ProcessedElement::Way(pitch), ProcessedElement::Way(meadow)];
 
-        let cache = FloodFillCache::precompute(&elements, None);
+        let cache = FloodFillCache::precompute(&elements, None, false);
         let mut roads = RoadMaskBitmap::new(&xzbbox);
         roads.set(80, 80);
 
@@ -957,7 +995,7 @@ mod tests {
             square(6, (0, 0), 60, &[("landuse", "meadow")]),
         ];
 
-        let cache = FloodFillCache::precompute(&elements, None);
+        let cache = FloodFillCache::precompute(&elements, None, false);
         let mut roads = RoadMaskBitmap::new(&xzbbox);
         roads.set(18, 15);
         let sealed = cache.collect_sealed_surfaces(&elements, &roads).unwrap();
@@ -990,7 +1028,7 @@ mod tests {
             &[("landuse", "forest")],
         ))];
 
-        let cache = FloodFillCache::precompute(&elements, None);
+        let cache = FloodFillCache::precompute(&elements, None, false);
         let roads = RoadMaskBitmap::new(&xzbbox);
 
         assert!(
@@ -1008,7 +1046,7 @@ mod tests {
             &[("leisure", "pitch")],
         ))];
 
-        let cache = FloodFillCache::precompute(&elements, None);
+        let cache = FloodFillCache::precompute(&elements, None, false);
         let mut roads = RoadMaskBitmap::new(&xzbbox);
         for x in 5..=35 {
             for z in 5..=30 {
@@ -1052,7 +1090,7 @@ mod tests {
             area_relation(4, 104, &[("natural", "water")]),
             area_relation(5, 105, &[("building", "yes")]),
         ];
-        let cache = FloodFillCache::precompute(&elements, None);
+        let cache = FloodFillCache::precompute(&elements, None, false);
         assert!(cache.get_cached(101).is_some_and(|f| !f.is_empty()));
         assert!(cache.get_cached(102).is_some_and(|f| !f.is_empty()));
         for skipped in [103, 104, 105] {

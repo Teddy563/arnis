@@ -78,6 +78,7 @@ impl ElevationProvider for AwsTerrain {
             tiles
                 .par_iter()
                 .map(|(tile_x, tile_y)| {
+                    // Same name as cache_files gives it.
                     let tile_path = tile_cache_dir.join(format!("z{zoom}_x{tile_x}_y{tile_y}.png"));
                     let rgb_img = fetch_or_load_tile(&client, *tile_x, *tile_y, zoom, &tile_path)?;
                     Ok(((*tile_x, *tile_y), rgb_img))
@@ -202,6 +203,15 @@ fn sample_tile_pixel(
     Some(height)
 }
 
+/// The tiles in `dir` a fetch of `bbox` reads.
+pub(crate) fn cache_files(dir: &Path, bbox: &LLBBox) -> Vec<std::path::PathBuf> {
+    let zoom = calculate_zoom_level(bbox);
+    get_tile_coordinates(bbox, zoom)
+        .into_iter()
+        .map(|(x, y)| dir.join(format!("z{zoom}_x{x}_y{y}.png")))
+        .collect()
+}
+
 fn calculate_zoom_level(bbox: &LLBBox) -> u8 {
     let lat_diff: f64 = (bbox.max().lat() - bbox.min().lat()).abs();
     let lng_diff: f64 = (bbox.max().lng() - bbox.min().lng()).abs();
@@ -306,6 +316,7 @@ fn download_tile_once(
     url: &str,
     tile_path: &Path,
 ) -> Result<TileImage, String> {
+    crate::net::ensure_online("elevation tiles (AWS Terrain)")?;
     let _permit = crate::net::request_permit();
     let response = client.get(url).send().map_err(|e| e.to_string())?;
     response.error_for_status_ref().map_err(|e| e.to_string())?;

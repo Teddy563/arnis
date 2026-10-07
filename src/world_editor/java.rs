@@ -185,6 +185,7 @@ impl<'a> WorldEditor<'a> {
             &self.region_write_mode(),
             self.climate_lat(),
             (self.ground_origin_x, self.ground_origin_z),
+            self.blinear_level,
         )
     }
 }
@@ -218,6 +219,25 @@ impl RegionWriteMode {
                 let bx0 = abs_chunk_x * 16;
                 let bz0 = abs_chunk_z * 16;
                 bx0 + 15 >= min_x && bx0 <= max_x && bz0 + 15 >= min_z && bz0 <= max_z
+            }
+        }
+    }
+
+    /// Whether any chunk of `r.X.Z` is written. A merge never opens another region's
+    /// file: a One World piece builds a margin in its neighbours' regions, which the
+    /// neighbour's own process may be writing at the same time.
+    fn writes_region(&self, region_x: i32, region_z: i32) -> bool {
+        match *self {
+            RegionWriteMode::Fresh => true,
+            RegionWriteMode::Merge {
+                min_x,
+                min_z,
+                max_x,
+                max_z,
+                ..
+            } => {
+                let (bx0, bz0) = (region_x * 512, region_z * 512);
+                bx0 + 511 >= min_x && bx0 <= max_x && bz0 + 511 >= min_z && bz0 <= max_z
             }
         }
     }
@@ -384,7 +404,11 @@ fn write_region_to_disk(
     mode: &RegionWriteMode,
     climate_lat: Option<f64>,
     ground_origin: (i32, i32),
+    blinear_level: Option<i32>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !mode.writes_region(region_x, region_z) {
+        return Ok(());
+    }
     if let Some(preview) = preview {
         preview.ingest_region(region_x, region_z, region_to_modify);
     }
@@ -394,9 +418,20 @@ fn write_region_to_disk(
         RegionWriteMode::Fresh => None,
     };
     let merge = merge_dir.is_some();
-    let mut region = match &merge_dir {
-        Some(dir) => open_region_file_for_merge(dir, region_x, region_z)?,
-        None => create_region_file(world_dir, region_x, region_z, void_world)?,
+    let mut region = match (blinear_level, &merge_dir) {
+        // B_Linear has no reader here, so it cannot merge; the CLI refuses One World.
+        (Some(_), Some(_)) => {
+            return Err("--region-format blinear cannot merge into a world".into())
+        }
+        (Some(level), None) => RegionSink::Blinear(super::blinear::BlinearRegionWriter::create(
+            world_dir, region_x, region_z, level, void_world,
+        )?),
+        (None, Some(dir)) => {
+            RegionSink::Anvil(open_region_file_for_merge(dir, region_x, region_z)?)
+        }
+        (None, None) => RegionSink::Anvil(create_region_file(
+            world_dir, region_x, region_z, void_world,
+        )?),
     };
     let mut ser_buffer = Vec::with_capacity(8192);
     let mut written_chunks: Vec<(i32, i32)> = Vec::new();
@@ -504,7 +539,15 @@ fn write_region_to_disk(
                 let chunk_nbt = create_chunk_nbt_with_lighting(&chunk, lighting, &biome_value);
                 ser_buffer.clear();
                 fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
-                region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
+                match &mut region {
+                    RegionSink::Anvil(r) => {
+                        r.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?
+                    }
+                    RegionSink::Blinear(w) => {
+                        w.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)
+                    }
+                }
+                crate::progress_json::CHUNKS_WRITTEN.fetch_add(1, Ordering::Relaxed);
                 if merge {
                     written_chunks.push((chunk_x, chunk_z));
                 }
@@ -520,12 +563,20 @@ fn write_region_to_disk(
         lod.finish();
     }
 
-    if let Some(dir) = merge_dir.filter(|_| !written_chunks.is_empty()) {
+    if let RegionSink::Blinear(writer) = region {
+        writer.finish()?;
+    } else if let Some(dir) = merge_dir.filter(|_| !written_chunks.is_empty()) {
         drop(region);
         strip_stale_side_chunks(&dir, region_x, region_z, &written_chunks);
     }
 
     Ok(())
+}
+
+/// Where one region's chunks go: the same chunk NBT, framed by either container.
+enum RegionSink {
+    Anvil(Region<File>),
+    Blinear(super::blinear::BlinearRegionWriter),
 }
 
 /// Morton (Z-order) index into a 16x16 grid of 2x2-chunk columns.
@@ -616,6 +667,8 @@ pub(crate) struct RegionWriteCtx {
     mode: RegionWriteMode,
     climate_lat: Option<f64>,
     ground_origin: (i32, i32),
+    /// `Some(zstd level)` writes B_Linear instead of Anvil.
+    blinear_level: Option<i32>,
 }
 
 impl RegionWriteCtx {
@@ -631,6 +684,7 @@ impl RegionWriteCtx {
         mode: RegionWriteMode,
         climate_lat: Option<f64>,
         ground_origin: (i32, i32),
+        blinear_level: Option<i32>,
     ) -> Self {
         Self {
             world_dir,
@@ -643,6 +697,7 @@ impl RegionWriteCtx {
             mode,
             climate_lat,
             ground_origin,
+            blinear_level,
         }
     }
 
@@ -666,6 +721,7 @@ impl RegionWriteCtx {
             &self.mode,
             self.climate_lat,
             self.ground_origin,
+            self.blinear_level,
         )
     }
 }
@@ -2092,8 +2148,92 @@ mod merge_tests {
             &mode,
             None,
             (0, 0),
+            None,
         )
         .unwrap();
+    }
+
+    /// The same region through both containers carries the same chunk NBT, and the
+    /// default (Anvil) path writes no B_Linear file.
+    #[test]
+    fn blinear_holds_the_same_chunk_nbt_as_anvil() {
+        // Both writes size heightmaps from the world-bounds globals; hold them still.
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let (mca_dir, bl_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let region = region_with(&[(5, 5), (31, 0), (0, 31)], STONE);
+        write(mca_dir.path(), &region, RegionWriteMode::Fresh);
+        let blinear = |void_world: bool, level: i32| {
+            write_region_to_disk(
+                bl_dir.path(),
+                &llbbox(),
+                None,
+                false,
+                void_world,
+                None,
+                None,
+                0,
+                0,
+                &region,
+                &RegionWriteMode::Fresh,
+                None,
+                (0, 0),
+                Some(level),
+            )
+            .unwrap();
+            let bytes = std::fs::read(bl_dir.path().join("region").join("r.0.0.b_linear"));
+            crate::world_editor::blinear::decode(&bytes.unwrap())
+        };
+
+        assert!(!mca_dir
+            .path()
+            .join("region")
+            .join("r.0.0.b_linear")
+            .exists());
+        assert!(!bl_dir.path().join("region").join("r.0.0.mca").exists());
+        let mut mca = Region::from_stream(
+            File::open(mca_dir.path().join("region").join("r.0.0.mca")).unwrap(),
+        )
+        .unwrap();
+        let slots = blinear(false, 6);
+        for cz in 0..32 {
+            for cx in 0..32 {
+                // Compared as NBT: compound key order follows HashMap iteration,
+                // so two serializations of one chunk differ in bytes.
+                let nbt = |bytes: &[u8]| fastnbt::from_bytes::<Value>(bytes).unwrap();
+                let anvil = mca.read_chunk(cx, cz).unwrap().expect("anvil chunk");
+                let slot = slots[cx + cz * 32].as_deref().expect("b_linear chunk");
+                assert_eq!(nbt(slot), nbt(&anvil), "chunk ({cx}, {cz})");
+            }
+        }
+        // A void region keeps only the touched chunks, as Anvil does.
+        assert_eq!(blinear(true, 22).iter().flatten().count(), 3);
+        // No merge: there is no B_Linear reader to merge with.
+        let merge = RegionWriteMode::Merge {
+            min_x: 0,
+            min_z: 0,
+            max_x: 15,
+            max_z: 15,
+            layout: crate::world_utils::WorldLayout::Legacy,
+        };
+        assert!(write_region_to_disk(
+            bl_dir.path(),
+            &llbbox(),
+            None,
+            false,
+            false,
+            None,
+            None,
+            0,
+            0,
+            &region,
+            &merge,
+            None,
+            (0, 0),
+            Some(6),
+        )
+        .is_err());
     }
 
     fn present_chunks(dir: &std::path::Path) -> Vec<(usize, usize)> {
@@ -2350,5 +2490,7 @@ mod merge_tests {
         assert!(!m.writes_chunk(-3, 0));
         assert!(!m.writes_chunk(0, 1));
         assert!(RegionWriteMode::Fresh.writes_chunk(1000, -1000));
+        assert!(m.writes_region(-1, 0) && m.writes_region(0, 0));
+        assert!(!m.writes_region(1, 0) && !m.writes_region(0, -1));
     }
 }

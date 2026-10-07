@@ -261,6 +261,18 @@ pub fn generate_ground_region(
     let schematic_trees = editor.tree_pack().is_some();
     let terrain_enabled = ground.elevation_enabled;
     let climate = ground.climate();
+    // Untagged cropland and grassland parcels (--land-texture). Climates with their
+    // own vegetated palette keep it.
+    let land_texture = climate
+        .surface_palette(land_cover::LC_CROPLAND, 0, 0)
+        .is_none()
+        .then(|| {
+            crate::element_processing::field_texture::LandTexture::from_args(
+                &args.fields,
+                args.scale,
+            )
+        })
+        .flatten();
 
     let total_blocks: u64 =
         (iter_max_x - iter_min_x + 1).max(0) as u64 * (iter_max_z - iter_min_z + 1).max(0) as u64;
@@ -301,10 +313,11 @@ pub fn generate_ground_region(
 
     // Snow line and the band over which snow thickens into full cover.
     let snow_line = terrain_surface::SnowLine::new(ground, center_lat, args.rotation);
+    let snowfall = args.snow.snowfall();
     // Share of forest-floor grass that grows as ferns, by the habitat the forest is in.
     // Undergrowth thins out with dryness: sparse in deserts, thinner on steppe,
     // full in savanna, temperate and boreal country.
-    let climate_sward = match climate {
+    let climate_sward = |climate| match climate {
         crate::climate::Climate::HotDesert => 0.25,
         crate::climate::Climate::ColdDesert => 0.3,
         crate::climate::Climate::IceCap => 0.3,
@@ -316,16 +329,19 @@ pub fn generate_ground_region(
         crate::climate::Climate::Temperate | crate::climate::Climate::TropicalSavanna => 1.0,
     };
     // Read per chunk, as the ecoregion under the forest can change across the area.
-    let fern_share_at = |x: i32, z: i32| match crate::ground_decoration::habitat(
-        land_cover::LC_TREE_COVER,
-        climate,
-        center_lat.abs(),
-        false,
-        ground.ecoregion(XZPoint::new(x - xzbbox.min_x(), z - xzbbox.min_z())),
-    ) {
-        Some(crate::ground_decoration::Habitat::Taiga) => 0.45,
-        Some(crate::ground_decoration::Habitat::Jungle) => 0.3,
-        _ => 0.12,
+    let fern_share_at = |x: i32, z: i32| {
+        let point = XZPoint::new(x - xzbbox.min_x(), z - xzbbox.min_z());
+        match crate::ground_decoration::habitat(
+            land_cover::LC_TREE_COVER,
+            ground.climate_at(point),
+            ground.local_lat(point).unwrap_or(center_lat).abs(),
+            false,
+            ground.ecoregion(point),
+        ) {
+            Some(crate::ground_decoration::Habitat::Taiga) => 0.45,
+            Some(crate::ground_decoration::Habitat::Jungle) => 0.3,
+            _ => 0.12,
+        }
     };
 
     for chunk_x in min_chunk_x..=max_chunk_x {
@@ -443,6 +459,7 @@ pub fn generate_ground_region(
                     };
 
                     let coord = XZPoint::new(x - xzbbox.min_x(), z - xzbbox.min_z());
+                    let climate = ground.climate_at(coord);
 
                     // Slope once per column (used for surface selection and depth), from
                     // unrounded heights so a contour doesn't flicker between tiers.
@@ -612,6 +629,7 @@ pub fn generate_ground_region(
                                 snow_depth = terrain_surface::glacier_depth(snow_depth);
                             }
                             let snow = if planetary_body.is_some()
+                                || !snowfall
                                 || snow_depth < terrain_surface::SNOW_MIN_DEPTH
                             {
                                 terrain_surface::Snow::None
@@ -671,6 +689,10 @@ pub fn generate_ground_region(
                                     terrain_surface::GLACIER_ICE
                                 } else if let Some(p) = climate.surface_palette(cover, x, z) {
                                     p
+                                } else if let Some(cell) =
+                                    land_texture.as_ref().and_then(|t| t.cell_at(cover, x, z))
+                                {
+                                    (cell.surface, DIRT)
                                 } else {
                                     // Select surface block based on ESA land cover class
                                     match cover {
@@ -1086,9 +1108,33 @@ pub fn generate_ground_region(
                                     Some(&[COARSE_DIRT]),
                                     None,
                                 );
-                                let sward = climate_sward * if worn { 0.5 } else { 1.0 };
+                                let sward = climate_sward(ground.climate_at(coord))
+                                    * if worn { 0.5 } else { 1.0 };
+                                // A textured cell is decorated as a parcel, unless a mapped
+                                // feature or the shore took the surface.
+                                let land_cell = land_texture
+                                    .as_ref()
+                                    .and_then(|t| t.cell_at(cover, x, z))
+                                    .filter(|c| {
+                                        editor.check_for_block_absolute(
+                                            x,
+                                            ground_y,
+                                            z,
+                                            Some(&[c.surface]),
+                                            None,
+                                        )
+                                    });
 
                                 match cover {
+                                    _ if land_cell.is_some() => {
+                                        crate::element_processing::field_texture::decorate(
+                                            editor,
+                                            land_cell.as_ref().unwrap(),
+                                            x,
+                                            z,
+                                            &mut rng,
+                                        );
+                                    }
                                     land_cover::LC_TREE_COVER
                                         if slope <= 4
                                             && ground_allows_trees
@@ -1493,7 +1539,11 @@ pub fn generate_ground_region(
         // at the end of generation for maximum throughput.
     }
 
-    // Plant patches need every column of the region finished first.
+    // Plant patches need every column of the region finished first, and grow
+    // around any rocks and bushes scattered there.
+    crate::ground_scatter::scatter_region(
+        editor, ground, args, xzbbox, iter_min_x, iter_max_x, iter_min_z, iter_max_z,
+    );
     crate::ground_decoration::decorate_region(
         editor, ground, args, xzbbox, iter_min_x, iter_max_x, iter_min_z, iter_max_z,
     );

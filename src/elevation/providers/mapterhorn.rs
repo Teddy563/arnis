@@ -50,7 +50,13 @@ const KNOWN_LAND_TILE: TileKey = TileKey {
 type TileImage = image::ImageBuffer<image::Rgb<u8>, Vec<u8>>;
 
 /// Global provider: 30m GLO-30 floor, sub-meter where national LiDAR exists.
-pub struct Mapterhorn;
+#[derive(Default)]
+pub struct Mapterhorn {
+    /// One World: sample from this top zoom (lowered only to fit the tile budget), fetch
+    /// every pyramid level instead of probing past sparse ones, and fail instead of
+    /// returning a grid with holes, so every area of the world reads the same tiles.
+    pub pinned_zoom: Option<u8>,
+}
 
 impl ElevationProvider for Mapterhorn {
     fn name(&self) -> &'static str {
@@ -67,12 +73,22 @@ impl ElevationProvider for Mapterhorn {
         grid_width: usize,
         grid_height: usize,
     ) -> Result<RawElevationGrid, Box<dyn std::error::Error>> {
-        let zoom = choose_zoom(bbox, grid_width, grid_height);
+        let zoom = match self.pinned_zoom {
+            Some(zoom) => fit_tile_budget(bbox, zoom),
+            None => choose_zoom(bbox, grid_width, grid_height),
+        };
 
         let cache_dir = get_cache_dir(self.name());
         std::fs::create_dir_all(&cache_dir)?;
 
-        let outcome = fetch_tile_pyramid(bbox, zoom, &cache_dir)?;
+        let outcome = fetch_tile_pyramid(bbox, zoom, &cache_dir, self.pinned_zoom.is_none())?;
+        if self.pinned_zoom.is_some() && outcome.failed_downloads > 0 {
+            return Err(format!(
+                "{} Mapterhorn tile downloads failed at the One World's pinned z{zoom}; this area may show a step at its seams",
+                outcome.failed_downloads
+            )
+            .into());
+        }
 
         if outcome.available.is_empty() && outcome.failed_downloads > 0 {
             return Err(format!(
@@ -97,6 +113,28 @@ impl ElevationProvider for Mapterhorn {
     }
 }
 
+/// The files in `dir` that a fetch of this grid reads first: one per tile at
+/// the chosen zoom, the 404 marker standing in for a tile known to be absent.
+pub(crate) fn cache_files(
+    dir: &Path,
+    bbox: &LLBBox,
+    grid_width: usize,
+    grid_height: usize,
+) -> Vec<PathBuf> {
+    let zoom = choose_zoom(bbox, grid_width, grid_height);
+    covering_tile_keys(bbox, zoom)
+        .into_iter()
+        .map(|k| {
+            let marker = k.marker_path(dir);
+            if marker.exists() {
+                marker
+            } else {
+                k.cache_path(dir)
+            }
+        })
+        .collect()
+}
+
 // ─── Zoom selection ────────────────────────────────────────────────────
 
 /// Smallest zoom whose pixels match the grid cell size, within budget.
@@ -112,16 +150,31 @@ fn choose_zoom(bbox: &LLBBox, grid_width: usize, grid_height: usize) -> u8 {
 
     // Ground m/px at zoom z is EARTH_CIRCUMFERENCE_M * cos(lat) / (512 * 2^z).
     let need = EARTH_CIRCUMFERENCE_M * cos_lat / (TILE_PX as f64 * cell_m * ZOOM_CELL_TOLERANCE);
-    let mut zoom: u8 = if need <= 1.0 {
+    fit_tile_budget(bbox, zoom_for_need(need))
+}
+
+fn zoom_for_need(need: f64) -> u8 {
+    if need <= 1.0 {
         0
     } else {
         (need.log2().ceil() as i64).clamp(0, MAX_ZOOM as i64) as u8
-    };
+    }
+}
 
+fn fit_tile_budget(bbox: &LLBBox, mut zoom: u8) -> u8 {
     while zoom > 0 && covering_tile_count(bbox, zoom) > MAX_TILES_PER_FETCH {
         zoom -= 1;
     }
     zoom
+}
+
+/// The zoom `choose_zoom` picks for one cell per block in a Web Mercator frame. A block
+/// and a tile pixel both shrink with cos(lat), so this is the same zoom anywhere in it.
+pub fn frame_zoom(origin_lat: f64, scale: f64) -> u8 {
+    let cos_origin = origin_lat.to_radians().cos().abs().max(1e-6);
+    zoom_for_need(
+        EARTH_CIRCUMFERENCE_M * cos_origin * scale / (TILE_PX as f64 * ZOOM_CELL_TOLERANCE),
+    )
 }
 
 // ─── Tile keys and coordinates ─────────────────────────────────────────
@@ -303,6 +356,7 @@ fn fetch_tile_pyramid(
     bbox: &LLBBox,
     zoom: u8,
     cache_dir: &Path,
+    probe: bool,
 ) -> Result<FetchOutcome, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!(
@@ -343,7 +397,13 @@ fn fetch_tile_pyramid(
 
     // Spread-probe large levels first so a zoom with no local data costs
     // ~16 requests instead of hundreds of 404s.
-    while state.available.is_empty() && z > floor && level_keys.len() > PROBE_MIN_LEVEL_TILES {
+    // A probe that misses skips a level even where some of its tiles exist, so the
+    // choice would depend on the bbox; a pinned fetch goes through every level.
+    while probe
+        && state.available.is_empty()
+        && z > floor
+        && level_keys.len() > PROBE_MIN_LEVEL_TILES
+    {
         let stride = (level_keys.len() / PROBE_TILE_COUNT).max(1);
         let probe_keys: Vec<TileKey> = level_keys
             .iter()
@@ -438,6 +498,20 @@ fn fetch_tile_pyramid(
     }
 
     // Persist 404 markers only when this run saw at least one good download.
+    // When every tile it found came from disk, one live known-land request
+    // gives that proof, since --offline can only replay 404s that were stored.
+    if !state.pending_markers.is_empty()
+        && !state
+            .saw_network_success
+            .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let _ = download_tile(
+            &client,
+            &KNOWN_LAND_TILE,
+            &KNOWN_LAND_TILE.cache_path(cache_dir),
+            &state.saw_network_success,
+        );
+    }
     if state
         .saw_network_success
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -499,6 +573,9 @@ fn download_tile(
     tile_path: &Path,
     net_ok: &std::sync::atomic::AtomicBool,
 ) -> TileFetch {
+    if let Err(e) = crate::net::ensure_online("elevation tiles (Mapterhorn)") {
+        return TileFetch::Failed(e);
+    }
     let url = key.url();
     let mut last_error = String::new();
 
@@ -841,6 +918,31 @@ mod tests {
         assert_eq!(zoom, 16);
     }
 
+    /// One cell per block in a frame is the zoom an area of that frame chose itself, at
+    /// any latitude and size, so a pinned world fetches what its areas did before.
+    #[test]
+    fn test_frame_zoom_matches_choose_zoom_for_block_cells() {
+        for (origin_lat, scale) in [(44.448, 1.0), (52.5, 1.0), (46.46, 2.0), (69.6, 0.5)] {
+            let frame = crate::projection::WebMercatorProjection::new(origin_lat, 13.4, scale);
+            for (dlat, size) in [(0.0, 700.0), (0.3, 6000.0), (-0.5, 300.0)] {
+                let (z0, x0) = (frame.z_for_lat(origin_lat + dlat), 0.0);
+                let bbox = LLBBox::new(
+                    frame.lat_for_z(z0 + size),
+                    frame.lon_for_x(x0),
+                    frame.lat_for_z(z0),
+                    frame.lon_for_x(x0 + size),
+                )
+                .unwrap();
+                let cells = size as usize + 1;
+                assert_eq!(
+                    choose_zoom(&bbox, cells, cells),
+                    frame_zoom(origin_lat, scale),
+                    "origin {origin_lat} scale {scale} offset {dlat}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_choose_zoom_capped_grid_lowers_zoom() {
         let bbox = LLBBox::new(52.0, 13.0, 52.5, 13.8).unwrap();
@@ -1035,7 +1137,9 @@ mod tests {
     fn test_live_500km2_scale_fetch() {
         // ~23x23 km around Munich at the 16384 grid cap, like a real 500 km2 run.
         let bbox = LLBBox::new(48.03, 11.40, 48.24, 11.71).unwrap();
-        let raw = Mapterhorn.fetch_raw(&bbox, 16384, 16384).unwrap();
+        let raw = Mapterhorn::default()
+            .fetch_raw(&bbox, 16384, 16384)
+            .unwrap();
         assert_eq!(raw.heights_meters.len(), 16384);
 
         let mut finite = 0usize;
@@ -1065,7 +1169,7 @@ mod tests {
         // UBC and Point Grey at 1:1, the area a USGS request left flat with spikes.
         // Canada's HRDEM stops at z15, so the z16 request falls back a level per tile.
         let bbox = LLBBox::new(49.215467, -123.266945, 49.280852, -123.177338).unwrap();
-        let raw = Mapterhorn.fetch_raw(&bbox, 6510, 7280).unwrap();
+        let raw = Mapterhorn::default().fetch_raw(&bbox, 6510, 7280).unwrap();
 
         let (mut min, mut max) = (f64::MAX, f64::MIN);
         let mut finite = 0usize;
@@ -1083,5 +1187,32 @@ mod tests {
             max > 60.0,
             "Point Grey rises well above the shore, got {max}"
         );
+    }
+
+    // Run manually: cargo test test_live_absent_markers -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn test_live_absent_markers_kept_when_parents_are_cached() {
+        // Bucharest: no LiDAR, so z16 404s and the data comes from coarser parents.
+        let bbox = LLBBox::new(44.4450, 26.0950, 44.4480, 26.1030).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let markers = |dir: &Path| {
+            std::fs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "missing"))
+                .map(|e| e.path())
+                .collect::<Vec<_>>()
+        };
+        fetch_tile_pyramid(&bbox, 16, tmp.path(), true).unwrap();
+        let first = markers(tmp.path());
+        assert!(!first.is_empty());
+        // Parents stay cached; only the 404s are forgotten, as when the cache
+        // holds a neighbouring area. They must be stored again.
+        for m in &first {
+            std::fs::remove_file(m).unwrap();
+        }
+        fetch_tile_pyramid(&bbox, 16, tmp.path(), true).unwrap();
+        assert_eq!(markers(tmp.path()).len(), first.len());
     }
 }

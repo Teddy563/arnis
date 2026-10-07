@@ -893,6 +893,8 @@ pub fn to_bedrock_block(block: Block) -> BedrockBlock {
             )],
         ),
         "cobweb" => BedrockBlock::simple("web"),
+        "rooted_dirt" => BedrockBlock::simple("dirt_with_roots"),
+        "beetroots" => BedrockBlock::simple("beetroot"),
 
         // Potted plants (Bedrock uses "flower_pot" for all variants;
         // the contained plant is a block entity, not a block state)
@@ -1023,6 +1025,18 @@ pub fn to_bedrock_block_with_properties(
     }
     if matches!(java_name, "wheat" | "carrots" | "potatoes") {
         return convert_crop(java_name, props_map);
+    }
+    if java_name == "beetroots" {
+        // Java beetroot ages 0-3; Bedrock's `beetroot` grows 0-7 like the others.
+        let age = props_map
+            .and_then(|p| p.get("age"))
+            .and_then(parse_int_property)
+            .unwrap_or(3)
+            .clamp(0, 3);
+        return BedrockBlock::with_states(
+            "beetroot",
+            vec![("growth", BedrockBlockStateValue::Int(age * 7 / 3))],
+        );
     }
     if matches!(
         java_name,
@@ -2401,9 +2415,14 @@ mod tests {
     /// Crops carry age=7 in block_definitions; Bedrock calls it "growth".
     #[test]
     fn test_crops_keep_their_growth_stage() {
-        use crate::block_definitions::{CARROTS, POTATOES, WHEAT};
+        use crate::block_definitions::{BEETROOTS, CARROTS, POTATOES, WHEAT};
 
-        for block in [WHEAT, CARROTS, POTATOES] {
+        // Beetroot's Java age stops at 3, which is Bedrock growth 7.
+        assert_eq!(
+            to_bedrock_block_with_properties(BEETROOTS, None).name,
+            "minecraft:beetroot"
+        );
+        for block in [WHEAT, CARROTS, POTATOES, BEETROOTS] {
             let bedrock = to_bedrock_block_with_properties(block, None);
             assert!(
                 matches!(

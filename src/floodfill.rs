@@ -2,7 +2,7 @@ use geo::orient::{Direction, Orient};
 use geo::{Contains, LineString, Point, Polygon};
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Maximum bounding box area (in blocks) for the visited-bitmap flood fill.
 /// 25 million blocks ≈ 5000×5000; bitmap uses only ~3 MB at this size.
@@ -11,6 +11,34 @@ pub const MAX_FLOOD_FILL_AREA: i64 = 25_000_000;
 
 /// Work cap for the scanline fill, whose cost is rows × edges rather than area.
 const MAX_SCANLINE_EDGE_TESTS: i64 = 200_000_000;
+
+/// Point-in-polygon edge tests one second of `--timeout` buys.
+///
+/// The timeout used to be read off the wall clock, so the same polygon could be
+/// cut short at a different seed depending on machine load, and two runs of one
+/// area could differ. It is now a work budget: `timeout_secs * this` edge tests,
+/// counted as (seeds tried + cells filled) * ring edges, which is a function of
+/// the polygon alone. A containment test costs a few ns per edge, so 200 M per
+/// second is the slow end of a real machine: the budget binds no later than the
+/// clock did on an idle one. The GUI's 40 s is 8 G tests, far past the 25 M
+/// cells the bitmap paths accept on any ordinary ring, so in practice it only
+/// stops pathological input, as the clock did.
+pub const EDGE_TESTS_PER_SECOND: f64 = 200_000_000.0;
+
+/// The edge-test budget for a `--timeout`; no timeout is no limit.
+fn work_budget(timeout: Option<&Duration>) -> u64 {
+    // Float to int casts saturate, so an absurd timeout cannot wrap.
+    timeout.map_or(u64::MAX, |t| {
+        (t.as_secs_f64() * EDGE_TESTS_PER_SECOND) as u64
+    })
+}
+
+/// Whether a fill that has tried `seeds` seed points and filled `filled` cells
+/// of a ring with `edges` edges has spent its budget.
+#[inline]
+fn over_budget(seeds: u64, filled: usize, edges: u64, budget: u64) -> bool {
+    seeds.saturating_add(filled as u64).saturating_mul(edges) > budget
+}
 
 /// A compact bitmap for visited-coordinate tracking during flood fill.
 ///
@@ -194,7 +222,9 @@ fn optimized_flood_fill_area(
     min_z: i32,
     max_z: i32,
 ) -> Vec<(i32, i32)> {
-    let start_time = Instant::now();
+    let budget = work_budget(timeout);
+    let edges = polygon_coords.len() as u64 - 1;
+    let mut seeds: u64 = 0;
 
     let mut filled_area = Vec::new();
     let mut visited = FloodBitmap::new(min_x, max_x, min_z, max_z);
@@ -219,14 +249,10 @@ fn optimized_flood_fill_area(
 
     for z in (min_z..=max_z).step_by(step_z as usize) {
         for x in (min_x..=max_x).step_by(step_x as usize) {
-            // Fast timeout check, only every few iterations
-            if filled_area.len() % 100 == 0 {
-                if let Some(timeout) = timeout {
-                    if start_time.elapsed() > *timeout {
-                        return filled_area;
-                    }
-                }
+            if over_budget(seeds, filled_area.len(), edges, budget) {
+                return filled_area;
             }
+            seeds += 1;
 
             // Skip if already visited or not inside polygon
             if visited.contains(x, z) || !polygon.contains(&Point::new(x as f64, z as f64)) {
@@ -279,7 +305,9 @@ fn original_flood_fill_area(
     min_z: i32,
     max_z: i32,
 ) -> Vec<(i32, i32)> {
-    let start_time = Instant::now();
+    let budget = work_budget(timeout);
+    let edges = polygon_coords.len() as u64 - 1;
+    let mut seeds: u64 = 0;
     let mut filled_area: Vec<(i32, i32)> = Vec::new();
     let mut visited = FloodBitmap::new(min_x, max_x, min_z, max_z);
 
@@ -305,13 +333,10 @@ fn original_flood_fill_area(
     // Scan for multiple seed points to handle U-shapes and concave polygons
     for z in (min_z..=max_z).step_by(step_z as usize) {
         for x in (min_x..=max_x).step_by(step_x as usize) {
-            // Reduced timeout checking frequency for better performance
-            // Use manual % check since is_multiple_of() is unstable on stable Rust
-            if let Some(timeout) = timeout {
-                if &start_time.elapsed() > timeout {
-                    return filled_area;
-                }
+            if over_budget(seeds, filled_area.len(), edges, budget) {
+                return filled_area;
             }
+            seeds += 1;
 
             // Skip if already processed or not inside polygon
             if visited.contains(x, z) || !polygon.contains(&Point::new(x as f64, z as f64)) {
@@ -432,6 +457,59 @@ mod tests {
     fn polygon_covering_more_than_the_budget_is_refused() {
         let triangle = [(0, 0), (9000, 0), (0, 9000), (0, 0)];
         assert!(flood_fill_area(&triangle, None).is_empty());
+    }
+
+    #[test]
+    fn a_timeout_converts_to_a_fixed_budget() {
+        assert_eq!(work_budget(None), u64::MAX);
+        assert_eq!(work_budget(Some(&Duration::from_secs(40))), 8_000_000_000);
+        assert_eq!(work_budget(Some(&Duration::MAX)), u64::MAX);
+        assert!(!over_budget(u64::MAX, usize::MAX, 4, u64::MAX));
+    }
+
+    /// Two `side`-wide rooms joined by a corridor exactly one block high, whose
+    /// walls sit on lattice rows, so it holds no interior cell. The interior is
+    /// then two separate regions and the fill needs a seed in each.
+    fn two_rooms(side: i32) -> Vec<(i32, i32)> {
+        let (gap, mid) = (10, side / 2);
+        vec![
+            (0, 0),
+            (side, 0),
+            (side, mid),
+            (side + gap, mid),
+            (side + gap, 0),
+            (2 * side + gap, 0),
+            (2 * side + gap, side),
+            (side + gap, side),
+            (side + gap, mid + 1),
+            (side, mid + 1),
+            (side, side),
+            (0, side),
+            (0, 0),
+        ]
+    }
+
+    #[test]
+    fn the_budget_stops_between_seeds_and_repeats_exactly() {
+        // 20 is the optimized path, 200 (an 82k bbox) the original one.
+        for side in [20, 200] {
+            let ring = two_rooms(side);
+            let full = flood_fill_area(&ring, None);
+            // Exactly the first room's worth of work: the check sits between
+            // seeds, as the clock's did, so that room fills and the next stops.
+            let first_room = full.iter().filter(|&&(x, _)| x < side).count();
+            let units = (first_room * (ring.len() - 1)) as f64;
+            let timeout = Duration::from_secs_f64(units / EDGE_TESTS_PER_SECOND);
+            let cut = flood_fill_area(&ring, Some(&timeout));
+            assert_eq!(cut.len(), first_room, "side {side}");
+            assert!(cut.len() < full.len());
+            // The cut depends on the polygon alone, so every run lands on it.
+            for _ in 0..5 {
+                assert_eq!(flood_fill_area(&ring, Some(&timeout)), cut);
+            }
+            // A second's budget is never reached on a ring this size.
+            assert_eq!(flood_fill_area(&ring, Some(&Duration::from_secs(1))), full);
+        }
     }
 
     #[test]

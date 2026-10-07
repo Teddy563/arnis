@@ -571,6 +571,10 @@ impl Block {
             484 => "melon",
             485 => "loom",
             486 => "smithing_table",
+            // Farmland parcels (src/element_processing/field_texture.rs)
+            487 => "packed_mud",
+            488 => "rooted_dirt",
+            489 => "beetroots",
             _ => return None,
         })
         // Block ids are u16 handles; keep the name and property tables in sync
@@ -937,6 +941,13 @@ impl Block {
                     "layers".to_string(),
                     Value::String((self.id - 472).to_string()),
                 );
+                map
+            })),
+            // Beetroots only reach age 3. Crop plots set their own growth stage;
+            // this keeps a bare placement ripe.
+            489 => Some(Value::Compound({
+                let mut map = HashMap::new();
+                map.insert("age".to_string(), Value::String("3".to_string()));
                 map
             })),
             // Ripe, so the bush shows its berries.
@@ -1589,6 +1600,11 @@ pub const SNOW_LAYERS: [Block; 7] = [
     Block::new(478),
     Block::new(479),
 ];
+// Farmland parcels. Packed mud and rooted dirt never regrow grass in-game, so worn
+// ground in a plot stays worn after the world is loaded.
+pub const PACKED_MUD: Block = Block::new(487);
+pub const ROOTED_DIRT: Block = Block::new(488);
+pub const BEETROOTS: Block = Block::new(489);
 
 /// Maps a block to a stair variant in the same colour family.
 #[inline]

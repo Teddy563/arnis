@@ -491,14 +491,34 @@ impl RoadMarkingIndex {
         self.crossing_paint(&node.tags, None)
     }
 
+    /// Every crossing painted; runs call [`RoadMarkingIndex::build_with`] for `--road-detail`.
+    #[cfg(test)]
     pub fn build(elements: &[ProcessedElement], scale: f64, region: SignRegion) -> Self {
+        Self::build_with(elements, scale, region, true, true)
+    }
+
+    /// [`RoadMarkingIndex::build`]; `crossings` false leaves pedestrian crossings unpainted,
+    /// with no lane-line gaps or stop lines kept for them (`--road-detail compact`). `vote`
+    /// lets the area's own tagged signalised crossings pick edge lines or zebras; One World
+    /// passes false, since a piece sees only its clipped share of them, and every piece then
+    /// paints the region's default.
+    pub fn build_with(
+        elements: &[ProcessedElement],
+        scale: f64,
+        region: SignRegion,
+        crossings: bool,
+        vote: bool,
+    ) -> Self {
         let mut index = Self {
             drives_on_left: region.drives_on_left(),
             yellow_centre: matches!(region, SignRegion::NorthAmerica | SignRegion::Canada),
-            signal_crossing_lines: signal_crossings_have_lines(elements).unwrap_or(matches!(
-                region,
-                SignRegion::Germanic | SignRegion::UkIreland
-            )),
+            signal_crossing_lines: vote
+                .then(|| signal_crossings_have_lines(elements))
+                .flatten()
+                .unwrap_or(matches!(
+                    region,
+                    SignRegion::Germanic | SignRegion::UkIreland
+                )),
             ..Self::default()
         };
 
@@ -526,7 +546,7 @@ impl RoadMarkingIndex {
                     palette: surface_palette(highway, &way.tags),
                     node_t: node_path_index(way),
                 });
-            } else if index.crossing_way_paint(&way.tags).is_some() {
+            } else if crossings && index.crossing_way_paint(&way.tags).is_some() {
                 crossing_ways.push(way);
             }
         }
@@ -684,7 +704,7 @@ impl RoadMarkingIndex {
                 {
                     continue;
                 }
-                let Some(paint) = index.crossing_node_paint(node) else {
+                let Some(paint) = index.crossing_node_paint(node).filter(|_| crossings) else {
                     continue;
                 };
                 // Signal heads tagged for a crossing mapped beside them are not the crossing.

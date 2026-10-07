@@ -1515,6 +1515,14 @@ fn generate_highways_internal(
             // Canonical width (shared with prescan/bridge consumers).
             let block_range = highway_block_range(highway_type, &way.tags, scale_factor);
 
+            // A road over water on a small map reads as a 1-block causeway; leave water
+            // cells to the carve. The road mask drops the same cells.
+            let drown_over_water = !is_bridge_member
+                && args
+                    .water
+                    .water_detail
+                    .drowns_crossing(scale_factor, &way.tags);
+
             // At-grade lit ways get periodic street lamps alongside.
             if way.tags.get("lit").map(String::as_str) == Some("yes")
                 && !is_bridge_member
@@ -1531,9 +1539,22 @@ fn generate_highways_internal(
             let lines = if renders_as_highway_tunnel(way) {
                 Vec::new()
             } else {
+                let road_width = 2 * block_range + 1;
                 lane_lines(highway_type, &way.tags, block_range, markings)
+                    .into_iter()
+                    .filter(|l| {
+                        args.road_detail.keeps_lane_line(
+                            highway_type,
+                            &way.tags,
+                            road_width,
+                            l.centre,
+                        )
+                    })
+                    .collect()
             };
-            let (dash_on, dash_period) = dash_pattern(highway_type, &way.tags, scale_factor);
+            let (dash_on, dash_period) =
+                args.road_detail
+                    .dash_pattern(dash_pattern(highway_type, &way.tags, scale_factor));
             let way_marks = if renders_as_highway_tunnel(way) {
                 None
             } else {
@@ -1842,6 +1863,9 @@ fn generate_highways_internal(
                             for dz in -block_range..=block_range {
                                 let set_x: i32 = x + dx;
                                 let set_z: i32 = z + dz;
+                                if drown_over_water && editor.is_lc_water(set_x, set_z) {
+                                    continue;
+                                }
 
                                 // Per-cell Y. For wide roads this is the
                                 // perpendicular median at the cell's own
@@ -1870,12 +1894,12 @@ fn generate_highways_internal(
 
                                 // A crossing on the road is painted on the road's own
                                 // surface, not the footway's grey.
-                                let crossing_here = crossing_paint
-                                    .and_then(|p| carriageway_at(set_x, set_z).map(|r| (p, r)));
+                                let crossing_here =
+                                    crossing_paint.zip(carriageway_at(set_x, set_z));
                                 if let Some((paint, road)) = crossing_here {
                                     let along = if dir_horizontal { set_x } else { set_z };
-                                    let on_stripe =
-                                        paint == CrossingPaint::Zebra && along.rem_euclid(2) == 0;
+                                    let on_stripe = paint == CrossingPaint::Zebra
+                                        && args.road_detail.bar(along);
                                     if on_stripe {
                                         // A bar only replaces the road under it, whichever was first.
                                         if use_absolute_y {
@@ -2163,7 +2187,7 @@ fn generate_highways_internal(
                         // Edge lines of a signalised crossing, one cell outside its width.
                         if let Some(CrossingPaint::Lines { broken }) = crossing_paint {
                             let along = if dir_horizontal { *x } else { *z };
-                            if !broken || along.rem_euclid(2) == 0 {
+                            if !broken || args.road_detail.bar(along) {
                                 for side in [-1, 1] {
                                     let off = side * (block_range + 1);
                                     let (sx, sz) = if dir_horizontal {
@@ -2184,7 +2208,18 @@ fn generate_highways_internal(
                             // Lane lines, dashed by path position so curves and short
                             // segments keep the rhythm.
                             if !way_marks.is_some_and(|m| m.in_gap(t)) {
-                                let phase = way_marks.map_or(t as i64, |m| m.dash_phase(t));
+                                // A One World piece clips a way where one run or the next
+                                // piece does not, which shifts its path positions; there the
+                                // dashes count along the segment's axis in the world frame.
+                                let phase = if args.one_world_run.is_some() {
+                                    if dir_horizontal {
+                                        i64::from(*x) * i64::from((x2 - x1).signum())
+                                    } else {
+                                        i64::from(*z) * i64::from((z2 - z1).signum())
+                                    }
+                                } else {
+                                    way_marks.map_or(t as i64, |m| m.dash_phase(t))
+                                };
                                 let dash = phase.rem_euclid(dash_period as i64) < dash_on as i64;
                                 for line in lines.iter().filter(|l| l.solid || dash) {
                                     // Offset rounded on its own, so lines sit symmetrically.
@@ -2220,12 +2255,11 @@ fn generate_highways_internal(
                                         }
                                         let (sx, sz) = (*x + dx, *z + dz);
                                         // Bars run with the road, alternating across it.
-                                        let bar = (((sx as f32 * perp_x + sz as f32 * perp_z)
-                                            / spacing)
-                                            .floor()
-                                            as i32)
-                                            .rem_euclid(2)
-                                            == 0;
+                                        let bar = args.road_detail.bar(
+                                            ((sx as f32 * perp_x + sz as f32 * perp_z) / spacing)
+                                                .floor()
+                                                as i32,
+                                        );
                                         let white = match mark.kind {
                                             CrossMark::Stop => true,
                                             CrossMark::GiveWay | CrossMark::Zebra => bar,
@@ -3067,13 +3101,18 @@ pub(crate) fn highway_block_range(
 ///
 /// This lets `get_nearest_road_block` in `amenities.rs` or other processors do a single O(1) bitmap lookup
 /// instead of live `get_ground_level` + `check_for_block_absolute` world scans.
+///
+/// `water_detail` drops the water cells of crossings the renderer drowns.
 pub fn collect_road_surface_coords(
     elements: &[ProcessedElement],
     editor: &WorldEditor,
     xzbbox: &XZBBox,
     scale: f64,
+    water_detail: crate::water_detail::WaterDetail,
 ) -> CoordinateBitmap {
-    collect_highway_surface_coords(elements, Some(editor), xzbbox, scale, |_| true)
+    collect_highway_surface_coords(elements, Some(editor), xzbbox, scale, water_detail, |_| {
+        true
+    })
 }
 
 /// Vehicular carriageways only (no footways, cycleways, paths, steps or pedestrian
@@ -3083,21 +3122,28 @@ pub fn collect_carriageway_coords(
     xzbbox: &XZBBox,
     scale: f64,
 ) -> CoordinateBitmap {
-    collect_highway_surface_coords(elements, None, xzbbox, scale, |highway| {
-        !matches!(
-            highway,
-            "footway"
-                | "path"
-                | "steps"
-                | "pedestrian"
-                | "cycleway"
-                | "bridleway"
-                | "corridor"
-                | "track"
-                | "elevator"
-                | "platform"
-        )
-    })
+    collect_highway_surface_coords(
+        elements,
+        None,
+        xzbbox,
+        scale,
+        Default::default(),
+        |highway| {
+            !matches!(
+                highway,
+                "footway"
+                    | "path"
+                    | "steps"
+                    | "pedestrian"
+                    | "cycleway"
+                    | "bridleway"
+                    | "corridor"
+                    | "track"
+                    | "elevator"
+                    | "platform"
+            )
+        },
+    )
 }
 
 /// Shared stamping loop for the road-surface bitmaps; `include` filters by highway type.
@@ -3106,6 +3152,7 @@ fn collect_highway_surface_coords(
     editor: Option<&WorldEditor>,
     xzbbox: &XZBBox,
     scale: f64,
+    water_detail: crate::water_detail::WaterDetail,
     include: impl Fn(&str) -> bool,
 ) -> CoordinateBitmap {
     let mut bitmap = CoordinateBitmap::new(xzbbox);
@@ -3161,6 +3208,7 @@ fn collect_highway_surface_coords(
 
         // Use the same block_range the renderer uses for this highway type
         let block_range = highway_block_range(highway_type, &way.tags, scale);
+        let drowned = editor.filter(|_| water_detail.drowns_crossing(scale, &way.tags));
 
         for i in 1..way.nodes.len() {
             let prev = way.nodes[i - 1].xz();
@@ -3171,6 +3219,9 @@ fn collect_highway_surface_coords(
             for (bx, _, bz) in &points {
                 for dx in -block_range..=block_range {
                     for dz in -block_range..=block_range {
+                        if drowned.is_some_and(|e| e.is_lc_water(bx + dx, bz + dz)) {
+                            continue;
+                        }
                         bitmap.set(bx + dx, bz + dz);
                     }
                 }
@@ -3598,11 +3649,25 @@ mod tests {
 
     /// Renders `ways` with road paint resolved over all of them, as a real run does.
     fn build_marked_ways(editor: &mut WorldEditor, ways: &[ProcessedWay]) {
-        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+        build_marked_ways_at(editor, ways, "max");
+    }
+
+    /// [`build_marked_ways`] with `--road-detail <detail>`.
+    fn build_marked_ways_at(editor: &mut WorldEditor, ways: &[ProcessedWay], detail: &str) {
+        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4", "--road-detail", detail].iter());
+        build_marked_ways_with(editor, ways, &args);
+    }
+
+    fn build_marked_ways_with(editor: &mut WorldEditor, ways: &[ProcessedWay], args: &Args) {
         let elements: Vec<ProcessedElement> =
             ways.iter().cloned().map(ProcessedElement::Way).collect();
-        let markings =
-            RoadMarkingIndex::build(&elements, 1.0, crate::decals::region::SignRegion::Europe);
+        let markings = RoadMarkingIndex::build_with(
+            &elements,
+            1.0,
+            crate::decals::region::SignRegion::Europe,
+            args.road_detail.paints_crossings(),
+            true,
+        );
         let outlines = crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&[]);
         let structures = BridgeStructureMap::build(&[], editor, &outlines, 1.0);
         let surface = BridgeSurfaceMap::build(&[], &structures, 1.0);
@@ -3612,7 +3677,7 @@ mod tests {
             generate_highways(
                 editor,
                 element,
-                &args,
+                args,
                 &HighwayConnectivityMap::new(),
                 &FloodFillCache::new(),
                 &empty,
@@ -3625,6 +3690,81 @@ mod tests {
                 &markings,
             );
         }
+    }
+
+    #[test]
+    fn one_world_dashes_do_not_move_with_the_clip() {
+        // The same road whole, and clipped 37 cells in as a neighbouring piece's bbox cuts it.
+        let xzbbox = XZBBox::rect_from_xz_lengths(200.0, 100.0).unwrap();
+        let tags = [("highway", "secondary")];
+        let whole = way_along(1, (10, 50), (190, 50), &tags);
+        let clipped = way_along(1, (47, 50), (190, 50), &tags);
+        let dashes = |way: &ProcessedWay, one_world: bool| -> Vec<bool> {
+            let mut args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+            if one_world {
+                args.one_world_run = Some(crate::one_world::RunContext {
+                    world_dir: std::path::PathBuf::new(),
+                    origin_lat: 0.0,
+                    origin_lon: 0.0,
+                    extending: false,
+                    elevation: None,
+                    elevation_zoom: None,
+                    replaced_chunks: 0,
+                    area_id: 0,
+                    unit: None,
+                });
+            }
+            let mut editor = test_editor(&xzbbox);
+            build_marked_ways_with(&mut editor, std::slice::from_ref(way), &args);
+            (60..180)
+                .map(|x| editor.check_for_block(x, 0, 50, Some(&[WHITE_CONCRETE])))
+                .collect()
+        };
+        assert!(dashes(&whole, true).iter().any(|&w| w));
+        assert_eq!(dashes(&whole, true), dashes(&clipped, true));
+        // A plain run keeps upstream's rhythm from the way's start.
+        assert_ne!(dashes(&whole, false), dashes(&clipped, false));
+    }
+
+    #[test]
+    fn road_detail_thins_the_junction_paint() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(200.0, 100.0).unwrap();
+        let road = way_through(
+            1,
+            &[(10, 10, 50), (2, 100, 50), (11, 190, 50)],
+            &[("highway", "primary"), ("lanes", "4")],
+        );
+        let crossing = way_through(
+            2,
+            &[(20, 100, 30), (2, 100, 50), (21, 100, 70)],
+            &[
+                ("highway", "footway"),
+                ("footway", "crossing"),
+                ("crossing", "zebra"),
+            ],
+        );
+        // Rows with lane paint well away from the crossing, and whether the zebra is there.
+        let paint = |detail: &str| {
+            let mut editor = test_editor(&xzbbox);
+            build_marked_ways_at(&mut editor, &[road.clone(), crossing.clone()], detail);
+            let white = |x: i32, z: i32| editor.check_for_block(x, 0, z, Some(&[WHITE_CONCRETE]));
+            let rows: Vec<i32> = (30..=70)
+                .filter(|&z| (20..70).any(|x| white(x, z)))
+                .collect();
+            // Bars on the crossing's column, off the centre line's row.
+            (rows, (44..=56).any(|z| z != 50 && white(100, z)))
+        };
+        let (max_rows, max_zebra) = paint("max");
+        assert_eq!(max_rows.len(), 3, "{max_rows:?}");
+        assert!(max_zebra);
+        // Clean keeps the centre line alone and the zebra.
+        let (clean_rows, clean_zebra) = paint("clean");
+        assert_eq!(clean_rows, vec![50]);
+        assert!(clean_zebra);
+        // Compact also leaves the crossing unpainted.
+        let (compact_rows, compact_zebra) = paint("compact");
+        assert_eq!(compact_rows, vec![50]);
+        assert!(!compact_zebra);
     }
 
     #[test]
@@ -4668,7 +4808,7 @@ mod tests {
         ]))];
         let xzbbox = XZBBox::rect_from_xz_lengths(120.0, 120.0).unwrap();
         let editor = tunnel_editor(&xzbbox, crate::ground::Ground::new_flat(0));
-        let mask = collect_road_surface_coords(&elems, &editor, &xzbbox, 1.0);
+        let mask = collect_road_surface_coords(&elems, &editor, &xzbbox, 1.0, Default::default());
         assert!(!mask.contains(50, 50), "tunnel is not a surface road");
     }
 

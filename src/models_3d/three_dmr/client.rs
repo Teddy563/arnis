@@ -52,7 +52,7 @@ fn deserialize_license<'de, D: Deserializer<'de>>(de: D) -> Result<Option<String
 }
 
 pub(crate) fn cache_root() -> PathBuf {
-    if let Some(dir) = dirs::cache_dir() {
+    if let Some(dir) = crate::elevation::cache::user_cache_dir() {
         dir.join(CACHE_SUBDIR)
     } else {
         PathBuf::from("./.arnis_3dmr_cache")
@@ -105,6 +105,7 @@ pub fn fetch_info(id: u64) -> Result<ModelInfo, String> {
         }
     }
 
+    crate::net::ensure_online("3D models (3DMR)")?;
     let client = client()?;
     let url = format!("{API_BASE}/info/{id}");
     let _permit = crate::net::request_permit();
@@ -117,7 +118,7 @@ pub fn fetch_info(id: u64) -> Result<ModelInfo, String> {
         serde_json::from_slice(&bytes).map_err(|e| format!("3DMR info {id} parse: {e}"))?;
 
     let _ = fs::create_dir_all(&dir);
-    let _ = fs::write(&info_path, &bytes);
+    crate::overture::write_atomic(&info_path, &bytes);
 
     Ok(info)
 }
@@ -133,6 +134,7 @@ pub fn fetch_glb(id: u64) -> Result<Vec<u8>, String> {
         }
     }
 
+    crate::net::ensure_online("3D models (3DMR)")?;
     let client = client()?;
     let url = format!("{API_BASE}/model/{id}");
     let _permit = crate::net::request_permit();
@@ -143,7 +145,7 @@ pub fn fetch_glb(id: u64) -> Result<Vec<u8>, String> {
     let bytes = read_capped(resp, MAX_GLB_BYTES)?;
 
     let _ = fs::create_dir_all(&dir);
-    let _ = fs::write(&glb_path, &bytes);
+    crate::overture::write_atomic(&glb_path, &bytes);
 
     Ok(bytes)
 }

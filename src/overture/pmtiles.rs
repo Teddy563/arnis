@@ -14,7 +14,7 @@
 
 use reqwest::blocking::Client;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 use super::cache;
@@ -336,6 +336,70 @@ pub fn zxy_to_tile_id(z: u8, x: u32, y: u32) -> Result<u64> {
     Ok(id)
 }
 
+/// Where an archive cached in `dir` keeps tile `z/x/y`.
+pub fn tile_cache_path(dir: &std::path::Path, z: u8, x: u32, y: u32) -> PathBuf {
+    dir.join("t")
+        .join(z.to_string())
+        .join(x.to_string())
+        .join(format!("{y}.bin"))
+}
+
+/// Where an archive cached in `dir` keeps a leaf directory.
+fn leaf_cache_path(dir: &std::path::Path, offset: u64, length: u32) -> PathBuf {
+    dir.join("leaf").join(format!("{offset}_{length}.bin"))
+}
+
+/// Where an archive cached in `dir` keeps an [`Archive::entry`].
+fn entry_cache_path(dir: &std::path::Path, tile_id: u64) -> PathBuf {
+    dir.join("id").join(format!("{tile_id}.bin"))
+}
+
+/// What an archive's cache in `dir` answers with no request, as an offline run reads it.
+pub struct CachedArchive {
+    dir: PathBuf,
+    header: Header,
+}
+
+impl CachedArchive {
+    /// `None` until a run has cached the header.
+    pub fn open(dir: PathBuf, allowed: &[u8]) -> Option<CachedArchive> {
+        let header =
+            Header::parse_allowing(&cache::read(&dir.join("header.bin"))?, allowed).ok()?;
+        Some(CachedArchive { dir, header })
+    }
+
+    /// Tile `z/x/y`, decompressed, if it is cached.
+    pub fn tile(&self, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+        let raw = cache::read(&tile_cache_path(&self.dir, z, x, y))?;
+        decompress(self.header.tile_compression, raw, MAX_TILE_BYTES).ok()
+    }
+
+    /// The file [`Archive::entry`] caches `tile_id` in, and its length on the wire;
+    /// `Ok(None)` when the archive has no such entry, `Err` with the first directory
+    /// on the way to it that is not cached.
+    pub fn entry(&self, tile_id: u64) -> std::result::Result<Option<(PathBuf, u32)>, PathBuf> {
+        let mut path = self.dir.join("root.bin");
+        for _ in 0..MAX_LEAF_DEPTH {
+            let Some(entries) = cache::read(&path)
+                .and_then(|raw| {
+                    decompress(self.header.internal_compression, raw, MAX_DIRECTORY_BYTES).ok()
+                })
+                .and_then(|d| decode_directory(&d).ok())
+            else {
+                return Err(path);
+            };
+            match find_entry(&entries, tile_id) {
+                Some(e) if e.run_length > 0 => {
+                    return Ok(Some((entry_cache_path(&self.dir, tile_id), e.length)))
+                }
+                Some(e) if e.length > 0 => path = leaf_cache_path(&self.dir, e.offset, e.length),
+                _ => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// Web-Mercator tile containing a coordinate at the given zoom.
 pub fn lonlat_to_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
     let n = f64::from(1u32 << z);
@@ -505,10 +569,9 @@ impl Archive {
                     client,
                     absolute,
                     u64::from(entry.length),
-                    self.cache_dir.as_ref().map(|d| {
-                        d.join("leaf")
-                            .join(format!("{}_{}.bin", entry.offset, entry.length))
-                    }),
+                    self.cache_dir
+                        .as_ref()
+                        .map(|d| leaf_cache_path(d, entry.offset, entry.length)),
                 )?;
                 let decoded = decode_directory(&decompress(
                     self.header.internal_compression,
@@ -545,12 +608,7 @@ impl Archive {
                 location.length
             ));
         }
-        let path = self.cache_dir.as_ref().map(|d| {
-            d.join("t")
-                .join(z.to_string())
-                .join(x.to_string())
-                .join(format!("{y}.bin"))
-        });
+        let path = self.cache_dir.as_ref().map(|d| tile_cache_path(d, z, x, y));
         let raw = self.read_cached(client, location.offset, u64::from(location.length), path)?;
         decompress(self.header.tile_compression, raw, MAX_TILE_BYTES)
     }
@@ -575,7 +633,7 @@ impl Archive {
         let path = self
             .cache_dir
             .as_ref()
-            .map(|d| d.join("id").join(format!("{tile_id}.bin")));
+            .map(|d| entry_cache_path(d, tile_id));
         let raw = self.read_cached(client, location.offset, u64::from(location.length), path)?;
         decompress(self.header.tile_compression, raw, MAX_TILE_BYTES)
     }
@@ -608,6 +666,18 @@ impl Archive {
     }
 }
 
+/// An archive on this machine: a `file://` URL or a plain path. Read in place, so no
+/// network and no cache copy.
+pub fn local_path(url: &str) -> Option<PathBuf> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return None;
+    }
+    match reqwest::Url::parse(url) {
+        Ok(u) if u.scheme() == "file" => u.to_file_path().ok(),
+        _ => Some(PathBuf::from(url)),
+    }
+}
+
 /// Attempts per range read. A dropped tile takes a square kilometre of
 /// buildings with it, so a transient failure must not settle it.
 const RANGE_ATTEMPTS: u32 = 3;
@@ -623,6 +693,17 @@ fn fetch_range(client: &Client, url: &str, offset: u64, length: u64) -> Result<V
     let end = offset
         .checked_add(length - 1)
         .ok_or_else(|| format!("range {offset}+{length} overflows the archive"))?;
+    if let Some(path) = local_path(url) {
+        // Short at end of file, like a 206 for a range past the end.
+        let mut file =
+            std::fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut bytes = Vec::new();
+        file.seek(SeekFrom::Start(offset))
+            .and_then(|_| file.take(length).read_to_end(&mut bytes))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok(bytes);
+    }
+    crate::net::ensure_online(url)?;
     let mut last_error = String::new();
 
     for attempt in 0..RANGE_ATTEMPTS {
@@ -670,6 +751,40 @@ fn fetch_range(client: &Client, url: &str, offset: u64, length: u64) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_archives_are_paths_or_file_urls() {
+        assert_eq!(local_path("https://tiles.arnisproject.com/v1"), None);
+        assert_eq!(local_path("http://localhost:8080/v1"), None);
+        assert_eq!(local_path("tiles/out"), Some(PathBuf::from("tiles/out")));
+        let dir = std::env::temp_dir();
+        let url = reqwest::Url::from_directory_path(&dir).unwrap();
+        assert_eq!(
+            local_path(url.as_str()).map(|p| p.components().collect::<PathBuf>()),
+            Some(dir.components().collect::<PathBuf>())
+        );
+        // A Windows drive letter is not a URL scheme.
+        #[cfg(windows)]
+        assert_eq!(local_path("D:/a/b"), Some(PathBuf::from("D:/a/b")));
+    }
+
+    #[test]
+    fn a_local_range_is_read_from_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.pmtiles");
+        std::fs::write(&path, (0u8..100).collect::<Vec<_>>()).unwrap();
+        let client = Client::new();
+        let url = path.to_str().unwrap();
+        assert_eq!(fetch_range(&client, url, 10, 3).unwrap(), vec![10, 11, 12]);
+        // Past the end comes back short, as a 206 would.
+        assert_eq!(fetch_range(&client, url, 98, 16).unwrap(), vec![98, 99]);
+        let file_url = reqwest::Url::from_file_path(&path).unwrap();
+        assert_eq!(
+            fetch_range(&client, file_url.as_str(), 0, 2).unwrap(),
+            vec![0, 1]
+        );
+        assert!(fetch_range(&client, &format!("{url}.missing"), 0, 2).is_err());
+    }
 
     fn varint(mut v: u64) -> Vec<u8> {
         let mut out = Vec::new();

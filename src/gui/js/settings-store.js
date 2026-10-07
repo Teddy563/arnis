@@ -64,6 +64,75 @@ const SETTINGS = [
 
   { id: 'enable-luanti-toggle', kind: 'checkbox', store: EXTERNAL },
 
+  // Extra Features (ids keep the old name, so stored settings still load)
+  { id: 'advanced-features-toggle', kind: 'checkbox', store: OWN },
+  { id: 'cpu-usage-slider', kind: 'number', store: OWN },
+  { id: 'threads-input', kind: 'number', store: OWN },
+  { id: 'ram-budget-input', kind: 'number', store: OWN },
+  { id: 'max-downloads-input', kind: 'number', store: OWN },
+  { id: 'big-worlds-toggle', kind: 'checkbox', store: OWN },
+  { id: 'one-world-workers-select', kind: 'select', store: OWN },
+  { id: 'unit-regions-select', kind: 'select', store: OWN },
+  { id: 'snap-mode-select', kind: 'select', store: OWN },
+  { id: 'square-selection-toggle', kind: 'checkbox', store: OWN },
+  // Meld Generation. The cave fields default to empty, so they are text.
+  { id: 'snow-mode-select', kind: 'select', store: OWN },
+  { id: 'snow-percent-slider', kind: 'number', store: OWN },
+  { id: 'snow-y-input', kind: 'number', store: OWN },
+  { id: 'rocks-toggle', kind: 'checkbox', store: OWN },
+  { id: 'bushes-toggle', kind: 'checkbox', store: OWN },
+  { id: 'rock-density-slider', kind: 'number', store: OWN },
+  { id: 'bush-density-slider', kind: 'number', store: OWN },
+  { id: 'road-detail-select', kind: 'select', store: OWN },
+  { id: 'no-buildings-toggle', kind: 'checkbox', store: OWN },
+  { id: 'loot-table-input', kind: 'text', store: OWN },
+  { id: 'field-mix-select', kind: 'select', store: OWN },
+  { id: 'farm-crops-input', kind: 'text', store: OWN },
+  { id: 'field-scale-slider', kind: 'number', store: OWN },
+  { id: 'tree-realm-select', kind: 'select', store: OWN },
+  { id: 'tree-weight-small-slider', kind: 'number', store: OWN },
+  { id: 'tree-weight-medium-slider', kind: 'number', store: OWN },
+  { id: 'tree-weight-big-slider', kind: 'number', store: OWN },
+  { id: 'tree-weight-tall-slider', kind: 'number', store: OWN },
+  { id: 'tree-weight-giant-slider', kind: 'number', store: OWN },
+  { id: 'cave-seed-input', kind: 'text', store: OWN },
+  { id: 'cave-datum-y-input', kind: 'text', store: OWN },
+  { id: 'cave-style-select', kind: 'select', store: OWN },
+  { id: 'cave-ores-select', kind: 'select', store: OWN },
+  { id: 'cave-biomes-input', kind: 'text', store: OWN },
+  { id: 'river-bed-select', kind: 'select', store: OWN },
+  { id: 'water-detail-select', kind: 'select', store: OWN },
+  // Experimental. The fields that default to empty are text, as above; the
+  // prop families are one comma list in a hidden field the checkboxes write.
+  { id: 'region-format-select', kind: 'select', store: OWN },
+  { id: 'blinear-level-input', kind: 'number', store: OWN },
+  { id: 'climate-mode-select', kind: 'select', store: OWN },
+  { id: 'grass-texture-toggle', kind: 'checkbox', store: OWN },
+  { id: 'land-texture-toggle', kind: 'checkbox', store: OWN },
+  { id: 'grass-mix-input', kind: 'text', store: OWN },
+  { id: 'land-mix-input', kind: 'text', store: OWN },
+  { id: 'world-floor-input', kind: 'text', store: OWN },
+  { id: 'world-ceiling-input', kind: 'text', store: OWN },
+  { id: 'world-seed-input', kind: 'text', store: OWN },
+  { id: 'props-select', kind: 'select', store: OWN },
+  { id: 'props-custom-input', kind: 'text', store: OWN },
+  { id: 'props-min-scale-input', kind: 'text', store: OWN },
+  { id: 'tree-pack-dir-input', kind: 'text', store: OWN },
+  { id: 'tree-pack-mode-select', kind: 'select', store: OWN },
+  { id: 'world-border-toggle', kind: 'checkbox', store: OWN },
+
+  // OSM Data Source
+  { id: 'osm-source-select', kind: 'select', store: OWN },
+  { id: 'osm-tiles-url-input', kind: 'text', store: OWN },
+  { id: 'local-archive-input', kind: 'text', store: OWN },
+  { id: 'arnis-tiles-path-input', kind: 'text', store: OWN },
+  { id: 'overpass-url-input', kind: 'text', store: OWN },
+  { id: 'osm-file-input', kind: 'text', store: OWN },
+  { id: 'osm-pbf-input', kind: 'text', store: OWN },
+  { id: 'offline-toggle', kind: 'checkbox', store: OWN },
+  { id: 'prewarm-first-toggle', kind: 'checkbox', store: OWN },
+  { id: 'bake-cpu-slider', kind: 'number', store: OWN },
+
   // Map & Input. #bbox-coords is the area selection, not a preference, so it
   // is intentionally absent.
   { id: 'tile-theme-select', kind: 'select', store: EXTERNAL },
@@ -74,6 +143,7 @@ const SETTINGS = [
   { id: 'bedrock-save-path-input', kind: 'text', store: EXTERNAL, dynamicDefault: 'bedrockSavePath' },
   { id: 'luanti-save-path-input', kind: 'text', store: EXTERNAL, dynamicDefault: 'luantiSavePath' },
   { id: 'language-select', kind: 'select', store: EXTERNAL, dynamicDefault: 'language' },
+  { id: 'mini-mode-toggle', kind: 'checkbox', store: OWN },
 
   // Consent record, not a preference. The user answered it on first run and the
   // HTML default is off, so a revert or reset could only withdraw consent, which
@@ -603,6 +673,38 @@ export function initSettingsStore(options = {}) {
   window.addEventListener('beforeunload', flushSave);
   window.addEventListener('pagehide', flushSave);
 
+  refresh();
+}
+
+// Presets: every setting inside `roots`, as { id: value }. Secrets (password
+// fields) and the telemetry choice (not revertable) never go in a file.
+const portable = (entry, el) => entry.revertable !== false && el.type !== 'password';
+
+export function exportSettings(roots) {
+  const values = {};
+  for (const entry of SETTINGS) {
+    const el = elementFor(entry);
+    if (el && portable(entry, el) && roots.some((root) => root.contains(el))) values[entry.id] = currentValue(entry);
+  }
+  return values;
+}
+
+// Writes a preset back through the controls, so their handlers run. A
+// setting the preset leaves out, or holds an unusable value for, gets its
+// default, so a load always gives the same state.
+export function importSettings(values, roots) {
+  applying = true;
+  try {
+    for (const entry of SETTINGS) {
+      const el = elementFor(entry);
+      if (!el || !portable(entry, el) || !roots.some((root) => root.contains(el))) continue;
+      const value = sanitize(entry, values[entry.id]);
+      writeValue(entry, value === undefined ? defaultValue(entry) : value);
+    }
+  } finally {
+    applying = false;
+  }
+  writeStored(collectOwn());
   refresh();
 }
 

@@ -70,6 +70,20 @@ fn landuse_paints_ground(tags: &HashMap<String, String>) -> bool {
     )
 }
 
+/// Whether `--no-buildings` leaves this element out: building ways and relations, and the
+/// door and entrance nodes that open into them.
+fn is_building_element(element: &ProcessedElement) -> bool {
+    let tags = element.tags();
+    match element {
+        ProcessedElement::Node(_) => tags.contains_key("door") || tags.contains_key("entrance"),
+        _ => {
+            tags.contains_key("building")
+                || tags.contains_key("building:part")
+                || tags.get("type").map(String::as_str) == Some("building")
+        }
+    }
+}
+
 /// Footprint of a ground-filling way, or `None` if it does not reach a ground-fill handler.
 /// Mirrors the landuse/natural/leisure/place arms of `process_element`; keep both in sync.
 fn way_ground_fill_area(way: &ProcessedWay) -> Option<f64> {
@@ -407,7 +421,11 @@ fn process_element(
                         still_surfaces,
                     );
                 } else {
-                    waterways::generate_waterways(editor, way);
+                    waterways::generate_waterways(
+                        editor,
+                        way,
+                        args.water.water_detail.channel_width_cap(args.scale),
+                    );
                 }
             } else if way.tags.contains_key("railway") {
                 railways::generate_railways(
@@ -609,7 +627,7 @@ fn should_stream_to_disk(num_regions: usize, available_mb: u64, fillground: bool
 }
 
 /// Free RAM in MB.
-fn available_memory_mb() -> u64 {
+pub(crate) fn available_memory_mb() -> u64 {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     sys.available_memory() / (1024 * 1024)
@@ -634,12 +652,28 @@ pub fn generate_world_with_options(
     // first area of a One World.
     let one_world = args.one_world_run.as_ref();
     let extending = one_world.is_some_and(|run| run.extending);
+    // A piece of a larger job: the coordinator owns everything world-wide.
+    let unit = one_world.and_then(|run| run.unit.as_ref());
+    // A piece builds `one_world::PIECE_HALO_BLOCKS` past its own chunks, so the trees
+    // rooted there reach in, and writes and previews only its own.
+    let own_rect = unit
+        .and_then(|u| XZBBox::rect_from_min_max(u.rect[0], u.rect[1], u.rect[2], u.rect[3]).ok())
+        .unwrap_or_else(|| xzbbox.clone());
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
+
+    // Before anything reads a footprint, so the ground under them stays open.
+    if !args.buildings {
+        elements.retain(|e| !is_building_element(e));
+    }
 
     // Before anything reads a footprint: nothing is built on a runway.
     let dropped = highways::drop_buildings_on_aircraft_pavement(&mut elements, args.scale);
     if dropped > 0 {
         println!("  Skipped {dropped} building(s) on runways, taxiways and aprons");
+    }
+    // Before the road mask and junction map, so they only see the roads drawn.
+    if args.road_detail != road_detail::RoadDetail::Max {
+        elements.retain(|element| !args.road_detail.drops_element(element));
     }
 
     // Create editor with appropriate format
@@ -674,18 +708,27 @@ pub fn generate_world_with_options(
     let void_world =
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
-    if void_world && !extending {
+    let blinear_level = args
+        .blinear_level()
+        .filter(|_| world_format == WorldFormat::JavaAnvil);
+    editor.set_blinear_level(blinear_level);
+    if (void_world || blinear_level.is_some()) && !extending {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
+        // Under B_Linear nothing rewrites the .mca, so it would linger as a stray Anvil
+        // region in a b_linear world.
         crate::world_utils::remove_untouched_template_region(&output_path);
     }
-    editor.set_place_schematics(args.use_3d);
+    editor.set_props(args.props());
     editor.set_game_settings(args.gamemode, args.world_time);
     editor.set_start_with_map(args.map_item);
     editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
     editor.set_projection_info(&args.projection.to_string(), args.scale);
     if let Some(run) = one_world {
-        editor.set_merge_into_existing(crate::world_utils::WorldLayout::of(&run.world_dir));
+        editor.set_merge_into_existing(
+            own_rect.clone(),
+            crate::world_utils::WorldLayout::of(&run.world_dir),
+        );
         editor.set_climate_anchor(run.origin_lat, run.origin_lon);
         // metadata.json describes the whole world, not this area alone.
         if let Ok(Some(manifest)) = crate::one_world::Manifest::load(&run.world_dir) {
@@ -787,7 +830,9 @@ pub fn generate_world_with_options(
     // A One World continues after its last map id.
     let wants_map_item = args.map_item && world_format == WorldFormat::JavaAnvil && !extending;
     let place_branding = world_format == WorldFormat::JavaAnvil && !extending;
-    let first_decal_id = if one_world.is_some() {
+    let first_decal_id = if let Some(u) = unit {
+        u.first_map_id
+    } else if one_world.is_some() {
         let layout = crate::world_utils::WorldLayout::of(&output_path);
         let next = crate::map_item::next_map_id(&layout.maps_dir(&output_path));
         next + if wants_map_item {
@@ -807,6 +852,14 @@ pub fn generate_world_with_options(
         .map(Arc::new);
     if let (Some(t), Some(_)) = (signage_start, signage_ctx.as_ref()) {
         eprintln!("[BENCHMARK] signage_prepass_ms={}", t.elapsed().as_millis());
+    }
+    if let (Some(u), Some(ctx)) = (unit, &signage_ctx) {
+        if ctx.registry.max_id() >= u.map_id_end {
+            return Err(format!(
+                "piece {} needs more signage map ids than its range {}..{}",
+                u.piece, u.first_map_id, u.map_id_end
+            ));
+        }
     }
     if let Some(ctx) = &signage_ctx {
         editor.set_signage(Arc::clone(ctx));
@@ -832,7 +885,7 @@ pub fn generate_world_with_options(
     let preview = (wants_png || wants_map_item || wants_local_maps).then(|| {
         Arc::new(if wants_png && one_world.is_some() {
             // Every area of a One World is sent to the map overlay at once.
-            PreviewAccumulator::new_capped(&xzbbox, 2048)
+            PreviewAccumulator::new_capped(&own_rect, 2048)
         } else if wants_png {
             PreviewAccumulator::new(&xzbbox)
         } else if wants_local_maps {
@@ -889,22 +942,46 @@ pub fn generate_world_with_options(
     bench.reset();
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
-    let big_water_field = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+    let water_detail = args.water.water_detail;
+    let mut big_water_field =
+        crate::water_depth::compute_big_water_field(&ground, &xzbbox, water_detail, args.scale);
+    big_water_field.set_river_bed(crate::river_bed::compute_river_bed_field(
+        args.water.river_bed,
+        &elements,
+        &ground,
+        &big_water_field,
+        &xzbbox,
+        &clip_bbox,
+        args.scale,
+        water_detail.channel_width_cap(args.scale),
+    ));
     // Resolved once here: a body spanning many tiles must not be measured per tile.
     let still_surfaces = water_areas::prescan_still_surfaces(&elements, &ground, &xzbbox);
+
+    // Farmland parcels align to their access roads. One World areas and work units
+    // see roads only CLIP_PAD_BLOCKS past their edge, too little to agree on a
+    // domain's road at the seam, so parcels there keep their hashed angles.
+    let field_roads = !args.one_world
+        && (args.fields.grass_texture
+            || args.fields.land_texture
+            || crate::element_processing::field_texture::FieldProfile::from_args(
+                &args.fields,
+                args.scale,
+            )
+            .is_some());
+    crate::road_bearings::set_from_elements(if field_roads { &elements } else { &[] });
 
     println!("{} Processing data...", "[4/7]".bold());
     emit_gui_progress_update(19.5, "Processing data...");
 
     // Build highway connectivity map once before processing
     let highway_connectivity = highways::build_highway_connectivity_map(&elements);
-    let road_markings = road_markings::RoadMarkingIndex::build(
+    let road_markings = road_markings::RoadMarkingIndex::build_with(
         &elements,
         args.scale,
-        crate::decals::region::SignRegion::detect(
-            (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
-            (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
-        ),
+        crate::decals::region::SignRegion::for_run(args, &llbbox),
+        args.road_detail.paints_crossings(),
+        one_world.is_none(),
     );
 
     // Collect underground railway centerline points for post-ground-fill air carving (phase 2).
@@ -921,11 +998,12 @@ pub fn generate_world_with_options(
     sort_ground_fill_areas(&mut elements);
 
     // Pre-compute all flood fills in parallel for better CPU utilization
-    let mut flood_fill_cache = FloodFillCache::precompute(&elements, args.timeout.as_ref());
+    let mut flood_fill_cache =
+        FloodFillCache::precompute(&elements, args.timeout.as_ref(), one_world.is_some());
 
     // Collect building footprints to prevent trees from spawning inside buildings
     // Uses a memory-efficient bitmap (~1 bit per coordinate) instead of a HashSet (~24 bytes per coordinate)
-    let building_footprints = flood_fill_cache.collect_building_footprints(&elements, &xzbbox);
+    let building_footprints = flood_fill_cache.collect_building_footprints(&elements, &clip_bbox);
 
     // Tenants and surrounding areas per building, for interiors furnished by use.
     let interior_uses = if args.interior {
@@ -937,14 +1015,18 @@ pub fn generate_world_with_options(
     // Collect coordinates covered by tunnel=building_passage highways so that
     // building generation can cut ground-level openings through walls and floors.
     let building_passages =
-        highways::collect_building_passage_coords(&elements, &xzbbox, args.scale);
+        highways::collect_building_passage_coords(&elements, &clip_bbox, args.scale);
 
     // Pre-build a bitmap of every (x, z) block coordinate covered by a rendered
     // road or path surface. Uses the same Bresenham + block_range geometry as
     // generate_highways_internal, so the bitmap is a 1:1 match of what gets placed.
     // Amenity processors use this for O(1) nearest-road-block lookups.
     let road_mask = Arc::new(highways::collect_road_surface_coords(
-        &elements, &editor, &xzbbox, args.scale,
+        &elements,
+        &editor,
+        &clip_bbox,
+        args.scale,
+        args.water.water_detail,
     ));
 
     // Roads plus every paved area footprint, resolved before anything is placed so
@@ -1063,7 +1145,10 @@ pub fn generate_world_with_options(
     // format-dependent block-entity schema (banners) only matches Java output.
     // Restrict the parallel tile path to Java; Bedrock/Luanti large worlds use
     // the sequential path (correct, just not tile-parallel).
-    let use_parallel_tiles = tiles.len() >= 3 && matches!(world_format, WorldFormat::JavaAnvil);
+    // A piece takes its job's path: the two paths settle overlapping trees at a
+    // tile seam in a different order.
+    let use_parallel_tiles = unit.map_or(tiles.len() >= 3, |u| u.tiled)
+        && matches!(world_format, WorldFormat::JavaAnvil);
 
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.
@@ -1098,7 +1183,10 @@ pub fn generate_world_with_options(
         // are kept via region deferral.
         // Read at the decision point: the precompute above allocates heavily, and an
         // optimistic figure would skip streaming in exactly the runs that need it.
-        let available_mb = available_memory_mb();
+        let available_mb = args
+            .process
+            .ram_budget_mb
+            .unwrap_or_else(available_memory_mb);
         eviction_active = matches!(world_format, WorldFormat::JavaAnvil)
             && should_stream_to_disk(tiles.len(), available_mb, args.fillground);
 
@@ -1202,7 +1290,7 @@ pub fn generate_world_with_options(
             tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
             // Ground generation runs on tile editors, so they need the real scale.
             tile_editor.set_projection_info(&args.projection.to_string(), args.scale);
-            tile_editor.set_place_schematics(args.use_3d);
+            tile_editor.set_props(args.props());
             tile_editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
             if let Some(ref tp) = tree_pack {
                 tile_editor.set_tree_pack(Arc::clone(tp));
@@ -1321,16 +1409,14 @@ pub fn generate_world_with_options(
                 g_max_z,
             );
 
-            // Under eviction the post-merge rail-tunnel carve can't run (regions get freed),
-            // so carve in-tile now, after ground/fill so the interior isn't refilled.
-            if eviction_active {
-                railways::carve_rail_tunnel_interior(&mut tile_editor, &tile_rail_tunnel_points);
-                highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
-            }
+            // Carve tunnels in-tile, after ground/fill so the interior isn't refilled. Always
+            // here, never post-merge: eviction frees regions before a post-merge pass could
+            // run, and carving in one place keeps streamed output identical to resident.
+            railways::carve_rail_tunnel_interior(&mut tile_editor, &tile_rail_tunnel_points);
+            highways::carve_highway_tunnel_interior(&mut tile_editor, &tile_tunnel_cells);
             // Seal floating water/lava last: the water-depth carve and the tunnel carves
-            // above can each undercut a water body over a cave. Under eviction this tile
-            // flushes soon, so it happens here; otherwise once after the merge.
-            if args.caves && eviction_active {
+            // above can each undercut a water body over a cave. In-tile for the same reason.
+            if args.caves {
                 crate::caves::seal_floating_fluid_region(
                     &mut tile_editor,
                     g_min_x,
@@ -1350,13 +1436,7 @@ pub fn generate_world_with_options(
                 emit_gui_progress_update_ex(pct, "Generating area...", eviction_active);
             }
 
-            (
-                tile_idx,
-                tile_editor.into_world(),
-                tile_rail_tunnel_points,
-                tile_tunnel_cells,
-                tile_road_overrides,
-            )
+            (tile_idx, tile_editor.into_world(), tile_road_overrides)
         };
 
         // Tiles merge in list order: outside its own bounds a tile only fills air, so the
@@ -1409,13 +1489,8 @@ pub fn generate_world_with_options(
             let merged = (|| -> Result<(), String> {
                 for (i, result) in &rx {
                     pending.insert(i, result);
-                    while let Some((
-                        tile_idx,
-                        tile_world,
-                        tile_rail_tunnel_points,
-                        tile_tunnel_cells,
-                        tile_road_overrides,
-                    )) = pending.remove(&next_merge)
+                    while let Some((tile_idx, tile_world, tile_road_overrides)) =
+                        pending.remove(&next_merge)
                     {
                         let merge_start = std::time::Instant::now();
                         editor.merge_world(
@@ -1477,13 +1552,6 @@ pub fn generate_world_with_options(
                                     }
                                 }
                             }
-                        }
-
-                        // Under eviction the in-tile carve already ran, and nothing reads
-                        // these afterwards, so don't retain the points or the cells.
-                        if !eviction_active {
-                            rail_tunnel_points.extend(tile_rail_tunnel_points);
-                            tunnel_cells.extend(tile_tunnel_cells);
                         }
 
                         // Step 20%->70% per merged tile, throttled to whole-percent steps.
@@ -1709,15 +1777,15 @@ pub fn generate_world_with_options(
     drop(rail_bridge_internal_endpoints);
 
     // Carve railway tunnel interiors now that underground is filled with stone.
-    // Under eviction this already ran in-tile (regions get freed before here).
-    if !eviction_active && !rail_tunnel_points.is_empty() {
+    // The tile path already did this in-tile (the lists stay empty there).
+    if !rail_tunnel_points.is_empty() {
         railways::carve_rail_tunnel_interior(&mut editor, &rail_tunnel_points);
     }
-    if !eviction_active && !tunnel_cells.is_empty() {
+    if !tunnel_cells.is_empty() {
         highways::carve_highway_tunnel_interior(&mut editor, &tunnel_cells);
     }
-    // Seal floating water/lava as the final underground pass; eviction tiles did it in-tile.
-    if args.caves && !eviction_active {
+    // Seal floating water/lava as the final underground pass; tiles did it in-tile.
+    if args.caves && ground_on_merged {
         crate::caves::seal_floating_fluid_region(
             &mut editor,
             xzbbox.min_x(),
@@ -1790,12 +1858,19 @@ pub fn generate_world_with_options(
     }
 
     // Map id 0 is the first map; branding is id 1 with the preview on, else id 0.
-    if place_branding {
+    // In a piece the frame is a block entity, so the piece holding it places it;
+    // the coordinator writes the maps it shows.
+    let branding = if place_branding {
         let (sx, sz) = options
             .spawn_point
             .or_else(|| crate::map_item::read_spawn_xz(&output_path))
             .unwrap_or((xzbbox.min_x() + 1, xzbbox.min_z() + 1));
-        if wants_map_item {
+        Some((sx, sz, wants_map_item))
+    } else {
+        unit.and_then(|u| u.branding)
+    };
+    if let Some((sx, sz, with_map_item)) = branding {
+        if with_map_item {
             editor.place_map_item_frame(sx, sz, 0, 1);
         } else {
             editor.place_branding_map_only(sx, sz, 0);
@@ -1848,7 +1923,12 @@ pub fn generate_world_with_options(
 
     if let Some(ctx) = &signage_ctx {
         let t = args.benchmark.then(std::time::Instant::now);
-        match crate::map_item::write_decal_maps(&output_path, &ctx.registry, preview.as_deref()) {
+        match crate::map_item::write_decal_maps(
+            &output_path,
+            &ctx.registry,
+            preview.as_deref(),
+            unit.is_none(),
+        ) {
             Ok(n) => println!("Wrote {n} signage map tiles."),
             Err(e) => eprintln!("Warning: Failed to create signage maps: {e}"),
         }
@@ -1916,7 +1996,7 @@ pub fn generate_world_with_options(
     }
     bench.mark("map_preview");
 
-    if let Some(run) = one_world {
+    if let Some(run) = one_world.filter(|run| run.unit.is_none()) {
         let png = run.preview_path();
         let preview_path = png.is_file().then_some(png.as_path());
         crate::one_world::record_area(
@@ -1951,8 +2031,14 @@ pub fn generate_world_with_options(
         }
     }
 
+    // After the area is recorded, so a One World's border holds all its areas.
+    // A piece leaves it to the coordinator.
+    if args.world_border && world_format == WorldFormat::JavaAnvil && unit.is_none() {
+        crate::one_world::apply_world_border(&output_path, &xzbbox);
+    }
+
     // An extended One World moves the spawn only to a marker inside this area.
-    if extending {
+    if extending && unit.is_none() {
         if let Some((sx, sz)) = options.spawn_point.filter(|&(x, z)| {
             xzbbox.contains(&crate::coordinate_system::cartesian::XZPoint::new(x, z))
         }) {
@@ -2064,7 +2150,7 @@ mod tests {
         group_members: &FnvHashMap<u64, Vec<u64>>,
         watch: &[u64],
     ) -> Vec<Vec<bool>> {
-        let cache = FloodFillCache::precompute(elements, None);
+        let cache = FloodFillCache::precompute(elements, None, false);
         let (tile_ids, readers) =
             tile_fill_readers(assignments, elements, part_groups, group_members, |id| {
                 cache.contains(id)
@@ -2135,6 +2221,37 @@ mod tests {
 
     fn ids(elements: &[ProcessedElement]) -> Vec<u64> {
         elements.iter().map(|e| e.id()).collect()
+    }
+
+    #[test]
+    fn no_buildings_drops_buildings_and_entrances_only() {
+        let node = |id, tags: &[(&str, &str)]| {
+            ProcessedElement::Node(ProcessedNode {
+                id,
+                tags: tags
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                x: 0,
+                z: 0,
+            })
+        };
+        let mut elements = vec![
+            way(1, 10, &[("building", "yes")]),
+            way(2, 10, &[("building:part", "yes")]),
+            relation(3, 10, &[("type", "building")]),
+            relation(4, 10, &[("type", "multipolygon"), ("building", "house")]),
+            node(5, &[("entrance", "main")]),
+            node(6, &[("door", "hinged")]),
+            way(7, 10, &[("highway", "residential")]),
+            way(8, 10, &[("railway", "rail")]),
+            way(9, 10, &[("natural", "water")]),
+            relation(10, 10, &[("type", "multipolygon"), ("landuse", "grass")]),
+            node(11, &[("amenity", "bench")]),
+            node(12, &[("natural", "tree")]),
+        ];
+        elements.retain(|e| !is_building_element(e));
+        assert_eq!(ids(&elements), vec![7, 8, 9, 10, 11, 12]);
     }
 
     #[test]

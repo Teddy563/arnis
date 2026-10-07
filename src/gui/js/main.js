@@ -8,6 +8,8 @@ import {
   localizeSettingsStore,
   cancelSettingsResetConfirm,
   flushSettingsStore,
+  exportSettings,
+  importSettings,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
 
@@ -25,11 +27,20 @@ const DEFAULT_LOCALE_PATH = `./locales/en.json`;
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
 let currentBboxSelectionColor = "#ffffff";
+// Values for the {placeholders} of the current key, or null.
+let currentBboxSelectionVars = null;
+
+function fillBboxSelectionVars(element) {
+  for (const k in (currentBboxSelectionVars || {})) {
+    element.textContent = element.textContent.split('{' + k + '}').join(currentBboxSelectionVars[k]);
+  }
+}
 
 // Helper function to set bbox selection info text and track it for language changes
-async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color) {
+async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color, vars) {
   currentBboxSelectionKey = localizationKey;
   currentBboxSelectionColor = color;
+  currentBboxSelectionVars = vars || null;
   
   // Ensure localization is available
   let localization = window.localization;
@@ -37,7 +48,8 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
     localization = await getLocalization();
   }
   
-  localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  await localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
 }
 
@@ -54,6 +66,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initVoxyLightingCoupling();
   initCavesFillCoupling();
   refreshHeightLimitRow();
+  initAdvancedFeatures();
   // After initSettings(), so the slider label and rotation handlers exist
   // before restored values are applied. Labels get localized a few lines below.
   initSettingsStore({ resetWorldFormat: () => setWorldFormat('java') });
@@ -132,6 +145,7 @@ async function applyLocalization(localization) {
 
     // Placeholder strings
     "input[id='bbox-coords']": "placeholder_bbox",
+    "#bbox-features-cta": "area_use_extra_features",
     // DEPRECATED: Ground level placeholder removed
     // "input[id='ground-level']": "placeholder_ground"
   };
@@ -154,13 +168,17 @@ async function applyLocalization(localization) {
   // Re-apply current bbox selection info text with new language
   const bboxSelectionInfo = document.getElementById("bbox-selection-info");
   if (bboxSelectionInfo && currentBboxSelectionKey) {
-    localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    await localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    fillBboxSelectionVars(bboxSelectionInfo);
     bboxSelectionInfo.style.color = currentBboxSelectionColor;
   }
 
   // Update error messages
   window.localization = localization;
   renderOneWorldStatus();
+  formatCpuUsage();
+  renderDataPlan();
+  refreshOptionPreviews();
   // The map hint lives in the map iframe, which cannot see this assignment.
   document.querySelectorAll('iframe').forEach((frame) => {
     try {
@@ -767,9 +785,8 @@ function registerMessageEvent() {
 // its own end from a least-squares rate, and budget the remaining bands via
 // per-regime time weights calibrated to this run. The backend tells us the
 // streaming regime via an optional `streaming` field (absent => non-streaming).
-// Starts once generation begins (progress >= ETA_START, downloads done) and
+// Starts once generation begins (the first band's lo: 20%, downloads done) and
 // ticks down once a second so it reads like a live countdown.
-const ETA_START = 20; // generation/terrain begins here, downloads done
 const ETA_WINDOW_MS = 16000; // sliding window for the rate (wider = steadier)
 const ETA_MIN_MS = 700; // min window span before trusting a rate
 const ETA_MIN_SAMPLES = 4; // keep at least this many samples in the window
@@ -795,11 +812,17 @@ const ETA_WPRIOR = {
   nonStreaming: [37, 2, 11, 20],
   streaming: [60, 0.3, 0.5, 3.0],
 };
+// A run in pieces reports one chunk-weighted 0-100% for the whole job (the
+// coordinator's `report` in scale/mod.rs), so it is one band from the start.
+const ETA_PIECED_PHASES = [{ id: "pieces", lo: 1, hi: 100 }];
 // Signage map tiles are what makes the finalize band long, and they are Java-only.
 // Without them the tail is just the map item and level.dat settings.
 const ETA_WFINALIZE_NO_SIGNAGE = 1.5;
 
 let eta = null;
+// Set by the coordinator's first "Building pieces..." line, cleared per run.
+let etaPieced = false;
+const etaPhases = () => (etaPieced ? ETA_PIECED_PHASES : ETA_PHASES);
 // Set from the generate handler; decides the finalize weight for the next run.
 let etaSignageExpected = true;
 
@@ -809,14 +832,16 @@ function setEtaSignageExpected(expected) {
 
 // Copy of the regime prior with the finalize weight adjusted for this run.
 function etaWeightsFor(streaming) {
+  if (etaPieced) return [1];
   const w = (streaming ? ETA_WPRIOR.streaming : ETA_WPRIOR.nonStreaming).slice();
   if (!etaSignageExpected) w[3] = ETA_WFINALIZE_NO_SIGNAGE;
   return w;
 }
 
 function etaPhaseIdx(p) {
-  for (let i = 0; i < ETA_PHASES.length; i++) if (p < ETA_PHASES[i].hi) return i;
-  return ETA_PHASES.length - 1;
+  const phases = etaPhases();
+  for (let i = 0; i < phases.length; i++) if (p < phases[i].hi) return i;
+  return phases.length - 1;
 }
 
 // Least-squares slope of progress over the window -> %/sec (null if not rising).
@@ -899,7 +924,8 @@ function etaTick() {
 
 function updateEta(progress, streaming) {
   // Reset before the generation phases and once finished / on a new run.
-  if (progress < ETA_START || progress >= 100) {
+  const phases = etaPhases();
+  if (progress < phases[0].lo || progress >= 100) {
     resetEta();
     return;
   }
@@ -917,7 +943,7 @@ function updateEta(progress, streaming) {
     eta.wprior = etaWeightsFor(streaming);
   }
 
-  const idx = etaPhaseIdx(progress), ph = ETA_PHASES[idx];
+  const idx = etaPhaseIdx(progress), ph = phases[idx];
   if (idx !== eta.phaseIdx) {
     // Bank the real duration (incl. any stall) of the phase we just left.
     if (eta.phaseIdx >= 0) {
@@ -960,7 +986,7 @@ function updateEta(progress, streaming) {
   if (remCur != null) {
     // In the last band this is just the measured rate; earlier ones budget the rest.
     raw = Math.max(0, remCur);
-    if (G != null) for (let j = idx + 1; j < ETA_PHASES.length; j++) raw += eta.wprior[j] * G;
+    if (G != null) for (let j = idx + 1; j < phases.length; j++) raw += eta.wprior[j] * G;
   }
 
   if (!stalled && raw != null && isFinite(raw) && raw <= ETA_MAX_S) {
@@ -999,7 +1025,63 @@ function resetProgressUi(message) {
     info.style.color = "#ececec";
   }
   resetEta();
+  etaPieced = false;
+  runStats = { startedAt: performance.now(), pieces: selectionPieces(), done: 0, estimate: runEstimate() };
+  renderRunStats();
 }
+
+// The line under the bar: before a run, runEstimate() for the selection;
+// during one, the time since the click, the pieces done and the estimated
+// size. The time left stays on the bar (#progress-eta).
+let runStats = null; // { startedAt, pieces: { n, w } | null, done, estimate }
+
+function runStatParts(withEta) {
+  const parts = [];
+  const size = (e) => e && e.mb != null &&
+    parts.push(['hard-drive', oneWorldText('run_estimate_size', 'On disk: ~{size}', { size: formatEstimateSize(e.mb) })]);
+  if (!runStats) {
+    const e = runEstimate();
+    size(e);
+    if (e) parts.push(['hourglass', oneWorldText('run_estimate_time', 'Build time: {time}', { time: formatEstimateTime(e.lo, e.hi) })]);
+    return parts;
+  }
+  parts.push(['clock', oneWorldText('run_elapsed', 'Elapsed: {time}', {
+    time: formatEtaDuration((performance.now() - runStats.startedAt) / 1000),
+  })]);
+  if (withEta && eta && eta.shown != null) {
+    parts.push(['hourglass', oneWorldText('run_eta', 'Remaining: {time}', { time: formatEtaDuration(Math.max(1, eta.shown)) })]);
+  }
+  const p = runStats.pieces;
+  if (p) {
+    let text = oneWorldText('run_pieces', 'Pieces: {done}/{n}', { done: runStats.done, n: p.n });
+    if (p.w) text += ' · ' + oneWorldText('run_workers', 'Workers: {w}', { w: p.w });
+    parts.push(['layers', text]);
+  }
+  size(runStats.estimate);
+  return parts;
+}
+
+function renderRunStats() {
+  fillRunStats(document.getElementById('run-stats'), runStatParts(false));
+}
+
+function fillRunStats(el, parts) {
+  if (!el) return;
+  const key = JSON.stringify(parts);
+  if (key === el.dataset.key) return;
+  el.dataset.key = key;
+  el.replaceChildren(...parts.map(([icon, text]) => {
+    const span = document.createElement('span');
+    span.className = 'run-stat';
+    span.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-${icon}"></use></svg>`;
+    span.append(text);
+    return span;
+  }));
+}
+
+// For the mini panel (mini.js): whether a run is going, and its line with the time left.
+window.arnisRunRunning = () => !!runStats;
+window.arnisFillRunStats = (el) => fillRunStats(el, runStatParts(true));
 
 // Function to set up the progress bar listener
 function setupProgressListener() {
@@ -1007,8 +1089,21 @@ function setupProgressListener() {
   const progressInfo = document.getElementById("progress-info");
   const progressDetail = document.getElementById("progress-detail");
 
+  setInterval(renderRunStats, 1000);
   window.__TAURI__.event.listen("progress-update", (event) => {
     const { progress, message, streaming } = event.payload;
+    // "Building pieces... 3/16 done": the coordinator's count, and a one-band ETA.
+    if (message && message.startsWith("Building pieces")) {
+      // Anything the four-band model counted before this is not the job's.
+      if (!etaPieced) resetEta();
+      etaPieced = true;
+      const m = message.match(/(\d+)\/(\d+) done/);
+      if (runStats && m) {
+        runStats.done = +m[1];
+        if (!runStats.pieces || runStats.pieces.n !== +m[2]) runStats.pieces = { n: +m[2], w: runStats.pieces?.w };
+      }
+      renderRunStats();
+    }
 
     if (progress != -1) {
       progressBar.style.width = `${progress}%`;
@@ -1019,13 +1114,17 @@ function setupProgressListener() {
     if (message != "") {
       progressInfo.textContent = message;
 
+      if (message.startsWith("Error!") || message.startsWith("Done!")) {
+        runStats = null;
+        renderRunStats();
+      }
       if (message.startsWith("Error!")) {
         progressInfo.style.color = "#fa7878";
         setGenerationButtonEnabled(true);
         window.arnisPreview3D?.setGenerationRunning(false);
         if (lastRunOneWorld) {
           // The world keeps its name; the status line carries the reason.
-          setWorldNameLabel(oneWorldDisplayName());
+          setWorldNameLabel(isOneWorldEnabled() ? oneWorldDisplayName() : lastRunWorldName);
           if (isOneWorldEnabled()) setOneWorldStatus(message.replace(/^Error!\s*/, ''), 'error');
         } else {
           setWorldNameLabel("");
@@ -1049,6 +1148,20 @@ function setupProgressListener() {
       }
       // The facade pipeline reports its stages here whichever job is driving it.
       notePrecomputeStage(message);
+      // A finished download (or a failed one) changed what the caches hold.
+      if (message.startsWith("Done!") || message.startsWith("Error!")) refreshDataPlan(true);
+    }
+    onTransferProgress(progress, message, event.payload.transfer);
+    // A stopped download is over too, with nothing to colour.
+    if (message.startsWith("Stopped.")) {
+      progressInfo.style.color = "#ececec";
+      setGenerationButtonEnabled(true);
+      resetEta();
+      refreshDataPlan(true);
+    }
+    if (transferJob === 'prewarm' && /^(Done!|Error!|Stopped\.)/.test(message)) {
+      transferEnd(message, message.startsWith("Done!"));
+      refreshStorage();
     }
   });
 
@@ -1155,6 +1268,10 @@ function initSettings() {
     // has to be read when the panel opens; measuring it once at startup left
     // it stale for the whole session.
     refreshCacheSize();
+    // Same for the plan: a run since the last look may have filled the caches.
+    refreshDataPlan(true);
+    // Auto's realm follows the selection.
+    refreshOptionPreviews();
   }
 
   // Close the settings page
@@ -1627,6 +1744,1585 @@ function initVoxyLightingCoupling() {
   bake.addEventListener('change', () => {
     if (!bake.checked) set(voxy, false);
   });
+}
+
+// The Extra Features switch (ids still say advanced-features). Off, its groups are hidden and every control
+// in them disabled: a hidden value then raises no revert arrow or nav dot, and
+// startGeneration sends nothing, so Arnis runs exactly as stock.
+function initAdvancedFeatures() {
+  const master = document.getElementById('advanced-features-toggle');
+  const groups = document.getElementById('advanced-features-groups');
+  const cpu = document.getElementById('cpu-usage-slider');
+  if (!master || !groups || !cpu) return;
+  // Big Worlds comes on with the switch. The store restores in DOM order, so a
+  // stored Big Worlds off is written after this and wins.
+  master.addEventListener('change', () => {
+    const big = document.getElementById('big-worlds-toggle');
+    if (master.checked && big && !big.checked) {
+      big.checked = true;
+      big.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    refreshAdvancedFeatures();
+  });
+  document.getElementById('big-worlds-toggle').addEventListener('change', refreshAdvancedFeatures);
+  cpu.addEventListener('input', () => { formatCpuUsage(); refreshAdvancedFeatures(); });
+  cpu.addEventListener('dblclick', () => {
+    cpu.value = 0;
+    fireInputChange(cpu);
+  });
+  document.getElementById('threads-input').addEventListener('input', refreshAdvancedFeatures);
+  // Meld Generation rows that follow another control.
+  ['snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'field-mix-select', 'farm-crops-input',
+    'interior-toggle', 'caves-toggle', 'region-format-select', 'grass-texture-toggle',
+    'land-texture-toggle', 'disable-height-limit-toggle', 'props-select', 'osm-source-select',
+    'offline-toggle'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', refreshAdvancedFeatures);
+    document.getElementById(id).addEventListener('change', refreshAdvancedFeatures);
+  });
+  MELD_SLIDERS.forEach(([id, format]) => {
+    const slider = document.getElementById(id);
+    const out = document.getElementById(id.replace('-slider', '-value'));
+    const show = () => { out.textContent = format(parseFloat(slider.value)); };
+    slider.addEventListener('input', show);
+    // Double-click resets, as on the other sliders.
+    slider.addEventListener('dblclick', () => {
+      slider.value = slider.defaultValue;
+      fireInputChange(slider);
+    });
+    show();
+  });
+  const loot = document.getElementById('loot-table-input');
+  bindBrowse('loot-table-browse', loot, 'gui_pick_loot_table', () => loot.value.trim());
+  initPropFamilies();
+  initExperimentalButtons();
+  initTreePack();
+  // The cards follow their controls, restored and reset values included.
+  initTreeSizeToggles();
+  initMixRows();
+  initPreviewModes();
+  groups.addEventListener('change', refreshOptionPreviews);
+  // Offline, a live render may only read the caches.
+  document.getElementById('offline-toggle').addEventListener('change', refreshLivePreviews);
+  refreshOptionPreviews();
+  initOsmSource();
+  initPresets();
+  // The workers and memory rows size the "W workers" of the size line.
+  ['unit-regions-select', 'snap-mode-select', 'square-selection-toggle', 'scale-value-slider',
+    'one-world-workers-select', 'ram-budget-input', 'max-downloads-input'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', refreshSnapPreview);
+  });
+  formatCpuUsage();
+  refreshAdvancedFeatures();
+}
+
+// OSM Data Source: the local file picker and the offline download, which
+// runs the generation's own settings with --prewarm.
+function initOsmSource() {
+  const file = document.getElementById('osm-file-input');
+  bindBrowse('osm-file-browse', file, 'gui_pick_osm_file', () => file.value.trim());
+  const pbf = document.getElementById('osm-pbf-input');
+  bindBrowse('osm-pbf-browse', pbf, 'gui_pick_pbf_file', () => pbf.value.trim());
+  // The bake is the OSM step of a prewarm: same settings, same threads, same
+  // progress, and the panel's bar and Stop follow it.
+  ['prewarm-button', 'osm-pbf-bake-button', 'data-plan-button'].forEach((id) =>
+    document.getElementById(id).addEventListener('click', startDownload));
+  document.getElementById('transfer-stop-button').addEventListener('click', () => {
+    if (!transferJob) return;
+    document.getElementById('transfer-stop-button').disabled = true;
+    document.getElementById('transfer-stage').textContent = oneWorldText('transfer_stopping', 'Stopping...');
+    invoke('gui_cancel_bake').catch((error) => console.warn('Stop failed:', error));
+  });
+  document.getElementById('storage-refresh-button').addEventListener('click', refreshStorage);
+  const bakeCpuSlider = document.getElementById('bake-cpu-slider');
+  bakeCpuSlider.addEventListener('input', formatBakeCpu);
+  formatBakeCpu();
+  initLocalArchive();
+  // Any setting can change what a run reads; the check is debounced and skips
+  // a request it has already answered.
+  document.getElementById('settings-modal').addEventListener('change', () => refreshDataPlan());
+  refreshStorage();
+}
+
+/* Download Plan: what a run of the selection reads with these settings, and
+   how much of it the caches hold, from gui_data_plan (disk only). Shown where
+   a run depends on the caches: offline, or reading a local extract or file. */
+let dataPlanTimer = null;
+let dataPlanKey = null;
+let dataPlan = null;
+// The extract sizes already asked for with a HEAD, by url.
+const extractSizeAsked = new Set();
+
+// `force` asks again even for the same request: the caches changed under it.
+function refreshDataPlan(force) {
+  if (force) dataPlanKey = null;
+  clearTimeout(dataPlanTimer);
+  dataPlanTimer = setTimeout(checkDataPlan, 300);
+}
+
+function dataPlanRequest() {
+  const source = document.getElementById('osm-source-select').value;
+  const offline = document.getElementById('offline-toggle').checked;
+  if (!selectedBBox || !(offline || source === 'pbf' || source === 'file' || source === 'local')) return null;
+  const mode = document.getElementById('generation-mode-select').value;
+  return {
+    bboxText: selectedBBox,
+    worldScale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
+    terrainEnabled: mode === 'geo-terrain' || mode === 'terrain-only',
+    skipOsmObjects: mode === 'terrain-only',
+    canopyHeightEnabled: document.getElementById('canopy-height-toggle').checked,
+    overtureEnabled: document.getElementById('overture-toggle').checked,
+    awsOnlyElevation: document.getElementById('aws-only-elevation-toggle').checked,
+    flags: advancedFeatureArgs().flags,
+  };
+}
+
+async function checkDataPlan() {
+  const request = dataPlanRequest();
+  document.getElementById('data-plan-row').style.display = request ? '' : 'none';
+  checkPreparePlan();
+  checkBakeThreads();
+  const key = request ? JSON.stringify(request) : null;
+  if (!request || key === dataPlanKey) return;
+  dataPlanKey = key;
+  try {
+    const plan = await invoke('gui_data_plan', request);
+    // A newer request went out while this one was on disk.
+    if (key !== dataPlanKey) return;
+    dataPlan = plan;
+    renderDataPlan();
+    askExtractSize(plan.extract);
+  } catch (error) {
+    console.warn('Download plan failed:', error);
+  }
+}
+
+// A Region Download extract not on disk yet: its size from one HEAD request,
+// kept by the backend, then the plan again. Never offline.
+async function askExtractSize(extract) {
+  if (!extract || !extract.url || extract.download_bytes != null) return;
+  if (document.getElementById('offline-toggle').checked || extractSizeAsked.has(extract.url)) return;
+  extractSizeAsked.add(extract.url);
+  try {
+    await invoke('gui_extract_size', { url: extract.url });
+    refreshDataPlan(true);
+  } catch (error) {
+    console.warn('Extract size failed:', error);
+  }
+}
+
+function formatPlanBytes(bytes) {
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+  if (bytes >= 1e6) return Math.round(bytes / 1e6) + ' MB';
+  return Math.max(1, Math.round(bytes / 1e3)) + ' KB';
+}
+
+// A size cell: nothing for zero, `~` for an estimate.
+function sizeCell(bytes, estimate) {
+  if (!bytes) return '—';
+  return (estimate ? '~' : '') + formatPlanBytes(bytes);
+}
+
+// A plan list row: name, status (green when `done`) and the size columns.
+function planRow(cells, done) {
+  const li = document.createElement('li');
+  cells.forEach((text, i) => {
+    const span = document.createElement('span');
+    span.textContent = text;
+    if (i === 1 && done) span.className = 'is-cached';
+    if (i >= 2) span.className = 'data-plan-size';
+    li.appendChild(span);
+  });
+  return li;
+}
+
+function planHead(cells) {
+  const li = planRow(cells, false);
+  li.className = 'data-plan-head';
+  return li;
+}
+
+// A line under a list; `warn` turns it red.
+function setPlanLine(id, text, warn) {
+  const el = document.getElementById(id);
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+  el.classList.toggle('is-warn', !!warn);
+}
+
+function renderDataPlan() {
+  const list = document.getElementById('data-plan-list');
+  if (!list || !dataPlan) return;
+  const t = oneWorldText;
+  const names = {
+    osm: t('data_plan_osm', 'OpenStreetMap'),
+    elevation: t('data_plan_elevation', 'Elevation'),
+    land_cover: t('data_plan_land_cover', 'Land Cover'),
+    canopy: t('data_plan_canopy', 'Canopy Height'),
+    overture: t('data_plan_overture', 'Overture Buildings'),
+  };
+  let download = 0;
+  list.classList.add('has-sizes');
+  list.replaceChildren(planHead([t('data_plan_col_source', 'Source'), t('data_plan_col_status', 'Status'),
+    t('data_plan_col_on_disk', 'On Disk'), t('data_plan_col_download', 'To Download')]),
+  ...dataPlan.items.map((item) => {
+    let status;
+    if (item.total === 0) {
+      status = t('data_plan_uncounted', 'Not counted');
+    } else if (item.cached === item.total) {
+      status = t('data_plan_cached', 'Cached ✓');
+    } else if (item.cached > 0) {
+      status = t('data_plan_partly', 'Partly cached ({n}/{m})', { n: item.cached, m: item.total });
+    } else {
+      status = t('data_plan_missing', 'Missing');
+    }
+    const missing = item.cached < item.total && item.missing_bytes ? item.missing_bytes : 0;
+    download += missing;
+    return planRow([names[item.source] || item.source, status, sizeCell(item.cached_bytes),
+      sizeCell(missing, true)], item.total > 0 && item.cached === item.total);
+  }));
+  const e = dataPlan.extract;
+  let line = '';
+  let bake = 0;
+  if (e && e.name) {
+    const parts = [];
+    if (e.bytes != null) parts.push(t('data_plan_extract_on_disk', '{size} on disk', { size: formatPlanBytes(e.bytes) }));
+    else if (e.download_bytes != null) parts.push(t('data_plan_extract_download', '{size} to download', { size: formatPlanBytes(e.download_bytes) }));
+    if (e.bake_bytes != null) {
+      parts.push(t('data_plan_bake_on_disk', 'baked: {size}', { size: formatPlanBytes(e.bake_bytes) }));
+    } else {
+      if (e.bake_estimate) {
+        bake = e.bake_estimate;
+        parts.push(t('data_plan_bake_estimate', 'bake ~{size} on disk', { size: formatPlanBytes(e.bake_estimate) }));
+      }
+      if (e.ram_estimate) parts.push(t('data_plan_bake_ram', '~{size} memory while baking', { size: formatPlanBytes(e.ram_estimate) }));
+    }
+    line = parts.length
+      ? [t('data_plan_extract_name', 'Extract: {name}', { name: e.name })].concat(parts).join(' · ')
+      : t('data_plan_extract_unknown', 'Extract: {name}, size known once downloaded', { name: e.name });
+  } else if (e) {
+    line = t('data_plan_no_index', 'The Geofabrik index is not downloaded yet; the button fetches it.');
+  }
+  const local = dataPlan.local_archive;
+  if (local) {
+    const here = local.archives.filter((a) => a.covers)
+      .map((a) => (a.bytes ? a.name + ' (' + formatPlanBytes(a.bytes) + ')' : a.name));
+    line = here.length
+      ? t('data_plan_local', 'In the folder for this area: {names}', { names: here.join(', ') })
+      : t('data_plan_local_none', 'No archive in the folder covers this area yet.');
+  }
+  setPlanLine('data-plan-extract', line);
+  // What the button would add to the disk, against what the disk has left.
+  const need = download + bake;
+  const free = dataPlan.free_bytes;
+  let total = '';
+  let short = false;
+  if (free != null) {
+    short = need > free;
+    const vars = { download: formatPlanBytes(download), need: formatPlanBytes(need), free: formatPlanBytes(free) };
+    if (short) total = t('data_plan_short', 'Not enough room: ~{need} needed, {free} free on this disk.', vars);
+    else if (need > 0) total = t('data_plan_total', 'Total: ~{download} to download, ~{need} more on disk · {free} free', vars);
+    else total = t('data_plan_total_none', 'Nothing to download · {free} free on this disk', vars);
+  }
+  setPlanLine('data-plan-total', total, short);
+}
+
+/* Bake CPU: downloads and bakes run on their own share of the cores (default
+   75 %), passed as --cpu-target in place of the generation's CPU setting, so
+   the backend sizes them with the same model. */
+function bakeCpu() {
+  return parseInt(document.getElementById('bake-cpu-slider').value, 10) || 75;
+}
+
+function formatBakeCpu() {
+  document.getElementById('bake-cpu-value').textContent = bakeCpu() + '%';
+}
+
+// The Extra Features flags with the bake's CPU share for the generation's.
+function bakeFlags(flags) {
+  return flags.filter((f) => !/^--(threads|cpu-target)(=|$)/.test(f)).concat('--cpu-target=' + bakeCpu());
+}
+
+/* Bake threads: what a bake runs on with the Bake CPU Usage. */
+let bakeThreadsKey = null;
+
+async function checkBakeThreads() {
+  const source = document.getElementById('osm-source-select').value;
+  const line = document.getElementById('bake-threads');
+  if (source !== 'pbf' && source !== 'local') {
+    line.style.display = 'none';
+    return;
+  }
+  const flags = bakeFlags(advancedFeatureArgs().flags);
+  const key = JSON.stringify(flags);
+  if (key === bakeThreadsKey && line.textContent) {
+    line.style.display = '';
+    return;
+  }
+  bakeThreadsKey = key;
+  try {
+    const b = await invoke('gui_bake_threads', { flags });
+    if (key !== bakeThreadsKey) return;
+    setPlanLine('bake-threads', oneWorldText('bake_threads',
+      'Bakes use {threads} of {cores} threads ({pct}% CPU), as the generation workers do; at most {downloads} downloads at once.',
+      { threads: b.threads, cores: b.cores, pct: b.cpu_pct, downloads: b.downloads }));
+  } catch (error) {
+    console.warn('Bake threads failed:', error);
+  }
+}
+
+/* The transfer panel: the bar and Stop of a running download or bake, fed by
+   the `transfer` field of progress-update. `transferJob` is 'prewarm' or
+   'bake' while one runs from this window. */
+let transferJob = null;
+let transferLast = null;
+
+function transferStart(job) {
+  transferJob = job;
+  transferLast = null;
+  const stop = document.getElementById('transfer-stop-button');
+  stop.disabled = false;
+  stop.style.display = '';
+  const panel = document.getElementById('transfer-panel');
+  panel.style.display = '';
+  panel.classList.remove('is-ended', 'is-done');
+  document.getElementById('transfer-stage').textContent = oneWorldText('transfer_starting', 'Starting...');
+  document.getElementById('transfer-detail').textContent = '';
+  setTransferBar(0);
+}
+
+// The run ended with `message`, `done` when it finished: the panel keeps the
+// last bar with the outcome in place of the stage.
+function transferEnd(message, done) {
+  if (!transferJob) return;
+  transferJob = null;
+  document.getElementById('transfer-stop-button').style.display = 'none';
+  if (message) document.getElementById('transfer-stage').textContent = message;
+  if (done) setTransferBar(100);
+  document.getElementById('transfer-panel').classList.add('is-ended');
+  document.getElementById('transfer-panel').classList.toggle('is-done', !!done);
+}
+
+function setTransferBar(percent) {
+  const p = Math.max(0, Math.min(100, percent));
+  document.getElementById('transfer-bar').style.width = p + '%';
+  document.getElementById('transfer-percent').textContent = Math.floor(p) + '%';
+}
+
+// A rate: one decimal under 10 MB/s, where whole megabytes say too little.
+function formatRate(bps) {
+  return (bps >= 1e6 && bps < 1e7 ? (bps / 1e6).toFixed(1) + ' MB' : formatPlanBytes(bps)) + '/s';
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// One progress-update while a job runs: `transfer` when the backend sent one.
+function onTransferProgress(progress, message, transfer) {
+  if (!transferJob) return;
+  const t = oneWorldText;
+  if (!transfer) {
+    // Before the first transfer (or between them), the bar follows the run.
+    if (!transferLast && progress >= 0) setTransferBar(progress);
+    if (!transferLast && message && !message.startsWith('Done!') && !message.startsWith('Error!')) {
+      document.getElementById('transfer-stage').textContent = message;
+    }
+    return;
+  }
+  transferLast = transfer;
+  const vars = { name: transfer.name, n: transfer.item, m: transfer.items };
+  const stage = {
+    download: t('transfer_download', 'Downloading {name} ({n}/{m})', vars),
+    bake: t('transfer_bake', 'Baking {name} ({n}/{m})', vars),
+    finalize: t('transfer_finalize', 'Writing {name} ({n}/{m})', vars),
+  }[transfer.stage];
+  // No extract yet (arnis-tiles choosing them): its status line says more.
+  if (!document.getElementById('transfer-stop-button').disabled) {
+    document.getElementById('transfer-stage').textContent = transfer.name ? stage : message || stage;
+  }
+  setTransferBar(transfer.percent);
+  const parts = [];
+  const done = formatPlanBytes(transfer.done_bytes);
+  if (transfer.total_bytes > 0) {
+    parts.push(t('transfer_bytes', '{done} of {total}', { done, total: formatPlanBytes(transfer.total_bytes) }));
+  } else if (transfer.done_bytes > 0) {
+    parts.push(t('transfer_written', '{done} written', { done }));
+  }
+  if (transfer.stage === 'download' && transfer.rate_bps > 0) {
+    parts.push(formatRate(transfer.rate_bps));
+    if (transfer.total_bytes > transfer.done_bytes) {
+      parts.push(t('transfer_left', 'about {time} left',
+        { time: formatClock((transfer.total_bytes - transfer.done_bytes) / transfer.rate_bps) }));
+    }
+  }
+  if (transfer.stage !== 'download' && transfer.threads > 0) {
+    parts.push(t('transfer_threads', 'Baking with {threads} threads ({pct}% CPU)',
+      { threads: transfer.threads, pct: transfer.cpu_pct }));
+  }
+  document.getElementById('transfer-detail').textContent = parts.join(' · ');
+  if (transferJob === 'bake') renderPreparePlan();
+}
+
+// The panel's download buttons: a prewarm with the panel's bar and Stop.
+async function startDownload() {
+  if (bakeRunning || generationButtonEnabled === false) return;
+  transferStart('prewarm');
+  await startGeneration({ prewarm: true });
+  // Refused before it started (no selection, say): nothing to follow.
+  if (generationButtonEnabled !== false) {
+    transferJob = null;
+    document.getElementById('transfer-panel').style.display = 'none';
+  }
+}
+
+/* Storage: each folder downloads and bakes go to, its size and the free space
+   on its disk, from gui_storage_info. Only the Archive Folder can move. */
+async function refreshStorage() {
+  try {
+    const folder = document.getElementById('local-archive-input').value.trim();
+    renderStorage(await invoke('gui_storage_info', { folder }));
+  } catch (error) {
+    console.warn('Storage info failed:', error);
+  }
+}
+
+function storageButton(icon, title, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'save-path-browse';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-' + icon + '"></use></svg>';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function renderStorage(locations) {
+  const t = oneWorldText;
+  const names = {
+    local_archive: t('storage_local_archive', 'Archive Folder (Local Archive)'),
+    bake_scratch: t('storage_bake_scratch', 'Bake Work Folder (arnis-tiles)'),
+    pbf_downloads: t('storage_pbf_downloads', 'Region Download Extracts'),
+    pbf_bakes: t('storage_pbf_bakes', 'Region Download Bakes'),
+    cache_root: t('storage_cache_root', 'Cache Folder (All Arnis Caches)'),
+  };
+  document.getElementById('storage-list').replaceChildren(...(locations || []).map((l) => {
+    const li = document.createElement('li');
+    li.className = 'storage-item';
+    const head = document.createElement('div');
+    head.className = 'storage-head';
+    const name = document.createElement('span');
+    name.textContent = names[l.kind] || l.kind;
+    const size = document.createElement('span');
+    size.className = 'storage-size';
+    const free = l.free_bytes != null ? formatPlanBytes(l.free_bytes) : '?';
+    size.textContent = l.exists && l.bytes > 0
+      ? t('storage_size', '{used} · {free} free', { used: formatPlanBytes(l.bytes), free })
+      : t('storage_empty', 'Empty · {free} free', { free });
+    head.append(name, size);
+    const control = document.createElement('div');
+    control.className = 'save-path-control storage-path';
+    const path = document.createElement('input');
+    path.type = 'text';
+    path.className = 'save-path-input';
+    path.readOnly = true;
+    path.value = l.path;
+    path.title = l.path;
+    path.spellcheck = false;
+    const open = storageButton('external', 'Open folder', () =>
+      invoke('gui_show_in_folder', { path: l.path }).catch((error) => console.warn('Open failed:', error)));
+    open.disabled = !l.exists;
+    control.append(path, open);
+    if (l.changeable) {
+      const field = document.getElementById('local-archive-input');
+      control.append(storageButton('folder-open', 'Change...', async () => {
+        try {
+          const picked = await invoke('gui_pick_save_directory', { startPath: l.path });
+          if (picked && picked !== l.path) {
+            field.value = picked;
+            fireInputChange(field);
+          }
+        } catch (error) {
+          console.warn('Change failed:', error);
+        }
+      }));
+    }
+    li.append(head, control);
+    return li;
+  }));
+}
+
+/* Local Archive: a folder of countries baked by arnis-tiles, read through
+   --osm-tiles-url. Prepare Countries lists the Geofabrik extracts that cover
+   the selection (arnis-tiles prepare --dry-run, kept per bbox by the backend)
+   and bakes them into the folder with Download & Bake. */
+let localArchiveInfo = null;
+let prepareKey = null;
+let preparePlan = null;
+let bakeRunning = false;
+// How the last bake ended, shown once the list is back.
+let bakeNote = '';
+// The extracts the running bake has reached, in order.
+let bakeSeen = [];
+
+function localArchiveFolder() {
+  const typed = document.getElementById('local-archive-input').value.trim();
+  return typed || (localArchiveInfo && localArchiveInfo.default_folder) || null;
+}
+
+function arnisTilesPath() {
+  return document.getElementById('arnis-tiles-path-input').value.trim();
+}
+
+async function refreshLocalArchiveInfo() {
+  try {
+    localArchiveInfo = await invoke('gui_local_archive_info', { tilesPath: arnisTilesPath() });
+    if (localArchiveInfo) {
+      document.getElementById('local-archive-input').placeholder = localArchiveInfo.default_folder;
+    }
+  } catch (error) {
+    console.warn('Local archive info failed:', error);
+  }
+  prepareKey = null;
+  refreshDataPlan(true);
+}
+
+function initLocalArchive() {
+  bindBrowse('local-archive-browse', document.getElementById('local-archive-input'),
+    'gui_pick_save_directory', () => localArchiveFolder() || '', 'startPath');
+  document.getElementById('arnis-tiles-path-input').addEventListener('change', refreshLocalArchiveInfo);
+  document.getElementById('local-archive-input').addEventListener('change', refreshStorage);
+  document.getElementById('prepare-bake-button').addEventListener('click', bakeCountries);
+  refreshLocalArchiveInfo();
+}
+
+function setPrepareStatus(text) {
+  const status = document.getElementById('prepare-status');
+  status.replaceChildren(text);
+  status.style.display = text ? '' : 'none';
+}
+
+async function checkPreparePlan() {
+  const panel = document.getElementById('prepare-panel');
+  const source = document.getElementById('osm-source-select').value;
+  const show = source === 'local' && !!selectedBBox;
+  panel.style.display = show ? '' : 'none';
+  if (!show || bakeRunning) return;
+  if (!localArchiveInfo || !localArchiveInfo.arnis_tiles) {
+    // Says how to get it rather than only greying the button.
+    preparePlan = null;
+    prepareKey = null;
+    renderPreparePlan();
+    const link = document.createElement('a');
+    link.href = 'https://github.com/louis-e/arnis-tiles';
+    link.textContent = 'github.com/louis-e/arnis-tiles';
+    link.addEventListener('click', (e) => { e.preventDefault(); openExternal(link.href); });
+    const status = document.getElementById('prepare-status');
+    status.replaceChildren(oneWorldText('prepare_missing_tool',
+      'Baking needs arnis-tiles next to Arnis, on PATH or in arnis-tiles Path. Get it from') + ' ', link, '.');
+    status.style.display = '';
+    return;
+  }
+  const request = { bboxText: selectedBBox, folder: localArchiveFolder() || '', tilesPath: arnisTilesPath() };
+  const key = JSON.stringify(request);
+  if (key === prepareKey) return;
+  prepareKey = key;
+  preparePlan = null;
+  renderPreparePlan();
+  setPrepareStatus(oneWorldText('prepare_loading', 'Finding the countries that cover the selection...'));
+  try {
+    const plan = await invoke('gui_prepare_plan', request);
+    // A newer request went out while arnis-tiles was answering this one.
+    if (key !== prepareKey) return;
+    preparePlan = plan;
+    setPrepareStatus(bakeNote);
+    bakeNote = '';
+  } catch (error) {
+    if (key !== prepareKey) return;
+    prepareKey = null;
+    setPrepareStatus(String(error));
+  }
+  renderPreparePlan();
+}
+
+// A country's status: baked, or where the running bake is with it.
+function prepareStatus(e) {
+  const t = oneWorldText;
+  if (e.baked) return t('prepare_baked', 'Baked ✓');
+  if (!bakeRunning || !transferLast) return '';
+  if (transferLast.name === e.id) {
+    return {
+      download: t('prepare_downloading', 'Downloading {pct}%', {
+        pct: transferLast.total_bytes ? Math.floor(100 * transferLast.done_bytes / transferLast.total_bytes) : 0,
+      }),
+      bake: t('prepare_baking', 'Baking'),
+      finalize: t('prepare_writing', 'Writing'),
+    }[transferLast.stage];
+  }
+  return bakeSeen.includes(e.id) ? t('prepare_baked', 'Baked ✓') : t('prepare_waiting', 'Waiting');
+}
+
+function renderPreparePlan() {
+  const t = oneWorldText;
+  const rows = preparePlan ? preparePlan.extracts : [];
+  if (bakeRunning && transferLast && !bakeSeen.includes(transferLast.name)) bakeSeen.push(transferLast.name);
+  const list = document.getElementById('prepare-list');
+  list.classList.add('has-sizes');
+  list.replaceChildren(...(rows.length ? [planHead([t('prepare_col_country', 'Country'), t('data_plan_col_status', 'Status'),
+    t('prepare_col_download', 'Download'), t('prepare_col_archive', 'Archive')])] : []),
+  ...rows.map((e) => {
+    const status = prepareStatus(e);
+    const done = status === t('prepare_baked', 'Baked ✓');
+    return planRow([e.name, status, formatPlanBytes(e.bytes), sizeCell(e.archive_bytes, !e.baked)], done);
+  }));
+  if (preparePlan && !rows.length) {
+    setPrepareStatus(t('prepare_none', 'No Geofabrik extract covers the selection.'));
+  }
+  // What a bake of the countries not baked yet takes, against the folder's disk.
+  const todo = rows.filter((e) => !e.baked);
+  let total = '';
+  let short = false;
+  if (preparePlan && todo.length && preparePlan.free_bytes != null) {
+    const vars = {
+      download: formatPlanBytes(todo.reduce((a, e) => a + e.bytes, 0)),
+      archive: formatPlanBytes(todo.reduce((a, e) => a + e.archive_bytes, 0)),
+      peak: formatPlanBytes(preparePlan.peak_bytes),
+      free: formatPlanBytes(preparePlan.free_bytes),
+    };
+    short = preparePlan.peak_bytes > preparePlan.free_bytes;
+    total = short
+      ? t('prepare_short', 'Not enough room: up to ~{peak} needed while baking, {free} free on this disk.', vars)
+      : t('prepare_total', 'To bake: {download} to download, ~{archive} of archives · up to ~{peak} on disk while baking · {free} free', vars);
+  }
+  setPlanLine('prepare-total', total, short);
+  document.getElementById('prepare-bake-button').disabled =
+    bakeRunning || !rows.length || rows.every((e) => e.baked);
+}
+
+async function bakeCountries() {
+  if (bakeRunning || !selectedBBox || transferJob) return;
+  bakeRunning = true;
+  bakeSeen = [];
+  setGenerationButtonEnabled(false);
+  transferStart('bake');
+  renderPreparePlan();
+  bakeNote = '';
+  // The transfer panel below shows the bake from here on.
+  setPrepareStatus('');
+  let outcome = '';
+  let finished = false;
+  try {
+    const done = await invoke('gui_bake_archive', {
+      bboxText: selectedBBox,
+      folder: localArchiveFolder() || '',
+      tilesPath: arnisTilesPath(),
+      flags: bakeFlags(advancedFeatureArgs().flags),
+    });
+    if (!done) bakeNote = oneWorldText('prepare_stopped', 'Stopped. Countries already baked are kept.');
+    finished = done;
+    outcome = done ? oneWorldText('prepare_done', 'Done! The local archive is ready.') : bakeNote;
+  } catch (error) {
+    bakeNote = String(error);
+    outcome = bakeNote;
+  } finally {
+    bakeRunning = false;
+    transferEnd(outcome, finished);
+    setGenerationButtonEnabled(true);
+    prepareKey = null;
+    refreshDataPlan(true);
+    refreshStorage();
+  }
+}
+
+// Presets: the Extra Features and OSM Data Source settings as a JSON file.
+function initPresets() {
+  // Every setting on the page (version 2). A version 1 file held only these
+  // two sections, so it leaves the others as they are.
+  const all = [document.getElementById('settings-modal')];
+  const v1 = ['settings-section-features', 'settings-section-osm'].map((id) => document.getElementById(id));
+  const flash = (button, ok) => {
+    button.classList.add(ok ? 'is-success' : 'is-error');
+    setTimeout(() => button.classList.remove('is-success', 'is-error'), 1500);
+  };
+  const save = document.getElementById('preset-save-button');
+  save.addEventListener('click', async () => {
+    try {
+      const contents = JSON.stringify({ arnisPreset: 2, settings: exportSettings(all) }, null, 2);
+      if (await invoke('gui_save_preset', { contents })) flash(save, true);
+    } catch (error) {
+      console.error('Saving the preset failed:', error);
+      flash(save, false);
+    }
+  });
+  const load = document.getElementById('preset-load-button');
+  load.addEventListener('click', async () => {
+    try {
+      const text = await invoke('gui_load_preset');
+      if (text === null || text === undefined) return;
+      const preset = JSON.parse(text);
+      if (!preset || ![1, 2].includes(preset.arnisPreset) || typeof preset.settings !== 'object') {
+        throw new Error('not an Arnis preset');
+      }
+      importSettings(preset.settings, preset.arnisPreset === 1 ? v1 : all);
+      refreshOptionPreviews();
+      flash(load, true);
+    } catch (error) {
+      console.error('Loading the preset failed:', error);
+      flash(load, false);
+    }
+  });
+}
+
+// Option preview cards. A shipped picture shows the option a control holds
+// (rendered with Arnis itself); when the rest of
+// its group differs from the stock defaults, a live render of the group's
+// sample area with its current flags replaces it (gui_render_preview).
+const PREVIEW_GROUPS = {
+  fields: ['field-mix', 'farm-crops', 'field-scale'],
+  trees: ['tree-realm', 'tree-size-weights', 'tree-pack-dir', 'tree-pack-mode'],
+  snow: ['snow-mode', 'snow-percent', 'snow-y'],
+  scatter: ['rocks', 'rock-density', 'bushes', 'bush-density'],
+  roads: ['road-detail'],
+  water: ['river-bed', 'water-detail'],
+  grass: ['grass-texture', 'grass-mix'],
+  land: ['land-texture', 'land-mix'],
+  // The ores do not change the cave zone map.
+  caves: ['cave-style', 'cave-biomes'],
+};
+const TREE_SIZES = ['small', 'medium', 'big', 'tall', 'giant'];
+
+// The shipped picture (work/previews/final_render.py, option B: one per
+// option) a frame's current settings match, as a file under images/previews/
+// (the 3D one, if any, has the same name under iso/), or null when only a
+// live 2D render shows them: any custom value. Rocks and Bushes are drawn at
+// the densest setting, so the formations show; they stand for the default
+// densities. Climate is 2D only.
+// Grass and Land Texture: off, on with the default mix, or on with another
+// preset; changed shares have no shipped picture.
+function mixPicture(kind, fallback) {
+  if (!document.getElementById(kind + '-texture-toggle').checked) return kind + '-texture-off.webp';
+  const text = document.getElementById(kind + '-mix-input').value.trim();
+  if (text.includes('=')) return null;
+  const preset = text || fallback;
+  // Classic lays no parcels: the same ground as the texture off.
+  if (preset === 'classic') return kind + '-texture-off.webp';
+  return preset === fallback ? kind + '-texture-on.webp' : kind + '-mix-' + preset + '.webp';
+}
+
+function blockPictureKey(card) {
+  const el = (id) => document.getElementById(id);
+  const stock = (id) => el(id).value === el(id).defaultValue;
+  switch (card.dataset.for) {
+    case 'tree-realm-select': {
+      const realm = el('tree-realm-select').value;
+      const w = TREE_SIZES.map((s) => parseFloat(el('tree-weight-' + s + '-slider').value));
+      if (w.every((v) => v === 100)) return 'tree-realm-' + realm + '.webp';
+      const single = w.filter((v) => v === 100).length === 1 && w.every((v) => v === 0 || v === 100);
+      return realm === 'auto' && single ? 'tree-size-' + TREE_SIZES[w.indexOf(100)] + '.webp' : null;
+    }
+    case 'field-mix-select':
+      return el('farm-crops-input').value.trim() === '' && stock('field-scale-slider')
+        ? 'field-mix-' + el('field-mix-select').value + '.webp' : null;
+    case 'road-detail-select':
+      return 'road-detail-' + el('road-detail-select').value + '.webp';
+    case 'rocks-toggle': {
+      if (!stock('rock-density-slider') || !stock('bush-density-slider')) return null;
+      const r = el('rocks-toggle').checked;
+      const b = el('bushes-toggle').checked;
+      return 'scatter-' + (r ? (b ? 'both' : 'rocks') : (b ? 'bushes' : 'off')) + '.webp';
+    }
+    case 'snow-mode-select': {
+      const mode = el('snow-mode-select').value;
+      return stock('snow-percent-slider') && (mode !== 'manual' || stock('snow-y-input'))
+        ? 'snow-mode-' + mode + '.webp' : null;
+    }
+    case 'river-bed-select':
+      return el('water-detail-select').value === 'default'
+        ? 'river-bed-' + el('river-bed-select').value + '.webp' : null;
+    case 'water-detail-select':
+      return el('river-bed-select').value === 'off'
+        ? 'water-detail-' + el('water-detail-select').value + '.webp' : null;
+    case 'grass-texture-toggle':
+      return mixPicture('grass', 'default');
+    case 'land-texture-toggle':
+      return mixPicture('land', 'patchwork');
+    case 'climate-mode-select':
+      return 'climate-mode-' + el('climate-mode-select').value + '.webp';
+    case 'cave-style-select':
+      return el('cave-biomes-input').value.trim() === ''
+        ? 'cave-style-' + el('cave-style-select').value
+          + (el('cave-ores-select').value === 'more' ? '-more-ores' : '') + '.webp'
+        : null;
+    default:
+      return null;
+  }
+}
+const livePreviews = {};
+
+// The picture a card shows: 3D (images/previews/iso/) when picked and drawn
+// for the shipped option, else the 2D one with a note. The pick is a viewer
+// preference kept outside the settings store.
+const PREVIEW_MODE_KEY = 'arnis-preview-mode';
+let previewMode = '2d';
+try { previewMode = localStorage.getItem(PREVIEW_MODE_KEY) === '3d' ? '3d' : '2d'; } catch (_) {}
+
+function paintPreview(card) {
+  const img = card.querySelector('img');
+  const flat = card.dataset.shown || card.dataset.static;
+  card.querySelectorAll('.preview-mode button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === previewMode);
+    b.setAttribute('aria-pressed', String(b.dataset.mode === previewMode));
+  });
+  // Frames without a 2D | 3D switch (Grass, Land, Climate) are 2D only.
+  const want3d = previewMode === '3d' && !!card.querySelector('.preview-mode');
+  // Live renders are 2D only.
+  const iso = want3d && !card.dataset.live && card.dataset.exact === '1'
+    ? card.dataset.static.replace('images/previews/', 'images/previews/iso/')
+    : null;
+  card.classList.toggle('is-coming', want3d && !iso);
+  img.onerror = iso ? () => {
+    img.onerror = null;
+    card.classList.add('is-coming');
+    img.setAttribute('src', flat);
+  } : null;
+  const src = iso || flat;
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+}
+
+function initPreviewModes() {
+  document.querySelectorAll('.preview-frame .preview-mode button').forEach((button) => {
+    button.addEventListener('click', () => {
+      previewMode = button.dataset.mode;
+      try { localStorage.setItem(PREVIEW_MODE_KEY, previewMode); } catch (_) {}
+      document.querySelectorAll('.preview-frame').forEach(paintPreview);
+    });
+  });
+  document.querySelectorAll('.preview-frame').forEach(initPreviewZoom);
+}
+
+// Zoom inside a frame: wheel or pinch around the pointer, drag to pan,
+// double-click to fit, +/- by steps. A CSS transform on the picture (drawn
+// at 2-3x the frame), so nothing is rendered again; the picture always
+// covers the frame. The view stays when the picture changes, for comparing.
+const PREVIEW_MAX_ZOOM = 6;
+
+function initPreviewZoom(card) {
+  const img = card.querySelector('img');
+  let k = 1;
+  let x = 0;
+  let y = 0;
+  const apply = () => {
+    const w = card.clientWidth;
+    const h = card.clientHeight;
+    k = Math.min(PREVIEW_MAX_ZOOM, Math.max(1, k));
+    x = Math.min(0, Math.max(w * (1 - k), x));
+    y = Math.min(0, Math.max(h * (1 - k), y));
+    img.style.transform = k === 1 ? '' : 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')';
+  };
+  // Zoom by `f` keeping the frame point (px, py) still.
+  const zoomAt = (f, px, py) => {
+    const next = Math.min(PREVIEW_MAX_ZOOM, Math.max(1, k * f));
+    x = px - (px - x) * (next / k);
+    y = py - (py - y) * (next / k);
+    k = next;
+    apply();
+  };
+  const local = (e) => {
+    const r = card.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  card.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(Math.exp(-e.deltaY * 0.0015), ...local(e));
+  }, { passive: false });
+  card.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    k = 1;
+    apply();
+  });
+  card.querySelectorAll('.preview-zoom button').forEach((b) => b.addEventListener('click', () => {
+    zoomAt(b.dataset.zoom === '1' ? 1.5 : 1 / 1.5, card.clientWidth / 2, card.clientHeight / 2);
+  }));
+  // One pointer pans, two pinch.
+  const pointers = new Map();
+  let pinch = 0;
+  img.addEventListener('pointerdown', (e) => {
+    img.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, local(e));
+    card.classList.add('is-panning');
+  });
+  img.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const [px, py] = local(e);
+    const [ox, oy] = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [px, py]);
+    if (pointers.size === 1) {
+      x += px - ox;
+      y += py - oy;
+      apply();
+    } else if (pointers.size === 2) {
+      const [a, b] = Array.from(pointers.values());
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) zoomAt(d / pinch, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      pinch = d;
+    }
+  });
+  const up = (e) => {
+    pointers.delete(e.pointerId);
+    pinch = 0;
+    if (!pointers.size) card.classList.remove('is-panning');
+  };
+  img.addEventListener('pointerup', up);
+  img.addEventListener('pointercancel', up);
+  new ResizeObserver(apply).observe(card);
+}
+
+// Tree Sizes: per size a switch and its weight, 0 to 100 % of the usual
+// share. Off is 0 and greys the number; on from 0 puts it back at 100. The
+// number stays enabled either way, since a disabled control sends nothing.
+function initTreeSizeToggles() {
+  const boxes = Array.from(document.querySelectorAll('.tree-size-row input[data-weight]'));
+  const sync = () => boxes.forEach((box) => {
+    const field = document.getElementById(box.dataset.weight);
+    box.checked = parseFloat(field.value) > 0;
+    box.disabled = field.disabled;
+    box.closest('.tree-size-row').classList.toggle('is-off', !box.checked);
+  });
+  boxes.forEach((box) => {
+    const field = document.getElementById(box.dataset.weight);
+    box.addEventListener('change', () => {
+      field.value = box.checked ? 100 : 0;
+      fireInputChange(field);
+    });
+    field.addEventListener('input', sync);
+    field.addEventListener('change', () => {
+      const v = Math.round(parseFloat(field.value));
+      const clamped = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100;
+      if (String(clamped) !== field.value) {
+        field.value = clamped;
+        fireInputChange(field);
+        return;
+      }
+      sync();
+    });
+    new MutationObserver(sync).observe(field, { attributes: true, attributeFilter: ['disabled'] });
+  });
+  sync();
+}
+
+// Farm Crops, Grass Mix and Land Mix: a row per part with a switch and its
+// share, starting from the layout's or preset's own shares (the FieldMix
+// presets in field_texture.rs). The hidden text field stays what the store
+// keeps and generation sends: a share list only when the rows differ from
+// the preset's, else the preset's name, or nothing for the default.
+const CROP_KEYS = ['wheat', 'potato', 'carrot', 'beetroot', 'sunflower', 'pumpkin', 'fallow'];
+const MIX_KEYS = ['coarse', 'plains', 'flower', 'farm', 'moss'];
+const FIELD_PRESETS = {
+  classic: { shares: [0, 0, 0, 0, 0], crops: [100, 0, 0, 0, 0, 0, 0] },
+  smallholding: { shares: [12, 10, 4, 70, 4], crops: [22, 18, 18, 14, 12, 10, 6] },
+  patchwork: { shares: [10, 8, 2, 75, 5], crops: [40, 15, 15, 8, 12, 5, 5] },
+  prairie: { shares: [6, 6, 1, 85, 2], crops: [62, 8, 6, 4, 12, 2, 6] },
+  pasture: { shares: [6, 58, 24, 6, 6], crops: [45, 10, 10, 5, 20, 5, 5] },
+  // --grass-mix's own default (FieldMix::GRASS).
+  default: { shares: [6, 64, 22, 0, 8] },
+};
+// Cave Biomes: each theme's percent of its default amount. A style is one
+// amount for every theme (CaveStyle::amount in src/caves/mod.rs).
+const CAVE_THEMES = ['lush', 'dripstone', 'deepdark', 'mushroom', 'ice', 'amethyst', 'volcanic', 'coral'];
+const CAVE_STYLES = { vanilla: 0, 'more-vanilla': 18, 'all-mix': 100, 'more-mix': 180 };
+// `layout`: the select whose value is the preset (else the Field Layout).
+// `all`: every part is sent, 0 included, as --cave-biomes keeps the style's
+// amount for a part left out; `max` is a part's top.
+const MIXES = {
+  'farm-crops-input': {
+    keys: CROP_KEYS,
+    original: (name) => FIELD_PRESETS[name].crops,
+    encode: () => '',
+  },
+  'grass-mix-input': {
+    keys: MIX_KEYS,
+    fallback: 'default',
+    original: (name) => FIELD_PRESETS[name].shares,
+    encode: (name) => (name === 'default' ? '' : name),
+  },
+  'land-mix-input': {
+    keys: MIX_KEYS,
+    fallback: 'patchwork',
+    original: (name) => FIELD_PRESETS[name].shares,
+    encode: (name) => (name === 'patchwork' ? '' : name),
+  },
+  'cave-biomes-input': {
+    keys: CAVE_THEMES,
+    layout: 'cave-style-select',
+    all: true,
+    max: 200,
+    original: (name) => CAVE_THEMES.map(() => CAVE_STYLES[name]),
+    encode: () => '',
+  },
+};
+
+function initMixRows() {
+  Object.entries(MIXES).forEach(([id, mix]) => {
+    const field = document.getElementById(id);
+    const list = document.querySelector('.mix-list[data-mix="' + id + '"]');
+    if (!field || !list) return;
+    const select = document.querySelector('.mix-preset[data-mix="' + id + '"]');
+    const layout = document.getElementById(mix.layout || 'field-mix-select');
+    const max = mix.max || 100;
+    const rows = mix.keys.map((k) => list.querySelector('.mix-row[data-key="' + k + '"]'));
+    const reset = list.querySelector('.mix-reset');
+    const presetName = () => (select ? select.value : layout.value);
+    const original = () => mix.original(presetName());
+    const same = (a, b) => a.every((v, i) => v === b[i]);
+    const values = () => rows.map((r) => {
+      const v = Math.round(parseFloat(r.querySelector('input[type="number"]').value));
+      return r.querySelector('.switch').checked && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 0;
+    });
+    const show = (vals) => {
+      rows.forEach((r, i) => {
+        r.querySelector('input[type="number"]').value = vals[i];
+        r.querySelector('.switch').checked = vals[i] > 0;
+        r.classList.toggle('is-off', vals[i] === 0);
+      });
+      if (reset) reset.disabled = same(vals, original());
+    };
+    const write = (text) => {
+      if (field.value === text) return;
+      field.value = text;
+      fireInputChange(field);
+    };
+    // Rows to text: the preset as is, or the shares that are on.
+    const commit = () => {
+      const vals = values();
+      show(vals);
+      write(same(vals, original())
+        ? mix.encode(presetName())
+        : mix.keys.map((k, i) => (vals[i] > 0 || mix.all ? k + '=' + vals[i] : null)).filter(Boolean).join(','));
+    };
+    // Text to rows: restore, reset and preset files write the field.
+    const read = () => {
+      const text = field.value.trim().toLowerCase();
+      if (select) {
+        const named = text === '' ? mix.fallback : text;
+        if (FIELD_PRESETS[named] && select.querySelector('option[value="' + named + '"]')) {
+          select.value = named;
+        }
+      }
+      let vals = original();
+      if (text.includes('=')) {
+        if (!mix.all) vals = mix.keys.map(() => 0);
+        text.split(',').forEach((pair) => {
+          const [k, v] = pair.split('=').map((t) => t.trim());
+          const i = mix.keys.indexOf(k);
+          if (i >= 0) vals[i] = Math.min(max, Math.max(0, parseInt(v, 10) || 0));
+        });
+      }
+      show(vals);
+    };
+    rows.forEach((r, i) => {
+      const box = r.querySelector('.switch');
+      const num = r.querySelector('input[type="number"]');
+      box.addEventListener('change', () => {
+        if (box.checked && !(parseFloat(num.value) > 0)) num.value = original()[i] || (mix.all ? 100 : 10);
+        // One part stays on: an all-zero list is refused (but no cave biome is Vanilla).
+        if (!mix.all && !values().some((v) => v > 0)) box.checked = true;
+        commit();
+      });
+      num.addEventListener('change', () => {
+        box.checked = parseFloat(num.value) > 0;
+        if (!mix.all && !values().some((v) => v > 0)) {
+          num.value = original()[i] || 10;
+          box.checked = true;
+        }
+        commit();
+      });
+    });
+    const restart = () => { show(original()); commit(); };
+    if (reset) reset.addEventListener('click', restart);
+    // A new layout or preset starts again from its own shares.
+    (select || layout).addEventListener('change', restart);
+    field.addEventListener('change', read);
+    const disable = () => {
+      rows.forEach((r) => r.querySelectorAll('input').forEach((x) => { x.disabled = field.disabled; }));
+      if (select) select.disabled = field.disabled;
+    };
+    new MutationObserver(disable).observe(field, { attributes: true, attributeFilter: ['disabled'] });
+    disable();
+    read();
+  });
+}
+
+// The realm Auto would pick by the selection's centre, as tree_pack.rs
+// realm_for_latlon does (its ecoregion pick usually agrees). First match wins.
+const REALM_BOXES = [
+  ['fl', 8, 31, -90, -60], ['ena', 8, 62, -100, -52], ['wna', 25, 72, -170, -100],
+  ['sam', -56, 14, -82, -34], ['eur', 34, 72, -25, 40], ['afr', -36, 37, -19, 52],
+  ['ind', -11, 29, 60, 155], ['asn', 5, 75, 40, 155], ['aus', -50, 0, 110, 180],
+  ['aus', -50, 32, -180, -130],
+];
+
+function showAutoRealm() {
+  const slot = document.querySelector('.realm-auto .realm-detected');
+  if (!slot) return;
+  const b = (selectedBBox || '').split(/[ ,]+/).map(parseFloat);
+  let text = '';
+  if (b.length === 4 && b.every(Number.isFinite) && b.some((v) => v !== 0)) {
+    const lat = (b[0] + b[2]) / 2;
+    const lon = (b[1] + b[3]) / 2;
+    const hit = REALM_BOXES.find(([, a0, a1, o0, o1]) => lat >= a0 && lat <= a1 && lon >= o0 && lon <= o1);
+    const code = hit ? hit[0] : 'vanilla-plus';
+    const name = document.querySelector('.realm-grid .segment[data-value="' + code + '"] span[data-localize]');
+    if (name) text = ' · ' + name.textContent.trim();
+  }
+  slot.textContent = text;
+}
+
+// What a card shows, in words. A side-by-side block names the picked option
+// of each list and the switches that are on ("Europe · Small + Tall");
+// all of a list's switches on is the stock mix and goes unsaid.
+function previewName(card) {
+  const block = card.closest('.preview-block');
+  const picked = Array.from(block.querySelectorAll('.preview-options .segment.active')).map((b) => b.textContent.trim());
+  const switches = Array.from(block.querySelectorAll('.tree-size-row input.switch, .preview-controls > .settings-row > .settings-control > input.switch'));
+  const on = switches.filter((s) => s.checked).map((s) => {
+    const label = s.closest('label') || s.closest('.settings-row').querySelector('.setting-heading > span');
+    return label.textContent.trim();
+  });
+  if (switches.length && on.length < switches.length) {
+    picked.push(on.length ? on.join(' + ') : oneWorldText('preview_off', 'Off'));
+  } else if (switches.length && !picked.length) {
+    picked.push(on.join(' + '));
+  }
+  // Rows changed from their preset's own.
+  const mixed = Array.from(block.querySelectorAll('.mix-list[data-mix]'))
+    .some((list) => document.getElementById(list.dataset.mix).value.includes('='));
+  if (mixed) picked.push(oneWorldText('mix_custom', 'Custom'));
+  return picked.join(' · ');
+}
+
+function previewCaption(card) {
+  const name = previewName(card);
+  const state = card.classList.contains('is-updating')
+    ? oneWorldText('preview_updating', 'Updating…')
+    : card.dataset.note || '';
+  card.querySelector('figcaption').textContent = state ? name + ' · ' + state : name;
+}
+
+function refreshOptionPreviews() {
+  showAutoRealm();
+  document.querySelectorAll('.option-preview[data-for]').forEach((card) => {
+    const img = card.querySelector('img');
+    if (!document.getElementById(card.dataset.for) || !img) return;
+    // No shipped picture: keep the last one (at first, the page's own) under
+    // the live render.
+    const key = blockPictureKey(card);
+    card.dataset.exact = key ? '1' : '';
+    const src = key ? 'images/previews/' + key : (card.dataset.static || img.getAttribute('src'));
+    // A live render stands until its group changes; the group's own refresh
+    // puts the shipped picture back when that is exact again.
+    if (card.dataset.static !== src) {
+      card.dataset.static = src;
+      if (!card.dataset.live) card.dataset.shown = src;
+    }
+    paintPreview(card);
+    previewCaption(card);
+  });
+  refreshLivePreviews();
+}
+
+const flagName = (flag) => flag.slice(2).split('=')[0];
+
+// Per group: debounced, one request in flight that counts, and a sequence
+// number so an answer to an older combination is dropped.
+function refreshLivePreviews() {
+  const flags = advancedFeatureArgs().flags;
+  const offline = document.getElementById('offline-toggle').checked;
+  Object.entries(PREVIEW_GROUPS).forEach(([group, names]) => {
+    const mine = flags.filter((f) => names.includes(flagName(f)));
+    const state = livePreviews[group] || (livePreviews[group] = { key: null, seq: 0, timer: null });
+    const key = mine.join(' ') + (offline ? ' offline' : '');
+    if (key === state.key) return;
+    state.key = key;
+    const seq = ++state.seq;
+    clearTimeout(state.timer);
+    const cards = Array.from(document.querySelectorAll('.option-preview[data-group="' + group + '"]'));
+    const exact = cards.every((c) => c.dataset.exact === '1');
+    const settle = (card) => {
+      delete card.dataset.live;
+      delete card.dataset.note;
+      card.classList.remove('is-updating');
+      card.dataset.shown = card.dataset.static;
+      paintPreview(card);
+      previewCaption(card);
+    };
+    if (mine.length === 0 || exact) {
+      cards.forEach(settle);
+      return;
+    }
+    // A frame whose own options match a shipped picture keeps it.
+    const live = cards.filter((c) => c.dataset.exact !== '1');
+    cards.filter((c) => !live.includes(c)).forEach(settle);
+    live.forEach((card) => { card.classList.add('is-updating'); previewCaption(card); });
+    state.timer = setTimeout(async () => {
+      let src = null;
+      let note = '';
+      try {
+        src = await invoke('gui_render_preview', { group, flags: mine, offline });
+      } catch (error) {
+        if (String(error).includes('needs-data')) {
+          note = oneWorldText('preview_needs_data', 'Preview needs data');
+        } else {
+          console.warn('Live preview failed:', error);
+        }
+      }
+      if (seq !== state.seq) return;
+      live.forEach((card) => {
+        card.classList.remove('is-updating');
+        // A failed render shows the shipped picture, not an older combination's.
+        if (src) card.dataset.live = '1';
+        else delete card.dataset.live;
+        card.dataset.shown = src || card.dataset.static;
+        paintPreview(card);
+        if (note) card.dataset.note = note;
+        else delete card.dataset.note;
+        previewCaption(card);
+      });
+    }, 600);
+  });
+}
+
+// The prop families live in one hidden field, the comma list --props takes,
+// so the store keeps them as one value; the checkboxes only edit it.
+function initPropFamilies() {
+  const field = document.getElementById('props-custom-input');
+  const boxes = Array.from(document.querySelectorAll('#props-custom-row input[data-prop]'));
+  const show = () => {
+    const picked = field.value.split(',');
+    boxes.forEach((box) => { box.checked = picked.includes(box.dataset.prop); });
+  };
+  boxes.forEach((box) => box.addEventListener('change', () => {
+    field.value = boxes.filter((b) => b.checked).map((b) => b.dataset.prop).join(',');
+    fireInputChange(field);
+  }));
+  field.addEventListener('change', show);
+  show();
+}
+
+// Tree Pack Folder: what gui_tree_pack_status last found there (the field's
+// folder, or the default next to Arnis when it is empty).
+let treePack = null;
+let treePackSeq = 0;
+
+async function refreshTreePack() {
+  const seq = ++treePackSeq;
+  const field = document.getElementById('tree-pack-dir-input');
+  let status = null;
+  try {
+    status = await invoke('gui_tree_pack_status', { folder: field.value });
+  } catch (error) {
+    console.warn('Tree pack status failed:', error);
+  }
+  if (seq !== treePackSeq) return;
+  treePack = status;
+  if (status) {
+    field.placeholder = status.default_folder;
+    setFeatureNotice('tree-pack-status', status.exists
+      ? oneWorldText('tree_pack_found', '{n} custom trees found ({m} skipped)', { n: status.found, m: status.skipped })
+      : oneWorldText('tree_pack_missing', 'No folder there yet. Create Folder Structure makes it.'));
+  }
+  refreshLivePreviews();
+}
+
+function initTreePack() {
+  const field = document.getElementById('tree-pack-dir-input');
+  bindBrowse('tree-pack-dir-browse', field, 'gui_pick_save_directory',
+    () => field.value.trim() || (treePack && treePack.folder) || '', 'startPath');
+  field.addEventListener('change', refreshTreePack);
+  [['tree-pack-create-button', false], ['tree-pack-export-button', true]].forEach(([id, exporting]) => {
+    const button = document.getElementById(id);
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await invoke('gui_tree_pack_layout', { folder: field.value, export: exporting });
+        await refreshTreePack();
+      } catch (error) {
+        setFeatureNotice('tree-pack-status', String(error), false);
+      } finally {
+        refreshAdvancedFeatures();
+      }
+    });
+  });
+  refreshTreePack();
+}
+
+// A notice under a button: what the click did, green when it worked.
+function setFeatureNotice(id, text, ok) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = text ? '' : 'none';
+  const slot = el.querySelector('span') || el;
+  slot.textContent = text || '';
+  el.classList.toggle('is-success', ok === true);
+  el.classList.toggle('is-error', ok === false);
+}
+
+function initExperimentalButtons() {
+  const preview = document.getElementById('climate-preview-button');
+  const image = document.getElementById('climate-preview-image');
+  preview.addEventListener('click', async () => {
+    if (!selectedBBox) {
+      image.removeAttribute('src');
+      setFeatureNotice('climate-preview', oneWorldText('select_location_first', 'Select an area on the map first.'), false);
+      return;
+    }
+    preview.disabled = true;
+    try {
+      image.src = await invoke('gui_climate_preview', { bboxText: selectedBBox });
+      setFeatureNotice('climate-preview', oneWorldText('climate_preview_done', 'Climate zones of the selected area.'), true);
+    } catch (error) {
+      image.removeAttribute('src');
+      setFeatureNotice('climate-preview', String(error), false);
+    } finally {
+      preview.disabled = false;
+    }
+  });
+
+  const redraw = document.getElementById('redraw-map-button');
+  redraw.addEventListener('click', async () => {
+    redraw.disabled = true;
+    try {
+      const id = await invoke('gui_redraw_one_world_map', { savePath: savePath, worldName: oneWorldFolderName() });
+      setFeatureNotice('redraw-map-status', oneWorldText('redraw_map_done', 'Map #{id} now shows every area.', { id }), true);
+    } catch (error) {
+      setFeatureNotice('redraw-map-status', String(error), false);
+    } finally {
+      refreshAdvancedFeatures();
+    }
+  });
+}
+
+const formatPercent = (v) => Math.round(v) + '%';
+const MELD_SLIDERS = [
+  ['snow-percent-slider', formatPercent],
+  ['rock-density-slider', (v) => v.toFixed(2)],
+  ['bush-density-slider', (v) => v.toFixed(2)],
+  ['field-scale-slider', formatPercent],
+];
+
+// Meld Generation rows that only depend on the master switch.
+const MELD_ALWAYS = [
+  'snow-mode-select', 'rocks-toggle', 'bushes-toggle', 'road-detail-select', 'no-buildings-toggle',
+  'field-mix-select', 'farm-crops-input', 'tree-realm-select', 'river-bed-select', 'water-detail-select',
+  ...TREE_SIZES.map((size) => 'tree-weight-' + size + '-slider'),
+  'climate-mode-select', 'climate-preview-button', 'grass-texture-toggle', 'land-texture-toggle',
+  'world-seed-input', 'props-select',
+  'tree-pack-dir-input', 'tree-pack-mode-select', 'tree-pack-create-button', 'tree-pack-export-button',
+];
+
+function formatCpuUsage() {
+  const cpu = document.getElementById('cpu-usage-slider');
+  const out = document.getElementById('cpu-usage-value');
+  if (!cpu || !out) return;
+  const pct = parseInt(cpu.value, 10) || 0;
+  out.textContent = pct > 0 ? pct + '%' : ((window.localization && window.localization.features_auto) || 'Auto');
+}
+
+// One place decides every row, so the master switch, the CPU Usage / Threads
+// exclusion and the One World gate never fight over `disabled`.
+function refreshAdvancedFeatures() {
+  const master = document.getElementById('advanced-features-toggle');
+  const groups = document.getElementById('advanced-features-groups');
+  if (!master || !groups) return;
+  const on = master.checked;
+  groups.style.display = on ? '' : 'none';
+  const cpuSet = (parseInt(document.getElementById('cpu-usage-slider').value, 10) || 0) > 0;
+  const threadsSet = (parseInt(document.getElementById('threads-input').value, 10) || 0) > 0;
+  // Threads wins when both hold a value (only reachable from stored state),
+  // so one of the two always stays editable.
+  setSettingsRowAvailable('cpu-usage-slider', on && !threadsSet);
+  setSettingsRowAvailable('threads-input', on && (threadsSet || !cpuSet));
+  setSettingsRowAvailable('ram-budget-input', on);
+  setSettingsRowAvailable('max-downloads-input', on);
+  // Big Worlds builds in pieces with or without One World (a large selection
+  // becomes one), so these follow it alone.
+  setSettingsRowAvailable('big-worlds-toggle', on);
+  const big = on && document.getElementById('big-worlds-toggle').checked;
+  setSettingsRowAvailable('one-world-workers-select', big);
+  setSettingsRowAvailable('unit-regions-select', big);
+  setSettingsRowAvailable('snap-mode-select', big);
+  setSettingsRowAvailable('square-selection-toggle', big);
+
+  MELD_ALWAYS.forEach((id) => setSettingsRowAvailable(id, on));
+  const checked = (id) => {
+    const el = document.getElementById(id);
+    return el.checked && !el.disabled;
+  };
+  // The snow rows mean nothing in the other modes, so they hide; the share
+  // is greyed under One World, which refuses peaks.
+  const snow = document.getElementById('snow-mode-select').value;
+  const shown = (id, show) => {
+    document.getElementById(id).style.display = show ? '' : 'none';
+  };
+  shown('snow-percent-row', snow === 'peaks');
+  shown('snow-y-row', snow === 'manual');
+  setSettingsRowAvailable('snow-percent-slider', on && snow === 'peaks' && !isOneWorldEnabled());
+  setSettingsRowAvailable('snow-y-input', on && snow === 'manual');
+  setSettingsRowAvailable('rock-density-slider', on && checked('rocks-toggle'));
+  setSettingsRowAvailable('bush-density-slider', on && checked('bushes-toggle'));
+  setSettingsRowAvailable('loot-table-input', on && checked('interior-toggle'));
+  // Parcels exist with a layout other than Classic, or with farm crops.
+  const parcels = document.getElementById('field-mix-select').value !== 'classic'
+    || document.getElementById('farm-crops-input').value.trim() !== '';
+  setSettingsRowAvailable('field-scale-slider', on && parcels);
+  setSettingsRowAvailable('cave-seed-input', on && checked('caves-toggle'));
+  setSettingsRowAvailable('cave-datum-y-input', on && checked('caves-toggle'));
+  ['cave-style-select', 'cave-ores-select', 'cave-biomes-input'].forEach((id) => {
+    setSettingsRowAvailable(id, on && checked('caves-toggle'));
+  });
+
+  // Experimental. A One World merges into Anvil files and fixes its own build
+  // height, so the region format and the floor and ceiling are a single
+  // Java world's.
+  const single = on && selectedWorldFormat === 'java' && !isOneWorldEnabled();
+  setSettingsRowAvailable('region-format-select', single);
+  const blinear = single && document.getElementById('region-format-select').value === 'blinear';
+  shown('blinear-level-row', blinear);
+  setSettingsRowAvailable('blinear-level-input', blinear);
+  setSettingsRowAvailable('grass-mix-input', on && (checked('grass-texture-toggle') || checked('land-texture-toggle')));
+  setSettingsRowAvailable('land-mix-input', on && checked('land-texture-toggle'));
+  const tall = single && checked('disable-height-limit-toggle');
+  setSettingsRowAvailable('world-floor-input', tall);
+  setSettingsRowAvailable('world-ceiling-input', tall);
+  const props = document.getElementById('props-select').value;
+  shown('props-custom-row', props === 'custom');
+  setSettingsRowAvailable('props-custom-input', on && props === 'custom');
+  setSettingsRowAvailable('props-min-scale-input', on && props !== 'none');
+  setSettingsRowAvailable('redraw-map-button', on && isOneWorldEnabled());
+  setSettingsRowAvailable('world-border-toggle', on && selectedWorldFormat === 'java');
+  refreshSnapPreview();
+
+  // OSM Data Source, not behind the switch: each source shows its own field.
+  const source = document.getElementById('osm-source-select').value;
+  [['osm-tiles-url', 'archive'], ['overpass-url', 'overpass'], ['osm-file', 'file'], ['osm-pbf', 'pbf'],
+    ['local-archive', 'local'], ['arnis-tiles-path', 'local']].forEach(([id, value]) => {
+    shown(id + '-row', source === value);
+    setSettingsRowAvailable(id + '-input', source === value);
+  });
+  shown('osm-pbf-bake-row', source === 'pbf');
+  // Pieces exist only with the switch and One World; offline has nothing to warm.
+  setSettingsRowAvailable('prewarm-first-toggle',
+    on && isOneWorldEnabled() && !checked('offline-toggle'));
+  refreshSettingsState();
+}
+
+// The Extra Features as CLI flags for gui_start_generation, which parses
+// them with the CLI's own parser. A control that is disabled or on its default
+// adds none, so the run is the stock one unless a control says otherwise.
+function advancedFeatureArgs() {
+  const enabled = (id) => {
+    const el = document.getElementById(id);
+    return el && !el.disabled ? el : null;
+  };
+  const positive = (id) => {
+    const el = enabled(id);
+    const n = el ? parseInt(el.value, 10) : NaN;
+    return n > 0 ? n : null;
+  };
+  const changed = (id) => {
+    const el = enabled(id);
+    if (!el) return null;
+    if (el.tagName === 'SELECT') {
+      const def = Array.from(el.options).find((o) => o.defaultSelected) || el.options[0];
+      return el.value !== def.value ? el.value : null;
+    }
+    const n = parseFloat(el.value);
+    return Number.isFinite(n) && n !== parseFloat(el.defaultValue) ? n : null;
+  };
+  const on = (id) => (enabled(id) && enabled(id).checked ? true : null);
+  const text = (id) => {
+    const el = enabled(id);
+    return el && el.value.trim() !== '' ? el.value.trim() : null;
+  };
+  const int = (id) => {
+    const t = text(id);
+    return t === null ? null : parseInt(t, 10);
+  };
+  const weights = TREE_SIZES.map((size) => enabled('tree-weight-' + size + '-slider'));
+  const weighted = weights.some((el) => el && parseFloat(el.value) !== 100);
+  const treePackDir = enabled('tree-pack-dir-input') && treePack && treePack.exists ? treePack.folder : null;
+  const workers = enabled('one-world-workers-select');
+  const propsSelect = enabled('props-select');
+  // Auto leaves the props to the 3D Models switch, as stock.
+  const props = propsSelect && propsSelect.value !== 'auto' ? propsSelect.value : null;
+  const source = document.getElementById('osm-source-select').value;
+  const overpass = (text('overpass-url-input') || '').split(',').map((u) => u.trim()).filter(Boolean).join(',');
+  const values = {
+    'cpu-target': positive('cpu-usage-slider'),
+    'threads': positive('threads-input'),
+    'ram-budget-mb': positive('ram-budget-input'),
+    'max-downloads': positive('max-downloads-input'),
+    // Either one builds a One World area in pieces; a single run ignores both.
+    'one-world-workers': workers ? workers.value : null,
+    'unit-regions': positive('unit-regions-select'),
+    'snow-mode': changed('snow-mode-select'),
+    'snow-percent': changed('snow-percent-slider'),
+    // Manual needs a line, so it goes even on its default.
+    'snow-y': int('snow-y-input'),
+    'road-detail': changed('road-detail-select'),
+    'rocks': on('rocks-toggle'),
+    'rock-density': changed('rock-density-slider'),
+    'bushes': on('bushes-toggle'),
+    'bush-density': changed('bush-density-slider'),
+    'no-buildings': on('no-buildings-toggle'),
+    'loot-table': text('loot-table-input'),
+    'field-mix': changed('field-mix-select'),
+    'farm-crops': text('farm-crops-input'),
+    'field-scale': changed('field-scale-slider'),
+    'tree-realm': changed('tree-realm-select'),
+    'tree-size-weights': weighted
+      ? TREE_SIZES.map((size, i) => size + '=' + parseFloat(weights[i].value)).join(',')
+      : null,
+    // Only a folder that is there; an empty field means the default one.
+    'tree-pack-dir': treePackDir,
+    'tree-pack-mode': treePackDir ? changed('tree-pack-mode-select') : null,
+    // A string, so a seed past 2^53 reaches the parser whole.
+    'cave-seed': text('cave-seed-input'),
+    'cave-datum-y': int('cave-datum-y-input'),
+    'cave-style': changed('cave-style-select'),
+    'cave-ores': changed('cave-ores-select'),
+    'cave-biomes': text('cave-biomes-input'),
+    'river-bed': changed('river-bed-select'),
+    'water-detail': changed('water-detail-select'),
+    'region-format': changed('region-format-select'),
+    'blinear-level': changed('blinear-level-input'),
+    'climate-mode': changed('climate-mode-select'),
+    'grass-texture': on('grass-texture-toggle'),
+    'grass-mix': text('grass-mix-input'),
+    'land-texture': on('land-texture-toggle'),
+    'land-mix': text('land-mix-input'),
+    'min-y': int('world-floor-input'),
+    'max-y': int('world-ceiling-input'),
+    'seed': text('world-seed-input'),
+    // Custom with nothing ticked places none.
+    'props': props === 'custom' ? (text('props-custom-input') || 'none') : props,
+    'props-min-scale': text('props-min-scale-input'),
+    'world-border': on('world-border-toggle'),
+    // OSM Data Source: sent whatever the Extra Features switch says.
+    'no-tile-archive': source === 'overpass' ? true : null,
+    // Local Archive reads the baked folder through the same flag.
+    'osm-tiles-url': source === 'local' ? localArchiveFolder() : text('osm-tiles-url-input'),
+    'overpass-url': overpass || null,
+    'file': text('osm-file-input'),
+    // Region Download: an empty file field picks the Geofabrik extract.
+    'osm-pbf': source === 'pbf' ? (text('osm-pbf-input') || 'geofabrik') : null,
+    'offline': on('offline-toggle'),
+    'prewarm-first': on('prewarm-first-toggle'),
+  };
+  const flags = Object.entries(values)
+    .filter(([, v]) => v !== null)
+    .map(([name, v]) => (v === true ? '--' + name : '--' + name + '=' + v));
+  return { flags };
 }
 
 // Caves are carved into the filled ground, so turning them on turns Fill Ground
@@ -2430,6 +4126,8 @@ function handleBboxInput() {
     // The Precompute button next to this field turns on the selection, and the
     // field is inside the same panel, so it has to follow every keystroke.
     refreshPrecomputeButton();
+    refreshSnapPreview();
+    refreshDataPlan();
   });
 }
 
@@ -2479,6 +4177,64 @@ const AREA_THRESHOLDS = {
   mars: { extensive: 1.5e12, large: 5e12, extreme: 1.5e13 }
 };
 
+// The run estimate under the progress bar extends the Earth numbers above with
+// Phase 6 runs on a 24-thread machine at scale 1:
+//   size  8x8 km, 256 regions (251k chunks): 984 MB of regions, so 15.4 MB per
+//         km2 of world (Munich above: 15.3-16.2) or 3.84 MB per whole region.
+//   time  cold single runs 8 km 34 s, 16 km 114 s, 80 km at scale 0.05 (16 km2
+//         of world on 6400 km2 of ground) 77 s: about 7 s, plus 0.42 s per km2
+//         of world, plus 0.01 s per km2 of ground for the data. Warm runs were
+//         ~15% faster (8 km 28.9 s, 16 km 105.8 s), Munich's dense centre ~1.6x
+//         slower, and pieces side by side 1.2-1.5x faster than one run.
+// ponytail: one machine's clock; a slower CPU lands past the top of the range.
+const EST_MB_PER_WORLD_KM2 = 984 / 64;
+const EST_MB_PER_REGION = 984 / 256;
+const EST_REGION_KM2 = 0.512 * 0.512;
+const EST_FIXED_S = 7;
+const EST_S_PER_WORLD_KM2 = 0.42;
+const EST_S_PER_GROUND_KM2 = 0.01;
+
+// { mb, lo, hi } for the selection and settings: megabytes of Java regions
+// (null for the other formats, which were not measured) and a range of
+// seconds. Null off Earth or with nothing selected.
+function runEstimate() {
+  if (!selectedBBox || selectedCelestialBody !== 'earth') return null;
+  const [lat1, lng1, lat2, lng2] = selectedBBox.trim().split(/[,\s]+/).map(Number);
+  let groundKm2 = calculateBBoxSize(lat1, lng1, lat2, lng2) / 1e6;
+  let worldKm2 = groundKm2 * earthScaleFactor();
+  let mb = worldKm2 * EST_MB_PER_WORLD_KM2;
+  // In pieces the snap knows the whole regions it builds and the ground they cover.
+  const pieced = !!selectionPieces();
+  if (pieced) {
+    const snap = lastSnap.snap;
+    const regions = snap.regions[0] * snap.regions[1];
+    mb = regions * EST_MB_PER_REGION;
+    worldKm2 = regions * EST_REGION_KM2;
+    groundKm2 = snap.size_km[0] * snap.size_km[1];
+  }
+  if (!(worldKm2 > 0)) return null;
+  const t = EST_FIXED_S + EST_S_PER_WORLD_KM2 * worldKm2 + EST_S_PER_GROUND_KM2 * groundKm2;
+  return {
+    mb: selectedWorldFormat === 'java' ? mb : null,
+    lo: (t * 0.85) / (pieced ? 1.5 : 1),
+    hi: (t * 1.6) / (pieced ? 1.2 : 1),
+  };
+}
+
+function formatEstimateSize(mb) {
+  if (mb >= 1000) return (mb / 1000).toFixed(mb >= 10000 ? 0 : 1) + ' GB';
+  return (mb >= 100 ? Math.round(mb / 10) * 10 : Math.max(1, Math.round(mb))) + ' MB';
+}
+
+// Rounded so a range never claims more than it knows: 5 s steps, then minutes,
+// then 10 minutes.
+function formatEstimateTime(lo, hi) {
+  const round = (s) => formatEtaDuration(
+    s < 90 ? Math.max(5, Math.round(s / 5) * 5) : s < 3600 ? Math.round(s / 60) * 60 : Math.round(s / 600) * 600);
+  const a = round(lo), b = round(hi);
+  return a === b ? '~' + a : a + '–' + b;
+}
+
 let selectedBBox = "";
 let mapSelectedBBox = "";  // Tracks bbox from map selection
 let customBBoxValid = false;  // Tracks if custom input is valid
@@ -2492,16 +4248,45 @@ let bboxInputError = false;  // The coordinate field holds input that did not va
 function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   const t = AREA_THRESHOLDS[selectedCelestialBody] || AREA_THRESHOLDS.earth;
   selectedSize *= earthScaleFactor();
-  if (selectedSize > t.extreme) {
+  const pieces = selectionPieces();
+  let warned = false;
+  // Built in pieces, the size is no longer a worry: say how instead.
+  if (pieces) {
+    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+  } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
+    warned = true;
   } else if (selectedSize > t.large) {
     setBboxSelectionInfo(bboxSelectionElement, "area_too_large", "#fa7878");
+    warned = true;
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
+    warned = true;
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  renderRunStats();
+  const cta = document.getElementById("bbox-features-cta");
+  if (cta) cta.style.display = warned && !snapActive() && selectedCelestialBody === "earth" ? "" : "none";
 }
+
+// Keys the size status owns, so a late snap may replace them.
+const BBOX_SIZE_KEYS = ["area_pieces_info", "area_extreme", "area_too_large", "area_extensive", "selection_confirmed"];
+
+// The warning's way out: open Extra Features with the switch and Big Worlds on.
+function useExtraFeatures() {
+  window.openSettings();
+  ["advanced-features-toggle", "big-worlds-toggle"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.checked) {
+      el.checked = true;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  const nav = document.querySelector('.settings-nav-item[data-target="settings-section-features"]');
+  if (nav) nav.click();
+}
+window.useExtraFeatures = useExtraFeatures;
 
 // Blocks, and so memory, grow with the square of the scale; Moon and Mars use a fixed one.
 function earthScaleFactor() {
@@ -2513,7 +4298,7 @@ function earthScaleFactor() {
 // Re-runs the size status, e.g. after a body switch or scale change moves the tier.
 function refreshBboxSelectionInfo() {
   // An error about the typed coordinates stays until the field is fixed.
-  if (!mapSelectedBBox || bboxInputError) return;
+  if (!mapSelectedBBox || bboxInputError || !BBOX_SIZE_KEYS.includes(currentBboxSelectionKey)) return;
   const [lat1, lng1, lat2, lng2] = mapSelectedBBox.split(" ").map(Number);
   displayBboxSizeStatus(
     document.getElementById("bbox-selection-info"),
@@ -2562,6 +4347,7 @@ function displayBboxInfoText(bboxText) {
     }
     window.arnisPreview3D?.onBboxCleared();
     refreshPrecomputeButton();
+    refreshDataPlan();
     return;
   }
 
@@ -2591,6 +4377,132 @@ function displayBboxInfoText(bboxText) {
   // Hide any rendered mini 3D preview if the selection actually changed
   window.arnisPreview3D?.onBboxChanged(selectedBBox);
   refreshPrecomputeButton();
+  refreshSnapPreview();
+  refreshDataPlan();
+}
+
+/* Large worlds: with pieces in use the selection grows to whole regions of the
+   One World's grid, so every piece is whole regions. The Rust side does the
+   frame maths, the same as the run's; the map draws the result. */
+
+function extraFeaturesOn() {
+  const master = document.getElementById('advanced-features-toggle');
+  return !!(master && master.checked);
+}
+
+// With Big Worlds on, every selection gets its cells on the map. Off Earth the
+// scale slider is not the world's, so there is no grid to place.
+function snapActive() {
+  const big = document.getElementById('big-worlds-toggle');
+  return extraFeaturesOn() && !!(big && big.checked && !big.disabled) && selectedCelestialBody === 'earth';
+}
+
+function snapSelection(bbox) {
+  return invoke('gui_snap_selection', {
+    bboxText: bbox,
+    savePath: savePath,
+    // null: the new One World a large selection becomes.
+    worldName: isOneWorldEnabled() ? oneWorldFolderName() : null,
+    scale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
+    unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
+    snapMode: document.getElementById('snap-mode-select').value,
+    square: document.getElementById('square-selection-toggle').checked,
+    // Sizes Parallel Workers as the run will.
+    flags: advancedFeatureArgs().flags,
+  });
+}
+
+// Pieces need a One World, so a Java world on Earth. With One World on they
+// are always used; without it a selection of more than one cell runs as a new
+// One World, and one cell is the usual single run.
+function snapRunsAsOneWorld(snap) {
+  return isOneWorldEnabled() || (isOneWorldAvailable() && snap.cells[0] * snap.cells[1] > 1);
+}
+
+// The bbox a run is given and the world it goes to: the snapped bbox when it
+// builds in pieces. A new world is also pinned to the snap's centre, so the
+// run's frame is the one the cell lines were placed in.
+async function runSelectionFor(bbox) {
+  const plain = { bbox, flags: [], oneWorld: isOneWorldEnabled(), worldName: oneWorldFolderName() };
+  if (!snapActive()) return plain;
+  const snap = await snapSelection(bbox);
+  if (!snapRunsAsOneWorld(snap)) return plain;
+  return {
+    bbox: snap.bbox,
+    flags: snap.new_world ? ['--origin=' + snap.origin.join(',')] : [],
+    oneWorld: true,
+    worldName: isOneWorldEnabled() ? oneWorldFolderName() : snap.world_name,
+  };
+}
+
+let snapPreviewKey = null;
+let snapPreviewTimer = null;
+// The last drawn snap and the selection it is for.
+let lastSnap = null;
+// Debounced: a dragged selection or a slider fires many events, and only the
+// last one needs a grid.
+function refreshSnapPreview() {
+  clearTimeout(snapPreviewTimer);
+  snapPreviewTimer = setTimeout(drawSnapPreview, 100);
+}
+
+// { n, w } while the current selection is built in more than one piece, so
+// the size line can say "Builds in N pieces · W workers"; else null.
+function selectionPieces() {
+  if (!snapActive() || !lastSnap || lastSnap.bbox !== selectedBBox) return null;
+  const snap = lastSnap.snap;
+  const n = snap.cells[0] * snap.cells[1];
+  return n > 1 && snapRunsAsOneWorld(snap) ? { n, w: snap.workers } : null;
+}
+
+async function drawSnapPreview() {
+  const on = snapActive() && !!selectedBBox;
+  // The map shows its Show grid button while a grid can show.
+  postToMap({ type: 'snapGridControl', visible: snapActive() });
+  const key = on ? JSON.stringify([selectedBBox, savePath, isOneWorldEnabled(), isOneWorldAvailable(),
+    oneWorldFolderName(),
+    document.getElementById('scale-value-slider').value,
+    document.getElementById('unit-regions-select').value,
+    document.getElementById('snap-mode-select').value,
+    document.getElementById('square-selection-toggle').checked,
+    advancedFeatureArgs().flags]) : 'off';
+  if (key === snapPreviewKey) return;
+  snapPreviewKey = key;
+  let snap = null;
+  if (on) {
+    try {
+      snap = await snapSelection(selectedBBox);
+    } catch (error) {
+      console.warn('Cell snap failed:', error);
+    }
+    if (key !== snapPreviewKey) return;
+    // A failed snap is asked again on the next change, not never.
+    if (!snap) snapPreviewKey = null;
+  }
+  lastSnap = snap ? { bbox: selectedBBox, snap } : null;
+  renderRunStats();
+  const how = !snap ? ''
+    : !snapRunsAsOneWorld(snap) ? oneWorldText('snap_single_run', 'Builds in one run')
+      : isOneWorldEnabled() ? '' : oneWorldText('snap_as_one_world', 'Builds as a One World');
+  // Width (east-west) first, then height (north-south).
+  const text = snap
+    ? oneWorldText('snap_regions_info', '{x} × {z} regions · {cx} × {cz} cells · {pieces} pieces · {w} × {h} km', {
+      x: snap.regions[0], z: snap.regions[1], cx: snap.cells[0], cz: snap.cells[1],
+      pieces: snap.cells[0] * snap.cells[1], w: snap.size_km[0].toFixed(1), h: snap.size_km[1].toFixed(1),
+    }) + (snap.fallback
+      ? ' · ' + oneWorldText('snap_fallback', 'No whole cell fits inside, so one is used.')
+      : '') + (how ? ' · ' + how : '')
+    : '';
+  // The map marks the outline's width (W) and height (H) like a drawing.
+  const dims = snap ? [0, 1].map((i) => (i ? 'H ' : 'W ') + oneWorldText('snap_dim', '{n} cells · {km} km', {
+    n: snap.cells[i], km: snap.size_km[i].toFixed(1),
+  })) : null;
+  postToMap({ type: 'snapOverlay', snap, dims });
+  refreshBboxSelectionInfo();
+  const info = document.getElementById('bbox-snap-info');
+  if (!info) return;
+  info.style.display = snap ? '' : 'none';
+  info.textContent = text;
 }
 
 let worldPath = "";
@@ -2831,6 +4743,8 @@ let oneWorldPinned = false;
 let oneWorldOverlayKey = null;
 // Whether the running (or last) generation was a One World run.
 let lastRunOneWorld = false;
+// The One World it went to: the named one, or a new one for a large selection.
+let lastRunWorldName = '';
 let oneWorldName = localStorage.getItem(ONE_WORLD_NAME_KEY) || '';
 
 function isOneWorldAvailable() {
@@ -2951,6 +4865,29 @@ function controlValue(el) {
   return el.type === 'checkbox' ? el.checked : parseFloat(el.value);
 }
 
+// Tells the store and every listener a control changed.
+function fireInputChange(el) {
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// A Browse button: the picker opens at `start()` and hands it back on cancel;
+// anything else goes into the field.
+function bindBrowse(buttonId, field, command, start, arg = 'current') {
+  document.getElementById(buttonId).addEventListener('click', async () => {
+    try {
+      const current = start();
+      const picked = await invoke(command, { [arg]: current });
+      if (picked && picked !== current) {
+        field.value = picked;
+        fireInputChange(field);
+      }
+    } catch (error) {
+      console.error(command + ' failed:', error);
+    }
+  });
+}
+
 function writeControl(el, value) {
   if (controlValue(el) === value) return;
   if (el.type === 'checkbox') el.checked = !!value;
@@ -3048,6 +4985,7 @@ let oneWorldRefreshSeq = 0;
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
   refreshLuantiAvailability();
+  refreshAdvancedFeatures();
   setSettingsRowAvailable('one-world-toggle', isOneWorldAvailable());
   if (!isOneWorldEnabled()) {
     const wasOn = oneWorldInfo !== null;
@@ -3141,7 +5079,7 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun() {
+async function prepareOneWorldRun(bbox) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -3167,7 +5105,7 @@ async function prepareOneWorldRun() {
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
-      savePath: savePath, worldName: oneWorldFolderName(), bboxText: selectedBBox
+      savePath: savePath, worldName: oneWorldFolderName(), bboxText: bbox
     });
   } catch (error) {
     setOneWorldStatus(String(error), 'error');
@@ -3201,6 +5139,9 @@ function initOneWorld() {
   if (mapFrame) {
     mapFrame.addEventListener('load', () => {
       oneWorldOverlayKey = null;
+      // The new map has no grid yet.
+      snapPreviewKey = null;
+      refreshSnapPreview();
       if (isOneWorldEnabled()) refreshOneWorldState();
     });
   }
@@ -3244,7 +5185,10 @@ function setGenerationButtonEnabled(enabled) {
  * Validates required inputs and sends generation parameters to the backend
  * @returns {Promise<void>}
  */
-async function startGeneration() {
+// `prewarm` downloads what this run would read and builds nothing, so no
+// world is created, checked or renamed for it.
+async function startGeneration(options = {}) {
+  const prewarm = options.prewarm === true;
   if (generationButtonEnabled === false) {
     return;
   }
@@ -3275,16 +5219,24 @@ async function startGeneration() {
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
 
-    const oneWorld = isOneWorldEnabled();
-    if (oneWorld && !(await prepareOneWorldRun())) {
+    const runSelection = await runSelectionFor(selectedBBox);
+    const runBBox = runSelection.bbox;
+    const oneWorld = runSelection.oneWorld;
+    // Without One World on, a run in pieces makes a new One World there.
+    if (oneWorld && !isOneWorldEnabled() && !savePath) {
+      handleWorldSelectionError(1);
+      return;
+    }
+    if (isOneWorldEnabled() && !prewarm && !(await prepareOneWorldRun(runBBox))) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
     }
     lastRunOneWorld = oneWorld;
+    lastRunWorldName = runSelection.worldName;
 
     // Auto-create world for Java format (a One World is resolved by the backend)
-    if (selectedWorldFormat === 'java' && !oneWorld) {
+    if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {
       if (!savePath) {
         console.warn("Cannot create world: save path not set");
         return;
@@ -3307,8 +5259,8 @@ async function startGeneration() {
 
     // Clear any existing world preview since we're generating a new one.
     // A One World keeps its areas on the map; the new one joins them at the end.
-    if (!oneWorld) notifyWorldChanged();
-    if (oneWorld) setWorldNameLabel(oneWorldFolderName());
+    if (!oneWorld && !prewarm) notifyWorldChanged();
+    if (oneWorld && !prewarm) setWorldNameLabel(runSelection.worldName);
 
     // Get the map iframe reference
     const mapFrame = document.querySelector('.map-container');
@@ -3377,7 +5329,7 @@ async function startGeneration() {
 
     // Pass the selected options to the Rust backend
     await invoke("gui_start_generation", {
-        bboxText: selectedBBox,
+        bboxText: runBBox,
         selectedWorld: oneWorld ? savePath : worldPath,
         bedrockSavePath: bedrockSavePath,
         luantiSavePath: luantiSavePath,
@@ -3398,7 +5350,7 @@ async function startGeneration() {
         awsOnlyElevation: aws_only_elevation,
         bakeLightingEnabled: bake_lighting,
         voxyLodEnabled: voxy_lod,
-        isNewWorld: true,
+        isNewWorld: !prewarm,
         spawnPoint: spawnPoint,
         telemetryConsent: telemetryConsent || false,
         worldFormat: getEffectiveWorldFormat(),
@@ -3415,7 +5367,12 @@ async function startGeneration() {
         facadeDetail: getFacadeDetail(),
         celestialBodyName: selectedCelestialBody,
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : ""
+        oneWorldName: oneWorld ? runSelection.worldName : "",
+        // A download refuses --offline, which only reads what it fetches.
+        // A download runs on the Bake CPU Usage.
+        flags: (prewarm
+          ? bakeFlags(advancedFeatureArgs().flags.filter((f) => f !== '--offline')).concat('--prewarm')
+          : advancedFeatureArgs().flags).concat(runSelection.flags)
     });
 
     console.log("Generation process started.");
@@ -3434,6 +5391,8 @@ async function startGeneration() {
       // clear it only if nothing else has taken the line since.
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
+      runStats = null;
+      renderRunStats();
       setGenerationButtonEnabled(true);
       window.arnisPreview3D?.setGenerationRunning(false);
     }

@@ -28,6 +28,14 @@ pub(super) struct Rect {
 }
 
 impl Rect {
+    /// No bound in practice; small enough that `grow` cannot overflow.
+    pub const EVERYWHERE: Rect = Rect {
+        min_x: -(1 << 28),
+        max_x: 1 << 28,
+        min_z: -(1 << 28),
+        max_z: 1 << 28,
+    };
+
     pub fn contains(&self, x: i32, z: i32) -> bool {
         x >= self.min_x && x <= self.max_x && z >= self.min_z && z <= self.max_z
     }
@@ -63,7 +71,8 @@ impl Rect {
 
 pub(super) struct CaveShape<'g> {
     gen: &'g CaveGen,
-    /// Features never leave the world's bbox, whichever tile plans them.
+    /// Features never leave the world's bbox, whichever tile plans them ([`Rect::EVERYWHERE`]
+    /// with `--cave-datum-y`, so separate runs plan the same features).
     world: Rect,
     /// Every block a feature that can reach the region may look at.
     ext: Rect,

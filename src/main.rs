@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod arnis_tiles;
 mod bedrock_block_map;
 mod bench;
 mod biome;
@@ -12,9 +14,12 @@ mod canopy;
 mod caves;
 mod celestial;
 mod climate;
+mod climate_field;
 mod clipping;
 mod colors;
 mod coordinate_system;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod data_plan;
 mod data_processing;
 mod decals;
 mod deterministic_rng;
@@ -29,6 +34,7 @@ mod grid_ops;
 mod ground;
 mod ground_decoration;
 mod ground_generation;
+mod ground_scatter;
 mod land_cover;
 mod landmarks;
 mod luanti_block_map;
@@ -41,16 +47,24 @@ mod mapillary;
 mod models_3d;
 mod net;
 mod one_world;
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+mod option_preview;
 mod ore_generation;
 mod osm_parser;
+mod osm_pbf;
 mod osm_tiles;
 mod overture;
 #[cfg(feature = "gui")]
 mod preview_3d;
 #[cfg(feature = "gui")]
 mod progress;
+mod progress_json;
 mod projection;
 mod retrieve_data;
+mod river_bed;
+mod road_bearings;
+mod scale;
+mod snow_mode;
 mod structures;
 #[cfg(feature = "gui")]
 mod telemetry;
@@ -58,16 +72,21 @@ mod terrain_surface;
 #[cfg(test)]
 mod test_utilities;
 mod tile;
+mod transfer;
 mod trees;
 mod version_check;
 mod voxy;
 mod water_depth;
+mod water_detail;
+mod work_units;
 mod world_editor;
 mod world_utils;
+mod y_bounds;
 
 use args::Args;
 use clap::Parser;
 use colored::*;
+use element_processing::subprocessor::buildings_loot;
 use std::path::PathBuf;
 #[cfg(all(feature = "gui", target_os = "linux"))]
 use std::process::Command;
@@ -87,9 +106,20 @@ mod progress {
     /// Mirrors the real module's constant so callers outside the GUI feature
     /// still compile; nothing here reads it, the emits below do nothing.
     pub const MESSAGE_ONLY: f64 = -1.0;
-    pub fn emit_gui_error(_message: &str) {}
-    pub fn emit_gui_progress_update(_progress: f64, _message: &str) {}
-    pub fn emit_gui_progress_update_ex(_progress: f64, _message: &str, _streaming: bool) {}
+    // `--progress json` is the one consumer left without a window.
+    pub fn emit_gui_error(message: &str) {
+        crate::progress_json::error(message);
+    }
+    pub fn emit_gui_progress_update(progress: f64, message: &str) {
+        crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
+        crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_transfer(progress: f64, message: &str, t: &crate::transfer::Transfer) {
+        crate::progress_json::progress(progress, message);
+        crate::progress_json::record("transfer", serde_json::json!(t));
+    }
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
     pub fn is_running_with_gui() -> bool {
@@ -173,19 +203,68 @@ fn release_one_world(failed: bool) {
     }
 }
 
+/// From here on a failure keeps the world this run created: a job built in
+/// pieces resumes from the pieces it finished.
+fn keep_one_world() {
+    if let Some(run) = ONE_WORLD_RUN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        run.created = None;
+    }
+}
+
 /// `process::exit` skips destructors, so failures go through here.
 fn exit_failed() -> ! {
+    progress_json::error("generation failed, see stderr");
     release_one_world(true);
     std::process::exit(1);
 }
 
+/// `--offline` stops here rather than build a world with holes where the
+/// cache had nothing.
+fn exit_if_offline_misses() {
+    let missing = net::offline_misses();
+    if missing.is_empty() {
+        return;
+    }
+    eprintln!(
+        "{} --offline, and the cache lacks data this area needs:",
+        "Error:".red().bold()
+    );
+    for (what, refused) in missing {
+        eprintln!("  - {what} ({refused} request(s) refused)");
+    }
+    eprintln!("Run the same command once with --prewarm in place of --offline to fetch it.");
+    exit_failed();
+}
+
+/// The One World folder: `--world-name` inside the saves folder.
+fn one_world_dir(args: &Args) -> PathBuf {
+    let base_dir = args.path.clone().unwrap_or_else(|| {
+        eprintln!(
+            "{} --one-world needs --output-dir (the saves folder).",
+            "Error:".red().bold()
+        );
+        std::process::exit(1);
+    });
+    let name = args
+        .world_name
+        .as_deref()
+        .and_then(world_utils::world_folder_name)
+        .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
+    base_dir.join(name)
+}
+
 fn run_cli() {
-    // Configure thread pool with 90% CPU cap to keep system responsive
-    floodfill_cache::configure_rayon_thread_pool(0.9);
-
-    // Clean up old cached elevation tiles on startup
-    elevation_data::cleanup_old_cached_tiles();
-
+    let started = std::time::Instant::now();
+    // Parsed ahead of the banner so `--capabilities` prints its line alone.
+    let mut args: Args = Args::parse();
+    if args.process.capabilities {
+        println!("{}", serde_json::json!(args::CAPABILITIES));
+        return;
+    }
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
     println!(
@@ -207,16 +286,93 @@ fn run_cli() {
         repository.bright_white().bold()
     );
 
-    // Fire-and-forget update check; prints a one-line notice on a background thread.
-    version_check::check_for_updates_async();
+    let tree_dir = match (&args.init_tree_pack_dir, &args.export_tree_packs) {
+        (Some(dir), _) => Some(trees::pack_dir::init(dir).map(|n| {
+            format!(
+                "Tree pack folders created in {} ({n} tree types).",
+                dir.display()
+            )
+        })),
+        (_, Some(dir)) => Some(
+            trees::pack_dir::export(dir)
+                .map(|n| format!("{n} tree schematics exported to {}.", dir.display())),
+        ),
+        _ => None,
+    };
+    if let Some(result) = tree_dir {
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if let Some(path) = &args.dump_loot_table {
+        if let Err(e) = fs::write(path, buildings_loot::BUILT_IN_JSON) {
+            eprintln!(
+                "{} Cannot write {}: {e}",
+                "Error:".red().bold(),
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.map_item_only {
+        let world_dir = one_world_dir(&args);
+        match map_item::redraw_one_world_map(&world_dir) {
+            Ok(id) => println!("World map item (map #{id}) redrawn over every area."),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if let Some(path) = &args.loot_table {
+        match buildings_loot::load_loot_table(path) {
+            Ok(table) => buildings_loot::set_loot_table(Some(table)),
+            Err(e) => eprintln!(
+                "{} --loot-table {}: {e}; using the built-in loot table",
+                "Warning:".yellow().bold(),
+                path.display()
+            ),
+        }
+    }
+    if args.process.progress == Some(args::ProgressFormat::Json) {
+        progress_json::enable();
+    }
 
-    // Parse input arguments
-    let mut args: Args = Args::parse();
+    // Configure thread pool with 90% CPU cap to keep system responsive, unless
+    // --threads or --cpu-target asked for a count
+    match args.process.thread_count() {
+        Some(threads) => floodfill_cache::configure_rayon_threads(threads),
+        None => floodfill_cache::configure_rayon_thread_pool(0.9),
+    }
+    if let Some(n) = args.process.max_downloads {
+        net::set_max_requests(n as usize);
+    }
+    net::set_offline(args.process.offline);
+    retrieve_data::set_overpass_urls(args.process.overpass_url.clone());
+
+    // Clean up old cached elevation tiles on startup
+    if !args.process.no_cache_sweep {
+        elevation_data::cleanup_old_cached_tiles();
+    }
+
+    // Fire-and-forget update check; prints a one-line notice on a background thread.
+    if !args.process.no_update_check && !args.process.offline {
+        version_check::check_for_updates_async();
+    }
     args::apply_body_defaults(&mut args);
     // Caves carve into the filled ground, so they bring it with them.
     if args.caves {
         args.fillground = true;
     }
+    // Overture only adds buildings, so --no-buildings has nothing to fetch.
+    args.overture &= args.buildings;
 
     // Validate arguments (path requirements differ between Java and Bedrock)
     if let Err(e) = args::validate_args(&args) {
@@ -224,10 +380,33 @@ fn run_cli() {
         std::process::exit(1);
     }
 
+    if args.climate_map.is_some() {
+        if let Err(e) = climate_field::render(&args) {
+            eprintln!("{}: {}", "Error".red().bold(), e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world
     // exists. It uses the same zone picker, seed and --cave-biomes amounts as --caves.
     if args.cave_zone_map.is_some() {
-        if let Err(e) = caves::zone_map::render(&args) {
+        // A One World places the bbox in its own frame, which the preview has to match.
+        let frame = match (args.one_world, args.bbox) {
+            (true, Some(bbox)) => {
+                let world_dir = args.path.is_some().then(|| one_world_dir(&args));
+                Some(one_world::preview_rect(
+                    world_dir.as_deref(),
+                    &bbox,
+                    &mut args,
+                ))
+            }
+            _ => None,
+        };
+        if let Err(e) = frame
+            .transpose()
+            .and_then(|frame| caves::zone_map::render(&args, frame))
+        {
             eprintln!("{}: {}", "Error".red().bold(), e);
             std::process::exit(1);
         }
@@ -315,22 +494,31 @@ fn run_cli() {
         }
     };
 
+    if let Some(n) = args.units.plan_units {
+        if let Err(e) = work_units::print_plan(&one_world_dir(&args), &effective_bbox, &args, n) {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
-    if args.one_world {
-        let base_dir = args.path.clone().unwrap_or_else(|| {
-            eprintln!(
-                "{} --one-world needs --output-dir (the saves folder).",
-                "Error:".red().bold()
-            );
-            std::process::exit(1);
-        });
-        let name = args
-            .world_name
-            .as_deref()
-            .and_then(world_utils::world_folder_name)
-            .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
-        let world_dir = base_dir.join(name);
+    if let (true, Some(lease)) = (args.one_world, args.units.one_world_unit.clone()) {
+        scale::child::watch_parent();
+        let world_dir = one_world_dir(&args);
+        effective_bbox = one_world::prepare_unit(&world_dir, &effective_bbox, &mut args, &lease)
+            .unwrap_or_else(|e| {
+                eprintln!("{} {}", "Error:".red().bold(), e);
+                exit_failed();
+            });
+        world_editor::set_world_bounds(
+            ground::extended_min_y_for(&args),
+            ground::world_top_y_for(&args),
+        );
+        one_world_paths = Some(world_dir);
+    } else if args.one_world {
+        let world_dir = one_world_dir(&args);
         let session =
             one_world::prepare(&world_dir, &effective_bbox, &mut args).unwrap_or_else(|e| {
                 eprintln!("{} {}", "Error:".red().bold(), e);
@@ -358,7 +546,21 @@ fn run_cli() {
         }
         one_world_paths = Some(world_dir);
     }
+    if args.units.coordinates() {
+        let world_dir = one_world_paths.clone().unwrap_or_default();
+        let argv: Vec<_> = env::args_os().skip(1).collect();
+        if let Err(e) = scale::run(&args, &world_dir, &effective_bbox, &argv) {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            exit_failed();
+        }
+        // A prewarm leaves no world it created behind.
+        release_one_world(args.process.prewarm);
+        progress_json::done(started);
+        return;
+    }
     let args = args;
+    // After One World has applied the seed its world keeps, before anything rolls a die.
+    deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
 
     // Heads-up for very large areas: long, memory-heavy (about 6 GB here, the GUI's "very
     // large" tier) and heavy on the public elevation servers. Non-blocking.
@@ -392,9 +594,9 @@ fn run_cli() {
     };
 
     // Build the generation output path and level name
-    let (generation_path, level_name) = if args.mapillary_probe {
+    let (generation_path, level_name) = if args.mapillary_probe || args.process.prewarm {
         // The probe reports coverage and exits, so it must not allocate (and
-        // leave behind) an empty world directory on the way there.
+        // leave behind) an empty world directory on the way there. Nor must a prewarm.
         (PathBuf::new(), None)
     } else if args.bedrock {
         // Bedrock: generate .mcworld file in user-specified path or Desktop
@@ -442,7 +644,9 @@ fn run_cli() {
             world_path.display().to_string().bright_white().bold()
         );
         if args.disable_height_limit {
-            if let Err(e) = world_utils::install_tall_datapack(&world_path) {
+            if let Err(e) = world_utils::install_tall_datapack(&world_path)
+                .and_then(|()| y_bounds::patch_datapack(&world_path, &args))
+            {
                 eprintln!(
                     "{} Failed to install tall-world datapack: {}",
                     "Error:".red().bold(),
@@ -477,11 +681,24 @@ fn run_cli() {
             "[1/7]".bold()
         );
     }
+    if let Some(min) = args
+        .props_min_scale
+        .filter(|m| !skip_objects && args.scale < *m)
+    {
+        println!(
+            "Scale {:.2} is below --props-min-scale {min:.2}: leaving out schematic props",
+            args.scale
+        );
+    }
 
     // The Mapillary facade pipeline needs only the bbox too, and its downloads
     // are the longest thing in a run that uses it, so it starts here and is
     // collected inside `generate_world_with_options`, just before the buildings.
-    let facade_job = mapillary::FacadeJob::start(&args, effective_bbox);
+    let facade_job = if args.process.prewarm {
+        mapillary::FacadeJob::default()
+    } else {
+        mapillary::FacadeJob::start(&args, effective_bbox)
+    };
     if facade_job.is_running() {
         println!(
             "{} Fetching Mapillary street-level imagery...",
@@ -531,8 +748,13 @@ fn run_cli() {
                 args.save_json_file.as_deref(),
                 &args.osm_tiles_url,
                 !args.no_tile_archive,
+                osm_pbf::Source::from_args(&args).as_ref(),
             )
             .unwrap_or_else(|e| {
+                // Offline, the other fetches finish first so the error lists all that is missing.
+                if net::offline() {
+                    return osm_parser::OsmData::empty();
+                }
                 eprintln!("{} Failed to fetch data: {e}", "Error:".red().bold());
                 exit_failed();
             })
@@ -559,6 +781,27 @@ fn run_cli() {
     });
     bench.report("fetch_total", fetch_start.elapsed());
     bench.reset();
+
+    if args.process.prewarm {
+        // 3D models download while they are placed, so their prescan runs here to fetch them.
+        if args.use_3d && !skip_objects {
+            let (elements, ..) = osm_parser::parse_osm_data(
+                raw_data,
+                effective_bbox,
+                args.debug,
+                &projection::ProjectionSpec::from_args(&args),
+            );
+            models_3d::Models3dPipeline::prescan(&elements, &args, &Default::default()).prewarm();
+        }
+        println!(
+            "{} Inputs for this area are cached; no world was written.",
+            "Done!".green().bold()
+        );
+        release_one_world(true);
+        progress_json::done(started);
+        return;
+    }
+    exit_if_offline_misses();
 
     // Parse raw data
     let (mut parsed_elements, mut xzbbox, outline_suppression, part_groups) =
@@ -708,6 +951,12 @@ fn run_cli() {
             )
         })
     });
+    // A piece of a job reports the height at the job's spawn, if it holds it.
+    let unit = args.one_world_run.as_ref().and_then(|r| r.unit.as_ref());
+    let java_spawn = match unit {
+        Some(u) => u.spawn.map(|[x, z]| (x, z)),
+        None => java_spawn,
+    };
     let spawn_y_for_java = java_spawn.map(|(sx, sz)| {
         use coordinate_system::cartesian::XZPoint;
         let rel = XZPoint::new(sx - xzbbox.min_x(), sz - xzbbox.min_z());
@@ -803,7 +1052,16 @@ fn run_cli() {
             exit_failed();
         }
     }
+    // 3D models and Mapillary facades are fetched during generation.
+    exit_if_offline_misses();
+    if let Some(u) = unit {
+        progress_json::record(
+            "result",
+            serde_json::json!({ "piece": u.piece, "spawn_y": spawn_y_for_java }),
+        );
+    }
     release_one_world(false);
+    progress_json::done(started);
 }
 
 fn main() {

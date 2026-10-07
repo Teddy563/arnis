@@ -30,7 +30,8 @@ mod mvt;
 pub(crate) mod pmtiles;
 mod tiles;
 
-pub use cache::{cache_root, clear_overture_cache};
+pub use cache::{cache_root, clear_overture_cache, write_atomic};
+pub(crate) use tiles::cache_files as tile_cache_files;
 
 /// What a fetch actually cost, so the two transports can be compared on
 /// measurement rather than on the docstrings above.
@@ -983,19 +984,6 @@ fn fetch_overture_buildings_inner(
             if clipped.len() < 3 {
                 return None;
             }
-            if projection.clip_pad > 0 {
-                let min_x = clipped.iter().map(|n| n.x).min().unwrap_or(0);
-                let max_x = clipped.iter().map(|n| n.x).max().unwrap_or(0);
-                let min_z = clipped.iter().map(|n| n.z).min().unwrap_or(0);
-                let max_z = clipped.iter().map(|n| n.z).max().unwrap_or(0);
-                if max_x < xzbbox.min_x()
-                    || min_x > xzbbox.max_x()
-                    || max_z < xzbbox.min_z()
-                    || min_z > xzbbox.max_z()
-                {
-                    return None;
-                }
-            }
             way.nodes = clipped;
             Some(ProcessedElement::Way(way))
         })
@@ -1046,6 +1034,10 @@ fn parse_release_listing(body: &str) -> Result<Vec<String>, Box<dyn std::error::
 
 /// Release names currently published in the bucket, newest first.
 fn discover_releases(client: &Client) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Offline the remembered release is the answer; not data the run is missing.
+    if crate::net::offline() {
+        return Err("offline".into());
+    }
     stats::record_request();
     let body = client
         .get(OVERTURE_RELEASE_LIST_URL)
@@ -1138,6 +1130,7 @@ fn stac_index_for(
         return Ok(bytes::Bytes::from(cached));
     }
 
+    crate::net::ensure_online("Overture STAC index")?;
     let url = format!("{OVERTURE_STAC_ROOT}/{release}/collections.parquet");
     stats::record_request();
     let response = client.get(&url).send()?;
@@ -2308,6 +2301,7 @@ fn partition_size_cached(
         return Ok(size);
     }
 
+    crate::net::ensure_online("Overture GeoParquet")?;
     stats::record_request();
     let head_resp = client.head(url).send()?;
     if !head_resp.status().is_success() {
@@ -2388,6 +2382,7 @@ fn fetch_range_with_attempts(
     let end = start
         .checked_add(length - 1)
         .ok_or_else(|| format!("range {start}+{length} overflows the partition"))?;
+    crate::net::ensure_online("Overture GeoParquet")?;
     let mut last_error = String::new();
 
     for attempt in 0..max_attempts.max(1) {

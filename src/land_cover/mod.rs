@@ -245,6 +245,7 @@ pub fn fetch_land_cover_data(
     bbox: &LLBBox,
     grid_width: usize,
     grid_height: usize,
+    frame_m_per_cell: Option<f64>,
 ) -> Option<LandCoverData> {
     println!("Fetching land cover data (ESA WorldCover 2021)...");
     emit_gui_progress_update(9.0, "Downloading data...");
@@ -273,7 +274,8 @@ pub fn fetch_land_cover_data(
     // Sampling per cell is what keeps the grid gap-free at any --scale, and the raster
     // also feeds the shoreline reconstruction below.
     let mut raster: Option<EsaPixelRaster> = None;
-    let cells_per_meter = cells_per_meter(bbox, grid_width);
+    let cells_per_meter =
+        frame_m_per_cell.map_or_else(|| cells_per_meter(bbox, grid_width), |m| 1.0 / m);
     for (tile_lat, tile_lng, tile_url) in &tile_specs {
         match read_esa_tile_into_raster(
             &client,
@@ -337,7 +339,7 @@ pub fn fetch_land_cover_data(
 // ─── Cache helpers ────────────────────────────────────────────────────────
 
 fn get_cache_dir() -> PathBuf {
-    if let Some(cache_dir) = dirs::cache_dir() {
+    if let Some(cache_dir) = crate::elevation::cache::user_cache_dir() {
         cache_dir.join(LAND_COVER_CACHE_DIR)
     } else {
         PathBuf::from(format!("./{LAND_COVER_CACHE_DIR}"))
@@ -355,6 +357,43 @@ pub fn land_cover_cache_dir() -> PathBuf {
 /// command only has to call one entry point per cache root.
 pub fn clear_land_cover_cache() -> crate::elevation::cache::CacheClearStats {
     crate::elevation::cache::clear_cache_dir(&get_cache_dir())
+}
+
+/// The files under the cache root `root` that a fetch of `bbox` reads: each
+/// ESA tile's header and the internal COG tiles the bbox overlaps. Ocean
+/// tiles the COG leaves empty are never cached, so they count as missing.
+pub(crate) fn cache_files(root: &Path, bbox: &LLBBox) -> Vec<PathBuf> {
+    // ponytail: the product's fixed layout (36000 px tiles cut in 1024 px COG
+    // tiles), not read from each header; parse the header if ESA ever re-cuts it.
+    const PPD: f64 = 12_000.0;
+    const COG_TILE: i64 = 1024;
+    let dir = root.join(LAND_COVER_CACHE_DIR);
+    let px = |deg: f64| (deg * PPD).floor() as i64;
+    let (x0, x1) = (px(bbox.min().lng() + 180.0), px(bbox.max().lng() + 180.0));
+    let (y0, y1) = (px(90.0 - bbox.max().lat()), px(90.0 - bbox.min().lat()));
+    let side = (ESA_TILE_DEGREES * PPD) as i64;
+    let mut out = Vec::new();
+    for (lat, lng, url) in get_esa_tile_specs(bbox) {
+        let tx = ((lng + 180.0) * PPD).round() as i64;
+        let ty = ((90.0 - lat - ESA_TILE_DEGREES) * PPD).round() as i64;
+        let (lx0, lx1) = ((x0 - tx).max(0), (x1 + 1 - tx).min(side));
+        let (ly0, ly1) = ((y0 - ty).max(0), (y1 + 1 - ty).min(side));
+        if lx0 >= lx1 || ly0 >= ly1 {
+            continue;
+        }
+        let name = url
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .replace(".tif", "");
+        out.push(dir.join(format!("{name}_header.bin")));
+        for ity in ly0 / COG_TILE..=(ly1 - 1) / COG_TILE {
+            for itx in lx0 / COG_TILE..=(lx1 - 1) / COG_TILE {
+                out.push(dir.join(format!("{name}_tile_{itx}_{ity}.bin")));
+            }
+        }
+    }
+    out
 }
 
 // ─── ESA tile URL computation ─────────────────────────────────────────────
@@ -592,12 +631,20 @@ fn read_esa_tile_into_raster(
 
     // Step 1: Read the TIFF/BigTIFF header to get IFD location
     // Read first 64KB which should contain the IFD for COG files
+    // Open ocean has no tile (404). That answer is kept too, so --offline can replay it.
+    let absent_path = header_cache_path.with_extension("missing");
     let header_bytes = if header_cache_path.exists() {
         std::fs::read(&header_cache_path)?
+    } else if absent_path.exists() {
+        return Err("no ESA tile here (HTTP 404, cached)".into());
     } else {
-        let bytes = fetch_range(client, url, 0, 65536)?;
+        let bytes = fetch_range(client, url, 0, 65536).inspect_err(|e| {
+            if e.to_string().starts_with("HTTP 404") {
+                crate::overture::write_atomic(&absent_path, b"");
+            }
+        })?;
         // Cache the header for future use
-        let _ = std::fs::write(&header_cache_path, &bytes);
+        crate::overture::write_atomic(&header_cache_path, &bytes);
         bytes
     };
 
@@ -708,7 +755,7 @@ fn read_esa_tile_into_raster(
                 std::fs::read(&tile_cache_file)?
             } else {
                 let data = fetch_range(client, url, offset, byte_count)?;
-                let _ = std::fs::write(&tile_cache_file, &data);
+                crate::overture::write_atomic(&tile_cache_file, &data);
                 data
             };
 
@@ -752,6 +799,7 @@ fn fetch_range(
     start: u64,
     length: u64,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    crate::net::ensure_online("land cover (ESA WorldCover)")?;
     let end = start + length - 1;
     let response = client
         .get(url)
@@ -1408,8 +1456,10 @@ fn smooth_class_boundaries(
 }
 
 /// Simple deterministic hash from coordinates (for dithering and block variety).
+/// Mixes in `--seed` (none by default) before the final multiply.
 pub fn coord_hash(x: i32, z: i32) -> u64 {
-    let mut h = (x as u32 as u64).wrapping_mul(0x9E3779B97F4A7C15);
+    let mut h =
+        crate::deterministic_rng::seeded((x as u32 as u64).wrapping_mul(0x9E3779B97F4A7C15));
     h ^= (z as u32 as u64).wrapping_mul(0x517CC1B727220A95);
     h = h.wrapping_mul(0x6C62272E07BB0142);
     h ^ (h >> 32)
@@ -1623,5 +1673,32 @@ mod smoothing_scale_tests {
         let mut lc = lc_from_rows(&["bbbb", "gggg"], 1.0);
         mark_beaches(&mut lc);
         assert!(lc.grid[0].iter().all(|&c| c == LC_BARE));
+    }
+}
+
+#[cfg(test)]
+mod absent_tile_tests {
+    use super::*;
+
+    /// A stored 404 answers without a request, which is what lets --offline replay it.
+    #[test]
+    fn cached_absent_tile_is_replayed_without_a_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Nothing listens there: any request would fail with a connection error instead.
+        let url = "http://127.0.0.1:9/ESA_WorldCover_10m_2021_v200_N30W045_Map.tif";
+        std::fs::write(
+            tmp.path()
+                .join("ESA_WorldCover_10m_2021_v200_N30W045_Map_header.missing"),
+            b"",
+        )
+        .unwrap();
+        let client = reqwest::blocking::Client::new();
+        let bbox = LLBBox::new(31.0, -44.0, 31.01, -43.99).unwrap();
+        let mut raster = None;
+        let err =
+            read_esa_tile_into_raster(&client, url, tmp.path(), 30.0, -45.0, &bbox, &mut raster)
+                .unwrap_err();
+        assert!(err.to_string().contains("cached"), "{err}");
+        assert!(raster.is_none());
     }
 }

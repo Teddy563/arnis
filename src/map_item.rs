@@ -53,12 +53,24 @@ impl MapStore {
         next_map_id(&self.dir)
     }
 
-    fn write_map(&self, map_id: i32, map_dat: &Value) -> Result<(), String> {
-        let name = match self.layout {
+    fn map_path(&self, map_id: i32) -> PathBuf {
+        self.dir.join(match self.layout {
             WorldLayout::Legacy => format!("map_{map_id}.dat"),
             WorldLayout::Dimensions => format!("{map_id}.dat"),
-        };
-        write_gzip_nbt(&self.dir.join(name), map_dat)
+        })
+    }
+
+    /// The map id a file in the map folder holds, if it is a map.
+    fn map_id_of(&self, file_name: &str) -> Option<i32> {
+        let stem = file_name.strip_suffix(".dat")?;
+        match self.layout {
+            WorldLayout::Legacy => stem.strip_prefix("map_")?.parse().ok(),
+            WorldLayout::Dimensions => stem.parse().ok(),
+        }
+    }
+
+    fn write_map(&self, map_id: i32, map_dat: &Value) -> Result<(), String> {
+        write_gzip_nbt(&self.map_path(map_id), map_dat)
     }
 
     fn write_counter(&self, last_id: i32) -> Result<(), String> {
@@ -87,7 +99,7 @@ pub fn read_spawn_xz(world_path: &Path) -> Option<(i32, i32)> {
     None
 }
 
-fn read_gzip_nbt(path: &Path) -> Result<Value, String> {
+pub(crate) fn read_gzip_nbt(path: &Path) -> Result<Value, String> {
     let raw = std::fs::read(path).map_err(|e| format!("read {path:?}: {e}"))?;
     let mut decompressed = Vec::new();
     GzDecoder::new(raw.as_slice())
@@ -267,18 +279,44 @@ fn item_slot(entry: &Value) -> Option<i8> {
 // Puts the map into slot 0, only ever replacing a filled map there; other items
 // (including the player's own maps in other slots) are left untouched. If slot 0
 // holds something else, the map goes into the first free slot instead.
+/// The singleplayer player: `Data.Player` in level.dat before 26.1, a file of their
+/// own after (`world_utils::singleplayer_file`). `None` for the level.dat one.
+fn player_file(world_path: &Path) -> Result<Option<PathBuf>, String> {
+    let Value::Compound(root) = read_gzip_nbt(&world_path.join("level.dat"))? else {
+        return Err("level.dat root is not a compound".to_string());
+    };
+    let Some(Value::Compound(data)) = root.get("Data") else {
+        return Err("level.dat missing Data compound".to_string());
+    };
+    if data.contains_key("Player") {
+        return Ok(None);
+    }
+    crate::world_utils::singleplayer_file(world_path, data)
+        .filter(|p| p.is_file())
+        .map(Some)
+        .ok_or_else(|| "level.dat has no player".to_string())
+}
+
 fn insert_into_inventory(world_path: &Path, map_id: i32) -> Result<(), String> {
-    let level_path = world_path.join("level.dat");
-    let mut root = read_gzip_nbt(&level_path)?;
+    let own_file = player_file(world_path)?;
+    let path = own_file
+        .clone()
+        .unwrap_or_else(|| world_path.join("level.dat"));
+    let mut root = read_gzip_nbt(&path)?;
     {
         let Value::Compound(ref mut r) = root else {
-            return Err("level.dat root is not a compound".to_string());
+            return Err(format!("{} root is not a compound", path.display()));
         };
-        let Some(Value::Compound(ref mut data)) = r.get_mut("Data") else {
-            return Err("level.dat missing Data compound".to_string());
-        };
-        let Some(Value::Compound(ref mut player)) = data.get_mut("Player") else {
-            return Err("level.dat missing Player compound".to_string());
+        let player = if own_file.is_some() {
+            r
+        } else {
+            let Some(Value::Compound(ref mut data)) = r.get_mut("Data") else {
+                return Err("level.dat missing Data compound".to_string());
+            };
+            let Some(Value::Compound(ref mut player)) = data.get_mut("Player") else {
+                return Err("level.dat missing Player compound".to_string());
+            };
+            player
         };
         let inventory = player
             .entry("Inventory".to_string())
@@ -296,7 +334,7 @@ fn insert_into_inventory(world_path: &Path, map_id: i32) -> Result<(), String> {
         };
         items.push(map_item_entry(map_id, slot));
     }
-    write_gzip_nbt(&level_path, &root)
+    write_gzip_nbt(&path, &root)
 }
 
 // Quantize a bundled PNG to a locked 128x128 map; alpha below 128 stays transparent.
@@ -350,25 +388,34 @@ pub fn write_map_item(
     preview: &PreviewAccumulator,
     xzbbox: &XZBBox,
 ) -> Result<(), String> {
+    let img = preview.render_image();
+    write_map_item_image(
+        world_path,
+        &img,
+        (preview.min_x(), preview.min_z(), preview.step()),
+        xzbbox,
+    )
+}
+
+/// `write_map_item` from a finished preview image whose top-left pixel is
+/// block (`origin.0`, `origin.1`), `origin.2` blocks per pixel.
+pub fn write_map_item_image(
+    world_path: &Path,
+    img: &RgbImage,
+    origin: (i32, i32, u32),
+    xzbbox: &XZBBox,
+) -> Result<(), String> {
     let w = xzbbox.max_x() - xzbbox.min_x() + 1;
     let h = xzbbox.max_z() - xzbbox.min_z() + 1;
     let (bpp, scale, tracking) = map_geometry(w.max(h));
     let x_center = xzbbox.min_x() + w / 2;
     let z_center = xzbbox.min_z() + h / 2;
 
-    let img = preview.render_image();
     if img.width() == 0 || img.height() == 0 {
         return Err("empty preview image".to_string());
     }
     let colors = build_colors(
-        &img,
-        preview.min_x(),
-        preview.min_z(),
-        preview.step(),
-        xzbbox,
-        bpp,
-        x_center,
-        z_center,
+        img, origin.0, origin.1, origin.2, xzbbox, bpp, x_center, z_center,
     );
 
     let store = MapStore::open(world_path)?;
@@ -404,11 +451,13 @@ pub fn write_branding_map_only(world_path: &Path) -> Result<(), String> {
     store.write_counter(map_id)
 }
 
-/// Writes one locked map per decal tile and bumps the id counter past them.
+/// Writes one locked map per decal tile and, with `update_counter`, bumps the
+/// id counter past them.
 pub fn write_decal_maps(
     world_path: &Path,
     registry: &DecalRegistry,
     preview: Option<&PreviewAccumulator>,
+    update_counter: bool,
 ) -> Result<usize, String> {
     if registry.is_empty() {
         return Ok(0);
@@ -466,14 +515,208 @@ pub fn write_decal_maps(
         highest = highest.max(h);
         written += w;
     }
+    if !update_counter {
+        return Ok(written);
+    }
 
     store.write_counter(highest)?;
     Ok(written)
 }
 
+/// Moves the map id counter past every `map_<id>.dat` in the world, for a job
+/// whose pieces wrote their maps without touching it.
+pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
+    let store = MapStore::open(world_path)?;
+    let highest = std::fs::read_dir(&store.dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| store.map_id_of(&e.ok()?.file_name().into_string().ok()?))
+        .max();
+    match highest {
+        Some(h) if h >= store.next_id() => store.write_counter(h),
+        _ => Ok(()),
+    }
+}
+
+/// Redraws a One World's map item from the area previews its manifest
+/// records, so it shows every area instead of the first. Repaints the locked
+/// map in the player's first hotbar slot (the one the spawn frame shows too),
+/// or adds a new one there. Returns the map id.
+pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
+    let manifest = crate::one_world::Manifest::load(world_path)?.ok_or_else(|| {
+        format!(
+            "{} is not a One World; a single run's map item already shows all of it.",
+            world_path.display()
+        )
+    })?;
+    let ext = manifest.extent().ok_or("the One World has no areas yet")?;
+    let _lock = crate::world_utils::SessionLock::acquire(world_path)
+        .map_err(|_| "the world is open in Minecraft or being generated".to_string())?;
+    let w = ext.max_x() - ext.min_x() + 1;
+    let h = ext.max_z() - ext.min_z() + 1;
+    let (bpp, scale, tracking) = map_geometry(w.max(h));
+    let (x_center, z_center) = (ext.min_x() + w / 2, ext.min_z() + h / 2);
+
+    // Oldest area first, so where areas overlap the newer one, written over it, shows.
+    let mut colors = vec![TRANSPARENT as i8; (MAP_SIZE * MAP_SIZE) as usize];
+    let mut drawn = 0;
+    for area in &manifest.areas {
+        let Some(path) = area
+            .preview
+            .as_deref()
+            .and_then(|p| crate::one_world::safe_preview_path(world_path, p))
+        else {
+            continue;
+        };
+        let img = match image::open(&path) {
+            Ok(img) => img.to_rgb8(),
+            Err(e) => {
+                eprintln!("Warning: area #{} preview skipped: {e}", area.id);
+                continue;
+            }
+        };
+        let rect = XZBBox::rect_from_min_max(area.min_x, area.min_z, area.max_x, area.max_z)?;
+        // Resampled to one pixel per map pixel, as the preview's own step is not recorded.
+        let step = bpp as u32;
+        let img = image::imageops::resize(
+            &img,
+            ((area.max_x - area.min_x + 1) as u32).div_ceil(step),
+            ((area.max_z - area.min_z + 1) as u32).div_ceil(step),
+            image::imageops::FilterType::Triangle,
+        );
+        let area_colors = build_colors(
+            &img, area.min_x, area.min_z, step, &rect, bpp, x_center, z_center,
+        );
+        for (c, a) in colors.iter_mut().zip(area_colors) {
+            if a != TRANSPARENT as i8 {
+                *c = a;
+            }
+        }
+        drawn += 1;
+    }
+    if drawn == 0 {
+        return Err("no area of this One World has a preview to draw from".to_string());
+    }
+
+    let store = MapStore::open(world_path)?;
+    let existing = hotbar_map_id(world_path).filter(|&id| {
+        matches!(read_gzip_nbt(&store.map_path(id)),
+            Ok(Value::Compound(root)) if matches!(root.get("data"),
+                Some(Value::Compound(d)) if d.get("locked") == Some(&Value::Byte(1))))
+    });
+    let map_id = existing.unwrap_or_else(|| store.next_id());
+    let map_dat = build_map_dat(
+        colors,
+        scale,
+        tracking,
+        x_center,
+        z_center,
+        store.data_version,
+    );
+    store.write_map(map_id, &map_dat)?;
+    if existing.is_none() {
+        sync_map_counter(world_path)?;
+        insert_into_inventory(world_path, map_id)?;
+    }
+    Ok(map_id)
+}
+
+/// The id of the filled map in the player's first hotbar slot, where
+/// `insert_into_inventory` puts the world map.
+fn hotbar_map_id(world_path: &Path) -> Option<i32> {
+    let player = match player_file(world_path).ok()? {
+        Some(path) => read_gzip_nbt(&path).ok()?,
+        None => {
+            let Ok(Value::Compound(mut root)) = read_gzip_nbt(&world_path.join("level.dat")) else {
+                return None;
+            };
+            let Some(Value::Compound(mut data)) = root.remove("Data") else {
+                return None;
+            };
+            data.remove("Player")?
+        }
+    };
+    let Value::Compound(player) = player else {
+        return None;
+    };
+    let Some(Value::List(items)) = player.get("Inventory") else {
+        return None;
+    };
+    let item = items
+        .iter()
+        .find(|e| is_filled_map(e) && item_slot(e) == Some(0))?;
+    match item {
+        Value::Compound(m) => match m.get("components") {
+            Some(Value::Compound(c)) => match c.get("minecraft:map_id") {
+                Some(Value::Int(id)) => Some(*id),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_world_map_covers_every_area_and_is_redrawn_in_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let previews = world.join(crate::one_world::PREVIEW_DIR);
+        std::fs::create_dir_all(&previews).unwrap();
+        // Two 128x256 areas side by side, one red and one blue.
+        let area = |id: u32, min_x: i32, rgb: [u8; 3]| {
+            let name = format!("area-{id}.png");
+            RgbImage::from_pixel(64, 128, image::Rgb(rgb))
+                .save(previews.join(&name))
+                .unwrap();
+            serde_json::json!({
+                "id": id, "generated_at": 0, "arnis_version": "test",
+                "min_x": min_x, "min_z": 0, "max_x": min_x + 127, "max_z": 255,
+                "min_lat": 0.0, "min_lon": 0.0, "max_lat": 0.0, "max_lon": 0.0,
+                "preview": format!("{}/{name}", crate::one_world::PREVIEW_DIR),
+            })
+        };
+        let manifest = serde_json::json!({
+            "version": crate::one_world::MANIFEST_VERSION, "created_with": "test",
+            "created_at": 0, "origin_lat": 0.0, "origin_lon": 0.0, "scale": 1.0,
+            "ground_level": -62, "terrain": false, "disable_height_limit": false,
+            "aws_only_elevation": false, "elevation": null, "next_area_id": 3,
+            "areas": [area(1, 0, [200, 0, 0]), area(2, 128, [0, 0, 200])],
+        });
+        std::fs::write(
+            crate::one_world::Manifest::path_in(&world),
+            manifest.to_string(),
+        )
+        .unwrap();
+
+        let colors = |id: i32| {
+            let Value::Compound(root) =
+                read_gzip_nbt(&world.join(format!("data/map_{id}.dat"))).unwrap()
+            else {
+                panic!("map root");
+            };
+            let Some(Value::Compound(data)) = root.get("data") else {
+                panic!("map data");
+            };
+            let Some(Value::ByteArray(c)) = data.get("colors") else {
+                panic!("colors");
+            };
+            c.to_vec()
+        };
+        let id = redraw_one_world_map(&world).unwrap();
+        // 256x256 blocks at 2 blocks per pixel: the left half red, the right half blue.
+        let c = colors(id);
+        assert_eq!(c[64 * 128 + 10], nearest_map_color(200, 0, 0) as i8);
+        assert_eq!(c[64 * 128 + 117], nearest_map_color(0, 0, 200) as i8);
+        // A second run repaints the same map rather than adding one.
+        assert_eq!(redraw_one_world_map(&world).unwrap(), id);
+        assert_eq!(hotbar_map_id(&world), Some(id));
+    }
 
     #[test]
     fn geometry_scales_with_world_size() {
@@ -605,6 +848,83 @@ mod tests {
         );
     }
 
+    /// A fresh world as Minecraft 26.1+ leaves it after opening it once: no
+    /// `Data.Player`, the player in a file of their own, maps under data/minecraft/maps.
+    fn upgraded_world(dir: &Path) -> (PathBuf, PathBuf) {
+        let world = PathBuf::from(crate::world_utils::create_new_world(dir).unwrap());
+        let mut level = read_gzip_nbt(&world.join("level.dat")).unwrap();
+        let Value::Compound(ref mut root) = level else {
+            panic!("level root");
+        };
+        let Some(Value::Compound(data)) = root.get_mut("Data") else {
+            panic!("level data");
+        };
+        data.remove("Player");
+        data.insert("DataVersion".to_string(), Value::Int(5023));
+        data.insert(
+            "singleplayer_uuid".to_string(),
+            Value::IntArray(fastnbt::IntArray::new(vec![1, 2, 3, 4])),
+        );
+        write_gzip_nbt(&world.join("level.dat"), &level).unwrap();
+        let player = world.join("players/data/00000001-0000-0002-0000-000300000004.dat");
+        std::fs::create_dir_all(player.parent().unwrap()).unwrap();
+        let body = HashMap::from([("Inventory".to_string(), Value::List(Vec::new()))]);
+        write_gzip_nbt(&player, &Value::Compound(body)).unwrap();
+        (world, player)
+    }
+
+    #[test]
+    fn the_map_item_goes_to_the_player_file_of_an_upgraded_world() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (world, player) = upgraded_world(tmp.path());
+        insert_into_inventory(&world, 7).unwrap();
+        assert_eq!(hotbar_map_id(&world), Some(7));
+        let Value::Compound(p) = read_gzip_nbt(&player).unwrap() else {
+            panic!("player");
+        };
+        assert!(matches!(p.get("Inventory"), Some(Value::List(items)) if items.len() == 1));
+        // Replaced in place, not stacked up.
+        insert_into_inventory(&world, 9).unwrap();
+        assert_eq!(hotbar_map_id(&world), Some(9));
+    }
+
+    #[test]
+    fn the_counter_of_an_upgraded_world_is_synced_in_its_map_folder() {
+        use crate::decals::DecalKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let (world, _) = upgraded_world(tmp.path());
+        let maps = world.join("data/minecraft/maps");
+        let keys = [DecalKey::Pictogram("bus_stop")];
+        let registry = DecalRegistry::from_keys_starting_at(keys.into_iter().collect(), 500);
+        assert_eq!(write_decal_maps(&world, &registry, None, false).unwrap(), 1);
+        assert!(maps.join("500.dat").is_file());
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&maps), 501);
+        assert!(!world.join("data/idcounts.dat").exists());
+    }
+
+    #[test]
+    fn a_job_piece_leaves_the_counter_to_the_coordinator() {
+        use crate::decals::DecalKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let data = world.join("data");
+        let keys = [
+            DecalKey::Pictogram("bus_stop"),
+            DecalKey::Pictogram("recycling"),
+        ];
+        let registry = DecalRegistry::from_keys_starting_at(keys.into_iter().collect(), 70_000);
+        assert_eq!(write_decal_maps(&world, &registry, None, false).unwrap(), 2);
+        assert_eq!(next_map_id(&data), 0, "a piece must not move the counter");
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), 70_002);
+        // Never moved backwards.
+        std::fs::remove_file(data.join("map_70001.dat")).unwrap();
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), 70_002);
+    }
+
     #[test]
     fn writes_decal_maps_with_registry_ids() {
         use crate::decals::{DecalKey, TextStyle};
@@ -616,7 +936,7 @@ mod tests {
         keys.insert(DecalKey::Pictogram("recycling"));
         keys.insert(DecalKey::text(TextStyle::Fascia, "Bakery", 2));
         let registry = DecalRegistry::from_keys(keys);
-        let written = write_decal_maps(&world, &registry, None).unwrap();
+        let written = write_decal_maps(&world, &registry, None, true).unwrap();
         // Two pictograms plus a two-tile fascia.
         assert_eq!(written, 4);
 
@@ -684,7 +1004,7 @@ mod tests {
         keys.insert(DecalKey::Pictogram("bus_stop"));
         keys.insert(DecalKey::text(TextStyle::Fascia, "Bakery", 2));
         let registry = DecalRegistry::from_keys(keys);
-        write_decal_maps(&world, &registry, None).unwrap();
+        write_decal_maps(&world, &registry, None, true).unwrap();
 
         for id in DecalRegistry::FIRST_ID..=registry.max_id() {
             let Value::Compound(root) = read_gzip_nbt(&maps.join(format!("{id}.dat"))).unwrap()

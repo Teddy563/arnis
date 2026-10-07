@@ -2,15 +2,19 @@ use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::climate::Climate;
-use crate::deterministic_rng::element_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::bush::{self, place_bush, BushKind};
+use crate::element_processing::field_texture::{self, FieldProfile};
 use crate::element_processing::tree::{Tree, TreeType};
 use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFillCache};
 use crate::osm_parser::{ProcessedElement, ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::trees::mapped::{tree_row_positions, MappedTree};
 use crate::world_editor::WorldEditor;
 use rand::{prelude::IndexedRandom, Rng};
+
+/// Salt of the per-block random draws of natural fills.
+const FILL_SALT: u64 = 0x4E41_5455;
 
 pub fn generate_natural(
     editor: &mut WorldEditor,
@@ -178,9 +182,6 @@ pub fn generate_natural(
                     trees
                 };
 
-                // Use deterministic RNG seeded by element ID for consistent results across region boundaries
-                let mut rng = element_rng(way.id);
-
                 // Blocks that natural areas should not overwrite
                 let protected_blocks: &[Block] = &[
                     BLACK_CONCRETE,
@@ -204,14 +205,31 @@ pub fn generate_natural(
                             | Climate::ColdSteppe
                     );
 
+                // Grassland parcels (--grass-texture). None keeps the stock sward.
+                let grass = (natural_type == "grassland")
+                    .then(|| FieldProfile::grassland(&args.fields, args.scale))
+                    .flatten();
+
                 let mut shrubbery_species: Option<Block> = None;
+                let mut rng = element_rng(way.id);
                 for &(x, z) in filled_area.iter() {
+                    // One World keys these by the block alone (plain runs keep the
+                    // per-element stream), not drawn in fill order or by id: the
+                    // cells a run fills depend on its area and tiles, and an assembled
+                    // multipolygon ring's id on which member ways the run saw, so
+                    // either would grow different plants on each side of a seam.
+                    if args.one_world_run.is_some() {
+                        rng = coord_rng(x, z, FILL_SALT);
+                    }
+                    let grass_cell = grass.as_ref().map(|g| g.cell_at(x, z));
                     // Roads, paths and paved areas keep their own surface. Checked
                     // by mask because a gravel or dirt road is not in the block list.
                     let sealed = editor.surface_is_sealed(x, z);
                     if !sealed && !editor.check_for_block(x, 0, z, Some(protected_blocks)) {
                         let b = if rock_variation {
                             vary_rock_block(block_type, x, z)
+                        } else if let Some(cell) = &grass_cell {
+                            cell.surface
                         } else {
                             block_type
                         };
@@ -264,6 +282,15 @@ pub fn generate_natural(
                         continue;
                     }
                     match natural_type.as_str() {
+                        "grassland" if grass_cell.is_some() => {
+                            field_texture::decorate(
+                                editor,
+                                grass_cell.as_ref().unwrap(),
+                                x,
+                                z,
+                                &mut rng,
+                            );
+                        }
                         "grassland" => {
                             if !editor.check_for_block(x, 0, z, Some(&[GRASS_BLOCK])) {
                                 continue;

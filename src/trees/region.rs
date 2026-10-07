@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::ecoregion::{EcoBiome, Ecoregion};
 use crate::land_cover::coord_hash;
 use crate::trees::schematic::{load_schem, Schematic};
+use crate::trees::size_weights::SizeWeights;
 use crate::trees::tree_library::{size_for_height, SizeFilter, TreeSize};
 use crate::trees::tree_pack::TreePackSource;
 
@@ -282,6 +283,7 @@ pub struct RegionLibrary {
     ground_level: i32,
     blocks_per_meter: f64,
     sizes: SizeFilter,
+    size_weights: Option<SizeWeights>,
     total_realm: usize,
     total_vanilla: usize,
     /// Palms were left out at load, so mixes leave them out too.
@@ -289,6 +291,8 @@ pub struct RegionLibrary {
     /// Palms where no ecoregion says otherwise, by the area's latitude.
     palms_default: bool,
     mixes: HashMap<u16, EcoMix>,
+    /// The user tree folder, for communities ecoregion mixes load from other packs.
+    pack_dir: Option<std::sync::Arc<crate::trees::pack_dir::PackDir>>,
 }
 
 // Metres above the selection's lowest point at which a cell counts as montane.
@@ -326,7 +330,9 @@ fn build_community(
                 };
                 if let Ok(schem) = load_schem(&bytes) {
                     if schem.has_leaves() {
-                        let size = size_for_height(schem.height);
+                        // A user file in a size folder takes that size.
+                        let size = crate::trees::pack_dir::tier_of(rel)
+                            .unwrap_or_else(|| size_for_height(schem.height));
                         entries.push((schem, size, wclass));
                         idxs.push(entries.len() - 1);
                     }
@@ -538,11 +544,13 @@ impl RegionLibrary {
             ground_level,
             blocks_per_meter,
             sizes,
+            size_weights: None,
             total_realm,
             total_vanilla,
             palms_stripped: exclude_palms,
             palms_default: true,
             mixes: HashMap::new(),
+            pack_dir: source.dir(),
         };
         lib.mark_palms();
         Ok(lib)
@@ -724,7 +732,7 @@ impl RegionLibrary {
             self.realm_pack.communities.push(derived);
             return Some(self.realm_pack.communities.len() - 1);
         }
-        let source = TreePackSource::embedded(spec.pack);
+        let source = TreePackSource::with_dir(spec.pack, self.pack_dir.clone());
         let manifest = manifests.entry(spec.pack.to_string()).or_insert_with(|| {
             source
                 .realm_manifest()
@@ -765,45 +773,12 @@ impl RegionLibrary {
     /// The size tier wanted at this cell, by the scale band. Tall rare, Giant only at 1:1.
     fn size_pick(&self, x: i32, z: i32) -> TreeSize {
         let roll = coord_hash(x + 101, z + 233) % 1000;
-        if self.scale < 0.3 {
-            if roll < 650 {
-                TreeSize::Small
-            } else if roll < 985 {
-                TreeSize::Medium
-            } else {
-                TreeSize::Big
-            }
-        } else if self.scale < 0.7 {
-            if roll < 380 {
-                TreeSize::Small
-            } else if roll < 820 {
-                TreeSize::Medium
-            } else if roll < 985 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall
-            }
-        } else if self.scale < 1.0 {
-            if roll < 260 {
-                TreeSize::Small
-            } else if roll < 700 {
-                TreeSize::Medium
-            } else if roll < 930 {
-                TreeSize::Big
-            } else {
-                TreeSize::Tall
-            }
-        } else if roll < 200 {
-            TreeSize::Small
-        } else if roll < 600 {
-            TreeSize::Medium
-        } else if roll < 880 {
-            TreeSize::Big
-        } else if roll < 975 {
-            TreeSize::Tall
-        } else {
-            TreeSize::Giant
-        }
+        crate::trees::size_weights::pick(roll, self.scale, self.size_weights.as_ref())
+    }
+
+    /// Reweight the size roll per tier (`--tree-size-weights`).
+    pub fn set_size_weights(&mut self, weights: SizeWeights) {
+        self.size_weights = Some(weights);
     }
 
     /// Whether a size may appear: the UI tier toggle AND a scale gate (Giant only at 1:1).
@@ -1276,6 +1251,34 @@ mod tests {
                 lib.pick_slot(k * 3, k * 7, Habitat::Lowland, 0, SlotRequest::default())
             {
                 assert!(idx < lib.entries.len());
+            }
+        }
+    }
+
+    /// A piece of a One World job builds `PIECE_HALO_BLOCKS` past its own chunks so a
+    /// tree rooted across the seam still reaches in. Every bundled model, its trunk
+    /// snapped as far from the asking cell as the widest spacing allows, must fit.
+    #[test]
+    fn every_bundled_crown_fits_the_piece_halo() {
+        let snap = 6; // trunk_slot_s jitters within a cell of up to 7 blocks
+        for realm in ["afr", "asn", "aus", "ena", "eur", "fl", "ind", "sam", "wna"] {
+            let lib = RegionLibrary::load(
+                &TreePackSource::embedded(realm),
+                1.0,
+                -62,
+                1.0,
+                SizeFilter::default(),
+                false,
+            )
+            .expect(realm);
+            for (schem, _, _) in &lib.entries {
+                // place_schematic_tree anchors the model at ((w - 1) / 2, (l - 1) / 2).
+                let side = schem.width.max(schem.length);
+                let reach = side - 1 - (side - 1) / 2;
+                assert!(
+                    reach + snap <= crate::one_world::PIECE_HALO_BLOCKS,
+                    "{realm}: a {side}-block model reaches {reach} past its trunk"
+                );
             }
         }
     }

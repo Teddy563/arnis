@@ -709,9 +709,7 @@ pub fn build_context(
         return None;
     }
     let carriageway = collect_carriageway_coords(elements, xzbbox, args.scale);
-    let lat = (llbbox.min().lat() + llbbox.max().lat()) / 2.0;
-    let lon = (llbbox.min().lng() + llbbox.max().lng()) / 2.0;
-    let region = SignRegion::detect(lat, lon);
+    let region = SignRegion::for_run(args, &llbbox);
     let intersections = build_intersection_index(elements, args.scale);
 
     let mut keys: BTreeSet<DecalKey> = BTreeSet::new();

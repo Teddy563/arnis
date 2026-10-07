@@ -50,9 +50,27 @@ pub struct ElevationData {
     /// needed the extended floor. Every consumer of the affine must use this, not args.
     pub(crate) ground_level: i32,
     pub(crate) soft_top: Option<SoftTop>,
+    /// The padded grid as fetched, kept by `crop`: `(pad, rows)`. Terrain read past
+    /// the area edge (an outline node across a One World seam) comes from here, not
+    /// from the clamped edge column, so both sides of a seam agree.
+    // ponytail: full padded copy; keep only the pad ring if memory ever matters.
+    pub(crate) halo: Option<(usize, Vec<Vec<f32>>)>,
 }
 
 impl ElevationData {
+    /// Height at an area-local block outside the area, from the kept pad. None inside.
+    #[inline]
+    pub fn halo_height(&self, x: i32, z: i32) -> Option<f64> {
+        let (pad, rows) = self.halo.as_ref()?;
+        if (0..self.world_width as i32).contains(&x) && (0..self.world_height as i32).contains(&z) {
+            return None;
+        }
+        let p = *pad as i32;
+        let gz = (z + p).clamp(0, rows.len() as i32 - 1) as usize;
+        let gx = (x + p).clamp(0, rows[gz].len() as i32 - 1) as usize;
+        Some(f64::from(rows[gz][gx]))
+    }
+
     pub fn affine(&self) -> ElevationAffine {
         ElevationAffine {
             min_height_m: self.min_height_m,
@@ -100,6 +118,7 @@ impl ElevationData {
 
     /// Only meaningful while one cell is one block.
     pub fn crop(&mut self, x0: usize, z0: usize, width: usize, height: usize) {
+        self.halo = Some((x0, self.heights.clone()));
         crate::grid_ops::crop_rows(&mut self.heights, x0, z0, width, height);
         self.width = width;
         self.height = height;
@@ -202,16 +221,12 @@ pub fn fetch_elevation_data(
     benchmark: bool,
     dims: (usize, usize, usize, usize),
     affine: AffinePolicy,
+    frame_m_per_cell: Option<f64>,
 ) -> Result<ElevationData, Box<dyn std::error::Error>> {
     let mut bench = crate::bench::Bench::new(benchmark);
     let (world_width, world_height, grid_width, grid_height) = dims;
 
-    // Fallback chain: Mapterhorn, then AWS if it fails outright.
-    let provider = select_provider(bbox, source_mode);
-    let mut chain: Vec<Box<dyn ElevationProvider>> = vec![provider];
-    if source_mode.allows_earth_fallback() && chain[0].name() != "aws" {
-        chain.push(Box::new(providers::aws_terrain::AwsTerrain));
-    }
+    let chain = provider_chain(bbox, source_mode);
 
     emit_gui_progress_update(10.0, "Downloading data...");
 
@@ -223,7 +238,8 @@ pub fn fetch_elevation_data(
     // Shared post-processing pipeline
     let mut height_grid = raw.heights_meters;
     let (bbox_height_m, bbox_width_m) = geo_distance(bbox.min(), bbox.max());
-    let m_per_cell = (bbox_width_m / grid_width as f64 + bbox_height_m / grid_height as f64) * 0.5;
+    let m_per_cell = frame_m_per_cell
+        .unwrap_or((bbox_width_m / grid_width as f64 + bbox_height_m / grid_height as f64) * 0.5);
     // Both passes target Earth DSM defects and actively damage altimetry: the outlier
     // gate is calibrated on Earth's elevation range, and a lunar mare is flat to within
     // metres so a real central peak reads as an anomaly to the MAD filter. PDS gaps are
@@ -343,6 +359,7 @@ pub fn fetch_elevation_data(
         },
         ground_level: effective_ground_level,
         soft_top,
+        halo: None,
     })
 }
 
@@ -353,6 +370,19 @@ pub fn cleanup_old_cached_tiles() {
 
 /// Try each provider in `chain` until one delivers usable data. Non-final
 /// providers are skipped on error or mostly empty data (over-claiming bboxes).
+/// Fallback chain: Mapterhorn, then AWS if it fails outright. A One World's pinned zoom
+/// comes first; when its tiles are unavailable the area falls back like any other run.
+fn provider_chain(bbox: &LLBBox, source_mode: SourceMode) -> Vec<Box<dyn ElevationProvider>> {
+    let mut chain = vec![select_provider(bbox, source_mode)];
+    if let SourceMode::Pinned(_) = source_mode {
+        chain.push(Box::new(providers::mapterhorn::Mapterhorn::default()));
+    }
+    if matches!(source_mode, SourceMode::Auto | SourceMode::Pinned(_)) {
+        chain.push(Box::new(providers::aws_terrain::AwsTerrain));
+    }
+    chain
+}
+
 fn fetch_raw_with_fallback(
     chain: &[Box<dyn ElevationProvider>],
     bbox: &LLBBox,
@@ -438,6 +468,24 @@ mod grid_dim_tests {
     /// The Switzerland bbox: ~346 km x ~225 km, a 1.54:1 aspect.
     fn switzerland() -> LLBBox {
         LLBBox::from_str("45.80,5.95,47.82,10.50").unwrap()
+    }
+
+    /// A pinned One World zoom whose tiles are unavailable falls back to the chain an
+    /// ordinary run takes (unpinned Mapterhorn, then AWS) instead of failing the area.
+    #[test]
+    fn a_pinned_zoom_falls_back_like_an_ordinary_run() {
+        let names = |mode| -> Vec<&str> {
+            provider_chain(&switzerland(), mode)
+                .iter()
+                .map(|p| p.name())
+                .collect()
+        };
+        assert_eq!(names(SourceMode::Auto), ["mapterhorn", "aws"]);
+        assert_eq!(
+            names(SourceMode::Pinned(16)),
+            ["mapterhorn", "mapterhorn", "aws"]
+        );
+        assert_eq!(names(SourceMode::AwsOnly), ["aws"]);
     }
 
     #[test]

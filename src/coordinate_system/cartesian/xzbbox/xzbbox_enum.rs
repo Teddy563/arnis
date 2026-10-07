@@ -97,6 +97,11 @@ impl XZBBox {
     pub fn max_z(&self) -> i32 {
         self.bounding_rect().max().z
     }
+
+    /// `[min_x, min_z, max_x, max_z]`.
+    pub fn to_array(&self) -> [i32; 4] {
+        [self.min_x(), self.min_z(), self.max_x(), self.max_z()]
+    }
 }
 
 impl fmt::Display for XZBBox {

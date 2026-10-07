@@ -109,6 +109,7 @@ pub fn build_preview_payload(bbox_text: &str, aws_only: bool) -> Result<Vec<u8>,
         false,
         compute_grid_dims(&bbox, preview_scale),
         crate::elevation::AffinePolicy::Fit,
+        None,
     )
     .map_err(|e| format!("Elevation fetch failed: {e}"))?;
 
@@ -175,7 +176,7 @@ pub fn build_landcover_grid(bbox_text: &str) -> Result<Vec<u8>, String> {
     let (_, grid_w, grid_h) = preview_grid_dims(&bbox);
 
     let _mute = ProgressMute::new();
-    let lc = land_cover::fetch_land_cover_data(&bbox, grid_w, grid_h)
+    let lc = land_cover::fetch_land_cover_data(&bbox, grid_w, grid_h, None)
         .ok_or("Land cover data unavailable".to_string())?;
     if lc.width != grid_w || lc.height != grid_h {
         return Err("Land cover grid dimension mismatch".to_string());

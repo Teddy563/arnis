@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Reads AOT1 and AOT2 alike, so a re-bake is swapped in here via archives.json without a release.
@@ -104,6 +104,21 @@ fn default_cell_zoom() -> u8 {
     CELL_ZOOM
 }
 
+impl Manifest {
+    /// The index in `dir`, if this build reads it.
+    fn read(dir: &Path) -> Option<Manifest> {
+        let m: Manifest =
+            serde_json::from_slice(&std::fs::read(dir.join("archives.json")).ok()?).ok()?;
+        (m.zoom == ZOOM && m.cell_zoom <= ZOOM).then_some(m)
+    }
+
+    /// The coverage cell of z13 tile `(x, y)`.
+    fn cell(&self, x: u32, y: u32) -> u32 {
+        let shift = ZOOM - self.cell_zoom;
+        (y >> shift) * (1u32 << self.cell_zoom) + (x >> shift)
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct ArchiveEntry {
     file: String,
@@ -115,6 +130,11 @@ struct ArchiveEntry {
     min_lon: f64,
     max_lat: f64,
     max_lon: f64,
+    /// The extract a local bake was made from, and the file's size.
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    bytes: Option<u64>,
 }
 
 impl ArchiveEntry {
@@ -147,7 +167,12 @@ impl ArchiveEntry {
 }
 
 pub fn cache_root() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("arnis").join("osm-tiles"))
+    crate::elevation::cache::user_cache_dir().map(|d| cache_root_in(&d))
+}
+
+/// The archive cache under the cache root `root`.
+fn cache_root_in(root: &Path) -> PathBuf {
+    root.join("arnis").join("osm-tiles")
 }
 
 /// Frees the whole archive cache, including dirs left by older cache layouts.
@@ -160,12 +185,129 @@ pub fn clear_osm_tiles_cache() -> crate::elevation::cache::CacheClearStats {
 
 /// Cached ranges are offsets into one specific file, so each base URL gets its own dir.
 fn cache_root_for(base_url: &str) -> Option<PathBuf> {
+    cache_root().map(|d| d.join(url_dir(base_url)))
+}
+
+fn url_dir(base_url: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in base_url.trim_end_matches('/').as_bytes() {
         h ^= u64::from(*b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    cache_root().map(|d| d.join(format!("{h:016x}")))
+    format!("{h:016x}")
+}
+
+/// The tiles under the cache root `root` that a read of `bbox` takes, from
+/// the archive index cached there, then the relation records it fetches;
+/// `None` with no index on disk or past the tile cap. A tile cached by any
+/// archive that covers it counts. Tiles the archive holds nothing for (open
+/// sea) are never cached, so they count as missing.
+pub(crate) fn cache_files(root: &Path, base_url: &str, bbox: &LLBBox) -> Option<Vec<PathBuf>> {
+    let dir = cache_root_in(root).join(url_dir(base_url));
+    let manifest = Manifest::read(&dir)?;
+    let (xs, xe, ys, ye) = tile_range(bbox)?;
+    let mut out = Vec::new();
+    for x in xs..=xe {
+        for y in ys..=ye {
+            let cell = HashSet::from([manifest.cell(x, y)]);
+            let paths: Vec<PathBuf> = manifest
+                .archives
+                .iter()
+                .filter(|a| a.file_is_safe() && a.covers(&cell, bbox))
+                .map(|a| pmtiles::tile_cache_path(&dir.join(&a.file), ZOOM, x, y))
+                .collect();
+            if let Some(first) = paths.first() {
+                out.push(paths.iter().find(|p| p.exists()).unwrap_or(first).clone());
+            }
+        }
+    }
+    let tiles: Vec<(u32, u32)> = (xs..=xe)
+        .flat_map(|x| (ys..=ye).map(move |y| (x, y)))
+        .collect();
+    out.extend(relation_records(&dir, &manifest, bbox, &tiles));
+    Some(out)
+}
+
+/// The z13 tiles a read of `bbox` takes, as `(min_x, max_x, min_y, max_y)`;
+/// `None` past the tile cap.
+fn tile_range(bbox: &LLBBox) -> Option<(u32, u32, u32, u32)> {
+    let (min_x, min_y) = pmtiles::lonlat_to_tile(bbox.min().lng(), bbox.max().lat(), ZOOM);
+    let (max_x, max_y) = pmtiles::lonlat_to_tile(bbox.max().lng(), bbox.min().lat(), ZOOM);
+    let (xs, xe, ys, ye) = (
+        min_x.min(max_x),
+        min_x.max(max_x),
+        min_y.min(max_y),
+        min_y.max(max_y),
+    );
+    (((xe - xs) as usize + 1).saturating_mul((ye - ys) as usize + 1) <= MAX_TILES)
+        .then_some((xs, xe, ys, ye))
+}
+
+/// One archive in a local archive folder.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct LocalArchive {
+    /// The extract it was baked from (`romania`), or its file name.
+    pub name: String,
+    pub bytes: Option<u64>,
+    /// Holds part of the selection.
+    pub covers: bool,
+}
+
+/// What a local archive folder holds for a selection, from its archives.json
+/// and coverage cells alone.
+#[derive(serde::Serialize, Debug, Default, PartialEq)]
+pub struct LocalCoverage {
+    pub archives: Vec<LocalArchive>,
+    /// z13 tiles the selection reads, and how many of them some archive holds.
+    pub tiles: usize,
+    pub covered: usize,
+}
+
+/// The coverage of `bbox` by the local archive in `dir`; an empty folder
+/// covers nothing. `None` past the tile cap.
+pub(crate) fn local_coverage(dir: &Path, bbox: &LLBBox) -> Option<LocalCoverage> {
+    let (xs, xe, ys, ye) = tile_range(bbox)?;
+    let tiles = (xe - xs + 1) as usize * (ye - ys + 1) as usize;
+    let Some(manifest) = Manifest::read(dir) else {
+        return Some(LocalCoverage {
+            tiles,
+            ..LocalCoverage::default()
+        });
+    };
+    // An entry whose file is gone holds nothing.
+    let present: Vec<&ArchiveEntry> = manifest
+        .archives
+        .iter()
+        .filter(|a| a.file_is_safe() && dir.join(&a.file).is_file())
+        .collect();
+    let mut covering = vec![false; present.len()];
+    let mut covered = 0;
+    for x in xs..=xe {
+        for y in ys..=ye {
+            let cell = HashSet::from([manifest.cell(x, y)]);
+            let mut any = false;
+            for (i, a) in present.iter().enumerate() {
+                if a.covers(&cell, bbox) {
+                    covering[i] = true;
+                    any = true;
+                }
+            }
+            covered += usize::from(any);
+        }
+    }
+    Some(LocalCoverage {
+        archives: present
+            .iter()
+            .zip(covering)
+            .map(|(a, covers)| LocalArchive {
+                name: a.name.clone().unwrap_or_else(|| a.file.clone()),
+                bytes: a.bytes,
+                covers,
+            })
+            .collect(),
+        tiles,
+        covered,
+    })
 }
 
 fn client() -> Result<Client> {
@@ -179,6 +321,11 @@ fn client() -> Result<Client> {
 /// The archive directory, refreshed daily. A stale copy still names archives that exist.
 fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
     let url = format!("{}/archives.json", base_url.trim_end_matches('/'));
+    if let Some(path) = pmtiles::local_path(&url) {
+        let body = std::fs::read(&path)
+            .map_err(|e| format!("tile archive index {}: {e}", path.display()))?;
+        return serde_json::from_slice(&body).map_err(|e| format!("bad archive index: {e}"));
+    }
     let cached = cache_root_for(base_url).map(|d| d.join("archives.json"));
     if let Some(p) = &cached {
         if let Ok(md) = std::fs::metadata(p) {
@@ -187,7 +334,8 @@ fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
                 .ok()
                 .and_then(|t| t.elapsed().ok())
                 .is_some_and(|age| age < Duration::from_secs(86_400));
-            if fresh {
+            // Offline, any copy beats none: archives it names stay published.
+            if fresh || crate::net::offline() {
                 if let Ok(body) = std::fs::read(p) {
                     if let Ok(m) = serde_json::from_slice::<Manifest>(&body) {
                         return Ok(m);
@@ -196,6 +344,7 @@ fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
             }
         }
     }
+    crate::net::ensure_online("OSM tile archive index")?;
     let body = client
         .get(&url)
         .send()
@@ -205,9 +354,8 @@ fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
     let parsed: Manifest =
         serde_json::from_slice(&body).map_err(|e| format!("bad archive index: {e}"))?;
     if let Some(p) = &cached {
+        crate::overture::write_atomic(p, &body);
         if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-            let _ = std::fs::write(p, &body);
             prune_stale(
                 dir,
                 &parsed.archives.iter().map(|a| a.file.as_str()).collect(),
@@ -317,7 +465,10 @@ fn read_tiles(bbox: LLBBox, base_url: &str) -> Result<(OsmData, usize, u64)> {
             ));
         }
         let url = format!("{}/{}", base_url.trim_end_matches('/'), entry.file);
-        let cache = cache_root_for(base_url).map(|d| d.join(&entry.file));
+        // A local archive is read in place; copying it into the cache would only double it.
+        let cache = cache_root_for(base_url)
+            .filter(|_| pmtiles::local_path(base_url).is_none())
+            .map(|d| d.join(&entry.file));
         let mut archive = Archive::open_allowing(&client, &url, cache, &[TILE_TYPE_UNKNOWN])?;
 
         let mut located = Vec::new();
@@ -346,12 +497,7 @@ fn read_tiles(bbox: LLBBox, base_url: &str) -> Result<(OsmData, usize, u64)> {
             bytes += on_wire;
             is_aot2 |= plain.starts_with(b"AOT2");
             let tile = decode(&plain)?;
-            for r in &tile.relations {
-                let list = seen_in.entry(r.0).or_default();
-                if list.last() != Some(&k) {
-                    list.push(k);
-                }
-            }
+            note_relations(&tile, k, &mut seen_in);
             absorb(tile, &mut collected);
             tiles_read += 1;
         }
@@ -363,23 +509,7 @@ fn read_tiles(bbox: LLBBox, base_url: &str) -> Result<(OsmData, usize, u64)> {
         return Err("the tile archive has no data for this area".into());
     }
 
-    // A tile only holds the members touching it, so a lake arrives as a few shore pieces;
-    // fetch the whole relation for those the bbox uses, as Overpass returned them.
-    let area = Extent::around(&bbox);
-    let partial: Vec<u64> = collected
-        .relations
-        .iter()
-        .filter(|(_, (_, members))| {
-            members.iter().any(|(m, _)| !collected.ways.contains_key(m))
-                && members
-                    .iter()
-                    .filter_map(|(m, _)| collected.ways.get(m))
-                    .filter_map(|(_, _, pts)| Extent::of(pts))
-                    .reduce(Extent::union)
-                    .is_some_and(|e| e.intersects(&area))
-        })
-        .map(|(id, _)| *id)
-        .collect();
+    let partial = partial_relations(&collected, &bbox);
     let mut records = 0usize;
     let mut skipped: Vec<String> = Vec::new();
     for (k, archive) in opened.iter_mut().enumerate() {
@@ -441,6 +571,89 @@ fn read_tiles(bbox: LLBBox, base_url: &str) -> Result<(OsmData, usize, u64)> {
     }
 
     Ok((assemble(collected, &bbox), tiles_read, bytes))
+}
+
+/// Records that archive `k` carried each of `tile`'s relations.
+fn note_relations(tile: &DecodedTile, k: usize, seen_in: &mut HashMap<u64, Vec<usize>>) {
+    for r in &tile.relations {
+        let list = seen_in.entry(r.0).or_default();
+        if list.last() != Some(&k) {
+            list.push(k);
+        }
+    }
+}
+
+/// A tile only holds the members touching it, so a lake arrives as a few shore pieces: the
+/// relations the bbox uses with members missing, whose whole records a read fetches, as
+/// Overpass returned them.
+fn partial_relations(collected: &Collected, bbox: &LLBBox) -> Vec<u64> {
+    let area = Extent::around(bbox);
+    collected
+        .relations
+        .iter()
+        .filter(|(_, (_, members))| {
+            members.iter().any(|(m, _)| !collected.ways.contains_key(m))
+                && members
+                    .iter()
+                    .filter_map(|(m, _)| collected.ways.get(m))
+                    .filter_map(|(_, _, pts)| Extent::of(pts))
+                    .reduce(Extent::union)
+                    .is_some_and(|e| e.intersects(&area))
+        })
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// The whole-relation records a read of `bbox` fetches after its `tiles`, as the files it
+/// (or `--prewarm`) caches them in: picked from the cached tiles as the read picks them,
+/// each found through the cached directories. A directory not cached yet stands for the
+/// records behind it; an offline run would need it as well.
+// ponytail: decodes every cached tile of the area, as the run does; memoise per tile if a
+// large selection makes the window's plan slow.
+fn relation_records(
+    dir: &Path,
+    manifest: &Manifest,
+    bbox: &LLBBox,
+    tiles: &[(u32, u32)],
+) -> Vec<PathBuf> {
+    let cells: HashSet<u32> = tiles.iter().map(|&(x, y)| manifest.cell(x, y)).collect();
+    let archives: Vec<pmtiles::CachedArchive> = manifest
+        .archives
+        .iter()
+        .filter(|a| a.file_is_safe() && a.covers(&cells, bbox))
+        .filter_map(|a| pmtiles::CachedArchive::open(dir.join(&a.file), &[TILE_TYPE_UNKNOWN]))
+        .collect();
+    let mut collected = Collected::default();
+    let mut seen_in: HashMap<u64, Vec<usize>> = HashMap::new();
+    let mut aot2 = vec![false; archives.len()];
+    for (k, archive) in archives.iter().enumerate() {
+        for &(x, y) in tiles {
+            let Some((_, plain)) = archive
+                .tile(ZOOM, x, y)
+                .and_then(|raw| unpack(raw, "").ok())
+            else {
+                continue;
+            };
+            aot2[k] |= plain.starts_with(b"AOT2");
+            if let Ok(tile) = decode(&plain) {
+                note_relations(&tile, k, &mut seen_in);
+                absorb(tile, &mut collected);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for rid in partial_relations(&collected, bbox) {
+        for &k in seen_in[&rid].iter().filter(|&&k| aot2[k]) {
+            match archives[k].entry(RELATION_TILE_BASE + rid) {
+                Ok(Some((path, length))) if u64::from(length) <= MAX_RECORD_BYTES => out.push(path),
+                Ok(_) => {}
+                Err(directory) => out.push(directory),
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Archives set tile_compression=none, so the baker's zstd frame is still around the payload.
@@ -948,6 +1161,8 @@ mod tests {
             min_lon: 0.0,
             max_lat: 1.0,
             max_lon: 1.0,
+            name: None,
+            bytes: None,
         }
     }
 
@@ -1080,6 +1295,111 @@ mod tests {
         let mut legacy = wide.clone();
         legacy.cells = Vec::new();
         assert!(legacy.covers(&wanted, &munich));
+    }
+
+    #[test]
+    fn a_local_index_is_read_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("archives.json"),
+            r#"{"zoom":13,"archives":[{"file":"ro.pmtiles","min_lat":43.6,"min_lon":20.2,"max_lat":48.3,"max_lon":29.7}]}"#,
+        )
+        .unwrap();
+        let m = manifest(&client().unwrap(), dir.path().to_str().unwrap()).unwrap();
+        assert_eq!((m.zoom, m.archives[0].file.as_str()), (13, "ro.pmtiles"));
+    }
+
+    #[test]
+    fn local_coverage_reads_the_cells_of_files_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let bucharest = LLBBox::from_str("44.4450,26.0950,44.4480,26.1030").unwrap();
+        let munich = LLBBox::from_str("48.13,11.57,48.14,11.58").unwrap();
+        let empty = local_coverage(dir.path(), &bucharest).unwrap();
+        assert!(empty.archives.is_empty() && empty.tiles > 0 && empty.covered == 0);
+
+        // Romania's real cells; the file named but not on disk yet holds nothing.
+        std::fs::write(
+            dir.path().join("archives.json"),
+            r#"{"zoom":13,"cell_zoom":6,"archives":[{"name":"romania","file":"romania-1.pmtiles","bytes":5,
+                "cells":[1380,1443,1444,1445,1507,1508,1509,1511],
+                "min_lat":42.1,"min_lon":19.9,"max_lat":49.6,"max_lon":41.7}]}"#,
+        )
+        .unwrap();
+        assert!(local_coverage(dir.path(), &bucharest)
+            .unwrap()
+            .archives
+            .is_empty());
+        std::fs::write(dir.path().join("romania-1.pmtiles"), b"12345").unwrap();
+        let c = local_coverage(dir.path(), &bucharest).unwrap();
+        assert_eq!(c.covered, c.tiles);
+        assert_eq!(
+            c.archives,
+            vec![LocalArchive {
+                name: "romania".into(),
+                bytes: Some(5),
+                covers: true
+            }]
+        );
+        let m = local_coverage(dir.path(), &munich).unwrap();
+        assert_eq!((m.covered, m.archives[0].covers), (0, false));
+    }
+
+    #[test]
+    fn the_plan_counts_the_relation_records_a_read_fetches() {
+        let root = tempfile::tempdir().unwrap();
+        let base = "https://tiles.example.invalid/v1";
+        let bbox = LLBBox::from_str("44.4450,26.0950,44.4480,26.1030").unwrap();
+        let dir = cache_root_in(root.path()).join(url_dir(base));
+        let archive = dir.join("a.pmtiles");
+        std::fs::create_dir_all(&archive).unwrap();
+        std::fs::write(
+            dir.join("archives.json"),
+            r#"{"zoom":13,"archives":[{"file":"a.pmtiles","min_lat":-90,"min_lon":-180,"max_lat":90,"max_lon":180}]}"#,
+        )
+        .unwrap();
+        // Relation 9: way 5 inside the bbox, way 6 in no tile here.
+        let mut tile = b"AOT2".to_vec();
+        uvar(1, &mut tile);
+        uvar(5, &mut tile);
+        tile.extend_from_slice(b"outer");
+        uvar(0, &mut tile); // no nodes
+        uvar(1, &mut tile);
+        svar(5, &mut tile);
+        tile.push(0);
+        uvar(0, &mut tile);
+        uvar(2, &mut tile);
+        for (lat, lon) in [(444_460_000, 260_990_000), (100, 100)] {
+            svar(lat, &mut tile);
+            svar(lon, &mut tile);
+        }
+        uvar(1, &mut tile);
+        svar(9, &mut tile);
+        uvar(0, &mut tile);
+        uvar(2, &mut tile);
+        for member in [5, 1] {
+            svar(member, &mut tile);
+            uvar(0, &mut tile);
+        }
+        let (xs, _, ys, _) = tile_range(&bbox).unwrap();
+        let tile_path = pmtiles::tile_cache_path(&archive, ZOOM, xs, ys);
+        std::fs::create_dir_all(tile_path.parent().unwrap()).unwrap();
+        std::fs::write(&tile_path, zstd::encode_all(&tile[..], 3).unwrap()).unwrap();
+        // Header and root directory as a run caches them: no compression, one entry.
+        let record = RELATION_TILE_BASE + 9;
+        let mut directory = Vec::new();
+        for v in [1, record, 1, 10, 1] {
+            uvar(v, &mut directory);
+        }
+        let mut header = vec![0u8; 127];
+        header[..8].copy_from_slice(b"PMTiles");
+        header[16..24].copy_from_slice(&(directory.len() as u64).to_le_bytes());
+        (header[97], header[98]) = (1, 1);
+        std::fs::write(archive.join("header.bin"), header).unwrap();
+        std::fs::write(archive.join("root.bin"), directory).unwrap();
+
+        let files = cache_files(root.path(), base, &bbox).unwrap();
+        assert!(files.contains(&tile_path));
+        assert!(files.contains(&archive.join("id").join(format!("{record}.bin"))));
     }
 
     #[test]

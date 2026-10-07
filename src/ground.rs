@@ -60,6 +60,8 @@ pub struct Ground {
     /// Earth unless this is a Moon/Mars world, which take their own surface palette.
     body: CelestialBody,
     ecoregions: Option<Arc<EcoMap>>,
+    /// Set by `--climate-mode per-position`; `None` reads `climate` everywhere.
+    climate_field: Option<Arc<crate::climate_field::ClimateField>>,
 }
 
 /// Layout of a run's ground grids. A projected run takes its size from the
@@ -73,6 +75,10 @@ pub struct GroundFrame {
     pub affine: AffinePolicy,
     /// Where climate is read; `None` is the bbox centre.
     pub climate_anchor: Option<(f64, f64)>,
+    /// What the water options add to the land-cover estimate of the deepest carve.
+    pub carve_depth: crate::water_detail::CarveDepth,
+    /// A One World's pinned elevation zoom; unavailable tiles fall back like any run.
+    pub elevation_zoom: Option<u8>,
 }
 
 impl GroundFrame {
@@ -83,6 +89,8 @@ impl GroundFrame {
             pad_blocks: 0,
             affine: AffinePolicy::Fit,
             climate_anchor: None,
+            carve_depth: Default::default(),
+            elevation_zoom: None,
         }
     }
 
@@ -109,6 +117,8 @@ impl GroundFrame {
                     None => AffinePolicy::FitWithHeadroom,
                 },
                 climate_anchor: Some((run.origin_lat, run.origin_lon)),
+                carve_depth: Default::default(),
+                elevation_zoom: run.elevation_zoom,
             },
             None => Self {
                 world_dims: Some((world_w, world_h)),
@@ -116,6 +126,8 @@ impl GroundFrame {
                 pad_blocks: 0,
                 affine: AffinePolicy::Fit,
                 climate_anchor: None,
+                carve_depth: Default::default(),
+                elevation_zoom: None,
             },
         }
     }
@@ -165,6 +177,7 @@ impl GroundFrame {
         let Some((world_w, world_h)) = self.world_dims else {
             let (ww, wh, gw, gh) = compute_grid_dims(bbox, scale);
             return FetchPlan {
+                m_per_cell: None,
                 bbox: *bbox,
                 dims: (ww, wh, gw, gh),
                 pad: 0,
@@ -192,6 +205,7 @@ impl GroundFrame {
                 proj.lon_for_x(x1),
             ) {
                 return FetchPlan {
+                    m_per_cell: (pad > 0).then(|| 1.0 / scale),
                     bbox: centres,
                     dims: (pw, ph, gw, gh),
                     pad,
@@ -201,6 +215,7 @@ impl GroundFrame {
         }
         let (_, _, gw, gh) = compute_grid_dims_for_world(world_w, world_h);
         FetchPlan {
+            m_per_cell: None,
             bbox: *bbox,
             dims: (world_w, world_h, gw, gh),
             pad: 0,
@@ -210,6 +225,9 @@ impl GroundFrame {
 }
 
 struct FetchPlan {
+    /// Metres per cell when the frame fixes it (One World), so every area smooths
+    /// with the same sigma; None measures the bbox.
+    m_per_cell: Option<f64>,
     bbox: LLBBox,
     /// `(world_width, world_height, grid_width, grid_height)`
     dims: (usize, usize, usize, usize),
@@ -280,6 +298,7 @@ impl Ground {
             climate: crate::climate::Climate::Temperate,
             body: CelestialBody::Earth,
             ecoregions: None,
+            climate_field: None,
         }
     }
 
@@ -298,7 +317,8 @@ impl Ground {
         let (mut land_cover, mut canopy) = std::thread::scope(|s| {
             let job = canopy_height
                 .then(|| s.spawn(move || canopy::fetch_canopy_data(&fetch_bbox, grid_w, grid_h)));
-            let lc = land_cover::fetch_land_cover_data(&fetch_bbox, grid_w, grid_h);
+            let lc =
+                land_cover::fetch_land_cover_data(&fetch_bbox, grid_w, grid_h, plan.m_per_cell);
             (lc, job.and_then(|h| h.join().ok()).flatten())
         });
         if land_cover.is_none() {
@@ -335,6 +355,7 @@ impl Ground {
             climate: frame.climate(bbox),
             body: CelestialBody::Earth,
             ecoregions: frame.ecoregions(bbox, (world_w, world_h)),
+            climate_field: None,
         }
     }
 
@@ -358,6 +379,7 @@ impl Ground {
             climate: crate::climate::Climate::Temperate,
             body: CelestialBody::Earth,
             ecoregions: None,
+            climate_field: None,
         }
     }
 
@@ -396,6 +418,7 @@ impl Ground {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: None,
             canopy: None,
@@ -406,6 +429,7 @@ impl Ground {
             climate: crate::climate::Climate::Temperate,
             body: CelestialBody::Earth,
             ecoregions: None,
+            climate_field: None,
         }
     }
 
@@ -441,7 +465,7 @@ impl Ground {
             let canopy_job = canopy_height
                 .then(|| scope.spawn(|| canopy::fetch_canopy_data(bbox, grid_w, grid_h)));
             let mut land_cover = if body.is_earth() {
-                let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h);
+                let lc = land_cover::fetch_land_cover_data(bbox, grid_w, grid_h, plan.m_per_cell);
                 if lc.is_some() {
                     println!("Land cover data loaded successfully");
                 } else {
@@ -457,7 +481,11 @@ impl Ground {
             let carve_floor = match &land_cover {
                 Some(lc) => {
                     let max_depth =
-                        crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h);
+                        frame
+                            .carve_depth
+                            .bound(crate::water_depth::estimate_max_carve_depth(
+                                &lc.grid, world_w, world_h,
+                            ));
                     crate::world_editor::min_y() + max_depth + 2
                 }
                 None => crate::world_editor::min_y(),
@@ -471,6 +499,8 @@ impl Ground {
                 crate::elevation::SourceMode::Planetary(body)
             } else if aws_only_elevation {
                 crate::elevation::SourceMode::AwsOnly
+            } else if let Some(zoom) = frame.elevation_zoom {
+                crate::elevation::SourceMode::Pinned(zoom)
             } else {
                 crate::elevation::SourceMode::Auto
             };
@@ -487,6 +517,7 @@ impl Ground {
                 benchmark,
                 (world_w, world_h, grid_w, grid_h),
                 frame.affine,
+                plan.m_per_cell,
             ) {
                 Ok(mut elevation_data) => {
                     let lat = frame.anchor_lat(&requested_bbox);
@@ -538,6 +569,7 @@ impl Ground {
                             .is_earth()
                             .then(|| frame.ecoregions(&requested_bbox, (final_w, final_h)))
                             .flatten(),
+                        climate_field: None,
                     }
                 }
                 Err(e) => {
@@ -572,6 +604,7 @@ impl Ground {
                             .is_earth()
                             .then(|| frame.ecoregions(&requested_bbox, plan.final_dims))
                             .flatten(),
+                        climate_field: None,
                     }
                 }
             }
@@ -585,10 +618,72 @@ impl Ground {
         self.snow_threshold_y
     }
 
+    /// Moves the climatic snow line set at construction where `--snow-mode` puts it.
+    pub fn apply_snow_mode(&mut self, snow: &crate::snow_mode::SnowArgs) {
+        use crate::snow_mode::SnowMode;
+        // Off keeps the line: it only stops snow being laid.
+        if !self.body.is_earth() || matches!(snow.snow_mode, SnowMode::Realistic | SnowMode::Off) {
+            return;
+        }
+        let relief = self
+            .elevation_data
+            .as_ref()
+            .filter(|_| self.elevation_enabled)
+            .map(|d| {
+                d.heights
+                    .iter()
+                    .flatten()
+                    .fold((f64::MAX, f64::MIN), |(lo, hi), &h| {
+                        (lo.min(f64::from(h)), hi.max(f64::from(h)))
+                    })
+            })
+            .filter(|(lo, hi)| lo <= hi);
+        self.snow_threshold_y =
+            snow.threshold_y(self.snow_threshold_y, relief, self.blocks_per_meter());
+        if snow.snow_mode == SnowMode::Peaks {
+            match self.snow_threshold_y {
+                i32::MAX => println!("Snow peaks: too little relief for snow caps."),
+                y => println!("Snow peaks: snow from Y {y}."),
+            }
+        }
+    }
+
     /// Climate at the bbox center (Temperate keeps the existing surface/biome behaviour).
     #[inline(always)]
     pub fn climate(&self) -> crate::climate::Climate {
         self.climate
+    }
+
+    /// Reads climate per position (`--climate-mode per-position`) instead of at
+    /// the origin. Earth only.
+    pub fn apply_climate_mode(
+        &mut self,
+        mode: crate::climate_field::ClimateMode,
+        frame: &GroundFrame,
+        bbox: &LLBBox,
+    ) {
+        if mode == crate::climate_field::ClimateMode::PerPosition && self.body.is_earth() {
+            let field = crate::climate_field::ClimateField::new(frame, bbox, self.world_dims());
+            self.climate_field = Some(Arc::new(field));
+        }
+    }
+
+    /// Climate under a ground coordinate when it is read per position.
+    #[inline]
+    pub fn local_climate(&self, coord: XZPoint) -> Option<crate::climate::Climate> {
+        Some(self.climate_field.as_ref()?.climate(coord))
+    }
+
+    /// Climate under a ground coordinate: the local one, or the origin's.
+    #[inline]
+    pub fn climate_at(&self, coord: XZPoint) -> crate::climate::Climate {
+        self.local_climate(coord).unwrap_or(self.climate)
+    }
+
+    /// Latitude under a ground coordinate when climate is read per position.
+    #[inline]
+    pub fn local_lat(&self, coord: XZPoint) -> Option<f64> {
+        Some(self.climate_field.as_ref()?.lat(coord))
     }
 
     /// Body this world is on; Earth keeps every existing behaviour.
@@ -998,6 +1093,9 @@ impl Ground {
         }
 
         let data: &ElevationData = self.elevation_data.as_ref().unwrap();
+        if let Some(h) = data.halo_height(coord.x, coord.z) {
+            return h.round() as i32;
+        }
         let (x_ratio, z_ratio) = self.get_data_coordinates(coord, data);
         self.interpolate_height(x_ratio, z_ratio, data)
     }
@@ -1007,6 +1105,9 @@ impl Ground {
     pub fn level_exact(&self, coord: XZPoint) -> f64 {
         match &self.elevation_data {
             Some(data) if self.elevation_enabled => {
+                if let Some(h) = data.halo_height(coord.x, coord.z) {
+                    return h;
+                }
                 let (x_ratio, z_ratio) = self.get_data_coordinates(coord, data);
                 Self::interpolate_height_exact(x_ratio, z_ratio, data)
             }
@@ -1348,10 +1449,11 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
     // Cleared before the scaler publishes its own: in the GUI a previous run's terrain top
     // would misgrade this world's map preview.
     crate::world_editor::common::set_terrain_top_y(args.ground_level);
-    let frame = GroundFrame::from_args(args, &bbox);
+    let mut frame = GroundFrame::from_args(args, &bbox);
+    frame.carve_depth = args.water.carve_depth(args.scale);
     if args.terrain() {
         println!("{} Fetching elevation...", "[3/7]".bold());
-        let ground = Ground::new_enabled(
+        let mut ground = Ground::new_enabled(
             &bbox,
             args.scale,
             args.height_multiplier,
@@ -1365,11 +1467,14 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
             args.body,
             &frame,
         );
+        ground.apply_snow_mode(&args.snow);
+        ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
         // The scaler may have sunk the base to reach the extended floor. The bedrock plane and
         // the out-of-bbox filler chunks both key off that base, so pin them to it now.
         let floor = area_floor_for(&ground, args);
         crate::world_editor::set_base_chunk_y(floor);
         crate::world_editor::set_terrain_floor_y(floor);
+        pin_floor_to_cave_datum(args);
         // A grass plane around a lunar crater would be the most visible thing in it.
         crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
         if args.debug {
@@ -1380,17 +1485,35 @@ pub fn generate_ground_data(args: &Args, bbox: LLBBox) -> Ground {
         return ground;
     }
     println!("{} Fetching land cover...", "[3/7]".bold());
-    let ground = Ground::new_flat_with_land_cover(
+    let mut ground = Ground::new_flat_with_land_cover(
         &bbox,
         args.scale,
         args.ground_level,
         args.canopy_height,
         &frame,
     );
+    ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
     crate::world_editor::set_base_chunk_y(ground.base_level());
     crate::world_editor::set_terrain_floor_y(ground.base_level());
+    pin_floor_to_cave_datum(args);
     crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
     ground
+}
+
+/// With `--cave-datum-y`, bedrock drops to the datum wherever the run's own floor sits above it.
+/// Each area (and each piece of one) otherwise puts bedrock under its own lowest point, and the
+/// caves stop at bedrock, so neighbours with different floors carve different depths and the
+/// whole underground steps at their seam. A run whose lowest point needs a floor below the
+/// datum keeps its own.
+fn pin_floor_to_cave_datum(args: &Args) {
+    use crate::world_editor::{set_terrain_floor_y, terrain_floor_y, TERRAIN_FLOOR_DEPTH};
+    if let Some(datum) = args.cave_datum_y.filter(|_| args.caves) {
+        if datum < terrain_floor_y() {
+            // The floor sits TERRAIN_FLOOR_DEPTH under the base it is given; the datum is
+            // already on a section boundary, and the world floor still clamps it.
+            set_terrain_floor_y(datum + TERRAIN_FLOOR_DEPTH);
+        }
+    }
 }
 
 /// The terrain base, except in a One World with the extended floor: its base is the
@@ -1424,7 +1547,7 @@ pub(crate) fn extended_max_y_for(args: &Args) -> i32 {
     } else if args.luanti {
         crate::world_editor::DEFAULT_MAX_Y
     } else {
-        2031
+        args.max_y.unwrap_or(2031)
     }
 }
 
@@ -1443,13 +1566,13 @@ pub(crate) fn world_top_y_for(args: &Args) -> i32 {
     } else if args.bedrock {
         511
     } else {
-        2031
+        args.max_y.unwrap_or(2031)
     }
 }
 
 pub(crate) fn extended_min_y_for(args: &Args) -> i32 {
     if args.disable_height_limit && !args.bedrock && !args.luanti {
-        -2032
+        args.min_y.unwrap_or(-2032)
     } else {
         crate::world_editor::DEFAULT_MIN_Y
     }
@@ -1492,6 +1615,7 @@ mod tests {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: None,
             canopy: None,
@@ -1502,6 +1626,7 @@ mod tests {
             climate: crate::climate::Climate::Temperate,
             body: CelestialBody::Earth,
             ecoregions: None,
+            climate_field: None,
         }
     }
 
@@ -1607,6 +1732,7 @@ mod tests {
             slope_correction: 1.0,
             ground_level: 0,
             soft_top: None,
+            halo: None,
         };
         // 46 deg snow line is 3000 m; at 0.1 block/m from min 0 m, ground 64 => Y 364.
         assert_eq!(snow_threshold_for(&ed(0.0, 0.1), 46.0, 64), 364);
@@ -1793,6 +1919,7 @@ pub(crate) mod test_support {
                 slope_correction: 1.0,
                 ground_level: 0,
                 soft_top: None,
+                halo: None,
             }),
             land_cover: Some(land_cover),
             canopy: None,
@@ -1803,6 +1930,7 @@ pub(crate) mod test_support {
             climate: crate::climate::Climate::Temperate,
             body: CelestialBody::Earth,
             ecoregions: None,
+            climate_field: None,
         }
     }
 }
@@ -1819,6 +1947,8 @@ mod frame_tests {
             pad_blocks: pad,
             affine: AffinePolicy::Fit,
             climate_anchor: Some((48.1372, 11.5755)),
+            carve_depth: Default::default(),
+            elevation_zoom: None,
         }
     }
 
@@ -1906,5 +2036,33 @@ mod frame_tests {
                 (rect.max_z() - rect.min_z() + 1) as usize
             ))
         );
+    }
+
+    /// --cave-datum-y lowers bedrock to the datum so pieces with different low points share
+    /// one floor, never raises it, and leaves runs without it alone.
+    #[test]
+    fn cave_datum_pins_the_floor_only_downwards() {
+        use crate::world_editor::{
+            set_terrain_floor_y, set_world_bounds, terrain_floor_y, DEFAULT_MAX_Y, DEFAULT_MIN_Y,
+            FLOOR_TEST_LOCK,
+        };
+        use clap::Parser;
+        let _g = FLOOR_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let args = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", "1,2,3,4", "--caves"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd)
+        };
+        set_world_bounds(-2032, 2031);
+        let floor_after = |base: i32, extra: &[&str]| {
+            set_terrain_floor_y(base);
+            pin_floor_to_cave_datum(&args(extra));
+            terrain_floor_y()
+        };
+        assert_eq!(floor_after(100, &[]), 32);
+        assert_eq!(floor_after(100, &["--cave-datum-y", "-64"]), -64);
+        assert_eq!(floor_after(-100, &["--cave-datum-y", "-64"]), -176);
+        set_world_bounds(DEFAULT_MIN_Y, DEFAULT_MAX_Y);
+        set_terrain_floor_y(crate::world_editor::DEFAULT_MIN_Y + 2);
     }
 }

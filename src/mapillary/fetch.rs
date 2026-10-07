@@ -125,7 +125,7 @@ impl Default for Endpoints {
             images: "https://graph.mapillary.com/images".to_string(),
             image: "https://graph.mapillary.com".to_string(),
             osm_tiles: Some(crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string()),
-            overpass: vec![crate::retrieve_data::ARNIS_OVERPASS_URL.to_string()],
+            overpass: crate::retrieve_data::overpass_urls(),
         }
     }
 }
@@ -372,6 +372,9 @@ impl Http {
     }
 
     fn attempt(&self, url: &str, query: &[(&str, &str)]) -> Attempt {
+        if let Err(e) = crate::net::ensure_online("Mapillary imagery") {
+            return Attempt::Undelivered(e);
+        }
         let _permit = request_permit();
         let mut response = match self.client.get(url).query(query).send() {
             Ok(r) => r,
@@ -1460,6 +1463,7 @@ pub fn fetch_osm(cfg: &FetchConfig) -> Result<Value, String> {
         .build()
         .map_err(|e| format!("Overpass HTTP client: {e}"))?;
 
+    crate::net::ensure_online("Mapillary facade buildings (Overpass)")?;
     let mut last = String::new();
     for mirror in &cfg.endpoints.overpass {
         // GET with the query in `data`, the same shape `retrieve_data` sends,

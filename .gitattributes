@@ -1,2 +1,3 @@
 src/gui/** linguist-vendored
 assets/climate/*.grid binary
+src/element_processing/subprocessor/buildings_loot.json eol=lf

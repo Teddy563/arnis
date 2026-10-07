@@ -198,6 +198,35 @@ a:hover {
   color: #fa7878;
 }
 
+/* A link, not a button: centred under the size warning it answers, as wide
+   as the warning, wrapping the same way. */
+#bbox-features-cta {
+  display: block;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--primary-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: center;
+  line-height: 1.3em;
+  white-space: normal;
+}
+
+#bbox-features-cta:hover {
+  color: var(--primary-accent-dark);
+}
+
+#bbox-features-cta:focus-visible {
+  outline: 2px solid var(--primary-accent);
+  outline-offset: 2px;
+}
+
 .bbox-selection-text {
   font-size: 0.9em;
   color: #ffffff;
@@ -850,4 +879,183 @@ input[type="range"] {
     transform: scale(1) rotate(0deg);
     opacity: 1;
   }
+}
+
+/* Under the progress bar: the run estimate, then elapsed time and pieces. */
+.run-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 14px;
+  min-height: 1.5em;
+  margin-top: 6px;
+  font-size: 0.8em;
+  line-height: 1.5em;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.run-stat .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Mini mode (js/mini.js, gui.rs gui_mini_window): the window is the panel.
+   Same greys, bar and stats line as the main window, no frame of its own. */
+.mini-panel {
+  display: none;
+}
+
+body.mini-mode > :not(.mini-panel):not(.icon-sprite) {
+  display: none !important;
+}
+
+body.mini-mode .mini-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--ui-card-border);
+  background: var(--ui-card);
+  color: var(--ui-text);
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.mini-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -6px 0 0;
+}
+
+.mini-logo {
+  height: 16px;
+  width: auto;
+  margin-right: 4px;
+  pointer-events: none;
+}
+
+.mini-world {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--primary-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mini-panel .mini-icon-button,
+.progress-row .mini-shrink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mini-panel .mini-icon-button:hover,
+.progress-row .mini-shrink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ui-text);
+}
+
+.progress-row .mini-shrink[hidden] {
+  display: none;
+}
+
+.mini-panel .mini-icon-button .icon,
+.progress-row .mini-shrink .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.mini-stage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.mini-panel .progress-bar-container {
+  height: 14px;
+  border-radius: 7px;
+}
+
+.mini-percent {
+  min-width: 36px;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-panel .mini-stats {
+  justify-content: flex-start;
+  min-height: 3em;
+  margin-top: 0;
+  gap: 0 12px;
+}
+
+.mini-confirm {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.mini-confirm[hidden] {
+  display: none;
+}
+
+.mini-confirm .dialog {
+  width: calc(100% - 20px);
+  animation: none;
+}
+
+.mini-confirm .dialog-body {
+  padding: 14px 16px 10px;
+}
+
+.mini-confirm .dialog-body p {
+  margin: 0;
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.mini-confirm .dialog-footer {
+  padding: 10px 12px;
+}
+
+.mini-confirm .dialog .dialog-button.is-danger {
+  border-color: var(--ui-danger);
+  color: var(--ui-danger);
+}
+
+.mini-confirm .dialog .dialog-button.is-danger:hover {
+  background: rgba(207, 102, 121, 0.12);
 }

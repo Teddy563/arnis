@@ -197,7 +197,6 @@ impl DecalRegistry {
     }
 
     /// Highest assigned map id, or `FIRST_ID - 1` when empty.
-    #[allow(dead_code)]
     pub fn max_id(&self) -> i32 {
         self.next_id - 1
     }

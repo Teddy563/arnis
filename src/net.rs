@@ -1,12 +1,70 @@
-//! Process-wide ceiling on in-flight HTTP requests.
+//! Process-wide ceiling on in-flight HTTP requests, and the `--offline` switch.
 
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 /// Sits above every per-provider download pool (4-8 threads), so ordinary
 /// fetching never waits on it. It only bounds unrelated fan-outs stacking on
 /// top of each other, which is what exhausts the Windows I/O resource limits
 /// the tokio driver panics on.
-const MAX_CONCURRENT_REQUESTS: usize = 16;
+pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 16;
+
+/// The ceiling in force: `MAX_CONCURRENT_REQUESTS` unless `--max-downloads`
+/// set another.
+static MAX_REQUESTS: AtomicUsize = AtomicUsize::new(MAX_CONCURRENT_REQUESTS);
+
+/// Changes the ceiling. Call before any download starts.
+pub fn set_max_requests(n: usize) {
+    MAX_REQUESTS.store(n.max(1), Ordering::Relaxed);
+}
+
+pub fn max_requests() -> usize {
+    MAX_REQUESTS.load(Ordering::Relaxed)
+}
+
+/// `--offline`: every download is refused before it starts.
+static OFFLINE: AtomicBool = AtomicBool::new(false);
+/// What an offline run wanted and the cache did not have, with a count of
+/// the refused requests.
+static OFFLINE_MISSES: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
+
+/// Turning it on forgets the misses of an earlier run in this process (the
+/// window runs many).
+pub fn set_offline(on: bool) {
+    if on {
+        OFFLINE_MISSES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+    OFFLINE.store(on, Ordering::Relaxed);
+}
+
+pub fn offline() -> bool {
+    OFFLINE.load(Ordering::Relaxed)
+}
+
+/// Called in front of a download that only a cache miss reaches. Offline it
+/// refuses, and records `what` so the run can stop and name everything the
+/// cache lacks instead of building flat ground or leaving objects out.
+pub fn ensure_online(what: &str) -> Result<(), String> {
+    if !offline() {
+        return Ok(());
+    }
+    *OFFLINE_MISSES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(what.to_string())
+        .or_default() += 1;
+    Err(format!("--offline: {what} is not in the cache"))
+}
+
+/// Everything [`ensure_online`] refused so far, by name.
+pub fn offline_misses() -> Vec<(String, usize)> {
+    let misses = OFFLINE_MISSES.lock().unwrap_or_else(|e| e.into_inner());
+    misses.iter().map(|(k, v)| (k.clone(), *v)).collect()
+}
 
 static IN_FLIGHT: Mutex<usize> = Mutex::new(0);
 static SLOT_FREED: Condvar = Condvar::new();
@@ -38,7 +96,7 @@ pub static PERMIT_TEST_LOCK: Mutex<()> = Mutex::new(());
 #[must_use]
 pub fn request_permit() -> RequestPermit {
     let mut in_flight = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
-    while *in_flight >= MAX_CONCURRENT_REQUESTS {
+    while *in_flight >= max_requests() {
         in_flight = SLOT_FREED
             .wait(in_flight)
             .unwrap_or_else(|e| e.into_inner());
@@ -94,6 +152,42 @@ mod tests {
         for t in threads {
             t.join().unwrap();
         }
+        assert_eq!(in_flight(), 0);
+    }
+
+    #[test]
+    fn offline_refuses_and_names_what_was_missing() {
+        // Downloads elsewhere in the crate would be refused while this runs.
+        let _guard = SERIALIZE.lock().unwrap_or_else(|e| e.into_inner());
+        let _floor = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let what = "net test source";
+        assert!(ensure_online(what).is_ok());
+        set_offline(true);
+        let refused = (ensure_online(what), ensure_online(what));
+        set_offline(false);
+        assert!(refused.0.unwrap_err().contains(what));
+        assert!(refused.1.is_err());
+        assert!(offline_misses().contains(&(what.to_string(), 2)));
+    }
+
+    #[test]
+    fn a_lowered_ceiling_is_the_one_enforced() {
+        let _guard = SERIALIZE.lock().unwrap_or_else(|e| e.into_inner());
+        set_max_requests(2);
+        let peak = AtomicUsize::new(0);
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    let _permit = request_permit();
+                    peak.fetch_max(in_flight(), Ordering::Relaxed);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                });
+            }
+        });
+        set_max_requests(MAX_CONCURRENT_REQUESTS);
+        assert!(peak.load(Ordering::Relaxed) <= 2);
         assert_eq!(in_flight(), 0);
     }
 }

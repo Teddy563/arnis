@@ -7,7 +7,8 @@
 use crate::block_definitions::*;
 use crate::world_editor::{terrain_floor_y, WorldEditor};
 
-/// Bottom of the underground band the fraction is measured over, above the bedrock plane.
+/// Bottom of the underground band the fraction is measured over, above the cave datum (the
+/// bedrock plane unless `--cave-datum-y` pins it).
 const BAND_FLOOR_OFFSET: i32 = 5;
 /// The band's ceiling sits this many blocks below the surface.
 const BAND_CAP: i32 = 10;
@@ -25,7 +26,7 @@ pub(super) fn apply_region(
 ) {
     let seed = 0xDEE9_5147;
     let floor = terrain_floor_y();
-    let band_floor = floor + BAND_FLOOR_OFFSET;
+    let band_floor = super::datum_y() + BAND_FLOOR_OFFSET;
     for x in iter_min_x..=iter_max_x {
         for z in iter_min_z..=iter_max_z {
             let surf = editor.get_ground_level(x, z);

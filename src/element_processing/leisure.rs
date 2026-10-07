@@ -1,7 +1,7 @@
 use crate::args::Args;
 use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
-use crate::deterministic_rng::element_rng;
+use crate::deterministic_rng::{coord_rng, element_rng};
 use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::tree::Tree;
@@ -9,6 +9,9 @@ use crate::floodfill_cache::{is_oversized_ring, BuildingFootprintBitmap, FloodFi
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::Rng;
+
+/// Salt of the per-block random draws of leisure fills.
+const FILL_SALT: u64 = 0x4C45_4953;
 
 pub fn generate_leisure(
     editor: &mut WorldEditor,
@@ -88,10 +91,15 @@ pub fn generate_leisure(
 
         // Flood-fill the interior of the leisure area using cache
         if corner_count > 0 {
-            // Use deterministic RNG seeded by element ID for consistent results across region boundaries
             let mut rng = element_rng(element.id);
-
             for &(x, z) in filled_area.iter() {
+                // One World keys these by the block alone (plain runs keep the
+                // per-element stream), not drawn in fill order or by id: the
+                // cells a run fills depend on its area and tiles, and an assembled
+                // multipolygon ring's id on which member ways the run saw.
+                if args.one_world_run.is_some() {
+                    rng = coord_rng(x, z, FILL_SALT);
+                }
                 if leisure_type == "schoolyard" && editor.nested_area_owns(x, z) {
                     continue;
                 }

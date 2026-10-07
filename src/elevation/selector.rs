@@ -12,13 +12,16 @@ pub enum SourceMode {
     Auto,
     /// Legacy AWS tiles only (--aws-only-elevation / "Legacy terrain" toggle).
     AwsOnly,
+    /// One World: Mapterhorn from the world's pinned top zoom, so every area reads the
+    /// same tiles. Unavailable tiles fall back to `Auto`'s chain with a warning.
+    Pinned(u8),
     /// NASA PDS raster for a non-Earth body. No fallback: an Earth provider would
     /// return sea-level noise for these coordinates.
     Planetary(CelestialBody),
 }
 
 impl SourceMode {
-    /// Whether the Earth fallback chain may be appended after the selection.
+    /// Whether the source is an Earth DSM, which the Earth repair passes are tuned for.
     pub fn allows_earth_fallback(self) -> bool {
         !matches!(self, SourceMode::Planetary(_))
     }
@@ -40,7 +43,13 @@ pub fn select_provider(_bbox: &LLBBox, mode: SourceMode) -> Box<dyn ElevationPro
         SourceMode::Planetary(body) => Box::new(PlanetaryDem { body }),
         SourceMode::Auto => {
             println!("Using Mapterhorn terrain tiles (global; high-res where available)");
-            Box::new(Mapterhorn)
+            Box::new(Mapterhorn::default())
+        }
+        SourceMode::Pinned(zoom) => {
+            println!("Using Mapterhorn terrain tiles from z{zoom}, as the One World pins");
+            Box::new(Mapterhorn {
+                pinned_zoom: Some(zoom),
+            })
         }
     }
 }

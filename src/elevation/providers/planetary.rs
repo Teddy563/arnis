@@ -298,9 +298,7 @@ impl SourceWindow {
         }
 
         let bytes: Vec<u8> = out.iter().flat_map(|v| v.to_le_bytes()).collect();
-        if let Err(e) = std::fs::write(&cached, &bytes) {
-            eprintln!("Warning: could not cache PDS window: {e}");
-        }
+        crate::overture::write_atomic(&cached, &bytes);
         Ok(out)
     }
 
@@ -464,6 +462,7 @@ fn range_get(
     offset: u64,
     len: usize,
 ) -> Result<Vec<u8>, String> {
+    crate::net::ensure_online("planetary elevation")?;
     let range = format!("bytes={}-{}", offset, offset + len as u64 - 1);
     let mut last = String::new();
     for attempt in 0..ROW_MAX_RETRIES {
