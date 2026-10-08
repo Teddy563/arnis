@@ -511,6 +511,10 @@ fn finish(
     if args.world_border {
         one_world::apply_world_border(world_dir, rect);
     }
+    // After every piece, so this is the database's only writer.
+    if args.dh_lod {
+        crate::dh_lod::run(world_dir, rect, fresh);
+    }
     Ok(())
 }
 

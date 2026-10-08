@@ -23,6 +23,7 @@ mod data_plan;
 mod data_processing;
 mod decals;
 mod deterministic_rng;
+mod dh_lod;
 mod ecoregion;
 mod element_processing;
 mod elevation;

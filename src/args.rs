@@ -374,6 +374,12 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub voxy_lod: bool,
 
+    /// Pre-generate the Distant Horizons mod's LODs (`data/DistantHorizons.sqlite`)
+    /// so the world renders to the horizon on first join. Java only; implies
+    /// --bake-lighting. A One World job writes them once, after its pieces.
+    #[arg(long, default_value_t = false)]
+    pub dh_lod: bool,
+
     /// Render a top-down PNG map preview of the generated world (Java and Bedrock)
     #[arg(long, default_value_t = false)]
     pub map_preview: bool,
@@ -791,6 +797,7 @@ pub const CAPABILITIES: &[&str] = &[
     "local-tile-archive",
     "tree-pack-dir",
     "world-border",
+    "dh-lod",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
@@ -1837,6 +1844,7 @@ mod tests {
         assert!(!args.disable_height_limit);
         assert!(!args.bake_lighting);
         assert!(!args.voxy_lod);
+        assert!(!args.dh_lod);
         assert!(!args.map_preview);
         assert_eq!(args.signage, SignageLevel::Basic);
         let cmd = [

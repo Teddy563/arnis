@@ -704,7 +704,9 @@ pub fn generate_world_with_options(
     // black horizon. The toggle implies baked lighting rather than silently
     // producing that.
     let wants_voxy = args.voxy_lod && world_format == WorldFormat::JavaAnvil;
-    editor.set_bake_lighting(args.bake_lighting || wants_voxy);
+    // Distant Horizons reads the same light, from the region files.
+    let wants_dh = args.dh_lod && world_format == WorldFormat::JavaAnvil;
+    editor.set_bake_lighting(args.bake_lighting || wants_voxy || wants_dh);
     let void_world =
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
@@ -2035,6 +2037,17 @@ pub fn generate_world_with_options(
     // A piece leaves it to the coordinator.
     if args.world_border && world_format == WorldFormat::JavaAnvil && unit.is_none() {
         crate::one_world::apply_world_border(&output_path, &xzbbox);
+    }
+
+    // Read back from the region files, so it waits for them; a piece leaves it
+    // to the coordinator, the database's only writer.
+    if wants_dh && unit.is_none() {
+        if args.blinear_level().is_some() {
+            eprintln!("Skipping the Distant Horizons LODs: B_Linear regions have no reader here.");
+        } else {
+            emit_gui_progress_update(MESSAGE_ONLY, "Writing Distant Horizons LODs...");
+            crate::dh_lod::run(&output_path, &xzbbox, !extending);
+        }
     }
 
     // An extended One World moves the spawn only to a marker inside this area.
