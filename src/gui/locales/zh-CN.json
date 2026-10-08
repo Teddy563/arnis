@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "已写入 {done}",
   "transfer_left": "约剩 {time}",
-  "transfer_threads": "使用 {threads} 个线程处理（CPU {pct}%）"
+  "transfer_threads": "使用 {threads} 个线程处理（CPU {pct}%）",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "首次进入时即可看到远处地形。仅限 Java 版。"
 }

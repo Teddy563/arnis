@@ -5294,6 +5294,7 @@ async function startGeneration(options = {}) {
     var aws_only_elevation = document.getElementById("aws-only-elevation-toggle").checked;
     var bake_lighting = document.getElementById("bake-lighting-toggle").checked;
     var voxy_lod = document.getElementById("voxy-lod-toggle").checked;
+    var dh_lod = document.getElementById("dh-lod-toggle").checked;
     var scale = parseFloat(document.getElementById("scale-value-slider").value);
     var heightMultiplier = parseFloat(document.getElementById("height-multiplier-slider").value) || 1;
     if (oneWorld && oneWorldInfo && oneWorldInfo.exists) {
@@ -5350,6 +5351,7 @@ async function startGeneration(options = {}) {
         awsOnlyElevation: aws_only_elevation,
         bakeLightingEnabled: bake_lighting,
         voxyLodEnabled: voxy_lod,
+        dhLodEnabled: dh_lod,
         isNewWorld: !prewarm,
         spawnPoint: spawnPoint,
         telemetryConsent: telemetryConsent || false,

@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} 書き込み済み",
   "transfer_left": "残り約 {time}",
-  "transfer_threads": "{threads} スレッドで変換中 (CPU {pct}%)"
+  "transfer_threads": "{threads} スレッドで変換中 (CPU {pct}%)",
+  "dh_lod": "Distant Horizons の LOD",
+  "dh_lod_desc": "初回参加時から遠くの地形が表示されます。Java のみ。"
 }

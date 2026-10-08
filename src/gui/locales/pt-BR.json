@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} de {total}",
   "transfer_written": "{done} gravados",
   "transfer_left": "cerca de {time} restantes",
-  "transfer_threads": "Processando com {threads} threads ({pct}% da CPU)"
+  "transfer_threads": "Processando com {threads} threads ({pct}% da CPU)",
+  "dh_lod": "LODs do Distant Horizons",
+  "dh_lod_desc": "O terreno distante aparece já na primeira entrada. Só Java."
 }

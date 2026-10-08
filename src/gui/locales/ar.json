@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} من {total}",
   "transfer_written": "كُتب {done}",
   "transfer_left": "يتبقى نحو {time}",
-  "transfer_threads": "المعالجة باستخدام {threads} خيوط ({pct}% من المعالج)"
+  "transfer_threads": "المعالجة باستخدام {threads} خيوط ({pct}% من المعالج)",
+  "dh_lod": "مستويات LOD لـ Distant Horizons",
+  "dh_lod_desc": "تظهر التضاريس البعيدة من أول دخول. Java فقط."
 }

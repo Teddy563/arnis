@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} od {total}",
   "transfer_written": "zapisano {done}",
   "transfer_left": "še približno {time}",
-  "transfer_threads": "Obdelava s {threads} nitmi ({pct} % CPE)"
+  "transfer_threads": "Obdelava s {threads} nitmi ({pct} % CPE)",
+  "dh_lod": "LOD-ji Distant Horizons",
+  "dh_lod_desc": "Oddaljen teren je viden že ob prvem vstopu. Samo Java."
 }

@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} von {total}",
   "transfer_written": "{done} geschrieben",
   "transfer_left": "noch etwa {time}",
-  "transfer_threads": "Aufbereitung mit {threads} Threads ({pct}% CPU)"
+  "transfer_threads": "Aufbereitung mit {threads} Threads ({pct}% CPU)",
+  "dh_lod": "Distant-Horizons-LODs",
+  "dh_lod_desc": "Entferntes Terrain erscheint beim ersten Betreten. Nur Java."
 }

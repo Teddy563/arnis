@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} av {total}",
   "transfer_written": "{done} skrivet",
   "transfer_left": "cirka {time} kvar",
-  "transfer_threads": "Bearbetar med {threads} trådar ({pct}% CPU)"
+  "transfer_threads": "Bearbetar med {threads} trådar ({pct}% CPU)",
+  "dh_lod": "Distant Horizons-LOD:er",
+  "dh_lod_desc": "Avlägsen terräng syns redan första gången du går in. Endast Java."
 }

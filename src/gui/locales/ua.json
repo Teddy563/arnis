@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} з {total}",
   "transfer_written": "записано {done}",
   "transfer_left": "залишилося близько {time}",
-  "transfer_threads": "Обробка в {threads} потоках ({pct}% ЦП)"
+  "transfer_threads": "Обробка в {threads} потоках ({pct}% ЦП)",
+  "dh_lod": "LOD для Distant Horizons",
+  "dh_lod_desc": "Далекий рельєф видно вже під час першого входу. Лише Java."
 }

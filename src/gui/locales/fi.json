@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} kirjoitettu",
   "transfer_left": "noin {time} jäljellä",
-  "transfer_threads": "Käsitellään {threads} säikeellä ({pct} % suorittimesta)"
+  "transfer_threads": "Käsitellään {threads} säikeellä ({pct} % suorittimesta)",
+  "dh_lod": "Distant Horizons -LODit",
+  "dh_lod_desc": "Kaukainen maasto näkyy jo ensimmäisellä liittymisellä. Vain Java."
 }

@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} megírva",
   "transfer_left": "kb. {time} van hátra",
-  "transfer_threads": "Feldolgozás {threads} szálon ({pct}% CPU)"
+  "transfer_threads": "Feldolgozás {threads} szálon ({pct}% CPU)",
+  "dh_lod": "Distant Horizons LOD-ok",
+  "dh_lod_desc": "A távoli terep már az első belépéskor megjelenik. Csak Java."
 }

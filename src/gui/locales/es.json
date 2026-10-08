@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} de {total}",
   "transfer_written": "{done} escritos",
   "transfer_left": "quedan unos {time}",
-  "transfer_threads": "Procesando con {threads} hilos ({pct}% de CPU)"
+  "transfer_threads": "Procesando con {threads} hilos ({pct}% de CPU)",
+  "dh_lod": "LOD de Distant Horizons",
+  "dh_lod_desc": "El terreno lejano se ve al entrar por primera vez. Solo Java."
 }

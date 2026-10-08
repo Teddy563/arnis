@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} iš {total}",
   "transfer_written": "įrašyta {done}",
   "transfer_left": "liko apie {time}",
-  "transfer_threads": "Apdorojama {threads} gijomis ({pct}% CPU)"
+  "transfer_threads": "Apdorojama {threads} gijomis ({pct}% CPU)",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "Tolimas reljefas matomas nuo pirmo įėjimo. Tik Java."
 }

@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} sur {total}",
   "transfer_written": "{done} écrits",
   "transfer_left": "environ {time} restantes",
-  "transfer_threads": "Traitement avec {threads} threads ({pct} % du CPU)"
+  "transfer_threads": "Traitement avec {threads} threads ({pct} % du CPU)",
+  "dh_lod": "LOD Distant Horizons",
+  "dh_lod_desc": "Le terrain lointain s'affiche dès la première connexion. Java uniquement."
 }

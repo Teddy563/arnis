@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} 기록됨",
   "transfer_left": "약 {time} 남음",
-  "transfer_threads": "{threads}개 스레드로 변환 중 (CPU {pct}%)"
+  "transfer_threads": "{threads}개 스레드로 변환 중 (CPU {pct}%)",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "처음 접속할 때부터 먼 지형이 보입니다. Java 전용."
 }

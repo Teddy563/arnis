@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} of {total}",
   "transfer_written": "{done} written",
   "transfer_left": "about {time} left",
-  "transfer_threads": "Baking with {threads} threads ({pct}% CPU)"
+  "transfer_threads": "Baking with {threads} threads ({pct}% CPU)",
+  "dh_lod": "Distant Horizons LODs",
+  "dh_lod_desc": "Distant terrain renders on first join. Java only."
 }

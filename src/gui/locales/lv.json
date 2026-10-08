@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} no {total}",
   "transfer_written": "ierakstīts {done}",
   "transfer_left": "atlicis apmēram {time}",
-  "transfer_threads": "Apstrādā ar {threads} pavedieniem ({pct}% CPU)"
+  "transfer_threads": "Apstrādā ar {threads} pavedieniem ({pct}% CPU)",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "Tālais reljefs redzams jau pirmajā ienākšanas reizē. Tikai Java."
 }

@@ -567,5 +567,7 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "ჩაწერილია {done}",
   "transfer_left": "დარჩა დაახლოებით {time}",
-  "transfer_threads": "დამუშავება {threads} ნაკადით ({pct}% CPU)"
+  "transfer_threads": "დამუშავება {threads} ნაკადით ({pct}% CPU)",
+  "dh_lod": "Distant Horizons LOD-ები",
+  "dh_lod_desc": "შორეული რელიეფი ჩანს პირველივე შესვლისას. მხოლოდ Java."
 }
