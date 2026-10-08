@@ -1,15 +1,20 @@
 //! Pre-generated LOD data for the [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons)
 //! mod (Java worlds only).
 //!
-//! Distant Horizons keeps its LODs in `<world>/data/DistantHorizons.sqlite`.
+//! Distant Horizons keeps a level's LODs in `DistantHorizons.sqlite` in that
+//! level's data folder (`ServerLevelWrapper.getMcSaveFolder`, the level's
+//! `DimensionDataStorage` folder): `<world>/data/` for the overworld before
+//! Minecraft 26.1, `<world>/dimensions/minecraft/overworld/data/` from 26.1.
 //! Left alone it builds them as you fly around, or with its world generator,
 //! both reading back the region files Arnis just wrote. This pass does that
 //! once, after the world is written: it reads the region files back and writes
 //! the block-detail rows DH would write for the same chunks, flagged so DH
 //! builds the coarser levels itself.
 //!
-//! Everything here follows DH 3.3.3 (the 1.21.1 build; core `b02c66d7`), the
-//! release that reads the Minecraft 1.21.1 worlds Arnis writes:
+//! Everything here follows DH 3.3.3 (core `b02c66d7`). Its 1.21.1 and 26.2
+//! builds carry byte-identical core classes and SQL scripts, and serialise
+//! blocks and biomes the same way, so one database serves both; only the
+//! folder differs. 3.3.4 changes none of the storage code.
 //!
 //! - The schema is what DH's `DatabaseUpdater` leaves after its twelve
 //!   `sqlScripts/` files, and the `Schema` table lists all twelve, so DH runs
@@ -37,6 +42,8 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+use crate::world_utils::WorldLayout;
 
 /// Columns per side of one `FullDataSourceV2`.
 const WIDTH: usize = 64;
@@ -150,9 +157,44 @@ const NEEDED_COLUMNS: [&str; 6] = [
     "Regenerate",
 ];
 
-/// Where DH keeps a world's overworld LODs (Minecraft before 26.1).
+/// Where DH keeps a world's overworld LODs, by the layout `level.dat` declares.
 pub fn database_path(world_dir: &Path) -> PathBuf {
-    world_dir.join("data").join("DistantHorizons.sqlite")
+    database_in(WorldLayout::of(world_dir), world_dir)
+}
+
+fn database_in(layout: WorldLayout, world_dir: &Path) -> PathBuf {
+    layout
+        .overworld_dir(world_dir)
+        .join("data")
+        .join("DistantHorizons.sqlite")
+}
+
+/// The inclusive block rectangle `[min_x, min_z, max_x, max_z]` of every
+/// overworld `.mca` region file, for a pass over a whole existing world.
+pub fn region_extent(world_dir: &Path) -> Option<[i32; 4]> {
+    let dir = WorldLayout::of(world_dir)
+        .overworld_dir(world_dir)
+        .join("region");
+    fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let (x, z) = name
+                .strip_prefix("r.")?
+                .strip_suffix(".mca")?
+                .split_once('.')?;
+            Some((x.parse::<i32>().ok()?, z.parse::<i32>().ok()?))
+        })
+        .map(|(x, z)| [x * 512, z * 512, x * 512 + 511, z * 512 + 511])
+        .reduce(|a, b| {
+            [
+                a[0].min(b[0]),
+                a[1].min(b[1]),
+                a[2].max(b[2]),
+                a[3].max(b[3]),
+            ]
+        })
 }
 
 /// What one pass wrote.
@@ -184,23 +226,22 @@ pub fn run(world_dir: &Path, rect: &crate::coordinate_system::cartesian::XZBBox,
 /// world never shows LODs of what it replaced; otherwise the sections are
 /// replaced in place and the rest of the database is kept.
 pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats, String> {
-    if crate::world_utils::WorldLayout::of(world_dir) != crate::world_utils::WorldLayout::Legacy {
-        return Err("worlds in the 26.1 folder layout are not supported yet".into());
-    }
-    let db_path = database_path(world_dir);
+    let layout = WorldLayout::of(world_dir);
+    let db_path = database_in(layout, world_dir);
+    // Minecraft 26.1+ moves a legacy world's region files into `dimensions/`
+    // but leaves `data/DistantHorizons.sqlite` behind, and DH then starts an
+    // empty database there. A legacy world gets the database under that name
+    // too, which the upgrade keeps (checked against the 26.2 server).
+    let upgraded =
+        (layout == WorldLayout::Legacy).then(|| database_in(WorldLayout::Dimensions, world_dir));
     if fresh {
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let mut p = db_path.clone().into_os_string();
-            p.push(suffix);
-            if let Err(e) = fs::remove_file(&p) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    return Err(format!("could not replace {}: {e}", db_path.display()));
-                }
-            }
-        }
+        remove_database(&db_path)?;
+    }
+    if let Some(path) = &upgraded {
+        remove_database(path)?;
     }
     let conn = Mutex::new(open_database(&db_path)?);
-    let region_dir = world_dir.join("region");
+    let region_dir = layout.overworld_dir(world_dir).join("region");
 
     let [min_x, min_z, max_x, max_z] = rect;
     let regions: Vec<(i32, i32)> = (min_x.div_euclid(512)..=max_x.div_euclid(512))
@@ -219,7 +260,11 @@ pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats
     let totals = Mutex::new(Stats::default());
     regions.par_iter().try_for_each(|&(rx, rz)| {
         let path = region_dir.join(format!("r.{rx}.{rz}.mca"));
-        let Ok(file) = File::open(&path) else {
+        // Minecraft leaves empty region files around; they hold no chunks.
+        let Some(file) = File::open(&path)
+            .ok()
+            .filter(|f| f.metadata().is_ok_and(|m| m.len() > 0))
+        else {
             return Ok(());
         };
         let mut region = fastanvil::Region::from_stream(file)
@@ -257,7 +302,32 @@ pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats
         totals.columns += rows.iter().map(|r| r.2 as u64).sum::<u64>();
         Ok::<(), String>(())
     })?;
+    // Closing the last connection folds the WAL into the file before it is
+    // linked.
+    drop(conn);
+    if let Some(path) = &upgraded {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        fs::hard_link(&db_path, path)
+            .or_else(|_| fs::copy(&db_path, path).map(drop))
+            .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    }
     Ok(totals.into_inner().unwrap_or_else(|p| p.into_inner()))
+}
+
+/// Deletes a database with its journal files; a missing one is fine.
+fn remove_database(path: &Path) -> Result<(), String> {
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let mut p = path.as_os_str().to_owned();
+        p.push(suffix);
+        if let Err(e) = fs::remove_file(&p) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("could not replace {}: {e}", path.display()));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Opens the database, laying down DH's schema in a new one.
@@ -993,6 +1063,60 @@ mod tests {
         let conn = open_database(&path).unwrap();
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM Schema"), 12);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM FullData"), 1);
+    }
+
+    /// A world whose `level.dat` declares `data_version`.
+    fn world_at(data_version: i32) -> tempfile::TempDir {
+        use fastnbt::Value;
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let data = HashMap::from([("DataVersion".to_string(), Value::Int(data_version))]);
+        let root = Value::Compound(HashMap::from([("Data".to_string(), Value::Compound(data))]));
+        let mut gz = flate2::write::GzEncoder::new(
+            File::create(dir.path().join("level.dat")).unwrap(),
+            flate2::Compression::default(),
+        );
+        gz.write_all(&fastnbt::to_bytes(&root).unwrap()).unwrap();
+        gz.finish().unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_database_goes_where_each_minecraft_looks() {
+        let in_26 = "dimensions/minecraft/overworld/data/DistantHorizons.sqlite";
+        // Arnis's own (1.21) layout: `data/` for DH on 1.21, and the same file
+        // where DH on 26.1+ looks once Minecraft has upgraded the world.
+        let legacy = world_at(4189);
+        fs::create_dir_all(legacy.path().join("region")).unwrap();
+        fs::write(legacy.path().join("region/r.-1.2.mca"), b"").unwrap();
+        fs::write(legacy.path().join("region/r.3.0.mca"), b"").unwrap();
+        assert_eq!(region_extent(legacy.path()), Some([-512, 0, 2047, 1535]));
+        let old = legacy.path().join("data/DistantHorizons.sqlite");
+        assert_eq!(database_path(legacy.path()), old);
+        write_lods(legacy.path(), [0, 0, 511, 511], true).unwrap();
+        let new = legacy.path().join(in_26);
+        assert_eq!(fs::read(&old).unwrap(), fs::read(&new).unwrap());
+        // Again, over the link it left.
+        write_lods(legacy.path(), [0, 0, 511, 511], false).unwrap();
+        let conn = Connection::open(&new).unwrap();
+        let scripts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM Schema", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(scripts, 12);
+
+        // A world Minecraft 26.1+ has already upgraded: only its own folder.
+        let upgraded = world_at(4903);
+        fs::create_dir_all(
+            upgraded
+                .path()
+                .join("dimensions/minecraft/overworld/region"),
+        )
+        .unwrap();
+        assert_eq!(database_path(upgraded.path()), upgraded.path().join(in_26));
+        write_lods(upgraded.path(), [0, 0, 511, 511], true).unwrap();
+        assert!(upgraded.path().join(in_26).exists());
+        assert!(!upgraded.path().join("data/DistantHorizons.sqlite").exists());
+        assert_eq!(region_extent(upgraded.path()), None);
     }
 
     #[test]

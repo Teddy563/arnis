@@ -333,6 +333,25 @@ fn run_cli() {
         }
         return;
     }
+    if args.dh_lod_only {
+        let world_dir = one_world_dir(&args);
+        let written = dh_lod::region_extent(&world_dir)
+            .ok_or_else(|| format!("{} has no .mca region files", world_dir.display()))
+            .and_then(|rect| dh_lod::write_lods(&world_dir, rect, false));
+        match written {
+            Ok(s) => println!(
+                "Distant Horizons LODs: {} sections ({} columns) written to {}.",
+                s.sections,
+                s.columns,
+                dh_lod::database_path(&world_dir).display()
+            ),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(path) = &args.loot_table {
         match buildings_loot::load_loot_table(path) {
             Ok(table) => buildings_loot::set_loot_table(Some(table)),

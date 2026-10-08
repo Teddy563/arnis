@@ -2713,6 +2713,7 @@ fn gui_start_generation(
                 loot_table: meld.loot_table,
                 dump_loot_table: None,
                 map_item_only: false,
+                dh_lod_only: false,
                 fillground: fillground_enabled,
                 caves: caves_enabled,
                 // The asset pack and zone preview are CLI aids; the GUI toggle carves with a

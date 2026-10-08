@@ -118,6 +118,13 @@ pub struct Args {
     #[arg(long)]
     pub map_item_only: bool,
 
+    /// Write the Distant Horizons LODs of the world at --output-dir (the saves
+    /// folder) and --world-name from its region files, and exit. For a world
+    /// generated without --dh-lod, or one Minecraft 26.1+ has since moved into
+    /// its `dimensions/` layout. Nothing is regenerated.
+    #[arg(long)]
+    pub dh_lod_only: bool,
+
     /// Enable filling ground (optional)
     #[arg(long, default_value_t = false)]
     pub fillground: bool,
@@ -374,8 +381,8 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub voxy_lod: bool,
 
-    /// Pre-generate the Distant Horizons mod's LODs (`data/DistantHorizons.sqlite`)
-    /// so the world renders to the horizon on first join. Java only; implies
+    /// Pre-generate the Distant Horizons mod's LODs (`DistantHorizons.sqlite` in
+    /// the overworld's `data/`) so the world renders to the horizon on first join. Java only; implies
     /// --bake-lighting. A One World job writes them once, after its pieces.
     #[arg(long, default_value_t = false)]
     pub dh_lod: bool,
@@ -798,6 +805,7 @@ pub const CAPABILITIES: &[&str] = &[
     "tree-pack-dir",
     "world-border",
     "dh-lod",
+    "dh-lod-only",
 ];
 
 /// `--cave-datum-y` sits on a section boundary inside the tallest world.
