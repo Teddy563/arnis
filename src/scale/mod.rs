@@ -39,6 +39,29 @@ const TAIL_LINES: usize = 40;
 /// Further attempts at a piece that failed for a reason that may pass.
 const MAX_RETRIES: u32 = 2;
 
+/// The window's run controls (gui.rs). Pause holds the queue: no piece
+/// starts, the running ones finish, and the job stays resumable. Stop ends
+/// the job and kills its running pieces; the finished ones are kept, so the
+/// same run again resumes. Set only from the window, which clears both when
+/// a run starts.
+pub static PAUSE: AtomicBool = AtomicBool::new(false);
+pub static STOP: AtomicBool = AtomicBool::new(false);
+
+/// What a job returns when Stop ended it.
+pub const STOPPED: &str = "Stopped.";
+
+/// Waits while the job is paused, saying so once. False once it is stopping.
+fn hold_while_paused() -> bool {
+    let mut said = false;
+    while PAUSE.load(Ordering::Acquire) && !STOP.load(Ordering::Acquire) {
+        if !std::mem::replace(&mut said, true) {
+            crate::progress::emit_gui_progress_update(crate::progress::MESSAGE_ONLY, "Paused.");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    !STOP.load(Ordering::Acquire)
+}
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -61,14 +84,18 @@ struct Job {
 }
 
 impl Job {
-    fn open(world_dir: &Path, rect: &XZBBox, n: i32, map_base: i32) -> Result<Self, String> {
-        let dir = world_dir.join(one_world::JOBS_DIR).join(format!(
+    fn dir(world_dir: &Path, rect: &XZBBox, n: i32) -> PathBuf {
+        world_dir.join(one_world::JOBS_DIR).join(format!(
             "{}_{}_{}_{}_n{n}",
             rect.min_x(),
             rect.min_z(),
             rect.max_x(),
             rect.max_z()
-        ));
+        ))
+    }
+
+    fn open(world_dir: &Path, rect: &XZBBox, n: i32, map_base: i32) -> Result<Self, String> {
+        let dir = Self::dir(world_dir, rect, n);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
         // The id base is kept, so a resumed job hands out the ranges it did before.
@@ -227,6 +254,9 @@ pub fn run(
     // allowance, so N workers then read the caches instead of all fetching at once.
     if args.process.prewarm || args.process.prewarm_first {
         for unit in units.iter().filter(|u| job.finished(u.index).is_none()) {
+            if !hold_while_paused() {
+                return Err(STOPPED.to_string());
+            }
             let i = unit.index;
             let mut argv = child_args(argv.iter().cloned(), unit, &lease_file(i)?);
             let downloads = args.process.max_downloads.unwrap_or(16).to_string();
@@ -236,8 +266,13 @@ pub fn run(
                 downloads.into(),
             ]);
             println!("  piece {}/{}: warming the caches", i + 1, units.len());
-            run_piece(&argv, &[], |_| {})
-                .map_err(|f| format!("warming piece {} failed: {}", i + 1, f.message))?;
+            run_piece_until(&argv, &[], Some(&STOP), |_| {}).map_err(|f| {
+                if STOP.load(Ordering::Acquire) {
+                    STOPPED.to_string()
+                } else {
+                    format!("warming piece {} failed: {}", i + 1, f.message)
+                }
+            })?;
         }
         // `--prewarm` alone stops here, before anything is built.
         if args.process.prewarm {
@@ -263,16 +298,31 @@ pub fn run(
     let running = Mutex::new(0usize);
     let cap = AtomicUsize::new(sizing.workers);
     let of = units.len();
+    // Each piece's area, in the world's blocks and on the map, on its records.
+    let bounds: Vec<Option<[f64; 4]>> = units
+        .iter()
+        .map(|u| {
+            crate::projection::llbbox_for_rect(&proj, &u.rect)
+                .ok()
+                .map(|b| [b.min().lat(), b.min().lng(), b.max().lat(), b.max().lng()])
+        })
+        .collect();
+    let piece_record = |i: usize, state: &str, extra: Value| {
+        let mut body = json!({"piece": i, "of": of, "state": state,
+                              "rect": units[i].rect.to_array(), "bounds": bounds[i]});
+        if let (Value::Object(body), Value::Object(extra)) = (&mut body, extra) {
+            body.extend(extra);
+        }
+        progress_json::record("piece", body.clone());
+        crate::progress::emit_gui_piece(&body);
+    };
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
     for unit in &units {
         match job.finished(unit.index) {
             Some(r) => {
                 println!("  piece {}/{of}: already built", unit.index + 1);
-                progress_json::record(
-                    "piece",
-                    json!({"piece": unit.index, "of": of, "state": "skipped"}),
-                );
+                piece_record(unit.index, "skipped", json!({}));
                 lock(&results)[unit.index] = Some(r);
             }
             None => queue.push_back(unit.index),
@@ -288,6 +338,24 @@ pub fn run(
         0.0,
     ));
     let finished = AtomicUsize::new(of - lock(&queue).len());
+    // The window's status line: the count, and whether the queue is held.
+    let status = || {
+        if !crate::progress::is_running_with_gui() {
+            // `--progress json` has its piece records, so its stream stays as it was.
+            return String::new();
+        }
+        let n = finished.load(Ordering::Relaxed);
+        let mut line = format!("Building pieces... {n}/{of} done");
+        if PAUSE.load(Ordering::Acquire) {
+            match *lock(&running) {
+                0 => line.push_str(". Paused."),
+                r => line.push_str(&format!(". Pausing: {r} running to finish.")),
+            }
+        }
+        line
+    };
+    // The fraction each running piece last showed on the map.
+    let shown = Mutex::new(vec![0.0; of]);
     // Piece `i` is `f` done: moves the job's bar and, in the window, the count.
     let report = |i: usize, f: f64| {
         let mut d = lock(&done);
@@ -296,22 +364,42 @@ pub fn run(
         d.1 = d.1.max(job_percent(&d.0));
         let percent = d.1;
         drop(d);
-        // `--progress json` has its piece records, so its stream stays as it was.
-        let message = if crate::progress::is_running_with_gui() {
-            format!(
-                "Building pieces... {}/{of} done",
-                finished.load(Ordering::Relaxed)
-            )
-        } else {
-            String::new()
+        crate::progress::emit_gui_progress_update(percent, &status());
+        // The map fills a running piece's cell in steps; window only.
+        let step = {
+            let mut s = lock(&shown);
+            let step = f < 1.0 && f - s[i] >= 0.05;
+            if step {
+                s[i] = f;
+            }
+            step
         };
-        crate::progress::emit_gui_progress_update(percent, &message);
+        if step {
+            crate::progress::emit_gui_piece(
+                &json!({"piece": i, "of": of, "state": "progress", "fraction": f}),
+            );
+        }
     };
+    let paused_said = AtomicBool::new(false);
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
 
     let work = || -> Result<(), String> {
-        while !aborting.load(Ordering::Relaxed) {
+        while !aborting.load(Ordering::Relaxed) && !STOP.load(Ordering::Acquire) {
+            // Paused: the queue waits while the running pieces finish.
+            if PAUSE.load(Ordering::Acquire) {
+                if !paused_said.swap(true, Ordering::Relaxed) {
+                    crate::progress::emit_gui_progress_update(
+                        crate::progress::MESSAGE_ONLY,
+                        &status(),
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                continue;
+            }
+            if paused_said.swap(false, Ordering::Relaxed) {
+                crate::progress::emit_gui_progress_update(crate::progress::MESSAGE_ONLY, &status());
+            }
             {
                 let mut r = lock(&running);
                 if *r >= cap.load(Ordering::Relaxed) {
@@ -338,10 +426,18 @@ pub fn run(
                     if attempt > 0 { " (retry)" } else { "" }
                 );
                 let state = if attempt > 0 { "retry" } else { "start" };
-                progress_json::record("piece", json!({"piece": i, "of": of, "state": state}));
-                let result = run_piece(&argv, &sizing.child_env(), |f| report(i, f));
+                lock(&shown)[i] = 0.0;
+                piece_record(i, state, json!({}));
+                let result =
+                    run_piece_until(&argv, &sizing.child_env(), Some(&STOP), |f| report(i, f));
                 match result {
                     Ok(r) => break r,
+                    // Killed by Stop: not a failure, and built again on resume.
+                    Err(_) if STOP.load(Ordering::Acquire) => {
+                        piece_record(i, "stopped", json!({}));
+                        *lock(&running) -= 1;
+                        return Ok(());
+                    }
                     // Never once the job is stopping: a piece killed with it
                     // looks like a crash.
                     Err(f)
@@ -354,10 +450,7 @@ pub fn run(
                         std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
                     }
                     Err(f) => {
-                        progress_json::record(
-                            "piece",
-                            json!({"piece": i, "of": of, "state": "failed"}),
-                        );
+                        piece_record(i, "failed", json!({}));
                         aborting.store(true, Ordering::Relaxed);
                         return Err(format!("piece {} of {of} failed: {}", i + 1, f.message));
                     }
@@ -373,10 +466,10 @@ pub fn run(
             write(&job.done_path(i), &json!(r))?;
             crate::keep_one_world();
             let pieces_done = finished.fetch_add(1, Ordering::Relaxed) + 1;
-            progress_json::record(
-                "piece",
-                json!({"piece": i, "of": of, "state": "done",
-                       "peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s,
+            piece_record(
+                i,
+                "done",
+                json!({"peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s,
                        "pieces_done": pieces_done}),
             );
             progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, Ordering::Relaxed);
@@ -400,6 +493,10 @@ pub fn run(
             "{e}\nFinished pieces are kept; run the same command again to resume."
         ));
     }
+    // Stopped before the last piece: kept for a resume, not finished.
+    if finished.load(Ordering::Relaxed) < of {
+        return Err(STOPPED.to_string());
+    }
     // Folded in plan order, so the outcome does not depend on which piece
     // finished first.
     let results: Vec<PieceResult> = results
@@ -422,6 +519,23 @@ pub fn run(
     )?;
     close_job(&job, world_dir);
     Ok(())
+}
+
+/// Forgets the finished pieces of the job that building `selection` in
+/// `world_dir` with `--unit-regions n` would resume, so it starts fresh.
+/// Their chunks stay until the pieces build them again.
+pub fn forget_job(world_dir: &Path, selection: &LLBBox, n: i32) -> Result<(), String> {
+    let Some(manifest) = one_world::Manifest::load(world_dir)? else {
+        return Ok(());
+    };
+    let (rect, _) = plan_units(&manifest.projection(), selection, n)?;
+    let dir = Job::dir(world_dir, &rect, n);
+    match std::fs::remove_dir_all(&dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("Failed to remove {}: {e}", dir.display()))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn close_job(job: &Job, world_dir: &Path) {
@@ -676,16 +790,8 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
     code != 0 && (!reported || NETWORK.iter().any(|w| text.contains(w)))
 }
 
-/// Runs one piece to the end. `progress` gets the piece's own fraction done.
-pub(crate) fn run_piece(
-    argv: &[OsString],
-    env: &[(&str, String)],
-    progress: impl FnMut(f64),
-) -> Result<PieceResult, PieceFailure> {
-    run_piece_until(argv, env, None, progress)
-}
-
-/// [`run_piece`], killed as soon as `cancel` is set. Its `transfer` records
+/// Runs one piece to the end, or kills it as soon as `cancel` is set.
+/// `progress` gets the piece's own fraction done. Its `transfer` records
 /// (a download or bake in the child) go on to the window as they come.
 pub(crate) fn run_piece_until(
     argv: &[OsString],

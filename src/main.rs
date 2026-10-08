@@ -120,6 +120,7 @@ mod progress {
         crate::progress_json::progress(progress, message);
         crate::progress_json::record("transfer", serde_json::json!(t));
     }
+    pub fn emit_gui_piece(_piece: &serde_json::Value) {}
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
     pub fn is_running_with_gui() -> bool {

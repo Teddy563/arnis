@@ -91,6 +91,7 @@ pub fn is_running_with_gui() -> bool {
 ///
 /// The function `emit_gui_progress_update` is used to send real-time progress updates to the UI.
 pub fn emit_gui_progress_update(progress: f64, message: &str) {
+    stop_point(message);
     if emits_suppressed(progress, message) {
         return;
     }
@@ -112,6 +113,7 @@ pub fn emit_gui_progress_update(progress: f64, message: &str) {
 /// ~instant when streaming, a real save otherwise). Additive payload field;
 /// only the two terrain emits use it, all other sites stay on the plain fn.
 pub fn emit_gui_progress_update_ex(progress: f64, message: &str, streaming: bool) {
+    stop_point(message);
     if emits_suppressed(progress, message) {
         return;
     }
@@ -132,6 +134,7 @@ pub fn emit_gui_progress_update_ex(progress: f64, message: &str, streaming: bool
 /// the OSM Data Source panel (`transfer` in the payload). Also sent on
 /// `--progress json` as a `transfer` record, so a child's reaches the window.
 pub fn emit_gui_transfer(progress: f64, message: &str, transfer: &crate::transfer::Transfer) {
+    stop_point(message);
     if emits_suppressed(progress, message) {
         return;
     }
@@ -146,6 +149,55 @@ pub fn emit_gui_transfer(progress: f64, message: &str, transfer: &crate::transfe
         if let Err(e) = window.emit("progress-update", payload) {
             eprintln!("Failed to emit progress event: {e}");
         }
+    }
+}
+
+/// A job's `piece` record (see `progress_json`), for the map in the window.
+pub fn emit_gui_piece(piece: &serde_json::Value) {
+    if let Some(window) = get_main_window() {
+        let payload = json!({ "progress": MESSAGE_ONLY, "message": "", "piece": piece });
+        if let Err(e) = window.emit("progress-update", payload) {
+            eprintln!("Failed to emit progress event: {e}");
+        }
+    }
+}
+
+/// The panic payload of a run that Stop unwound (`stop_point`).
+pub struct Stopped;
+
+thread_local! {
+    static STOPPABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While held, Stop (`scale::STOP`) unwinds this thread from its next
+/// progress emit. The window's generation thread holds one: a single run has
+/// no other way to end early. The unwind drops what the run holds (the new
+/// world's cleanup, the session lock) on its way out.
+/// ponytail: an emit made while holding a mutex would poison it; none does today.
+pub struct StopScope;
+
+impl StopScope {
+    pub fn enter() -> Self {
+        STOPPABLE.with(|s| s.set(true));
+        Self
+    }
+}
+
+impl Drop for StopScope {
+    fn drop(&mut self) {
+        STOPPABLE.with(|s| s.set(false));
+    }
+}
+
+fn stop_point(message: &str) {
+    if message.starts_with("Error!") || message.starts_with("Done!") {
+        return;
+    }
+    if crate::scale::STOP.load(Ordering::Acquire)
+        && !std::thread::panicking()
+        && STOPPABLE.with(|s| s.replace(false))
+    {
+        std::panic::resume_unwind(Box::new(Stopped));
     }
 }
 

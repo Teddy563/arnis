@@ -16,11 +16,14 @@
 //!
 //! A job built in pieces (`--unit-regions`) adds `piece` records, state
 //! `start`, `retry`, `done` (with `pieces_done`, the count so far), `skipped`
-//! or `failed`, and each piece's own run ends with a `result` record before
-//! its `done`:
+//! (built by an earlier run of the job), `failed` or `stopped` (killed by the
+//! window's Stop; built again on resume). Each carries the piece's `rect` in
+//! world blocks (`[min_x, min_z, max_x, max_z]`, inclusive) and its `bounds`
+//! on the map (`[min_lat, min_lng, max_lat, max_lng]`). Each piece's own run
+//! ends with a `result` record before its `done`:
 //!
 //! ```text
-//! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","peak_rss_mb":2310,"wall_s":40.1,"pieces_done":5}
+//! {"v":1,"type":"piece","piece":3,"of":16,"state":"done","rect":[0,-1024,1023,-1],"bounds":[44.44,26.09,44.45,26.1],"peak_rss_mb":2310,"wall_s":40.1,"pieces_done":5}
 //! ```
 //!
 //! A download or bake of an `.osm.pbf` extract adds `transfer` records: its
