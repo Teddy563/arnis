@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} kirjoitettu",
   "transfer_left": "noin {time} jäljellä",
-  "transfer_threads": "Käsitellään {threads} säikeellä ({pct} % suorittimesta)"
+  "transfer_threads": "Käsitellään {threads} säikeellä ({pct} % suorittimesta)",
+  "run_pause": "Tauko",
+  "run_resume": "Jatka",
+  "run_stop": "Pysäytä",
+  "run_stopping": "Pysäytetään...",
+  "run_restart": "Käynnistä uudelleen",
+  "run_pause_tip": "Anna käynnissä olevien osien valmistua ja pidätä loput. Mitään ei menetetä.",
+  "run_resume_tip": "Käynnistä odottavat osat uudelleen.",
+  "run_pause_single": "Vain osissa tehty ajo voi pitää taukoa. Tämä rakennetaan kerralla.",
+  "run_stop_tip": "Pysäytä nyt. Valmiit osat säilyvät, joten uusi aloitus jatkaa.",
+  "run_stop_single_tip": "Pysäytä nyt. Kerralla tehtävä ajo alkaa ensi kerralla alusta.",
+  "run_restart_tip": "Pysäytä ja aloita uudelleen: jatka tai rakenna kaikki osat uudelleen.",
+  "run_restart_single_tip": "Pysäytä ja aloita tämä ajo alusta.",
+  "run_restart_title": "Käynnistetäänkö generointi uudelleen?",
+  "run_restart_text": "Jatka säilyttää valmiit osat ja rakentaa loput. Aloita alusta rakentaa jokaisen osan uudelleen.",
+  "run_restart_fresh": "Aloita alusta",
+  "run_restart_cancel": "Peruuta"
 }

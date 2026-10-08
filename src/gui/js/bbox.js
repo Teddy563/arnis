@@ -1487,6 +1487,11 @@ $(document).ready(function () {
         if (event.data && event.data.type === 'snapOverlay') {
             showSnapOverlay(event.data.snap, event.data.dims);
         }
+        // A run's progress on the map: main.js runMap, null when cleared.
+        if (event.data && event.data.type === 'runOverlay') {
+            runOverlay = event.data.run;
+            scheduleSnapDraw();
+        }
         if (event.data && event.data.type === 'snapGridControl') {
             snapGridControlVisible = !!event.data.visible;
             syncGridToggleButton();
@@ -2486,6 +2491,8 @@ var snapGridShown = (function () {
     }
 })();
 var snapGridControlVisible = false;
+var runOverlay = null;
+var snapDrawPending = false;
 var _gridToggleBtn = null;
 var _gridToggleSection = null;
 
@@ -2500,6 +2507,56 @@ function syncGridToggleButton() {
 var SNAP_MIN_CELL_PX = 8;
 // How far outside the outline the W and H dimension lines sit.
 var SNAP_DIM_GAP_PX = 16;
+
+// Progress events come many a second; the map redraws once a frame at most.
+function scheduleSnapDraw() {
+    if (snapDrawPending) return;
+    snapDrawPending = true;
+    requestAnimationFrame(function () {
+        snapDrawPending = false;
+        drawSnapOverlay();
+    });
+}
+
+// The run under the grid, in the grid's canvas: built cells (or a finished
+// run in one go) green, building ones outlined in yellow with their share
+// done filled from the north edge, waiting ones left as they are.
+function drawRunOverlay() {
+    var run = runOverlay;
+    if (!run) return;
+    // One rectangle [s, w, n, e], or its top `f` share.
+    var rect = function (b, f) {
+        var s = f == null ? b[0] : b[2] - (b[2] - b[0]) * Math.min(1, f);
+        return [[[s, b[1]], [b[2], b[1]], [b[2], b[3]], [s, b[3]]]];
+    };
+    var done = [], building = [], filled = [];
+    if (run.pieces) {
+        Object.keys(run.pieces).forEach(function (k) {
+            var p = run.pieces[k];
+            if (!p.b) return;
+            if (p.s === 'done') done.push(rect(p.b));
+            else if (p.s === 'run') {
+                building.push(rect(p.b));
+                if (p.f > 0) filled.push(rect(p.b, p.f));
+            }
+        });
+    } else if (run.bbox) {
+        if (run.state === 'done') done.push(rect(run.bbox));
+        else if (run.state === 'run') {
+            building.push(rect(run.bbox));
+            if (run.pct > 0) filled.push(rect(run.bbox, run.pct / 100));
+        }
+    }
+    var paint = function (polys, style) {
+        if (polys.length === 0) return;
+        style.renderer = snapRenderer;
+        style.interactive = false;
+        L.polygon(polys, style).addTo(snapLayer);
+    };
+    paint(done, { stroke: false, fillColor: '#7bd864', fillOpacity: 0.45 });
+    paint(filled, { stroke: false, fillColor: '#fecc44', fillOpacity: 0.4 });
+    paint(building, { color: '#fecc44', weight: 2, opacity: 1, fillColor: '#fecc44', fillOpacity: 0.12 });
+}
 
 function showSnapOverlay(snap, dims) {
     snapState = snap ? { snap: snap, dims: dims } : null;
@@ -2522,6 +2579,7 @@ function drawSnapOverlay() {
         map.on('zoomend', drawSnapOverlay);
     }
     snapLayer.clearLayers();
+    drawRunOverlay();
     if (!snapState || !snapGridShown) return;
     var snap = snapState.snap, dims = snapState.dims;
     var s = snap.outline[0], w = snap.outline[1], n = snap.outline[2], e = snap.outline[3];

@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} iš {total}",
   "transfer_written": "įrašyta {done}",
   "transfer_left": "liko apie {time}",
-  "transfer_threads": "Apdorojama {threads} gijomis ({pct}% CPU)"
+  "transfer_threads": "Apdorojama {threads} gijomis ({pct}% CPU)",
+  "run_pause": "Pristabdyti",
+  "run_resume": "Tęsti",
+  "run_stop": "Sustabdyti",
+  "run_stopping": "Stabdoma...",
+  "run_restart": "Paleisti iš naujo",
+  "run_pause_tip": "Leidžia vykdomoms dalims baigtis, likusios laukia. Niekas neprarandama.",
+  "run_resume_tip": "Vėl paleidžia laukiančias dalis.",
+  "run_pause_single": "Pristabdyti galima tik generavimą dalimis. Šis kuriamas vienu kartu.",
+  "run_stop_tip": "Sustabdyti dabar. Baigtos dalys lieka, todėl paleidus vėl tęsiama.",
+  "run_stop_single_tip": "Sustabdyti dabar. Generavimas vienu kartu kitą kartą prasidės iš pradžių.",
+  "run_restart_tip": "Sustabdyti ir paleisti vėl: tęsti arba iš naujo sukurti kiekvieną dalį.",
+  "run_restart_single_tip": "Sustabdyti ir pradėti šį generavimą iš pradžių.",
+  "run_restart_title": "Paleisti generavimą iš naujo?",
+  "run_restart_text": "Tęsiant baigtos dalys lieka ir sukuriamos likusios. Pradedant iš naujo kiekviena dalis kuriama vėl.",
+  "run_restart_fresh": "Pradėti iš naujo",
+  "run_restart_cancel": "Atšaukti"
 }

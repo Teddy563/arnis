@@ -138,6 +138,9 @@ pub fn run_gui() -> Result<(), String> {
             gui_tree_pack_status,
             gui_tree_pack_layout,
             gui_start_generation,
+            gui_pause_generation,
+            gui_stop_generation,
+            gui_forget_finished_pieces,
             gui_get_version,
             gui_get_update_info,
             gui_get_platform,
@@ -2219,6 +2222,39 @@ fn offline_complete() -> Result<(), String> {
     Err(msg)
 }
 
+/// Pause holds a job's queue: the running pieces finish, none starts until
+/// Resume. A run in one go has no queue; the window does not offer it there.
+#[tauri::command]
+fn gui_pause_generation(paused: bool) {
+    crate::scale::PAUSE.store(paused, std::sync::atomic::Ordering::Release);
+}
+
+/// Stop: a job kills its running pieces and keeps the finished ones; a run
+/// in one go unwinds from its next progress emit; a download for offline
+/// use kills its child. The run then says "Stopped.".
+#[tauri::command]
+fn gui_stop_generation() {
+    use std::sync::atomic::Ordering;
+    if BUSY.load(Ordering::Acquire) == BUSY_GENERATION {
+        crate::scale::STOP.store(true, Ordering::Release);
+        BAKE_CANCEL.store(true, Ordering::Release);
+    }
+}
+
+/// Restart from scratch: the job building `bbox_text` in this One World with
+/// `unit_regions` forgets its finished pieces, so every piece is built again.
+#[tauri::command]
+fn gui_forget_finished_pieces(
+    save_path: String,
+    world_name: String,
+    bbox_text: String,
+    unit_regions: i32,
+) -> Result<(), String> {
+    let _slot = BusySlot::acquire(BUSY_GENERATION)?;
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    crate::scale::forget_job(&one_world_dir(&save_path, &world_name), &bbox, unit_regions)
+}
+
 /// `--prewarm` lives in the CLI, so the window runs it there, on the same
 /// command line a piece gets, with its progress on the window's bar.
 /// Stop (`gui_cancel_bake`) kills the child; its half-done extract download
@@ -2330,6 +2366,8 @@ fn gui_start_generation(
     };
 
     progress::reset_progress_floor();
+    crate::scale::PAUSE.store(false, std::sync::atomic::Ordering::Release);
+    crate::scale::STOP.store(false, std::sync::atomic::Ordering::Release);
 
     let mut meld = match meld_args(&flags, one_world) {
         Ok(meld) => meld,
@@ -2369,6 +2407,7 @@ fn gui_start_generation(
     } else {
         Default::default()
     };
+    let pieced = units.coordinates();
     // The global pool was built once at startup, so a per-run count gets its
     // own pool. ponytail: threads that are not rayon workers (std::thread
     // spawns inside the run) still fan out on the global pool.
@@ -2471,6 +2510,8 @@ fn gui_start_generation(
         // Held until the worker finishes, on every path, so the globals stay this run's.
         let _generation_slot = generation_slot;
         let work = move || {
+            // Stop unwinds this thread from its next progress emit.
+            let stop_scope = progress::StopScope::enter();
             let world_path = if one_world {
                 one_world_dir(&selected_world, &one_world_name)
             } else {
@@ -2813,6 +2854,8 @@ fn gui_start_generation(
                     let threads = crate::scale::budget::bake_threads(&args);
                     argv.push(format!("--threads={threads}").into());
                 }
+                // Stopped through BAKE_CANCEL, which kills the child and cleans up.
+                drop(stop_scope);
                 return prewarm_in_child(&argv, &bbox_text);
             }
 
@@ -2865,7 +2908,10 @@ fn gui_start_generation(
                                 g.disarm();
                             }
                         }
-                        emit_gui_error(&e);
+                        // Said once the run has let go of the process, below.
+                        if !crate::scale::STOP.load(std::sync::atomic::Ordering::Acquire) {
+                            emit_gui_error(&e);
+                        }
                         return Err(e);
                     }
                     if let Some(g) = cleanup_guard.as_mut() {
@@ -3140,11 +3186,37 @@ fn gui_start_generation(
             Some(pool) => pool.install(work),
             None => work(),
         };
-        if let Err(e) = tokio::task::spawn_blocking(blocking).await {
-            let error_msg = format!("Error in blocking task: {e}");
-            eprintln!("{error_msg}");
-            emit_gui_error(&error_msg);
-            // Session lock will be automatically released when the task fails
+        let joined = tokio::task::spawn_blocking(blocking).await;
+        // Free for the next run before the window hears this one ended, so
+        // Restart can start straight away.
+        drop(_generation_slot);
+        let stopped = crate::scale::STOP.load(std::sync::atomic::Ordering::Acquire);
+        let say_stopped = || {
+            emit_gui_progress_update(
+                progress::MESSAGE_ONLY,
+                if pieced {
+                    "Stopped. Finished pieces are kept; starting again resumes them."
+                } else {
+                    "Stopped. A run in one go starts over when started again."
+                },
+            )
+        };
+        match joined {
+            Ok(Err(_)) if stopped => say_stopped(),
+            Err(e) if e.is_panic() => match e.into_panic().downcast::<progress::Stopped>() {
+                Ok(_) => say_stopped(),
+                Err(_) => {
+                    let error_msg = "Error in blocking task: the run panicked".to_string();
+                    eprintln!("{error_msg}");
+                    emit_gui_error(&error_msg);
+                }
+            },
+            Err(e) => {
+                let error_msg = format!("Error in blocking task: {e}");
+                eprintln!("{error_msg}");
+                emit_gui_error(&error_msg);
+            }
+            Ok(_) => {}
         }
     });
 

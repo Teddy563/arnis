@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} sur {total}",
   "transfer_written": "{done} écrits",
   "transfer_left": "environ {time} restantes",
-  "transfer_threads": "Traitement avec {threads} threads ({pct} % du CPU)"
+  "transfer_threads": "Traitement avec {threads} threads ({pct} % du CPU)",
+  "run_pause": "Pause",
+  "run_resume": "Reprendre",
+  "run_stop": "Arrêter",
+  "run_stopping": "Arrêt en cours...",
+  "run_restart": "Redémarrer",
+  "run_pause_tip": "Laisse finir les morceaux en cours, puis retient le reste. Rien n’est perdu.",
+  "run_resume_tip": "Relance les morceaux en attente.",
+  "run_pause_single": "Seule une génération en morceaux peut être mise en pause. Celle-ci se fait d’un seul tenant.",
+  "run_stop_tip": "Arrêter maintenant. Les morceaux finis sont gardés, relancer reprend.",
+  "run_stop_single_tip": "Arrêter maintenant. Une génération d’un seul tenant repart de zéro la prochaine fois.",
+  "run_restart_tip": "Arrêter puis relancer : reprendre, ou reconstruire chaque morceau.",
+  "run_restart_single_tip": "Arrêter puis relancer cette génération depuis le début.",
+  "run_restart_title": "Redémarrer la génération ?",
+  "run_restart_text": "Reprendre garde les morceaux finis et construit le reste. Repartir de zéro reconstruit chaque morceau.",
+  "run_restart_fresh": "Repartir de zéro",
+  "run_restart_cancel": "Annuler"
 }

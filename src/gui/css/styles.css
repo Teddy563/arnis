@@ -831,6 +831,83 @@ input[type="range"] {
   box-shadow: none;
 }
 
+/* A run going: Pause, Stop and Restart where Start was. The wrapper keeps its
+   fill but not the green hover, which means "start". */
+.start-button-wrap.is-running {
+  cursor: default;
+}
+
+.start-button-wrap.is-running:hover {
+  background-color: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .start-button-wrap.is-running:hover {
+    background-color: #0f0f0f98;
+  }
+}
+
+.run-controls {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.run-controls[hidden] {
+  display: none;
+}
+
+.run-controls .run-control,
+.run-controls .run-control:active {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.run-controls .run-control:hover {
+  background: rgba(254, 204, 68, 0.14);
+  border-color: var(--primary-accent);
+}
+
+.run-controls .run-control.is-active {
+  color: var(--primary-accent);
+  border-color: var(--primary-accent);
+}
+
+.run-controls .run-control:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  border-color: transparent;
+}
+
+.run-controls .run-control .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.mini-panel .mini-icon-button[hidden] {
+  display: none;
+}
+
+.mini-panel .mini-icon-button.is-active {
+  color: var(--primary-accent);
+}
+
 .settings-button {
   width: 44px !important;
   min-width: 44px;
@@ -1051,11 +1128,11 @@ body.mini-mode .mini-panel {
   padding: 10px 12px;
 }
 
-.mini-confirm .dialog .dialog-button.is-danger {
+.dialog .dialog-button.is-danger {
   border-color: var(--ui-danger);
   color: var(--ui-danger);
 }
 
-.mini-confirm .dialog .dialog-button.is-danger:hover {
+.dialog .dialog-button.is-danger:hover {
   background: rgba(207, 102, 121, 0.12);
 }

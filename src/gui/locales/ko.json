@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} 기록됨",
   "transfer_left": "약 {time} 남음",
-  "transfer_threads": "{threads}개 스레드로 변환 중 (CPU {pct}%)"
+  "transfer_threads": "{threads}개 스레드로 변환 중 (CPU {pct}%)",
+  "run_pause": "일시 정지",
+  "run_resume": "재개",
+  "run_stop": "중지",
+  "run_stopping": "중지하는 중...",
+  "run_restart": "다시 시작",
+  "run_pause_tip": "실행 중인 조각은 끝내고 나머지는 대기시킵니다. 잃는 것은 없습니다.",
+  "run_resume_tip": "대기 중인 조각을 다시 시작합니다.",
+  "run_pause_single": "조각 단위 실행만 일시 정지할 수 있습니다. 이 실행은 한 번에 생성합니다.",
+  "run_stop_tip": "지금 중지합니다. 완료된 조각은 남으므로 다시 시작하면 이어집니다.",
+  "run_stop_single_tip": "지금 중지합니다. 한 번에 하는 실행은 다음에 처음부터 다시 시작합니다.",
+  "run_restart_tip": "중지한 뒤 다시 시작: 이어서 하거나 모든 조각을 다시 만듭니다.",
+  "run_restart_single_tip": "중지한 뒤 이 실행을 처음부터 다시 시작합니다.",
+  "run_restart_title": "생성을 다시 시작할까요?",
+  "run_restart_text": "재개는 완료된 조각을 유지하고 나머지를 만듭니다. 처음부터는 모든 조각을 다시 만듭니다.",
+  "run_restart_fresh": "처음부터",
+  "run_restart_cancel": "취소"
 }

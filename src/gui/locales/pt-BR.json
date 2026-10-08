@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} de {total}",
   "transfer_written": "{done} gravados",
   "transfer_left": "cerca de {time} restantes",
-  "transfer_threads": "Processando com {threads} threads ({pct}% da CPU)"
+  "transfer_threads": "Processando com {threads} threads ({pct}% da CPU)",
+  "run_pause": "Pausar",
+  "run_resume": "Retomar",
+  "run_stop": "Parar",
+  "run_stopping": "Parando...",
+  "run_restart": "Reiniciar",
+  "run_pause_tip": "Deixa as peças em andamento terminarem e segura o resto. Nada se perde.",
+  "run_resume_tip": "Inicia de novo as peças em espera.",
+  "run_pause_single": "Só uma geração em peças pode pausar. Esta é feita de uma vez.",
+  "run_stop_tip": "Parar agora. As peças prontas ficam, então iniciar de novo retoma.",
+  "run_stop_single_tip": "Parar agora. Uma geração de uma vez recomeça do zero na próxima.",
+  "run_restart_tip": "Parar e iniciar de novo: retomar ou construir cada peça de novo.",
+  "run_restart_single_tip": "Parar e começar esta geração desde o início.",
+  "run_restart_title": "Reiniciar a geração?",
+  "run_restart_text": "Retomar mantém as peças prontas e constrói o resto. Começar do zero constrói cada peça de novo.",
+  "run_restart_fresh": "Começar do zero",
+  "run_restart_cancel": "Cancelar"
 }

@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} 書き込み済み",
   "transfer_left": "残り約 {time}",
-  "transfer_threads": "{threads} スレッドで変換中 (CPU {pct}%)"
+  "transfer_threads": "{threads} スレッドで変換中 (CPU {pct}%)",
+  "run_pause": "一時停止",
+  "run_resume": "再開",
+  "run_stop": "停止",
+  "run_stopping": "停止中...",
+  "run_restart": "再起動",
+  "run_pause_tip": "実行中のピースを完了させ、残りを保留します。何も失われません。",
+  "run_resume_tip": "待機中のピースを再開します。",
+  "run_pause_single": "一時停止できるのはピース単位の実行だけです。この実行は一括で生成します。",
+  "run_stop_tip": "今すぐ停止します。完了したピースは残るため、再度開始すると再開します。",
+  "run_stop_single_tip": "今すぐ停止します。一括の実行は次回最初からやり直します。",
+  "run_restart_tip": "停止してから再開始します：再開するか、すべてのピースを作り直します。",
+  "run_restart_single_tip": "停止して、この実行を最初からやり直します。",
+  "run_restart_title": "生成を再起動しますか？",
+  "run_restart_text": "再開は完了したピースを残して残りを生成します。最初からはすべてのピースを作り直します。",
+  "run_restart_fresh": "最初から",
+  "run_restart_cancel": "キャンセル"
 }

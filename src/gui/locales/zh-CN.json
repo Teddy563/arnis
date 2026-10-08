@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "已写入 {done}",
   "transfer_left": "约剩 {time}",
-  "transfer_threads": "使用 {threads} 个线程处理（CPU {pct}%）"
+  "transfer_threads": "使用 {threads} 个线程处理（CPU {pct}%）",
+  "run_pause": "暂停",
+  "run_resume": "继续",
+  "run_stop": "停止",
+  "run_stopping": "正在停止...",
+  "run_restart": "重新开始",
+  "run_pause_tip": "让正在运行的分块完成，其余分块暂缓。不会丢失任何内容。",
+  "run_resume_tip": "重新开始等待中的分块。",
+  "run_pause_single": "只有分块生成才能暂停。此次生成一次完成。",
+  "run_stop_tip": "立即停止。已完成的分块会保留，再次开始将继续。",
+  "run_stop_single_tip": "立即停止。一次完成的生成下次会从头开始。",
+  "run_restart_tip": "停止后重新开始：继续，或重新构建每个分块。",
+  "run_restart_single_tip": "停止后从头重新开始此次生成。",
+  "run_restart_title": "重新开始生成？",
+  "run_restart_text": "继续会保留已完成的分块并构建其余部分。从头开始会重新构建每个分块。",
+  "run_restart_fresh": "从头开始",
+  "run_restart_cancel": "取消"
 }

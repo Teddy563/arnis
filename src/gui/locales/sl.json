@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} od {total}",
   "transfer_written": "zapisano {done}",
   "transfer_left": "še približno {time}",
-  "transfer_threads": "Obdelava s {threads} nitmi ({pct} % CPE)"
+  "transfer_threads": "Obdelava s {threads} nitmi ({pct} % CPE)",
+  "run_pause": "Premor",
+  "run_resume": "Nadaljuj",
+  "run_stop": "Ustavi",
+  "run_stopping": "Ustavljanje...",
+  "run_restart": "Znova zaženi",
+  "run_pause_tip": "Pusti, da se deli v teku končajo, ostale zadrži. Nič se ne izgubi.",
+  "run_resume_tip": "Znova zaženi čakajoče dele.",
+  "run_pause_single": "Premor je mogoč samo pri gradnji po delih. Ta se gradi naenkrat.",
+  "run_stop_tip": "Ustavi zdaj. Končani deli ostanejo, zato ponovni zagon nadaljuje.",
+  "run_stop_single_tip": "Ustavi zdaj. Gradnja naenkrat se naslednjič začne od začetka.",
+  "run_restart_tip": "Ustavi in znova zaženi: nadaljuj ali znova zgradi vsak del.",
+  "run_restart_single_tip": "Ustavi in začni to gradnjo od začetka.",
+  "run_restart_title": "Znova zaženem generiranje?",
+  "run_restart_text": "Nadaljuj obdrži končane dele in zgradi ostale. Začni znova vsak del zgradi še enkrat.",
+  "run_restart_fresh": "Začni znova",
+  "run_restart_cancel": "Prekliči"
 }

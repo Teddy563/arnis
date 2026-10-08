@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} von {total}",
   "transfer_written": "{done} geschrieben",
   "transfer_left": "noch etwa {time}",
-  "transfer_threads": "Aufbereitung mit {threads} Threads ({pct}% CPU)"
+  "transfer_threads": "Aufbereitung mit {threads} Threads ({pct}% CPU)",
+  "run_pause": "Pause",
+  "run_resume": "Fortsetzen",
+  "run_stop": "Stopp",
+  "run_stopping": "Wird gestoppt...",
+  "run_restart": "Neu starten",
+  "run_pause_tip": "Laufende Teile fertigstellen, dann den Rest anhalten. Nichts geht verloren.",
+  "run_resume_tip": "Die wartenden Teile wieder starten.",
+  "run_pause_single": "Nur ein Lauf in Teilen kann pausieren. Dieser baut in einem Durchgang.",
+  "run_stop_tip": "Jetzt stoppen. Fertige Teile bleiben, ein neuer Start setzt fort.",
+  "run_stop_single_tip": "Jetzt stoppen. Ein Lauf in einem Durchgang beginnt beim nächsten Mal von vorn.",
+  "run_restart_tip": "Stoppen, dann neu starten: fortsetzen oder jedes Teil neu bauen.",
+  "run_restart_single_tip": "Stoppen, dann diesen Lauf von vorn beginnen.",
+  "run_restart_title": "Generierung neu starten?",
+  "run_restart_text": "Fortsetzen behält die fertigen Teile und baut den Rest. Neu beginnen baut jedes Teil noch einmal.",
+  "run_restart_fresh": "Neu beginnen",
+  "run_restart_cancel": "Abbrechen"
 }

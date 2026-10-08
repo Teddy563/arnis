@@ -746,6 +746,10 @@ function registerMessageEvent() {
     // Typed messages are handled below; only untyped bboxText messages are
     // selection updates (typed ones carrying coordinates must not be).
     if (bboxText && !event.data.type) {
+      if (!run && runMap && bboxText !== runMap.src) {
+        runMap = null;
+        postRunMap();
+      }
       console.log("Updated BBOX Coordinates:", bboxText);
       displayBboxInfoText(bboxText);
     }
@@ -1092,6 +1096,8 @@ function setupProgressListener() {
   setInterval(renderRunStats, 1000);
   window.__TAURI__.event.listen("progress-update", (event) => {
     const { progress, message, streaming } = event.payload;
+    if (event.payload.piece) onRunPiece(event.payload.piece);
+    else if (progress >= 0) onRunPercent(progress);
     // "Building pieces... 3/16 done": the coordinator's count, and a one-band ETA.
     if (message && message.startsWith("Building pieces")) {
       // Anything the four-band model counted before this is not the job's.
@@ -1117,6 +1123,7 @@ function setupProgressListener() {
       if (message.startsWith("Error!") || message.startsWith("Done!")) {
         runStats = null;
         renderRunStats();
+        endRunControls(message);
       }
       if (message.startsWith("Error!")) {
         progressInfo.style.color = "#fa7878";
@@ -1155,6 +1162,9 @@ function setupProgressListener() {
     // A stopped download is over too, with nothing to colour.
     if (message.startsWith("Stopped.")) {
       progressInfo.style.color = "#ececec";
+      runStats = null;
+      renderRunStats();
+      endRunControls(message);
       setGenerationButtonEnabled(true);
       resetEta();
       refreshDataPlan(true);
@@ -4401,8 +4411,10 @@ function snapSelection(bbox) {
   return invoke('gui_snap_selection', {
     bboxText: bbox,
     savePath: savePath,
-    // null: the new One World a large selection becomes.
-    worldName: isOneWorldEnabled() ? oneWorldFolderName() : null,
+    // null: the new One World a large selection becomes, unless a stopped
+    // job of this selection made one: that one, so starting again resumes it.
+    worldName: isOneWorldEnabled() ? oneWorldFolderName()
+      : resumeWorld && resumeWorld.bbox === bbox ? resumeWorld.name : null,
     scale: parseFloat(document.getElementById('scale-value-slider').value) || 1,
     unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
     snapMode: document.getElementById('snap-mode-select').value,
@@ -5079,7 +5091,7 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun(bbox) {
+async function prepareOneWorldRun(bbox, skipOverlap = false) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -5101,7 +5113,7 @@ async function prepareOneWorldRun(bbox) {
       oneWorldText('one_world_locked', 'open in Minecraft'), 'error');
     return false;
   }
-  if (!info.exists) return true;
+  if (!info.exists || skipOverlap) return true;
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
@@ -5170,6 +5182,196 @@ function handleWorldSelectionError(errorCode) {
 
 let generationButtonEnabled = true;
 
+// Pause, Stop and Restart, in the Start button's place while a run goes, and
+// the run drawn on the map (bbox.js drawRunOverlay). `run` is null when idle.
+// Pause holds a job's queue: running pieces finish, none starts until Resume.
+// Stop kills what runs; a job keeps its finished pieces, so starting it again
+// resumes. Restart is Stop, then Start: a job resumes unless "Start fresh"
+// is chosen in its dialog; a run in one go always starts over.
+let run = null; // { src, bbox, pieced, prewarm, worldName, paused, stopping, restart }
+let runMap = null; // { bbox: [s, w, n, e], pct, state, pieces: { i: { b, s, f } } | null }
+// The world a stopped or failed job of pieces was building, when One World was
+// off and the job named a new one: its selection's next run goes there.
+let resumeWorld = null; // { bbox, name }
+
+function hasUnitRegionsFlag(flags) {
+  return advancedFeatureArgs().flags.concat(flags || [])
+    .some((f) => f.startsWith('--unit-regions') || f.startsWith('--one-world-workers'));
+}
+
+function bboxBounds(text) {
+  const v = String(text || '').trim().split(/[,\s]+/).map(Number);
+  if (v.length !== 4 || !v.every(isFinite)) return null;
+  return [Math.min(v[0], v[2]), Math.min(v[1], v[3]), Math.max(v[0], v[2]), Math.max(v[1], v[3])];
+}
+
+function postRunMap() {
+  postToMap({ type: 'runOverlay', run: runMap });
+}
+
+function startRunControls(opts) {
+  run = Object.assign({ paused: false, stopping: false, restart: null, src: selectedBBox }, opts);
+  runMap = opts.prewarm ? null
+    : { src: selectedBBox, bbox: bboxBounds(opts.bbox), pct: 0, state: 'run', pieces: opts.pieced ? {} : null };
+  postRunMap();
+  syncRunControls();
+}
+
+// A job's `piece` record: its cell turns yellow while it builds, green when done.
+function onRunPiece(p) {
+  if (!runMap) return;
+  if (!runMap.pieces) runMap.pieces = {};
+  const cell = runMap.pieces[p.piece] || {};
+  if (p.bounds) cell.b = p.bounds;
+  if (p.state === 'done' || p.state === 'skipped') cell.s = 'done';
+  else if (p.state === 'start' || p.state === 'retry') { cell.s = 'run'; cell.f = 0; }
+  else if (p.state === 'progress') cell.f = p.fraction;
+  else { delete runMap.pieces[p.piece]; postRunMap(); return; }
+  runMap.pieces[p.piece] = cell;
+  postRunMap();
+}
+
+// A run in one go fills its selection from the north as the bar moves.
+function onRunPercent(pct) {
+  if (!runMap || runMap.pieces || runMap.state !== 'run') return;
+  if (Math.floor(pct) === Math.floor(runMap.pct)) return;
+  runMap.pct = pct;
+  postRunMap();
+}
+
+function endRunControls(message) {
+  if (!run) return;
+  const restart = run.restart;
+  if (run.pieced && !isOneWorldEnabled()) {
+    resumeWorld = message.startsWith('Done!') ? null : { bbox: run.src, name: run.worldName };
+  }
+  run = null;
+  if (runMap) {
+    if (message.startsWith('Done!')) runMap.state = 'done';
+    else if (runMap.pieces) {
+      // The pieces that were running go back to waiting.
+      for (const k in runMap.pieces) if (runMap.pieces[k].s !== 'done') delete runMap.pieces[k];
+    } else runMap.state = 'stopped';
+    postRunMap();
+  }
+  syncRunControls();
+  if (restart && !message.startsWith('Error!')) {
+    // After the listener has handed the Start guard back.
+    setTimeout(() => restartRun(restart), 0);
+  }
+}
+
+async function restartRun(how) {
+  if (how.fresh) {
+    try {
+      await invoke('gui_forget_finished_pieces', {
+        savePath, worldName: how.worldName, bboxText: how.bbox,
+        unitRegions: parseInt(document.getElementById('unit-regions-select').value, 10) || 4,
+      });
+    } catch (error) {
+      const info = document.getElementById('progress-info');
+      info.textContent = 'Error! ' + error;
+      info.style.color = '#fa7878';
+      return;
+    }
+  }
+  startGeneration({ restart: true });
+}
+
+function syncRunControls() {
+  const t = oneWorldText;
+  const on = !!run;
+  const wrap = document.querySelector('.start-button-wrap');
+  wrap.classList.toggle('is-running', on);
+  document.getElementById('start-button').hidden = on;
+  document.getElementById('run-controls').hidden = !on;
+  const pause = document.getElementById('run-pause');
+  const stop = document.getElementById('run-stop');
+  const restart = document.getElementById('run-restart');
+  const miniPause = document.getElementById('mini-pause');
+  const miniStop = document.getElementById('mini-stop');
+  miniPause.hidden = miniStop.hidden = !on;
+  if (!on) return;
+  const canPause = run.pieced && !run.stopping;
+  const pauseText = run.paused ? t('run_resume', 'Resume') : t('run_pause', 'Pause');
+  const pauseTip = !run.pieced
+    ? t('run_pause_single', 'Only a run in pieces can pause. This one builds in one go.')
+    : run.paused ? t('run_resume_tip', 'Start the waiting pieces again.')
+      : t('run_pause_tip', 'Let the running pieces finish, then hold the rest. Nothing is lost.');
+  const stopText = run.stopping ? t('run_stopping', 'Stopping...') : t('run_stop', 'Stop');
+  const stopTip = run.pieced || run.prewarm
+    ? t('run_stop_tip', 'Stop now. Finished pieces are kept, so starting again resumes.')
+    : t('run_stop_single_tip', 'Stop now. A run in one go starts over next time.');
+  const restartTip = run.pieced
+    ? t('run_restart_tip', 'Stop, then start again: resume, or build every piece again.')
+    : t('run_restart_single_tip', 'Stop, then start this run again from the beginning.');
+  for (const [btn, mini, icon, text, tip, enabled] of [
+    [pause, miniPause, run.paused ? 'play' : 'pause', pauseText, pauseTip, canPause],
+    [stop, miniStop, 'square', stopText, stopTip, !run.stopping],
+    [restart, null, 'reset', t('run_restart', 'Restart'), restartTip, !run.stopping && !run.prewarm],
+  ]) {
+    btn.querySelector('use').setAttribute('href', '#i-' + icon);
+    btn.querySelector('span').textContent = text;
+    btn.title = tip;
+    btn.disabled = !enabled;
+    if (!mini) continue;
+    mini.querySelector('use').setAttribute('href', '#i-' + icon);
+    mini.title = tip;
+    mini.setAttribute('aria-label', text);
+    mini.disabled = !enabled;
+  }
+  pause.classList.toggle('is-active', run.paused);
+  miniPause.classList.toggle('is-active', run.paused);
+}
+
+async function togglePause() {
+  if (!run || !run.pieced || run.stopping) return;
+  run.paused = !run.paused;
+  syncRunControls();
+  await invoke('gui_pause_generation', { paused: run.paused });
+}
+
+async function stopRun(restart = null) {
+  if (!run || run.stopping) return;
+  run.stopping = true;
+  run.restart = restart;
+  syncRunControls();
+  const info = document.getElementById('progress-info');
+  info.textContent = oneWorldText('run_stopping', 'Stopping...');
+  info.style.color = '#ececec';
+  await invoke('gui_stop_generation');
+}
+
+// A job asks whether to resume or start fresh; a run in one go just starts over.
+function askRestart() {
+  if (!run || run.stopping) return;
+  const how = { bbox: run.bbox, worldName: run.worldName, fresh: false };
+  if (!run.pieced) {
+    stopRun(how);
+    return;
+  }
+  const modal = document.getElementById('run-restart-modal');
+  const finish = (choice) => {
+    hideModal(modal);
+    document.removeEventListener('keydown', onKey);
+    if (choice && run) stopRun(Object.assign(how, { fresh: choice === 'fresh' }));
+  };
+  const onKey = (event) => { if (event.key === 'Escape') finish(null); };
+  document.getElementById('run-restart-resume').onclick = () => finish('resume');
+  document.getElementById('run-restart-fresh').onclick = () => finish('fresh');
+  document.getElementById('run-restart-cancel').onclick = () => finish(null);
+  document.getElementById('run-restart-close').onclick = () => finish(null);
+  document.addEventListener('keydown', onKey);
+  showModal(modal);
+  document.getElementById('run-restart-resume').focus();
+}
+
+document.getElementById('run-pause').addEventListener('click', togglePause);
+document.getElementById('run-stop').addEventListener('click', () => stopRun());
+document.getElementById('run-restart').addEventListener('click', askRestart);
+document.getElementById('mini-pause').addEventListener('click', togglePause);
+document.getElementById('mini-stop').addEventListener('click', () => stopRun());
+
 // Central setter so every place that toggles generation state also
 // refreshes the world-name pencil (hidden/blocked while a generation, or a
 // rename, is in flight - see canEditCustomWorldName()).
@@ -5227,7 +5429,7 @@ async function startGeneration(options = {}) {
       handleWorldSelectionError(1);
       return;
     }
-    if (isOneWorldEnabled() && !prewarm && !(await prepareOneWorldRun(runBBox))) {
+    if (isOneWorldEnabled() && !prewarm && !(await prepareOneWorldRun(runBBox, options.restart === true))) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
@@ -5376,6 +5578,12 @@ async function startGeneration(options = {}) {
     });
 
     console.log("Generation process started.");
+    startRunControls({
+      bbox: runBBox,
+      pieced: !prewarm && runSelection.oneWorld && hasUnitRegionsFlag(runSelection.flags),
+      prewarm,
+      worldName: runSelection.worldName,
+    });
     setEtaSignageExpected(signage !== "none" && getEffectiveWorldFormat() === "java");
     resetEta();
     started = true;

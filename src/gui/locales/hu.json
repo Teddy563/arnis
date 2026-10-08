@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} / {total}",
   "transfer_written": "{done} megírva",
   "transfer_left": "kb. {time} van hátra",
-  "transfer_threads": "Feldolgozás {threads} szálon ({pct}% CPU)"
+  "transfer_threads": "Feldolgozás {threads} szálon ({pct}% CPU)",
+  "run_pause": "Szünet",
+  "run_resume": "Folytatás",
+  "run_stop": "Leállítás",
+  "run_stopping": "Leállítás folyamatban...",
+  "run_restart": "Újraindítás",
+  "run_pause_tip": "A futó darabok befejeződnek, a többi vár. Semmi sem vész el.",
+  "run_resume_tip": "A várakozó darabok újraindítása.",
+  "run_pause_single": "Csak darabokban futó generálás állítható szünetre. Ez egyben készül.",
+  "run_stop_tip": "Leállítás most. A kész darabok megmaradnak, az újabb indítás folytatja.",
+  "run_stop_single_tip": "Leállítás most. Az egyben futó generálás legközelebb elölről kezdődik.",
+  "run_restart_tip": "Leállítás, majd újraindítás: folytatás vagy minden darab újraépítése.",
+  "run_restart_single_tip": "Leállítás, majd a generálás elölről kezdése.",
+  "run_restart_title": "Újraindítod a generálást?",
+  "run_restart_text": "A folytatás megtartja a kész darabokat és megépíti a többit. Az újrakezdés minden darabot újraépít.",
+  "run_restart_fresh": "Újrakezdés",
+  "run_restart_cancel": "Mégse"
 }

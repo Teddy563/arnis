@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} no {total}",
   "transfer_written": "ierakstīts {done}",
   "transfer_left": "atlicis apmēram {time}",
-  "transfer_threads": "Apstrādā ar {threads} pavedieniem ({pct}% CPU)"
+  "transfer_threads": "Apstrādā ar {threads} pavedieniem ({pct}% CPU)",
+  "run_pause": "Pauze",
+  "run_resume": "Turpināt",
+  "run_stop": "Apturēt",
+  "run_stopping": "Aptur...",
+  "run_restart": "Restartēt",
+  "run_pause_tip": "Ļauj notiekošajām daļām pabeigties, pārējās gaida. Nekas netiek zaudēts.",
+  "run_resume_tip": "Atkal palaiž gaidošās daļas.",
+  "run_pause_single": "Pauzēt var tikai ģenerēšanu pa daļām. Šī tiek veidota vienā piegājienā.",
+  "run_stop_tip": "Apturēt tagad. Pabeigtās daļas paliek, tāpēc atkārtots sākums turpina.",
+  "run_stop_single_tip": "Apturēt tagad. Ģenerēšana vienā piegājienā nākamreiz sāksies no sākuma.",
+  "run_restart_tip": "Apturēt un sākt vēlreiz: turpināt vai no jauna izveidot katru daļu.",
+  "run_restart_single_tip": "Apturēt un sākt šo ģenerēšanu no sākuma.",
+  "run_restart_title": "Restartēt ģenerēšanu?",
+  "run_restart_text": "Turpinot pabeigtās daļas paliek un tiek izveidotas pārējās. Sākot no jauna, katra daļa tiek veidota vēlreiz.",
+  "run_restart_fresh": "Sākt no jauna",
+  "run_restart_cancel": "Atcelt"
 }

@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} of {total}",
   "transfer_written": "{done} written",
   "transfer_left": "about {time} left",
-  "transfer_threads": "Baking with {threads} threads ({pct}% CPU)"
+  "transfer_threads": "Baking with {threads} threads ({pct}% CPU)",
+  "run_pause": "Pause",
+  "run_resume": "Resume",
+  "run_stop": "Stop",
+  "run_stopping": "Stopping...",
+  "run_restart": "Restart",
+  "run_pause_tip": "Let the running pieces finish, then hold the rest. Nothing is lost.",
+  "run_resume_tip": "Start the waiting pieces again.",
+  "run_pause_single": "Only a run in pieces can pause. This one builds in one go.",
+  "run_stop_tip": "Stop now. Finished pieces are kept, so starting again resumes.",
+  "run_stop_single_tip": "Stop now. A run in one go starts over next time.",
+  "run_restart_tip": "Stop, then start again: resume, or build every piece again.",
+  "run_restart_single_tip": "Stop, then start this run again from the beginning.",
+  "run_restart_title": "Restart generation?",
+  "run_restart_text": "Resume keeps the finished pieces and builds the rest. Start fresh builds every piece again.",
+  "run_restart_fresh": "Start fresh",
+  "run_restart_cancel": "Cancel"
 }

@@ -567,5 +567,21 @@
   "transfer_bytes": "{done} de {total}",
   "transfer_written": "{done} escritos",
   "transfer_left": "quedan unos {time}",
-  "transfer_threads": "Procesando con {threads} hilos ({pct}% de CPU)"
+  "transfer_threads": "Procesando con {threads} hilos ({pct}% de CPU)",
+  "run_pause": "Pausar",
+  "run_resume": "Reanudar",
+  "run_stop": "Detener",
+  "run_stopping": "Deteniendo...",
+  "run_restart": "Reiniciar",
+  "run_pause_tip": "Deja terminar las piezas en curso y retiene el resto. No se pierde nada.",
+  "run_resume_tip": "Vuelve a iniciar las piezas en espera.",
+  "run_pause_single": "Solo una ejecución por piezas puede pausarse. Esta se construye de una vez.",
+  "run_stop_tip": "Detener ahora. Las piezas terminadas se conservan; al iniciar de nuevo se reanuda.",
+  "run_stop_single_tip": "Detener ahora. Una ejecución de una vez empieza de cero la próxima vez.",
+  "run_restart_tip": "Detener y volver a iniciar: reanudar o construir de nuevo cada pieza.",
+  "run_restart_single_tip": "Detener y empezar esta ejecución desde el principio.",
+  "run_restart_title": "¿Reiniciar la generación?",
+  "run_restart_text": "Reanudar conserva las piezas terminadas y construye el resto. Empezar de cero construye de nuevo cada pieza.",
+  "run_restart_fresh": "Empezar de cero",
+  "run_restart_cancel": "Cancelar"
 }

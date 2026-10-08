@@ -99,6 +99,8 @@
     <symbol id="i-thermometer" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
     <symbol id="i-grid-2x2" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
     <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
     <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M6 8h4"/><path d="M6 18h4"/><path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M14 8h4"/><path d="M14 18h4"/><path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/></symbol>
   </svg>
 
@@ -126,6 +128,18 @@
                   <button type="button" id="start-button" class="start-button" onclick="startGeneration()">
                     <span data-localize="start_generation">Start Generation</span>
                   </button>
+                  <!-- While a run goes, in the Start button's place (main.js syncRunControls) -->
+                  <div id="run-controls" class="run-controls" hidden>
+                    <button type="button" id="run-pause" class="run-control">
+                      <svg class="icon" aria-hidden="true"><use href="#i-pause"></use></svg><span>Pause</span>
+                    </button>
+                    <button type="button" id="run-stop" class="run-control">
+                      <svg class="icon" aria-hidden="true"><use href="#i-square"></use></svg><span>Stop</span>
+                    </button>
+                    <button type="button" id="run-restart" class="run-control">
+                      <svg class="icon" aria-hidden="true"><use href="#i-reset"></use></svg><span>Restart</span>
+                    </button>
+                  </div>
                   <!-- Lives outside #start-button (not nested inside it): the HTML spec
                        forbids interactive content (inputs, buttons, or anything with a
                        tabindex) inside a <button>. Clicking the label/background here
@@ -2758,6 +2772,28 @@
       </div>
     </div>
 
+    <!-- Restart while a job of pieces runs: resume it, or build every piece again. -->
+    <div id="run-restart-modal" class="modal" style="display: none;">
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="run-restart-title" tabindex="-1">
+        <header class="dialog-header">
+          <div class="dialog-heading">
+            <h2 id="run-restart-title" data-localize="run_restart_title">Restart generation?</h2>
+          </div>
+          <button type="button" class="dialog-close" id="run-restart-close" aria-label="Close" title="Close (Esc)">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+          </button>
+        </header>
+        <div class="dialog-body">
+          <p data-localize="run_restart_text">Resume keeps the finished pieces and builds the rest. Start fresh builds every piece again.</p>
+        </div>
+        <footer class="dialog-footer">
+          <button type="button" class="dialog-button" id="run-restart-cancel" data-localize="run_restart_cancel">Cancel</button>
+          <button type="button" class="dialog-button is-danger" id="run-restart-fresh" data-localize="run_restart_fresh">Start fresh</button>
+          <button type="button" class="dialog-button is-primary" id="run-restart-resume" data-localize="run_resume">Resume</button>
+        </footer>
+      </div>
+    </div>
+
     <!-- License Modal. The content is js/license.js plus the runtime credits
          main.js adds when it opens. -->
     <div id="license-modal" class="modal" style="display: none;">
@@ -2820,6 +2856,12 @@
     <div id="mini-head" class="mini-head">
       <img src="./images/logo.png" alt="Arnis" class="mini-logo" draggable="false">
       <span id="mini-world" class="mini-world"></span>
+      <button type="button" id="mini-pause" class="mini-icon-button" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#i-pause"></use></svg>
+      </button>
+      <button type="button" id="mini-stop" class="mini-icon-button" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#i-square"></use></svg>
+      </button>
       <button type="button" id="mini-expand" class="mini-icon-button">
         <svg class="icon" aria-hidden="true"><use href="#i-maximize"></use></svg>
       </button>
