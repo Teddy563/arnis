@@ -583,5 +583,7 @@
   "run_restart_title": "Paleisti generavimą iš naujo?",
   "run_restart_text": "Tęsiant baigtos dalys lieka ir sukuriamos likusios. Pradedant iš naujo kiekviena dalis kuriama vėl.",
   "run_restart_fresh": "Pradėti iš naujo",
-  "run_restart_cancel": "Atšaukti"
+  "run_restart_cancel": "Atšaukti",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "Tolimas reljefas matomas nuo pirmo įėjimo. Tik Java."
 }

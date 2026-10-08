@@ -583,5 +583,7 @@
   "run_restart_title": "Starta om genereringen?",
   "run_restart_text": "Fortsätt behåller de färdiga bitarna och bygger resten. Börja om bygger varje bit på nytt.",
   "run_restart_fresh": "Börja om",
-  "run_restart_cancel": "Avbryt"
+  "run_restart_cancel": "Avbryt",
+  "dh_lod": "Distant Horizons-LOD:er",
+  "dh_lod_desc": "Avlägsen terräng syns redan första gången du går in. Endast Java."
 }

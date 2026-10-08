@@ -583,5 +583,7 @@
   "run_restart_title": "Újraindítod a generálást?",
   "run_restart_text": "A folytatás megtartja a kész darabokat és megépíti a többit. Az újrakezdés minden darabot újraépít.",
   "run_restart_fresh": "Újrakezdés",
-  "run_restart_cancel": "Mégse"
+  "run_restart_cancel": "Mégse",
+  "dh_lod": "Distant Horizons LOD-ok",
+  "dh_lod_desc": "A távoli terep már az első belépéskor megjelenik. Csak Java."
 }

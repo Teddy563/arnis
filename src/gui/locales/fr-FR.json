@@ -583,5 +583,7 @@
   "run_restart_title": "Redémarrer la génération ?",
   "run_restart_text": "Reprendre garde les morceaux finis et construit le reste. Repartir de zéro reconstruit chaque morceau.",
   "run_restart_fresh": "Repartir de zéro",
-  "run_restart_cancel": "Annuler"
+  "run_restart_cancel": "Annuler",
+  "dh_lod": "LOD Distant Horizons",
+  "dh_lod_desc": "Le terrain lointain s'affiche dès la première connexion. Java uniquement."
 }

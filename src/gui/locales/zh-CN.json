@@ -583,5 +583,7 @@
   "run_restart_title": "重新开始生成？",
   "run_restart_text": "继续会保留已完成的分块并构建其余部分。从头开始会重新构建每个分块。",
   "run_restart_fresh": "从头开始",
-  "run_restart_cancel": "取消"
+  "run_restart_cancel": "取消",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "首次进入时即可看到远处地形。仅限 Java 版。"
 }

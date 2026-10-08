@@ -583,5 +583,7 @@
   "run_restart_title": "Перезапустить генерацию?",
   "run_restart_text": "Продолжить: готовые части сохраняются, строятся остальные. Начать заново: каждая часть строится снова.",
   "run_restart_fresh": "Начать заново",
-  "run_restart_cancel": "Отмена"
+  "run_restart_cancel": "Отмена",
+  "dh_lod": "LOD для Distant Horizons",
+  "dh_lod_desc": "Дальний рельеф виден уже при первом входе. Только Java."
 }

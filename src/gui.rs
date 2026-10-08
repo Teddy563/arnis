@@ -2157,6 +2157,7 @@ fn piece_argv(args: &Args, world_path: Option<&Path>, flags: &[String]) -> Vec<s
         ("--aws-only-elevation", args.aws_only_elevation),
         ("--bake-lighting", args.bake_lighting),
         ("--voxy-lod", args.voxy_lod),
+        ("--dh-lod", args.dh_lod),
         ("--map-preview", args.map_preview),
         ("--building-facades", args.building_facades),
     ];
@@ -2325,6 +2326,7 @@ fn gui_start_generation(
     aws_only_elevation: bool,
     bake_lighting_enabled: bool,
     voxy_lod_enabled: bool,
+    dh_lod_enabled: bool,
     is_new_world: bool,
     spawn_point: Option<(f64, f64)>,
     telemetry_consent: bool,
@@ -2763,6 +2765,7 @@ fn gui_start_generation(
                 benchmark: false,
                 bake_lighting: bake_lighting_enabled,
                 voxy_lod: voxy_lod_enabled,
+                dh_lod: dh_lod_enabled,
                 gamemode: crate::args::GameMode::from_str_lossy(&gamemode),
                 world_time: world_time.clamp(0, 23999),
                 world_type: crate::args::WorldType::from_str_lossy(&world_type),
@@ -3268,6 +3271,7 @@ mod piece_tests {
         args.aws_only_elevation = true;
         args.bake_lighting = true;
         args.voxy_lod = true;
+        args.dh_lod = true;
         args.map_preview = true;
         args.map_item = false;
         args.gamemode = crate::args::GameMode::from_str_lossy("survival");

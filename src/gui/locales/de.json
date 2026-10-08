@@ -583,5 +583,7 @@
   "run_restart_title": "Generierung neu starten?",
   "run_restart_text": "Fortsetzen behält die fertigen Teile und baut den Rest. Neu beginnen baut jedes Teil noch einmal.",
   "run_restart_fresh": "Neu beginnen",
-  "run_restart_cancel": "Abbrechen"
+  "run_restart_cancel": "Abbrechen",
+  "dh_lod": "Distant-Horizons-LODs",
+  "dh_lod_desc": "Entferntes Terrain erscheint beim ersten Betreten. Nur Java."
 }

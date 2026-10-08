@@ -583,5 +583,7 @@
   "run_restart_title": "Uruchomić generowanie ponownie?",
   "run_restart_text": "Wznów zachowuje ukończone części i buduje resztę. Od nowa buduje każdą część ponownie.",
   "run_restart_fresh": "Od nowa",
-  "run_restart_cancel": "Anuluj"
+  "run_restart_cancel": "Anuluj",
+  "dh_lod": "LOD-y Distant Horizons",
+  "dh_lod_desc": "Odległy teren widać już przy pierwszym wejściu. Tylko Java."
 }

@@ -583,5 +583,7 @@
   "run_restart_title": "إعادة تشغيل التوليد؟",
   "run_restart_text": "الاستئناف يحتفظ بالقطع المكتملة ويبني الباقي. البدء من جديد يبني كل قطعة مرة أخرى.",
   "run_restart_fresh": "البدء من جديد",
-  "run_restart_cancel": "إلغاء"
+  "run_restart_cancel": "إلغاء",
+  "dh_lod": "مستويات LOD لـ Distant Horizons",
+  "dh_lod_desc": "تظهر التضاريس البعيدة من أول دخول. Java فقط."
 }

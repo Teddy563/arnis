@@ -583,5 +583,7 @@
   "run_restart_title": "Käynnistetäänkö generointi uudelleen?",
   "run_restart_text": "Jatka säilyttää valmiit osat ja rakentaa loput. Aloita alusta rakentaa jokaisen osan uudelleen.",
   "run_restart_fresh": "Aloita alusta",
-  "run_restart_cancel": "Peruuta"
+  "run_restart_cancel": "Peruuta",
+  "dh_lod": "Distant Horizons -LODit",
+  "dh_lod_desc": "Kaukainen maasto näkyy jo ensimmäisellä liittymisellä. Vain Java."
 }

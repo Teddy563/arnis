@@ -583,5 +583,7 @@
   "run_restart_title": "生成を再起動しますか？",
   "run_restart_text": "再開は完了したピースを残して残りを生成します。最初からはすべてのピースを作り直します。",
   "run_restart_fresh": "最初から",
-  "run_restart_cancel": "キャンセル"
+  "run_restart_cancel": "キャンセル",
+  "dh_lod": "Distant Horizons の LOD",
+  "dh_lod_desc": "初回参加時から遠くの地形が表示されます。Java のみ。"
 }

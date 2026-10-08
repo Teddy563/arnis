@@ -583,5 +583,7 @@
   "run_restart_title": "Reiniciar a geração?",
   "run_restart_text": "Retomar mantém as peças prontas e constrói o resto. Começar do zero constrói cada peça de novo.",
   "run_restart_fresh": "Começar do zero",
-  "run_restart_cancel": "Cancelar"
+  "run_restart_cancel": "Cancelar",
+  "dh_lod": "LODs do Distant Horizons",
+  "dh_lod_desc": "O terreno distante aparece já na primeira entrada. Só Java."
 }

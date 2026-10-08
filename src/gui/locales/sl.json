@@ -583,5 +583,7 @@
   "run_restart_title": "Znova zaženem generiranje?",
   "run_restart_text": "Nadaljuj obdrži končane dele in zgradi ostale. Začni znova vsak del zgradi še enkrat.",
   "run_restart_fresh": "Začni znova",
-  "run_restart_cancel": "Prekliči"
+  "run_restart_cancel": "Prekliči",
+  "dh_lod": "LOD-ji Distant Horizons",
+  "dh_lod_desc": "Oddaljen teren je viden že ob prvem vstopu. Samo Java."
 }

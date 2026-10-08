@@ -583,5 +583,7 @@
   "run_restart_title": "Restartēt ģenerēšanu?",
   "run_restart_text": "Turpinot pabeigtās daļas paliek un tiek izveidotas pārējās. Sākot no jauna, katra daļa tiek veidota vēlreiz.",
   "run_restart_fresh": "Sākt no jauna",
-  "run_restart_cancel": "Atcelt"
+  "run_restart_cancel": "Atcelt",
+  "dh_lod": "Distant Horizons LOD",
+  "dh_lod_desc": "Tālais reljefs redzams jau pirmajā ienākšanas reizē. Tikai Java."
 }
