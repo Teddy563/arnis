@@ -585,5 +585,18 @@
   "run_restart_fresh": "Od nowa",
   "run_restart_cancel": "Anuluj",
   "dh_lod": "LOD-y Distant Horizons",
-  "dh_lod_desc": "Odległy teren widać już przy pierwszym wejściu. Tylko Java."
+  "dh_lod_desc": "Odległy teren widać już przy pierwszym wejściu. Tylko Java.",
+  "run_retry_failed": "Ponów nieudane ({n})",
+  "run_retry_failed_tip": "Buduje ponownie tylko nieudane części. Start buduje wszystkie wciąż brakujące części.",
+  "run_retry_cell": "Ponów tę komórkę",
+  "offline_missing": "Pobierz i przygotuj brakujące",
+  "offline_cached_all": "Wszystko jest w pamięci podręcznej",
+  "offline_need": "~{size} · około {time}",
+  "offline_now": "Pobierz i przygotuj teraz",
+  "offline_details": "Szczegóły",
+  "offline_first": "Najpierw pobierz i przygotuj brakujące dane",
+  "offline_first_on": "Najpierw pobierz i przygotuj brakujące dane: wł. Start pobiera brakujące, potem generuje.",
+  "offline_first_off": "Najpierw pobierz i przygotuj brakujące dane: wył. Start od razu generuje.",
+  "data_plan_moved": "Widoczne w oknie głównym pod przyciskami, gdy Dodatkowe funkcje są włączone.",
+  "advanced_features_end_desc": "Ten sam przełącznik co na górze Dodatkowych funkcji. Wyłączony: Arnis działa jak zwykle."
 }

@@ -82,6 +82,33 @@ pub fn watch_parent() {
     });
 }
 
+/// Test hook for a piece that dies mid-build. `ARNIS_TEST_FAIL_PIECE` names a
+/// file holding a piece number (from 1) and a delay in seconds: that piece
+/// exits as a panic does once the delay is up, and the file is removed first,
+/// so the piece's retry builds. Unset, it costs one environment lookup.
+pub fn fail_for_test(piece: usize) {
+    let Some(path) = std::env::var_os("ARNIS_TEST_FAIL_PIECE") else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let mut values = text.split_whitespace().map(|v| v.parse::<u64>().ok());
+    if values.next().flatten() != Some(piece as u64 + 1) || std::fs::remove_file(&path).is_err() {
+        return;
+    }
+    let delay = std::time::Duration::from_secs(values.next().flatten().unwrap_or(0));
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        eprintln!(
+            "Error: piece {} stopped by ARNIS_TEST_FAIL_PIECE",
+            piece + 1
+        );
+        // 101 is a panic's code, which the coordinator does not retry.
+        std::process::exit(101);
+    });
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(windows)]

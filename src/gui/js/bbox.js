@@ -1341,8 +1341,18 @@ $(document).ready(function () {
                  data.min_mc_z === 0 && data.max_mc_z === 0);
     }
 
+    // A failed or stopped cell of the last run: click or right-click it to retry it alone.
+    var drawingNow = false;
+    map.on('draw:drawstart', function () { drawingNow = true; });
+    map.on('draw:drawstop', function () { drawingNow = false; });
+    // After the click has reached the document, whose listener closes menus.
+    map.on('click', function (e) {
+        if (!drawingNow) setTimeout(function () { showCellMenu(e); }, 0);
+    });
+
     // Handle right-click on the map
     map.on('contextmenu', function(e) {
+        if (showCellMenu(e)) return;
         // Only show context menu if world preview is available and has Minecraft coords
         if (worldPreviewAvailable && worldOverlayData && hasMinecraftCoords()) {
             // Check if the click is within the world bounds
@@ -1364,10 +1374,12 @@ $(document).ready(function () {
         if (contextMenuElement && !contextMenuElement.contains(e.target)) {
             hideContextMenu();
         }
+        if (cellMenu && !cellMenu.contains(e.target)) hideCellMenu();
     });
 
     map.on('movestart', hideContextMenu);
     map.on('zoomstart', hideContextMenu);
+    map.on('movestart zoomstart', hideCellMenu);
     // ========== End Context Menu ==========
 
     // Coordinates typed into the parent's bbox field, as [south, west, north,
@@ -2520,7 +2532,8 @@ function scheduleSnapDraw() {
 
 // The run under the grid, in the grid's canvas: built cells (or a finished
 // run in one go) green, building ones outlined in yellow with their share
-// done filled from the north edge, waiting ones left as they are.
+// done filled from the north edge, failed ones red, stopped ones grey,
+// waiting ones left as they are.
 function drawRunOverlay() {
     var run = runOverlay;
     if (!run) return;
@@ -2529,12 +2542,14 @@ function drawRunOverlay() {
         var s = f == null ? b[0] : b[2] - (b[2] - b[0]) * Math.min(1, f);
         return [[[s, b[1]], [b[2], b[1]], [b[2], b[3]], [s, b[3]]]];
     };
-    var done = [], building = [], filled = [];
+    var done = [], building = [], filled = [], failed = [], stopped = [];
     if (run.pieces) {
         Object.keys(run.pieces).forEach(function (k) {
             var p = run.pieces[k];
             if (!p.b) return;
             if (p.s === 'done') done.push(rect(p.b));
+            else if (p.s === 'failed') failed.push(rect(p.b));
+            else if (p.s === 'stopped') stopped.push(rect(p.b));
             else if (p.s === 'run') {
                 building.push(rect(p.b));
                 if (p.f > 0) filled.push(rect(p.b, p.f));
@@ -2554,8 +2569,65 @@ function drawRunOverlay() {
         L.polygon(polys, style).addTo(snapLayer);
     };
     paint(done, { stroke: false, fillColor: '#7bd864', fillOpacity: 0.45 });
+    // Failed red, stopped grey: both can be retried alone (showCellMenu).
+    paint(failed, { color: '#cf6679', weight: 2, opacity: 1, fillColor: '#cf6679', fillOpacity: 0.45 });
+    paint(stopped, { color: '#8f8f8f', weight: 2, opacity: 1, dashArray: '5 4', fillColor: '#8f8f8f', fillOpacity: 0.35 });
     paint(filled, { stroke: false, fillColor: '#fecc44', fillOpacity: 0.4 });
     paint(building, { color: '#fecc44', weight: 2, opacity: 1, fillColor: '#fecc44', fillOpacity: 0.12 });
+}
+
+// The piece of a failed or stopped cell under `latlng`, once the run is over.
+function retryableCellAt(latlng) {
+    var run = runOverlay;
+    if (!run || !run.idle || !run.pieces) return null;
+    for (var k in run.pieces) {
+        var p = run.pieces[k];
+        if ((p.s === 'failed' || p.s === 'stopped') && p.b &&
+            latlng.lat >= p.b[0] && latlng.lat <= p.b[2] && latlng.lng >= p.b[1] && latlng.lng <= p.b[3]) {
+            return +k;
+        }
+    }
+    return null;
+}
+
+// A small menu with "Retry this cell", in the coordinate menu's style; the
+// window starts a run of that piece alone (main.js retryCells).
+var cellMenu = null;
+
+function hideCellMenu() {
+    if (cellMenu) cellMenu.style.display = 'none';
+}
+
+function showCellMenu(e) {
+    var piece = retryableCellAt(e.latlng);
+    if (piece == null) return false;
+    if (!cellMenu) {
+        cellMenu = document.createElement('div');
+        cellMenu.className = 'coordinate-context-menu run-cell-menu';
+        cellMenu.innerHTML = '<div class="coordinate-context-menu-item" role="button" tabindex="0">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>' +
+            '<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>' +
+            '<span></span></div>';
+        document.body.appendChild(cellMenu);
+        var item = cellMenu.firstChild;
+        var retry = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            window.parent.postMessage({ type: 'retryPiece', piece: +cellMenu.dataset.piece }, '*');
+            hideCellMenu();
+        };
+        item.addEventListener('click', retry);
+        item.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') retry(ev); });
+    }
+    var loc = (window.parent && window.parent !== window && window.parent.localization) || {};
+    cellMenu.querySelector('span').textContent = loc.run_retry_cell || 'Retry this cell';
+    cellMenu.dataset.piece = piece;
+    cellMenu.style.display = 'block';
+    var x = e.originalEvent.clientX, y = e.originalEvent.clientY;
+    cellMenu.style.left = Math.min(x, window.innerWidth - cellMenu.offsetWidth - 10) + 'px';
+    cellMenu.style.top = Math.min(y, window.innerHeight - cellMenu.offsetHeight - 10) + 'px';
+    return true;
 }
 
 function showSnapOverlay(snap, dims) {

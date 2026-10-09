@@ -158,7 +158,7 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #offline-panel [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
   });
 
@@ -178,6 +178,7 @@ async function applyLocalization(localization) {
   renderOneWorldStatus();
   formatCpuUsage();
   renderDataPlan();
+  syncOfflineFirst();
   refreshOptionPreviews();
   // The map hint lives in the map iframe, which cannot see this assignment.
   document.querySelectorAll('iframe').forEach((frame) => {
@@ -754,6 +755,11 @@ function registerMessageEvent() {
       displayBboxInfoText(bboxText);
     }
 
+    // "Retry this cell" on a failed or stopped cell of the map
+    if (event.data && event.data.type === 'retryPiece') {
+      retryCells([event.data.piece]);
+    }
+
     // World toggled on the map toolbar
     if (event.data && event.data.type === 'bodyChanged') {
       setCelestialBody(event.data.body);
@@ -1039,16 +1045,21 @@ function resetProgressUi(message) {
 // size. The time left stays on the bar (#progress-eta).
 let runStats = null; // { startedAt, pieces: { n, w } | null, done, estimate }
 
+function estimateSizePart(e) {
+  return e && e.mb != null
+    ? [['hard-drive', oneWorldText('run_estimate_size', 'On disk: ~{size}', { size: formatEstimateSize(e.mb) })]] : [];
+}
+
+// The selection's estimate: its size on disk and the time to build it.
+function estimateParts() {
+  const e = runEstimate();
+  return estimateSizePart(e).concat(e
+    ? [['hourglass', oneWorldText('run_estimate_time', 'Build time: {time}', { time: formatEstimateTime(e.lo, e.hi) })]] : []);
+}
+
 function runStatParts(withEta) {
   const parts = [];
-  const size = (e) => e && e.mb != null &&
-    parts.push(['hard-drive', oneWorldText('run_estimate_size', 'On disk: ~{size}', { size: formatEstimateSize(e.mb) })]);
-  if (!runStats) {
-    const e = runEstimate();
-    size(e);
-    if (e) parts.push(['hourglass', oneWorldText('run_estimate_time', 'Build time: {time}', { time: formatEstimateTime(e.lo, e.hi) })]);
-    return parts;
-  }
+  if (!runStats) return estimateParts();
   parts.push(['clock', oneWorldText('run_elapsed', 'Elapsed: {time}', {
     time: formatEtaDuration((performance.now() - runStats.startedAt) / 1000),
   })]);
@@ -1061,12 +1072,92 @@ function runStatParts(withEta) {
     if (p.w) text += ' · ' + oneWorldText('run_workers', 'Workers: {w}', { w: p.w });
     parts.push(['layers', text]);
   }
-  size(runStats.estimate);
+  parts.push(...estimateSizePart(runStats.estimate));
   return parts;
 }
 
 function renderRunStats() {
   fillRunStats(document.getElementById('run-stats'), runStatParts(false));
+  renderOfflinePanel();
+  syncRetryRow();
+}
+
+/* The offline panel under the run controls (Extra Features on): one summary
+   bar for what the selection still needs (the OSM Data Source transfer panel,
+   so a download or bake runs in the very same bar), and the Download Plan's
+   rows under a collapsed Details. Both are the settings components, moved
+   here by placeOfflinePanel, so one implementation serves both places. */
+function placeOfflinePanel() {
+  const main = extraFeaturesOn();
+  const body = document.getElementById('data-plan-body');
+  const transfer = document.getElementById('transfer-panel');
+  document.getElementById('data-plan-moved').hidden = !main;
+  document.getElementById('offline-first-toggle').hidden = !main || !!run;
+  if (main) {
+    document.getElementById('offline-summary').appendChild(transfer);
+    document.getElementById('offline-details-slot').appendChild(body);
+  } else {
+    document.getElementById('data-plan-row').appendChild(body);
+    body.insertBefore(transfer, document.getElementById('bake-threads'));
+    document.getElementById('offline-download-button').hidden = true;
+    if (!transferJob) transfer.style.display = 'none';
+  }
+  renderOfflinePanel();
+}
+
+// What the plan still needs: bytes to download (countries to bake included),
+// bytes a Region Download bake adds, and the bytes already on disk.
+function offlineNeed() {
+  if (!dataPlan) return null;
+  let download = 0, cached = 0;
+  for (const item of dataPlan.items) {
+    cached += item.cached_bytes || 0;
+    if (item.cached < item.total && item.missing_bytes) download += item.missing_bytes;
+  }
+  const e = dataPlan.extract;
+  const bake = e && e.name && e.bake_bytes == null && e.bake_estimate ? e.bake_estimate : 0;
+  const todo = preparePlan && document.getElementById('osm-source-select').value === 'local'
+    ? preparePlan.extracts.filter((x) => !x.baked) : [];
+  const countries = todo.reduce((a, x) => a + x.bytes, 0);
+  return { download: download + countries, bake, cached, total: cached + download + countries + bake };
+}
+
+// The rate the time left is worked out at: the last download's, or a typical line.
+// ponytail: one figure for every source; per-source rates if the guess misleads.
+let offlineRate = 5e6;
+
+// Idle, the summary bar shows the share already cached and what is left.
+function renderOfflineSummary() {
+  if (transferJob || !extraFeaturesOn()) return;
+  const t = oneWorldText;
+  const panel = document.getElementById('transfer-panel');
+  const need = offlineNeed();
+  const left = need ? need.download + need.bake : 0;
+  panel.style.display = '';
+  panel.classList.add('is-ended');
+  panel.classList.toggle('is-done', !!need && left === 0);
+  document.getElementById('transfer-stop-button').style.display = 'none';
+  const now = document.getElementById('offline-download-button');
+  now.hidden = false;
+  now.disabled = !need || left === 0 || generationButtonEnabled === false;
+  document.getElementById('transfer-stage').textContent = need && left === 0
+    ? t('offline_cached_all', 'Everything is cached') : t('offline_missing', "Download & bake what's missing");
+  setTransferBar(!need ? 0 : left === 0 ? 100 : 100 * need.cached / Math.max(1, need.total));
+  const parts = [];
+  if (left > 0) {
+    parts.push(t('offline_need', '~{size} · about {time}', {
+      size: formatPlanBytes(left), time: formatClock(need.download / offlineRate),
+    }));
+  }
+  parts.push(...estimateParts().map((part) => part[1]));
+  document.getElementById('transfer-detail').textContent = parts.join(' · ');
+}
+
+function renderOfflinePanel() {
+  const panel = document.getElementById('offline-panel');
+  panel.hidden = !(extraFeaturesOn() && selectedBBox);
+  if (panel.hidden) return;
+  renderOfflineSummary();
 }
 
 function fillRunStats(el, parts) {
@@ -1172,6 +1263,12 @@ function setupProgressListener() {
     if (transferJob === 'prewarm' && /^(Done!|Error!|Stopped\.)/.test(message)) {
       transferEnd(message, message.startsWith("Done!"));
       refreshStorage();
+      if (generateAfterDownload) {
+        generateAfterDownload = false;
+        // After the download has let go of the process; ponytail: a fixed
+        // wait, an event from gui_start_generation's end if it ever falls short.
+        if (message.startsWith("Done!")) setTimeout(() => startGeneration({ afterDownload: true }), 1000);
+      }
     }
   });
 
@@ -1764,6 +1861,13 @@ function initAdvancedFeatures() {
   const groups = document.getElementById('advanced-features-groups');
   const cpu = document.getElementById('cpu-usage-slider');
   if (!master || !groups || !cpu) return;
+  // The same switch at the end of Settings sets this one; refreshAdvancedFeatures follows back.
+  const mirror = document.getElementById('advanced-features-end-toggle');
+  mirror.addEventListener('change', () => {
+    if (master.checked === mirror.checked) return;
+    master.checked = mirror.checked;
+    master.dispatchEvent(new Event('change', { bubbles: true }));
+  });
   // Big Worlds comes on with the switch. The store restores in DOM order, so a
   // stored Big Worlds off is written after this and wins.
   master.addEventListener('change', () => {
@@ -1834,6 +1938,8 @@ function initOsmSource() {
   bindBrowse('osm-pbf-browse', pbf, 'gui_pick_pbf_file', () => pbf.value.trim());
   // The bake is the OSM step of a prewarm: same settings, same threads, same
   // progress, and the panel's bar and Stop follow it.
+  document.getElementById('offline-download-button').addEventListener('click', () => downloadAndBakeMissing());
+  initOfflineFirst();
   ['prewarm-button', 'osm-pbf-bake-button', 'data-plan-button'].forEach((id) =>
     document.getElementById(id).addEventListener('click', startDownload));
   document.getElementById('transfer-stop-button').addEventListener('click', () => {
@@ -1859,6 +1965,8 @@ function initOsmSource() {
 let dataPlanTimer = null;
 let dataPlanKey = null;
 let dataPlan = null;
+// Each source's cached file count when the running download started.
+let dataPlanStart = null;
 // The extract sizes already asked for with a HEAD, by url.
 const extractSizeAsked = new Set();
 
@@ -1872,7 +1980,8 @@ function refreshDataPlan(force) {
 function dataPlanRequest() {
   const source = document.getElementById('osm-source-select').value;
   const offline = document.getElementById('offline-toggle').checked;
-  if (!selectedBBox || !(offline || source === 'pbf' || source === 'file' || source === 'local')) return null;
+  // Extra Features shows it on the main window for any source.
+  if (!selectedBBox || !(extraFeaturesOn() || offline || source === 'pbf' || source === 'file' || source === 'local')) return null;
   const mode = document.getElementById('generation-mode-select').value;
   return {
     bboxText: selectedBBox,
@@ -1932,8 +2041,9 @@ function sizeCell(bytes, estimate) {
   return (estimate ? '~' : '') + formatPlanBytes(bytes);
 }
 
-// A plan list row: name, status (green when `done`) and the size columns.
-function planRow(cells, done) {
+// A plan list row: name, status (green when `done`) and the size columns;
+// with `percent`, the transfer bar under it while its item comes in.
+function planRow(cells, done, percent) {
   const li = document.createElement('li');
   cells.forEach((text, i) => {
     const span = document.createElement('span');
@@ -1942,6 +2052,13 @@ function planRow(cells, done) {
     if (i >= 2) span.className = 'data-plan-size';
     li.appendChild(span);
   });
+  if (percent != null) {
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar-container data-plan-bar';
+    bar.innerHTML = '<div class="progress-bar"></div>';
+    bar.firstChild.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    li.appendChild(bar);
+  }
   return li;
 }
 
@@ -1987,8 +2104,13 @@ function renderDataPlan() {
     }
     const missing = item.cached < item.total && item.missing_bytes ? item.missing_bytes : 0;
     download += missing;
+    // While a download runs the plan is read again every two seconds, so a
+    // row's bar is its files on disk out of the files it needs.
+    const running = transferJob === 'prewarm' && dataPlanStart && item.total > 0 &&
+      dataPlanStart[item.source] < item.total;
     return planRow([names[item.source] || item.source, status, sizeCell(item.cached_bytes),
-      sizeCell(missing, true)], item.total > 0 && item.cached === item.total);
+      sizeCell(missing, true)], item.total > 0 && item.cached === item.total,
+    running ? 100 * item.cached / item.total : null);
   }));
   const e = dataPlan.extract;
   let line = '';
@@ -2034,6 +2156,11 @@ function renderDataPlan() {
     else total = t('data_plan_total_none', 'Nothing to download · {free} free on this disk', vars);
   }
   setPlanLine('data-plan-total', total, short);
+  const missingItems = dataPlan.items.filter((i) => i.total > 0 && i.cached < i.total).length;
+  document.getElementById('offline-details-count').textContent = missingItems
+    ? t('data_plan_missing', 'Missing') + ' ' + missingItems + '/' + dataPlan.items.length
+    : t('data_plan_cached', 'Cached ✓');
+  renderOfflineSummary();
 }
 
 /* Bake CPU: downloads and bakes run on their own share of the cores (default
@@ -2085,6 +2212,8 @@ async function checkBakeThreads() {
    'bake' while one runs from this window. */
 let transferJob = null;
 let transferLast = null;
+// While a download runs: the plan read again, for the rows' bars.
+let transferPoll = null;
 
 function transferStart(job) {
   transferJob = job;
@@ -2092,9 +2221,14 @@ function transferStart(job) {
   const stop = document.getElementById('transfer-stop-button');
   stop.disabled = false;
   stop.style.display = '';
+  document.getElementById('offline-download-button').hidden = true;
   const panel = document.getElementById('transfer-panel');
   panel.style.display = '';
   panel.classList.remove('is-ended', 'is-done');
+  // The rows' bars: the plan, read off the disk again while it runs.
+  dataPlanStart = dataPlan ? Object.fromEntries(dataPlan.items.map((i) => [i.source, i.cached])) : null;
+  clearInterval(transferPoll);
+  transferPoll = setInterval(() => refreshDataPlan(true), 2000);
   document.getElementById('transfer-stage').textContent = oneWorldText('transfer_starting', 'Starting...');
   document.getElementById('transfer-detail').textContent = '';
   setTransferBar(0);
@@ -2105,6 +2239,10 @@ function transferStart(job) {
 function transferEnd(message, done) {
   if (!transferJob) return;
   transferJob = null;
+  clearInterval(transferPoll);
+  dataPlanStart = null;
+  // The last download's rate times the next one.
+  if (transferLast && transferLast.stage === 'download' && transferLast.rate_bps > 0) offlineRate = transferLast.rate_bps;
   document.getElementById('transfer-stop-button').style.display = 'none';
   if (message) document.getElementById('transfer-stage').textContent = message;
   if (done) setTransferBar(100);
@@ -2181,8 +2319,9 @@ async function startDownload() {
   await startGeneration({ prewarm: true });
   // Refused before it started (no selection, say): nothing to follow.
   if (generationButtonEnabled !== false) {
-    transferJob = null;
-    document.getElementById('transfer-panel').style.display = 'none';
+    transferEnd('', false);
+    if (!extraFeaturesOn()) document.getElementById('transfer-panel').style.display = 'none';
+    renderOfflinePanel();
   }
 }
 
@@ -2384,7 +2523,8 @@ function renderPreparePlan() {
   ...rows.map((e) => {
     const status = prepareStatus(e);
     const done = status === t('prepare_baked', 'Baked ✓');
-    return planRow([e.name, status, formatPlanBytes(e.bytes), sizeCell(e.archive_bytes, !e.baked)], done);
+    const baking = bakeRunning && transferLast && transferLast.name === e.id ? transferLast.percent : null;
+    return planRow([e.name, status, formatPlanBytes(e.bytes), sizeCell(e.archive_bytes, !e.baked)], done, baking);
   }));
   if (preparePlan && !rows.length) {
     setPrepareStatus(t('prepare_none', 'No Geofabrik extract covers the selection.'));
@@ -2443,6 +2583,55 @@ async function bakeCountries() {
     refreshDataPlan(true);
     refreshStorage();
   }
+  return finished;
+}
+
+/* "Download & bake now" on the main window, and Start with "Download & bake
+   missing data first" on: the countries a Local Archive still has to bake,
+   then a download of everything else the selection reads. */
+async function downloadAndBakeMissing() {
+  const local = document.getElementById('osm-source-select').value === 'local';
+  if (local && preparePlan && preparePlan.extracts.some((x) => !x.baked) && !(await bakeCountries())) {
+    generateAfterDownload = false;
+    return;
+  }
+  await startDownload();
+  if (!transferJob) generateAfterDownload = false;
+}
+
+// The switch beside Start: on, Start fetches what is missing first, in the
+// panel's bar, then generates. A main-window preference, kept like the
+// world format, not a setting of the Settings page.
+const OFFLINE_FIRST_KEY = 'arnis-offline-first';
+let generateAfterDownload = false;
+
+function offlineFirstOn() {
+  try {
+    return localStorage.getItem(OFFLINE_FIRST_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function syncOfflineFirst() {
+  const button = document.getElementById('offline-first-toggle');
+  const on = offlineFirstOn();
+  button.setAttribute('aria-pressed', String(on));
+  button.classList.toggle('is-on', on);
+  button.setAttribute('aria-label', oneWorldText('offline_first', 'Download & bake missing data first'));
+  button.title = on
+    ? oneWorldText('offline_first_on', 'Download & bake missing data first: on. Start fetches what is missing, then generates.')
+    : oneWorldText('offline_first_off', 'Download & bake missing data first: off. Start generates straight away.');
+}
+
+function initOfflineFirst() {
+  document.getElementById('offline-first-toggle').addEventListener('click', () => {
+    try {
+      localStorage.setItem(OFFLINE_FIRST_KEY, offlineFirstOn() ? '0' : '1');
+    } catch (_) { /* a private window keeps it off */ }
+    syncOfflineFirst();
+  });
+  syncOfflineFirst();
 }
 
 // Presets: the Extra Features and OSM Data Source settings as a JSON file.
@@ -3146,6 +3335,9 @@ function refreshAdvancedFeatures() {
   if (!master || !groups) return;
   const on = master.checked;
   groups.style.display = on ? '' : 'none';
+  document.getElementById('advanced-features-end-toggle').checked = on;
+  placeOfflinePanel();
+  refreshDataPlan();
   const cpuSet = (parseInt(document.getElementById('cpu-usage-slider').value, 10) || 0) > 0;
   const threadsSet = (parseInt(document.getElementById('threads-input').value, 10) || 0) > 0;
   // Threads wins when both hold a value (only reachable from stored state),
@@ -5188,8 +5380,9 @@ let generationButtonEnabled = true;
 // Stop kills what runs; a job keeps its finished pieces, so starting it again
 // resumes. Restart is Stop, then Start: a job resumes unless "Start fresh"
 // is chosen in its dialog; a run in one go always starts over.
-let run = null; // { src, bbox, pieced, prewarm, worldName, paused, stopping, restart }
-let runMap = null; // { bbox: [s, w, n, e], pct, state, pieces: { i: { b, s, f } } | null }
+let run = null; // { src, bbox, pieced, prewarm, worldName, paused, stopping, restart, retry }
+// A cell's `s`: run, done, failed or stopped; the last two can be retried alone.
+let runMap = null; // { src, units, bbox: [s, w, n, e], pct, state, pieces: { i: { b, s, f } } | null }
 // The world a stopped or failed job of pieces was building, when One World was
 // off and the job named a new one: its selection's next run goes there.
 let resumeWorld = null; // { bbox, name }
@@ -5205,14 +5398,27 @@ function bboxBounds(text) {
   return [Math.min(v[0], v[2]), Math.min(v[1], v[3]), Math.max(v[0], v[2]), Math.max(v[1], v[3])];
 }
 
+// `idle`: no run going, so the map offers a failed or stopped cell's retry.
 function postRunMap() {
-  postToMap({ type: 'runOverlay', run: runMap });
+  postToMap({ type: 'runOverlay', run: runMap && Object.assign({ idle: !run }, runMap) });
+}
+
+function unitRegionsValue() {
+  return parseInt(document.getElementById('unit-regions-select').value, 10) || 4;
 }
 
 function startRunControls(opts) {
   run = Object.assign({ paused: false, stopping: false, restart: null, src: selectedBBox }, opts);
+  // A retry keeps the other failed and stopped cells of the run before it.
+  const kept = {};
+  if (opts.retry && runMap && runMap.pieces && runMap.src === selectedBBox) {
+    for (const k in runMap.pieces) {
+      const c = runMap.pieces[k];
+      if ((c.s === 'failed' || c.s === 'stopped') && !opts.retry.includes(+k)) kept[k] = c;
+    }
+  }
   runMap = opts.prewarm ? null
-    : { src: selectedBBox, bbox: bboxBounds(opts.bbox), pct: 0, state: 'run', pieces: opts.pieced ? {} : null };
+    : { src: selectedBBox, units: unitRegionsValue(), bbox: bboxBounds(opts.bbox), pct: 0, state: 'run', pieces: opts.pieced ? kept : null };
   postRunMap();
   syncRunControls();
 }
@@ -5226,6 +5432,7 @@ function onRunPiece(p) {
   if (p.state === 'done' || p.state === 'skipped') cell.s = 'done';
   else if (p.state === 'start' || p.state === 'retry') { cell.s = 'run'; cell.f = 0; }
   else if (p.state === 'progress') cell.f = p.fraction;
+  else if (p.state === 'failed' || p.state === 'stopped') cell.s = p.state;
   else { delete runMap.pieces[p.piece]; postRunMap(); return; }
   runMap.pieces[p.piece] = cell;
   postRunMap();
@@ -5249,8 +5456,8 @@ function endRunControls(message) {
   if (runMap) {
     if (message.startsWith('Done!')) runMap.state = 'done';
     else if (runMap.pieces) {
-      // The pieces that were running go back to waiting.
-      for (const k in runMap.pieces) if (runMap.pieces[k].s !== 'done') delete runMap.pieces[k];
+      // A piece the run left unfinished can be retried alone, as a stopped one.
+      for (const k in runMap.pieces) if (runMap.pieces[k].s === 'run') runMap.pieces[k].s = 'stopped';
     } else runMap.state = 'stopped';
     postRunMap();
   }
@@ -5291,6 +5498,9 @@ function syncRunControls() {
   const miniPause = document.getElementById('mini-pause');
   const miniStop = document.getElementById('mini-stop');
   miniPause.hidden = miniStop.hidden = !on;
+  // How Start behaves means nothing while a run goes, and the buttons need the room.
+  document.getElementById('offline-first-toggle').hidden = on || !extraFeaturesOn();
+  syncRetryRow();
   if (!on) return;
   const canPause = run.pieced && !run.stopping;
   const pauseText = run.paused ? t('run_resume', 'Resume') : t('run_pause', 'Pause');
@@ -5322,6 +5532,39 @@ function syncRunControls() {
   }
   pause.classList.toggle('is-active', run.paused);
   miniPause.classList.toggle('is-active', run.paused);
+}
+
+// "Retry failed (n)" under the buttons, once a run of pieces ended with failed ones.
+function syncRetryRow() {
+  const failed = run ? [] : retryableCells('failed');
+  document.getElementById('run-retry-row').hidden = failed.length === 0;
+  if (!failed.length) return;
+  const retry = document.getElementById('run-retry');
+  retry.querySelector('span').textContent = oneWorldText('run_retry_failed', 'Retry failed ({n})', { n: failed.length });
+  retry.title = oneWorldText('run_retry_failed_tip', 'Build only the failed pieces again. Start builds every piece still missing.');
+}
+
+// The pieces of the last run, on this selection and grid, in state `state`
+// ('failed', or 'failed' and 'stopped' when null).
+function retryableCells(state) {
+  if (!runMap || !runMap.pieces || runMap.src !== selectedBBox || runMap.units !== unitRegionsValue()) return [];
+  return Object.keys(runMap.pieces).filter((k) => {
+    const s = runMap.pieces[k].s;
+    return state ? s === state : s === 'failed' || s === 'stopped';
+  }).map(Number);
+}
+
+// Builds only `pieces` of the last run's job (gui_retry_pieces); its other
+// missing pieces wait for Start. The coordinator's done files and leases are
+// the same as a resume's, so the world ends up as one uninterrupted run's.
+async function retryCells(pieces) {
+  const can = retryableCells(null);
+  pieces = pieces.filter((p) => can.includes(p));
+  if (run || generationButtonEnabled === false || pieces.length === 0) return;
+  await invoke('gui_retry_pieces', { pieces });
+  await startGeneration({ restart: true, retry: pieces });
+  // Refused before it started: the next run must not take it.
+  if (!run) await invoke('gui_retry_pieces', { pieces: [] }).catch(() => {});
 }
 
 async function togglePause() {
@@ -5371,6 +5614,7 @@ document.getElementById('run-stop').addEventListener('click', () => stopRun());
 document.getElementById('run-restart').addEventListener('click', askRestart);
 document.getElementById('mini-pause').addEventListener('click', togglePause);
 document.getElementById('mini-stop').addEventListener('click', () => stopRun());
+document.getElementById('run-retry').addEventListener('click', () => retryCells(retryableCells('failed')));
 
 // Central setter so every place that toggles generation state also
 // refreshes the world-name pencil (hidden/blocked while a generation, or a
@@ -5393,6 +5637,15 @@ async function startGeneration(options = {}) {
   const prewarm = options.prewarm === true;
   if (generationButtonEnabled === false) {
     return;
+  }
+  // "Download & bake missing data first": the download runs, and its Done!
+  // starts this generation (setupProgressListener).
+  if (!prewarm && !options.restart && !options.afterDownload && extraFeaturesOn() && offlineFirstOn()) {
+    const need = offlineNeed();
+    if (need && need.download + need.bake > 0) {
+      generateAfterDownload = true;
+      return downloadAndBakeMissing();
+    }
   }
   // The backend refuses this too, but only after gui_create_world has already
   // made an empty world for a run that is not going to happen. Said here, the
@@ -5585,6 +5838,7 @@ async function startGeneration(options = {}) {
       pieced: !prewarm && runSelection.oneWorld && hasUnitRegionsFlag(runSelection.flags),
       prewarm,
       worldName: runSelection.worldName,
+      retry: options.retry || null,
     });
     setEtaSignageExpected(signage !== "none" && getEffectiveWorldFormat() === "java");
     resetEta();

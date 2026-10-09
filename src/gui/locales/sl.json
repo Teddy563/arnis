@@ -585,5 +585,18 @@
   "run_restart_fresh": "Začni znova",
   "run_restart_cancel": "Prekliči",
   "dh_lod": "LOD-ji Distant Horizons",
-  "dh_lod_desc": "Oddaljen teren je viden že ob prvem vstopu. Samo Java."
+  "dh_lod_desc": "Oddaljen teren je viden že ob prvem vstopu. Samo Java.",
+  "run_retry_failed": "Ponovi neuspele ({n})",
+  "run_retry_failed_tip": "Znova zgradi samo neuspele dele. Začni zgradi vse še manjkajoče dele.",
+  "run_retry_cell": "Ponovi to celico",
+  "offline_missing": "Prenesi in pripravi manjkajoče",
+  "offline_cached_all": "Vse je v predpomnilniku",
+  "offline_need": "~{size} · približno {time}",
+  "offline_now": "Prenesi in pripravi zdaj",
+  "offline_details": "Podrobnosti",
+  "offline_first": "Najprej prenesi in pripravi manjkajoče podatke",
+  "offline_first_on": "Najprej prenesi in pripravi manjkajoče podatke: vklopljeno. Začni prenese manjkajoče, nato ustvari.",
+  "offline_first_off": "Najprej prenesi in pripravi manjkajoče podatke: izklopljeno. Začni takoj ustvari.",
+  "data_plan_moved": "Prikazano v glavnem oknu pod gumbi, ko so dodatne funkcije vklopljene.",
+  "advanced_features_end_desc": "Isto stikalo kot na vrhu dodatnih funkcij. Izklopljeno: Arnis deluje kot običajno."
 }

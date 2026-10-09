@@ -635,6 +635,13 @@ pub struct UnitArgs {
     /// One piece of a job, run by the job's coordinator.
     #[arg(long, hide = true)]
     pub one_world_unit: Option<PathBuf>,
+
+    /// Build only these pieces of the job (numbered from 1, as the job
+    /// prints them), say a piece that failed. The others wait for the next
+    /// run of the same job, which finishes it.
+    #[arg(long, value_name = "N,N...", value_delimiter = ',',
+          value_parser = clap::value_parser!(u32).range(1..))]
+    pub only_pieces: Option<Vec<u32>>,
 }
 
 impl UnitArgs {
@@ -1291,6 +1298,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     args.snow.validate(args.one_world)?;
+    if args.units.only_pieces.is_some() && !args.units.coordinates() {
+        return Err(
+            "--only-pieces only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
     if args.process.prewarm_first && !args.units.coordinates() {
         return Err(
             "--prewarm-first only applies to a job built in pieces (--unit-regions).".to_string(),

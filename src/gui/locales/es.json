@@ -585,5 +585,18 @@
   "run_restart_fresh": "Empezar de cero",
   "run_restart_cancel": "Cancelar",
   "dh_lod": "LOD de Distant Horizons",
-  "dh_lod_desc": "El terreno lejano se ve al entrar por primera vez. Solo Java."
+  "dh_lod_desc": "El terreno lejano se ve al entrar por primera vez. Solo Java.",
+  "run_retry_failed": "Reintentar fallidas ({n})",
+  "run_retry_failed_tip": "Vuelve a construir solo las piezas fallidas. Iniciar construye todas las que faltan.",
+  "run_retry_cell": "Reintentar esta celda",
+  "offline_missing": "Descargar y preparar lo que falta",
+  "offline_cached_all": "Todo está en caché",
+  "offline_need": "~{size} · unos {time}",
+  "offline_now": "Descargar y preparar ahora",
+  "offline_details": "Detalles",
+  "offline_first": "Descargar y preparar primero lo que falta",
+  "offline_first_on": "Descargar y preparar primero lo que falta: activado. Iniciar descarga lo que falta y luego genera.",
+  "offline_first_off": "Descargar y preparar primero lo que falta: desactivado. Iniciar genera de inmediato.",
+  "data_plan_moved": "Se muestra en la ventana principal, bajo los botones, mientras Funciones extra está activado.",
+  "advanced_features_end_desc": "El mismo interruptor que al inicio de Funciones extra. Desactivado, Arnis funciona como siempre."
 }

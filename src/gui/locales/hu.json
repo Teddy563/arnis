@@ -585,5 +585,18 @@
   "run_restart_fresh": "Újrakezdés",
   "run_restart_cancel": "Mégse",
   "dh_lod": "Distant Horizons LOD-ok",
-  "dh_lod_desc": "A távoli terep már az első belépéskor megjelenik. Csak Java."
+  "dh_lod_desc": "A távoli terep már az első belépéskor megjelenik. Csak Java.",
+  "run_retry_failed": "Sikertelenek újra ({n})",
+  "run_retry_failed_tip": "Csak a sikertelen darabokat építi újra. Az Indítás minden még hiányzó darabot megépít.",
+  "run_retry_cell": "Cella újrapróbálása",
+  "offline_missing": "Hiányzók letöltése és sütése",
+  "offline_cached_all": "Minden gyorsítótárban van",
+  "offline_need": "~{size} · kb. {time}",
+  "offline_now": "Letöltés és sütés most",
+  "offline_details": "Részletek",
+  "offline_first": "Hiányzó adatok letöltése és sütése előbb",
+  "offline_first_on": "Hiányzó adatok letöltése és sütése előbb: be. Az Indítás letölti a hiányzókat, majd generál.",
+  "offline_first_off": "Hiányzó adatok letöltése és sütése előbb: ki. Az Indítás azonnal generál.",
+  "data_plan_moved": "A főablakban, a gombok alatt látható, amíg az Extra funkciók be vannak kapcsolva.",
+  "advanced_features_end_desc": "Ugyanaz a kapcsoló, mint az Extra funkciók tetején. Kikapcsolva az Arnis a szokásos módon fut."
 }

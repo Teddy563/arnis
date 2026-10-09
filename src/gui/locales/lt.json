@@ -585,5 +585,18 @@
   "run_restart_fresh": "Pradėti iš naujo",
   "run_restart_cancel": "Atšaukti",
   "dh_lod": "Distant Horizons LOD",
-  "dh_lod_desc": "Tolimas reljefas matomas nuo pirmo įėjimo. Tik Java."
+  "dh_lod_desc": "Tolimas reljefas matomas nuo pirmo įėjimo. Tik Java.",
+  "run_retry_failed": "Kartoti nepavykusias ({n})",
+  "run_retry_failed_tip": "Iš naujo sukuria tik nepavykusias dalis. Pradėti sukuria visas dar trūkstamas dalis.",
+  "run_retry_cell": "Kartoti šį langelį",
+  "offline_missing": "Atsisiųsti ir paruošti trūkstamus",
+  "offline_cached_all": "Viskas talpykloje",
+  "offline_need": "~{size} · apie {time}",
+  "offline_now": "Atsisiųsti ir paruošti dabar",
+  "offline_details": "Išsamiau",
+  "offline_first": "Pirma atsisiųsti ir paruošti trūkstamus duomenis",
+  "offline_first_on": "Pirma atsisiųsti ir paruošti trūkstamus duomenis: įjungta. Pradėti atsiunčia trūkstamus, tada generuoja.",
+  "offline_first_off": "Pirma atsisiųsti ir paruošti trūkstamus duomenis: išjungta. Pradėti generuoja iškart.",
+  "data_plan_moved": "Rodoma pagrindiniame lange po mygtukais, kol įjungtos papildomos funkcijos.",
+  "advanced_features_end_desc": "Tas pats jungiklis kaip papildomų funkcijų viršuje. Išjungus Arnis veikia įprastai."
 }

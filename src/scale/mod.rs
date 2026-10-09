@@ -50,6 +50,15 @@ pub static STOP: AtomicBool = AtomicBool::new(false);
 /// What a job returns when Stop ended it.
 pub const STOPPED: &str = "Stopped.";
 
+/// What a job returns when it built the pieces `--only-pieces` named and
+/// others are still to build: not a failure, and the next run finishes it.
+pub const PARTIAL: &str =
+    "The chosen pieces are built; the others wait for the next run of this job.";
+
+/// The pieces (numbered from 1) the window's next run retries, set by
+/// `gui_retry_pieces` and taken by that run, as `--only-pieces`.
+pub static RETRY: Mutex<Option<Vec<u32>>> = Mutex::new(None);
+
 /// Waits while the job is paused, saying so once. False once it is stopping.
 fn hold_while_paused() -> bool {
     let mut said = false;
@@ -173,6 +182,19 @@ pub fn run(
     let proj = manifest.projection();
     let (rect, units) = plan_units(&proj, selection, n)?;
     let fresh = !run.extending;
+    // `--only-pieces`: these are built, the job's other missing pieces wait.
+    let only = args.units.only_pieces.as_deref();
+    if let Some(&bad) = only
+        .into_iter()
+        .flatten()
+        .find(|&&p| p as usize > units.len())
+    {
+        return Err(format!(
+            "--only-pieces {bad}: this job has {} pieces.",
+            units.len()
+        ));
+    }
+    let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
 
     // The map folder of the world's layout, which Minecraft 26.1+ moves.
     let maps_dir = crate::world_utils::WorldLayout::of(world_dir).maps_dir(world_dir);
@@ -253,7 +275,11 @@ pub fn run(
     // `--prewarm-first`: one piece at a time, each with the job's whole download
     // allowance, so N workers then read the caches instead of all fetching at once.
     if args.process.prewarm || args.process.prewarm_first {
-        for unit in units.iter().filter(|u| job.finished(u.index).is_none()) {
+        let warm: Vec<&WorkUnit> = units
+            .iter()
+            .filter(|u| wanted(u.index) && job.finished(u.index).is_none())
+            .collect();
+        for (k, unit) in warm.iter().enumerate() {
             if !hold_while_paused() {
                 return Err(STOPPED.to_string());
             }
@@ -266,7 +292,12 @@ pub fn run(
                 downloads.into(),
             ]);
             println!("  piece {}/{}: warming the caches", i + 1, units.len());
-            run_piece_until(&argv, &[], Some(&STOP), |_| {}).map_err(|f| {
+            // The job's bar: the pieces warmed so far plus this one's share.
+            let report = |f: f64| {
+                let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
+                crate::progress::emit_gui_progress_update(pct, "");
+            };
+            run_piece_until(&argv, &[], Some(&STOP), report).map_err(|f| {
                 if STOP.load(Ordering::Acquire) {
                     STOPPED.to_string()
                 } else {
@@ -325,7 +356,8 @@ pub fn run(
                 piece_record(unit.index, "skipped", json!({}));
                 lock(&results)[unit.index] = Some(r);
             }
-            None => queue.push_back(unit.index),
+            None if wanted(unit.index) => queue.push_back(unit.index),
+            None => {}
         }
     }
     let queue = Mutex::new(queue);
@@ -337,7 +369,7 @@ pub fn run(
             .collect(),
         0.0,
     ));
-    let finished = AtomicUsize::new(of - lock(&queue).len());
+    let finished = AtomicUsize::new(lock(&results).iter().flatten().count());
     // The window's status line: the count, and whether the queue is held.
     let status = || {
         if !crate::progress::is_running_with_gui() {
@@ -494,9 +526,11 @@ pub fn run(
             "{e}\nFinished pieces are kept; run the same command again to resume."
         ));
     }
-    // Stopped before the last piece: kept for a resume, not finished.
+    // Stopped before the last piece, or only some retried: kept for a
+    // resume, not finished.
     if finished.load(Ordering::Relaxed) < of {
-        return Err(STOPPED.to_string());
+        let partial = only.is_some() && !STOP.load(Ordering::Acquire);
+        return Err(if partial { PARTIAL } else { STOPPED }.to_string());
     }
     // Folded in plan order, so the outcome does not depend on which piece
     // finished first.
@@ -722,6 +756,7 @@ const PER_PIECE: &[&str] = &[
     "--ram-budget-mb",
     "--max-downloads",
     "--one-world-unit",
+    "--only-pieces",
 ];
 
 /// Switches the coordinator decides, so the user's are dropped: it hands
@@ -963,6 +998,8 @@ mod tests {
             "json",
             "--no-update-check",
             "--prewarm-first",
+            "--only-pieces",
+            "2,3",
             "--offline",
             "--scale=1",
         ]

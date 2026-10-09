@@ -585,5 +585,18 @@
   "run_restart_fresh": "Start fresh",
   "run_restart_cancel": "Cancel",
   "dh_lod": "Distant Horizons LODs",
-  "dh_lod_desc": "Distant terrain renders on first join. Java only."
+  "dh_lod_desc": "Distant terrain renders on first join. Java only.",
+  "run_retry_failed": "Retry failed ({n})",
+  "run_retry_failed_tip": "Build only the failed pieces again. Start builds every piece still missing.",
+  "run_retry_cell": "Retry this cell",
+  "offline_missing": "Download & bake what's missing",
+  "offline_cached_all": "Everything is cached",
+  "offline_need": "~{size} · about {time}",
+  "offline_now": "Download & bake now",
+  "offline_details": "Details",
+  "offline_first": "Download & bake missing data first",
+  "offline_first_on": "Download & bake missing data first: on. Start fetches what is missing, then generates.",
+  "offline_first_off": "Download & bake missing data first: off. Start generates straight away.",
+  "data_plan_moved": "Shown on the main window under the buttons while Extra Features is on.",
+  "advanced_features_end_desc": "The same switch as at the top of Extra Features. When off, Arnis runs as usual."
 }

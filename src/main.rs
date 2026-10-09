@@ -568,9 +568,13 @@ fn run_cli() {
     if args.units.coordinates() {
         let world_dir = one_world_paths.clone().unwrap_or_default();
         let argv: Vec<_> = env::args_os().skip(1).collect();
-        if let Err(e) = scale::run(&args, &world_dir, &effective_bbox, &argv) {
-            eprintln!("{} {}", "Error:".red().bold(), e);
-            exit_failed();
+        match scale::run(&args, &world_dir, &effective_bbox, &argv) {
+            Err(e) if e == scale::PARTIAL => println!("{e}"),
+            Err(e) => {
+                eprintln!("{} {}", "Error:".red().bold(), e);
+                exit_failed();
+            }
+            Ok(()) => {}
         }
         // A prewarm leaves no world it created behind.
         release_one_world(args.process.prewarm);

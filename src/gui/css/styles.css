@@ -847,10 +847,13 @@ input[type="range"] {
   }
 }
 
+/* Pause / Resume, Stop and Restart: one connected row in Start's place, as
+   tall as Start and built like the format toggles under it (#3A3A3A, yellow
+   for the primary action, 1px seams). Pause / Resume is the primary one. */
 .run-controls {
   display: flex;
-  gap: 6px;
-  padding: 8px 10px 0;
+  gap: 0;
+  padding: 0;
 }
 
 .run-controls[hidden] {
@@ -863,41 +866,72 @@ input[type="range"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
   margin: 0;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
+  padding: 10px 8px;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0;
+  background-color: #3a3a3a;
+  color: #ffffff;
   box-shadow: none;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
+  line-height: 24px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.25s ease, opacity 0.2s ease;
 }
 
-.run-controls .run-control:hover {
-  background: rgba(254, 204, 68, 0.14);
-  border-color: var(--primary-accent);
+.run-controls .run-control:first-child {
+  border-left: none;
+  border-radius: 8px 0 0 0;
 }
 
-.run-controls .run-control.is-active {
-  color: var(--primary-accent);
-  border-color: var(--primary-accent);
+.run-controls .run-control span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-controls .run-control:hover:not(:disabled) {
+  background-color: #4a4a4a;
+}
+
+.run-controls .run-control.is-primary:not(:disabled) {
+  background-color: var(--primary-accent);
+  color: #0f0f0f;
+  font-weight: 600;
+}
+
+.run-controls .run-control.is-primary:not(:disabled):hover {
+  background-color: var(--primary-accent-dark);
 }
 
 .run-controls .run-control:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
-  background: transparent;
-  border-color: transparent;
+}
+
+.run-controls .run-control:focus-visible {
+  outline: 2px solid var(--primary-accent);
+  outline-offset: -2px;
 }
 
 .run-controls .run-control .icon {
   width: 17px;
   height: 17px;
+}
+
+/* "Retry failed (n)": the same button on its own, under the button block. */
+.run-controls.run-retry-row {
+  margin-top: 8px;
+  border-radius: 8px;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+}
+
+.run-controls.run-retry-row .run-control {
+  border-radius: 8px;
 }
 
 .mini-panel .mini-icon-button[hidden] {
@@ -1135,4 +1169,169 @@ body.mini-mode .mini-panel {
 
 .dialog .dialog-button.is-danger:hover {
   background: rgba(207, 102, 121, 0.12);
+}
+
+/* The offline panel (Extra Features on), in the grey space under the
+   buttons: a summary card with the transfer bar, then the plan's rows under a
+   collapsed Details. It takes only the room that is left (flex-basis 0), so
+   it never makes the column taller; open, the rows scroll inside it under the
+   summary, which sticks to its top. */
+.offline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 8px 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  text-align: left;
+  line-height: 1.4;
+  color: var(--ui-text);
+}
+
+.offline-panel[hidden] {
+  display: none;
+}
+
+.offline-panel button {
+  width: auto;
+  margin: 0;
+  box-shadow: none;
+  font-family: inherit;
+}
+
+.offline-summary,
+.offline-details {
+  flex-shrink: 0;
+  border: 1px solid var(--ui-card-border);
+  border-radius: 8px;
+  background: var(--ui-card);
+}
+
+.offline-summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+}
+
+.offline-panel .offline-summary .transfer-panel {
+  margin: 0;
+}
+
+.offline-panel .offline-summary .prepare-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.offline-panel .offline-summary .clear-cache-button {
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.offline-panel .offline-summary .transfer-panel .data-plan-extract {
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.offline-details-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  list-style: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.offline-details-head > span:first-child {
+  flex: 1;
+}
+
+.offline-details-head::-webkit-details-marker {
+  display: none;
+}
+
+.offline-details-head:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.offline-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+
+.offline-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--ui-muted);
+  transition: transform 0.15s ease;
+}
+
+.offline-details[open] .offline-chevron {
+  transform: rotate(180deg);
+}
+
+.offline-details-body {
+  padding: 0 10px 8px;
+}
+
+/* The OSM Data Source lists, narrower and without the tile's icon indent. */
+.offline-panel .offline-details .data-plan-list,
+.offline-panel .offline-details .data-plan-extract,
+.offline-panel .offline-details .prepare-panel {
+  margin-left: 0;
+}
+
+.offline-panel .offline-details .data-plan-body > * + * {
+  margin-top: 6px;
+}
+
+.offline-panel .offline-details .data-plan-list {
+  font-size: 11.5px;
+}
+
+.offline-panel .offline-details .data-plan-list.has-sizes li {
+  grid-template-columns: minmax(0, 1fr) auto 50px 58px;
+  gap: 8px;
+}
+
+/* A row's own bar while its item comes in: the transfer bar, thinner. */
+.data-plan-list li .data-plan-bar {
+  grid-column: 1 / -1;
+  flex: none;
+  height: 6px;
+}
+
+/* Beside Start: "Download & bake missing data first", yellow when on. */
+.button-block-row .offline-first-toggle {
+  border-radius: 0;
+}
+
+.button-block-row .offline-first-toggle[hidden] {
+  display: none;
+}
+
+.button-block-row .offline-first-toggle.is-on svg {
+  stroke: var(--primary-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offline-chevron,
+  .run-controls .run-control {
+    transition: none;
+  }
 }

@@ -585,5 +585,18 @@
   "run_restart_fresh": "Começar do zero",
   "run_restart_cancel": "Cancelar",
   "dh_lod": "LODs do Distant Horizons",
-  "dh_lod_desc": "O terreno distante aparece já na primeira entrada. Só Java."
+  "dh_lod_desc": "O terreno distante aparece já na primeira entrada. Só Java.",
+  "run_retry_failed": "Tentar falhas de novo ({n})",
+  "run_retry_failed_tip": "Constrói de novo só as partes que falharam. Iniciar constrói todas as que ainda faltam.",
+  "run_retry_cell": "Tentar esta célula de novo",
+  "offline_missing": "Baixar e preparar o que falta",
+  "offline_cached_all": "Tudo está em cache",
+  "offline_need": "~{size} · cerca de {time}",
+  "offline_now": "Baixar e preparar agora",
+  "offline_details": "Detalhes",
+  "offline_first": "Baixar e preparar primeiro os dados que faltam",
+  "offline_first_on": "Baixar e preparar primeiro os dados que faltam: ligado. Iniciar baixa o que falta e depois gera.",
+  "offline_first_off": "Baixar e preparar primeiro os dados que faltam: desligado. Iniciar gera na hora.",
+  "data_plan_moved": "Aparece na janela principal, abaixo dos botões, enquanto Recursos extras estiver ligado.",
+  "advanced_features_end_desc": "O mesmo interruptor do topo de Recursos extras. Desligado, o Arnis funciona como sempre."
 }
