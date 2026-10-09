@@ -23,8 +23,14 @@
 //!   keyed by `floor(block / 64)`. Its blobs are encoded as
 //!   `FullDataSourceV2DTO` writes them, each its own zstd frame
 //!   (`CompressionMode` 4, `Z_STD_BLOCK`, DH's default).
-//! - `ApplyToParent = 1` is the flag DH's own chunk path sets; DH's update
-//!   propagator then downsamples the row into every coarser level.
+//! - The coarser levels 1 to 8 are written too, merged from the rows below as
+//!   DH's `FullDataSourceV2.updateFromOneBelowDetailLevel` merges them. DH
+//!   draws anything past a few hundred blocks from those levels
+//!   (`LodQuadTree.calcDetailLevelFromDistance`) and shows nothing where a
+//!   level has no row; its own propagator builds them a few rows a second,
+//!   so a large area would stay blank for hours.
+//! - `ApplyToParent = 1` on the block-detail rows, the flag DH's own chunk
+//!   path sets, still lets DH redo the coarser levels in the background.
 //! - Columns read from a full chunk are marked `LIGHT`, the last generation
 //!   step, so DH never queues them for world generation. Columns of chunks
 //!   that do not exist stay `EMPTY`, which DH generates as usual.
@@ -62,6 +68,8 @@ const PAIR_SEPARATOR: &str = "_DH-BSW_";
 const STATE_SEPARATOR: &str = "_STATE_";
 const AIR: &str = "AIR";
 const DEFAULT_BIOME: &str = "minecraft:plains";
+/// `FullDataSourceProviderV2.ROOT_SECTION_DETAIL_LEVEL`, as a `DetailLevel`.
+const TOP_LEVEL: u8 = 8;
 
 /// The tables, columns (in order) and indexes DH 3.3.3's update scripts leave
 /// behind, checked against a database DH created itself.
@@ -202,6 +210,18 @@ pub fn region_extent(world_dir: &Path) -> Option<[i32; 4]> {
 pub struct Stats {
     pub sections: u64,
     pub columns: u64,
+    /// Rows of the coarser levels.
+    pub coarser: u64,
+}
+
+impl std::fmt::Display for Stats {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{} sections ({} columns) and {} coarser sections",
+            self.sections, self.columns, self.coarser
+        )
+    }
 }
 
 /// `--dh-lod` after a world (or a One World job) is written: the LODs for
@@ -211,9 +231,7 @@ pub fn run(world_dir: &Path, rect: &crate::coordinate_system::cartesian::XZBBox,
     let rect = [rect.min_x(), rect.min_z(), rect.max_x(), rect.max_z()];
     match write_lods(world_dir, rect, fresh) {
         Ok(s) => println!(
-            "Distant Horizons LODs: {} sections ({} columns) written to {}.",
-            s.sections,
-            s.columns,
+            "Distant Horizons LODs: {s} written to {}.",
             database_path(world_dir).display()
         ),
         Err(e) => eprintln!("Warning: Failed to write the Distant Horizons LODs: {e}"),
@@ -258,6 +276,7 @@ pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats
     // SQLite takes one writer: regions are read and encoded in parallel, and
     // each one's rows go in under the lock as a single transaction.
     let totals = Mutex::new(Stats::default());
+    let written = Mutex::new(Vec::new());
     regions.par_iter().try_for_each(|&(rx, rz)| {
         let path = region_dir.join(format!("r.{rx}.{rz}.mca"));
         // Minecraft leaves empty region files around; they hold no chunks.
@@ -291,17 +310,21 @@ pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats
                 }
             }
         }
-        let mut conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let mut conn = lock(&conn);
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         for (sx, sz, _, row) in &rows {
-            upsert(&tx, *sx, *sz, row, now).map_err(|e| e.to_string())?;
+            upsert(&tx, 0, *sx, *sz, row, now).map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())?;
-        let mut totals = totals.lock().unwrap_or_else(|p| p.into_inner());
+        drop(conn);
+        let mut totals = lock(&totals);
         totals.sections += rows.len() as u64;
         totals.columns += rows.iter().map(|r| r.2 as u64).sum::<u64>();
+        lock(&written).extend(rows.iter().map(|r| (r.0, r.1)));
         Ok::<(), String>(())
     })?;
+    let mut totals = totals.into_inner().unwrap_or_else(|p| p.into_inner());
+    totals.coarser = write_coarser_levels(&conn, written.into_inner().unwrap_or_default(), now)?;
     // Closing the last connection folds the WAL into the file before it is
     // linked.
     drop(conn);
@@ -313,7 +336,86 @@ pub fn write_lods(world_dir: &Path, rect: [i32; 4], fresh: bool) -> Result<Stats
             .or_else(|_| fs::copy(&db_path, path).map(drop))
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
-    Ok(totals.into_inner().unwrap_or_else(|p| p.into_inner()))
+    Ok(totals)
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Levels 1 to [`TOP_LEVEL`] over the block-detail sections `written`, each
+/// parent merged from its four children as they now stand in the database.
+/// Returns the rows written.
+fn write_coarser_levels(
+    conn: &Mutex<Connection>,
+    mut written: Vec<(i32, i32)>,
+    now: i64,
+) -> Result<u64, String> {
+    let mut count = 0;
+    for level in 1..=TOP_LEVEL {
+        // `DhSectionPos.getParentPos`: halved, rounding down.
+        written = written.iter().map(|&(x, z)| (x >> 1, z >> 1)).collect();
+        written.sort_unstable();
+        written.dedup();
+        // Batches bound the encoded rows held at once.
+        for batch in written.chunks(1024) {
+            let rows: Vec<(i32, i32, Row)> = batch
+                .par_iter()
+                .filter_map(|&(x, z)| {
+                    // Updated in place, as DH updates a parent: a quarter
+                    // whose child this module cannot read (another compression
+                    // mode, an older format) keeps what it had.
+                    let mut parent =
+                        read_source(&lock(conn), level, x, z).unwrap_or_else(Source::new);
+                    let mut any = false;
+                    for (dx, dz) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                        if let Some(child) =
+                            read_source(&lock(conn), level - 1, 2 * x + dx, 2 * z + dz)
+                        {
+                            parent.merge_child(&child, dx as usize, dz as usize);
+                            any = true;
+                        }
+                    }
+                    any.then(|| parent.compact().encode().ok().map(|row| (x, z, row)))
+                        .flatten()
+                })
+                .collect();
+            let mut conn = lock(conn);
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            for (x, z, row) in &rows {
+                upsert(&tx, level, *x, *z, row, now).map_err(|e| e.to_string())?;
+            }
+            tx.commit().map_err(|e| e.to_string())?;
+            count += rows.len() as u64;
+        }
+    }
+    Ok(count)
+}
+
+/// A row as [`Source`], if it is one this module writes: zstd blobs in
+/// `DATA_FORMAT.V2_LATEST`.
+fn read_source(conn: &Connection, level: u8, x: i32, z: i32) -> Option<Source> {
+    let blobs: [Vec<u8>; 7] = conn
+        .query_row(
+            "SELECT Data, ColumnGenerationStep, Mapping,
+                NorthAdjData, SouthAdjData, EastAdjData, WestAdjData
+             FROM FullData WHERE DetailLevel = ?1 AND PosX = ?2 AND PosZ = ?3
+                AND CompressionMode = ?4 AND DataFormatVersion = ?5",
+            params![level, x, z, COMPRESSION_ZSTD, DATA_FORMAT_V2],
+            |r| {
+                Ok([
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ])
+            },
+        )
+        .ok()?;
+    Source::decode(&blobs)
 }
 
 /// Deletes a database with its journal files; a missing one is fine.
@@ -379,15 +481,22 @@ fn open_database(path: &Path) -> Result<Connection, String> {
 }
 
 /// DH's own upsert (`FullDataSourceV2Repo.createUpsertStatement`) with every
-/// flag present.
-fn upsert(conn: &Connection, sx: i32, sz: i32, row: &Row, now: i64) -> rusqlite::Result<()> {
+/// flag present. Only block-detail rows ask DH to update their parents.
+fn upsert(
+    conn: &Connection,
+    level: u8,
+    sx: i32,
+    sz: i32,
+    row: &Row,
+    now: i64,
+) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO FullData (DetailLevel, PosX, PosZ, MinY, DataChecksum,
             Data, ColumnGenerationStep, ColumnWorldCompressionMode, Mapping,
             NorthAdjData, SouthAdjData, EastAdjData, WestAdjData,
             DataFormatVersion, CompressionMode, ApplyToParent, ApplyToChildren, Regenerate,
             LastModifiedUnixDateTime, CreatedUnixDateTime)
-         VALUES (0, ?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 1, 0, 0, ?14, ?14)
+         VALUES (?15, ?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?16, 0, 0, ?14, ?14)
          ON CONFLICT(DetailLevel, PosX, PosZ) DO UPDATE SET
             DataChecksum = excluded.DataChecksum, Data = excluded.Data,
             ColumnGenerationStep = excluded.ColumnGenerationStep,
@@ -397,7 +506,7 @@ fn upsert(conn: &Connection, sx: i32, sz: i32, row: &Row, now: i64) -> rusqlite:
             EastAdjData = excluded.EastAdjData, WestAdjData = excluded.WestAdjData,
             DataFormatVersion = excluded.DataFormatVersion,
             CompressionMode = excluded.CompressionMode,
-            ApplyToParent = 1, ApplyToChildren = 0, Regenerate = 0,
+            ApplyToParent = excluded.ApplyToParent, ApplyToChildren = 0, Regenerate = 0,
             LastModifiedUnixDateTime = excluded.LastModifiedUnixDateTime",
         params![
             sx,
@@ -414,6 +523,8 @@ fn upsert(conn: &Connection, sx: i32, sz: i32, row: &Row, now: i64) -> rusqlite:
             DATA_FORMAT_V2,
             COMPRESSION_ZSTD,
             now,
+            level,
+            level == 0,
         ],
     )?;
     Ok(())
@@ -631,14 +742,99 @@ impl Source {
     /// `FullDataPointIdMap.addIfNotPresentAndGetId`: ids are per source, in
     /// order of first use.
     fn id(&mut self, biome: &str, block: &str) -> u32 {
-        let key = format!("{biome}{PAIR_SEPARATOR}{block}");
-        if let Some(&id) = self.ids.get(&key) {
+        self.key_id(&format!("{biome}{PAIR_SEPARATOR}{block}"))
+    }
+
+    fn key_id(&mut self, key: &str) -> u32 {
+        if let Some(&id) = self.ids.get(key) {
             return id;
         }
         let id = self.mapping.len() as u32;
-        self.mapping.push(key.clone());
-        self.ids.insert(key, id);
+        self.mapping.push(key.to_string());
+        self.ids.insert(key.to_string(), id);
         id
+    }
+
+    /// A row's blobs (`Data`, `ColumnGenerationStep`, `Mapping`, then the
+    /// north, south, east and west strips), as `FullDataSourceV2DTO` reads
+    /// them. `None` for anything malformed.
+    fn decode(blobs: &[Vec<u8>; 7]) -> Option<Self> {
+        let raw = |b: &[u8]| zstd::decode_all(b).ok();
+        let w = WIDTH as u32;
+        let mut source = Self::new();
+        // The middle, then the strips that hold the edge columns.
+        let areas = [
+            (0, (1, w - 1), (1, w - 1)),
+            (3, (0, w), (0, 1)),
+            (4, (0, w), (w - 1, w)),
+            (5, (w - 1, w), (0, w)),
+            (6, (0, 1), (0, w)),
+        ];
+        for (blob, xs, zs) in areas {
+            let cols = decode_points(&raw(&blobs[blob])?, xs, zs)?;
+            let positions = (xs.0..xs.1).flat_map(|x| (zs.0..zs.1).map(move |z| (x, z)));
+            for ((x, z), col) in positions.zip(cols) {
+                source.points[x as usize * WIDTH + z as usize] = col;
+            }
+        }
+        source.gen_steps = raw(&blobs[1])?;
+        let mapping = raw(&blobs[2])?;
+        let count = i32::from_be_bytes(mapping.get(..4)?.try_into().ok()?);
+        let mut at = 4;
+        for _ in 0..count {
+            let len = u16::from_be_bytes(mapping.get(at..at + 2)?.try_into().ok()?) as usize;
+            let entry = String::from_utf8_lossy(mapping.get(at + 2..at + 2 + len)?);
+            source.key_id(&entry);
+            at += 2 + len;
+        }
+        let max_id = source.points.iter().flatten().map(|p| p.id).max();
+        (source.gen_steps.len() == WIDTH * WIDTH && max_id.is_none_or(|id| id < count as u32))
+            .then_some(source)
+    }
+
+    /// `updateFromOneBelowDetailLevel`: `child`, the one `dx`, `dz` (0 or 1)
+    /// along, into its quarter of this source, each 2x2 of its columns
+    /// merged into one.
+    fn merge_child(&mut self, child: &Source, dx: usize, dz: usize) {
+        let (off_x, off_z) = (dx * WIDTH / 2, dz * WIDTH / 2);
+        for x in (0..WIDTH).step_by(2) {
+            for z in (0..WIDTH).step_by(2) {
+                let quad =
+                    [(x, z), (x, z + 1), (x + 1, z), (x + 1, z + 1)].map(|(x, z)| x * WIDTH + z);
+                let target = (off_x + x / 2) * WIDTH + off_z + z / 2;
+                self.gen_steps[target] = quad
+                    .iter()
+                    .map(|&i| child.gen_steps[i])
+                    .min()
+                    .unwrap_or(GEN_EMPTY);
+                let column = merge_columns(quad.map(|i| child.points[i].as_slice()), |id| {
+                    child.mapping.get(id as usize).is_some_and(|k| {
+                        k.strip_suffix(AIR)
+                            .is_some_and(|k| k.ends_with(PAIR_SEPARATOR))
+                    })
+                });
+                self.points[target] = column
+                    .into_iter()
+                    .map(|p| Point {
+                        id: self.key_id(&child.mapping[p.id as usize]),
+                        ..p
+                    })
+                    .collect();
+            }
+        }
+    }
+
+    /// `removeUnusedIdsAndRemap`: only the ids in use, numbered in the order
+    /// the columns use them.
+    fn compact(mut self) -> Self {
+        let old = std::mem::take(&mut self.mapping);
+        self.ids.clear();
+        let mut points = std::mem::take(&mut self.points);
+        for p in points.iter_mut().flatten() {
+            p.id = self.key_id(&old[p.id as usize]);
+        }
+        self.points = points;
+        self
     }
 
     /// `LodDataBuilder.createFromChunk` for the chunk at column offset
@@ -792,6 +988,130 @@ fn encode_points(points: &[Vec<Point>], xs: (u32, u32), zs: (u32, u32)) -> Vec<u
     out
 }
 
+/// `readBlobToDataSourceDataArrayV2`, the reverse of [`encode_points`].
+fn decode_points(blob: &[u8], xs: (u32, u32), zs: (u32, u32)) -> Option<Vec<Vec<Point>>> {
+    let mut at = 0;
+    let mut byte = || {
+        at += 1;
+        blob.get(at - 1).copied()
+    };
+    let mut varint = || {
+        let (mut v, mut shift) = (0u32, 0);
+        loop {
+            let b = byte()?;
+            v |= u32::from(b & 127).checked_shl(shift)?;
+            shift += 7;
+            if b & 128 == 0 {
+                return Some(v);
+            }
+        }
+    };
+    let n = ((xs.1 - xs.0) * (zs.1 - zs.0)) as usize;
+    let counts: Vec<usize> = (0..n)
+        .map(|_| varint().map(|c| c as usize))
+        .collect::<Option<_>>()?;
+    let mut flags = Vec::new();
+    let mut cols = Vec::with_capacity(n);
+    for &c in &counts {
+        let mut col = Vec::with_capacity(c.min(4096));
+        for _ in 0..c {
+            let e = varint()?;
+            flags.push(e & 3);
+            col.push(Point {
+                id: e >> 2,
+                height: 0,
+                bottom: 0,
+                block_light: 0,
+                sky_light: 0,
+            });
+        }
+        cols.push(col);
+    }
+    for p in cols.iter_mut().flatten() {
+        p.height = varint()?;
+    }
+    let mut previous = 0i32;
+    for (p, f) in cols.iter_mut().flatten().zip(&flags) {
+        let error = if f & 1 != 0 {
+            let v = varint()?;
+            ((v >> 1) as i32) ^ -((v & 1) as i32)
+        } else {
+            0
+        };
+        previous = previous - p.height as i32 + error;
+        p.bottom = previous as u32;
+    }
+    for (p, f) in cols.iter_mut().flatten().zip(&flags) {
+        if f & 2 != 0 {
+            let packed = byte()?;
+            p.sky_light = packed & 15;
+            p.block_light = packed >> 4;
+        }
+    }
+    (at == blob.len()).then_some(cols)
+}
+
+/// `mergeInputTwoByTwoDataColumn`: four top-down columns into one, sliced at
+/// every datapoint edge and sampled mid-slice. A slice takes the commonest
+/// non-air id (the first column's on a tie; id 0 where none has data) and
+/// the light averaged over the columns showing that id.
+fn merge_columns(columns: [&[Point]; 4], is_air: impl Fn(u32) -> bool) -> Vec<Point> {
+    let mut edges: Vec<u32> = columns
+        .iter()
+        .flat_map(|c| c.iter().flat_map(|p| [p.bottom, p.bottom + p.height]))
+        .collect();
+    edges.sort_unstable();
+    edges.dedup();
+    let mut out: Vec<Point> = Vec::new();
+    for slice in edges.windows(2) {
+        let (bottom, height) = (slice[0], slice[1] - slice[0]);
+        let y = bottom + height / 2;
+        let hits = columns.map(|c| {
+            c.iter()
+                .find(|p| p.bottom <= y && y < p.bottom + p.height)
+                .map_or((0, 0, 0), |p| (p.id, p.block_light, p.sky_light))
+        });
+        let ids = hits.map(|h| h.0);
+        let mut counts = [0; 4];
+        for &id in ids.iter().filter(|&&id| !is_air(id)) {
+            // The first equal entry takes the count, as DH's if-chain does.
+            counts[ids.iter().position(|&v| v == id).unwrap_or(3)] += 1;
+        }
+        let best = *counts.iter().max().unwrap_or(&0);
+        let id = ids[counts.iter().position(|&c| c == best).unwrap_or(0)];
+        let average = |light: fn(&(u32, u8, u8)) -> u8| {
+            let matching: Vec<u32> = hits
+                .iter()
+                .filter(|h| h.0 == id)
+                .map(|h| u32::from(light(h)))
+                .collect();
+            if matching.is_empty() {
+                (hits.iter().map(|h| u32::from(light(h))).sum::<u32>() / 4) as u8
+            } else {
+                (matching.iter().sum::<u32>() / matching.len() as u32) as u8
+            }
+        };
+        let (block_light, sky_light) = (average(|h| h.1), average(|h| h.2));
+        match out.last_mut() {
+            Some(last)
+                if (last.id, last.block_light, last.sky_light) == (id, block_light, sky_light) =>
+            {
+                last.height += height;
+            }
+            _ => out.push(Point {
+                id,
+                height,
+                bottom,
+                block_light,
+                sky_light,
+            }),
+        }
+    }
+    // Built bottom-up; DH keeps columns top-down.
+    out.reverse();
+    out
+}
+
 /// `VarintUtil.writeVarint`.
 fn varint(out: &mut Vec<u8>, mut v: u32) {
     while v >= 128 {
@@ -811,68 +1131,6 @@ fn fnv32(bytes: &[u8]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `readBlobToDataSourceDataArrayV2`, ported, so the encoder is checked
-    /// against DH's reading logic rather than against itself.
-    fn decode_points(blob: &[u8], xs: (u32, u32), zs: (u32, u32)) -> Vec<Vec<Point>> {
-        struct Reader<'a>(&'a [u8], usize);
-        impl Reader<'_> {
-            fn byte(&mut self) -> u8 {
-                self.1 += 1;
-                self.0[self.1 - 1]
-            }
-            fn varint(&mut self) -> u32 {
-                let (mut v, mut shift) = (0u32, 0);
-                loop {
-                    let b = self.byte();
-                    v |= u32::from(b & 127) << shift;
-                    shift += 7;
-                    if b & 128 == 0 {
-                        return v;
-                    }
-                }
-            }
-        }
-        let mut r = Reader(blob, 0);
-        let n = ((xs.1 - xs.0) * (zs.1 - zs.0)) as usize;
-        let counts: Vec<usize> = (0..n).map(|_| r.varint() as usize).collect();
-        let mut flags = Vec::new();
-        let mut cols: Vec<Vec<Point>> = counts
-            .iter()
-            .map(|&c| {
-                (0..c)
-                    .map(|_| {
-                        let e = r.varint();
-                        flags.push(e & 3);
-                        point(e >> 2, 0, 0, 0, 0)
-                    })
-                    .collect()
-            })
-            .collect();
-        for p in cols.iter_mut().flatten() {
-            p.height = r.varint();
-        }
-        let mut previous = 0i32;
-        for (p, f) in cols.iter_mut().flatten().zip(&flags) {
-            let error = if f & 1 != 0 {
-                let v = r.varint();
-                ((v >> 1) as i32) ^ -((v & 1) as i32)
-            } else {
-                0
-            };
-            previous = previous - p.height as i32 + error;
-            p.bottom = previous as u32;
-        }
-        for (p, f) in cols.iter_mut().flatten().zip(&flags) {
-            if f & 2 != 0 {
-                let packed = r.byte();
-                p.sky_light = packed & 15;
-                p.block_light = packed >> 4;
-            }
-        }
-        assert_eq!(r.1, blob.len(), "trailing bytes");
-        cols
-    }
 
     fn point(id: u32, height: u32, bottom: u32, block_light: u8, sky_light: u8) -> Point {
         Point {
@@ -895,7 +1153,8 @@ mod tests {
         ];
         points[66] = vec![point(3, 10, 200, 14, 3), point(400, 5, 7, 0, 0)];
         points[WIDTH * 62 + 62] = vec![point(1, 384, 0, 0, 0)];
-        let back = decode_points(&encode_points(&points, (1, 63), (1, 63)), (1, 63), (1, 63));
+        let back =
+            decode_points(&encode_points(&points, (1, 63), (1, 63)), (1, 63), (1, 63)).unwrap();
         let mut i = 0;
         for x in 1..63 {
             for z in 1..63 {
@@ -910,7 +1169,7 @@ mod tests {
         let mut points = vec![Vec::new(); WIDTH * WIDTH];
         points[5] = vec![point(1, 2, 3, 0, 15)]; // x 0, z 5: west
         points[63 * WIDTH + 63] = vec![point(2, 2, 3, 0, 15)]; // south-east corner
-        let strip = |xs, zs| decode_points(&encode_points(&points, xs, zs), xs, zs);
+        let strip = |xs, zs| decode_points(&encode_points(&points, xs, zs), xs, zs).unwrap();
         assert_eq!(strip((0, 1), (0, 64))[5], points[5]);
         assert_eq!(strip((0, 64), (63, 64))[63], points[63 * WIDTH + 63]);
         assert_eq!(strip((63, 64), (0, 64))[63], points[63 * WIDTH + 63]);
@@ -1013,6 +1272,94 @@ mod tests {
         }
     }
 
+    /// Traced by hand through `mergeInputTwoByTwoDataColumn`: id 0 is air, a
+    /// missing column reads as id 0 with no light, and air never outvotes.
+    #[test]
+    fn four_columns_merge_as_dh_merges_them() {
+        let c0 = [point(0, 10, 20, 0, 15), point(1, 20, 0, 0, 0)];
+        let c1 = [point(0, 15, 15, 0, 15), point(2, 15, 0, 0, 0)];
+        let merged = merge_columns([&c0, &c1, &[], &c0], |id| id == 0);
+        // Slices 0-15 and 15-20 go to stone (1), 20-30 to air with the sky
+        // light of three lit columns and one empty one: 45 / 4.
+        assert_eq!(merged, [point(0, 10, 20, 0, 11), point(1, 20, 0, 0, 0)]);
+        // A tie goes to the first column's id, lit by the columns showing it.
+        let (a, b) = ([point(2, 5, 0, 3, 0)], [point(1, 5, 0, 9, 0)]);
+        let tie = merge_columns([&a, &b, &b, &[point(2, 5, 0, 6, 0)]], |_| false);
+        assert_eq!(tie, [point(2, 5, 0, 4, 0)]);
+        // Missing columns vote too, as id 0.
+        assert_eq!(merge_columns([&a, &b, &[], &[]], |_| false)[0].id, 0);
+    }
+
+    #[test]
+    fn a_row_reads_back_as_written() {
+        let mut source = Source::new();
+        source.add_chunk(&test_chunk(true), 48, 0);
+        source.add_chunk(&test_chunk(true), 0, 48);
+        let row = source.encode().unwrap();
+        let [n, s, e, w] = row.adjacent.clone();
+        let back = Source::decode(&[row.data, row.gen_steps, row.mapping, n, s, e, w]).unwrap();
+        assert_eq!(back.points, source.points);
+        assert_eq!(back.gen_steps, source.gen_steps);
+        assert_eq!(back.mapping, source.mapping);
+    }
+
+    #[test]
+    fn every_coarser_level_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_database(&dir.path().join("dh.sqlite")).unwrap();
+        let mut source = Source::new();
+        source.add_chunk(&test_chunk(true), 0, 0);
+        upsert(&conn, 0, -1, 0, &source.encode().unwrap(), 1).unwrap();
+        let conn = Mutex::new(conn);
+        assert_eq!(write_coarser_levels(&conn, vec![(-1, 0)], 1).unwrap(), 8);
+        let conn = conn.into_inner().unwrap();
+        let keys: Vec<(u8, i32, i32)> = conn
+            .prepare(
+                "SELECT DetailLevel, PosX, PosZ FROM FullData WHERE DetailLevel > 0 ORDER BY 1",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(keys, (1..=8).map(|l| (l, -1, 0)).collect::<Vec<_>>());
+        // Section -1 is the east child of -1 at level 1: the chunk's 16x16
+        // columns land as 8x8 in that quarter.
+        let parent = read_source(&conn, 1, -1, 0).unwrap();
+        assert_eq!(parent.gen_steps[32 * WIDTH], GEN_LIGHT);
+        assert_eq!(parent.gen_steps[40 * WIDTH], GEN_EMPTY);
+        assert_eq!(parent.gen_steps[0], GEN_EMPTY);
+        let names: Vec<&str> = parent.points[32 * WIDTH]
+            .iter()
+            .map(|p| parent.mapping[p.id as usize].as_str())
+            .collect();
+        assert_eq!(
+            names[1],
+            "minecraft:plains_DH-BSW_minecraft:grass_block_STATE_{snowy:false}"
+        );
+        assert_eq!(parent.points[32 * WIDTH], source.points[0]);
+        // The top level holds the chunk too.
+        assert!(read_source(&conn, 8, -1, 0)
+            .unwrap()
+            .points
+            .iter()
+            .any(|c| !c.is_empty()));
+
+        // Its sibling written later, with the first child no longer readable
+        // here: the parent keeps that child's quarter.
+        conn.execute(
+            "UPDATE FullData SET CompressionMode = 3 WHERE DetailLevel = 0",
+            [],
+        )
+        .unwrap();
+        upsert(&conn, 0, -2, 0, &source.encode().unwrap(), 2).unwrap();
+        let conn = Mutex::new(conn);
+        write_coarser_levels(&conn, vec![(-2, 0)], 2).unwrap();
+        let parent = read_source(&lock(&conn), 1, -1, 0).unwrap();
+        assert_eq!(parent.points[32 * WIDTH], source.points[0]);
+        assert_eq!(parent.points[0], source.points[0]);
+    }
+
     #[test]
     fn unlit_chunks_take_sky_from_above() {
         let mut source = Source::new();
@@ -1039,8 +1386,8 @@ mod tests {
         let mut source = Source::new();
         source.add_chunk(&test_chunk(true), 0, 0);
         let row = source.encode().unwrap();
-        upsert(&conn, -3, 7, &row, 1).unwrap();
-        upsert(&conn, -3, 7, &row, 2).unwrap();
+        upsert(&conn, 0, -3, 7, &row, 1).unwrap();
+        upsert(&conn, 0, -3, 7, &row, 2).unwrap();
         let (n, parent, created, modified): (i64, i64, i64, i64) = conn
             .query_row(
                 "SELECT COUNT(*), MAX(ApplyToParent), MAX(CreatedUnixDateTime),
@@ -1055,7 +1402,7 @@ mod tests {
         let blob: Vec<u8> = conn
             .query_row("SELECT Data FROM FullData", [], |r| r.get(0))
             .unwrap();
-        let cols = decode_points(&zstd::decode_all(&blob[..]).unwrap(), (1, 63), (1, 63));
+        let cols = decode_points(&zstd::decode_all(&blob[..]).unwrap(), (1, 63), (1, 63)).unwrap();
         assert_eq!(cols[0], source.points[WIDTH + 1]);
         drop(conn);
 

@@ -340,9 +340,7 @@ fn run_cli() {
             .and_then(|rect| dh_lod::write_lods(&world_dir, rect, false));
         match written {
             Ok(s) => println!(
-                "Distant Horizons LODs: {} sections ({} columns) written to {}.",
-                s.sections,
-                s.columns,
+                "Distant Horizons LODs: {s} written to {}.",
                 dh_lod::database_path(&world_dir).display()
             ),
             Err(e) => {
