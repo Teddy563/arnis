@@ -386,8 +386,9 @@ pub fn run(
 
     let work = || -> Result<(), String> {
         while !aborting.load(Ordering::Relaxed) && !STOP.load(Ordering::Acquire) {
-            // Paused: the queue waits while the running pieces finish.
-            if PAUSE.load(Ordering::Acquire) {
+            // Paused: the queue waits while the running pieces finish. An
+            // empty queue has nothing to hold, so the job can still end.
+            if PAUSE.load(Ordering::Acquire) && !lock(&queue).is_empty() {
                 if !paused_said.swap(true, Ordering::Relaxed) {
                     crate::progress::emit_gui_progress_update(
                         crate::progress::MESSAGE_ONLY,
