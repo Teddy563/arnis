@@ -585,5 +585,18 @@
   "run_restart_fresh": "从头开始",
   "run_restart_cancel": "取消",
   "dh_lod": "Distant Horizons LOD",
-  "dh_lod_desc": "首次进入时即可看到远处地形。仅限 Java 版。"
+  "dh_lod_desc": "首次进入时即可看到远处地形。仅限 Java 版。",
+  "run_retry_failed": "重试失败的部分 ({n})",
+  "run_retry_failed_tip": "只重新构建失败的部分。开始会构建所有仍缺少的部分。",
+  "run_retry_cell": "重试此单元格",
+  "offline_missing": "下载并烘焙缺少的数据",
+  "offline_cached_all": "全部已缓存",
+  "offline_need": "~{size} · 约 {time}",
+  "offline_now": "立即下载并烘焙",
+  "offline_details": "详情",
+  "offline_first": "先下载并烘焙缺少的数据",
+  "offline_first_on": "先下载并烘焙缺少的数据：开。开始会先获取缺少的数据，再生成。",
+  "offline_first_off": "先下载并烘焙缺少的数据：关。开始会直接生成。",
+  "data_plan_moved": "启用扩展功能时，显示在主窗口的按钮下方。",
+  "advanced_features_end_desc": "与扩展功能顶部的开关相同。关闭时，Arnis 照常运行。"
 }

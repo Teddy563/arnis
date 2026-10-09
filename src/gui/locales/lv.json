@@ -585,5 +585,18 @@
   "run_restart_fresh": "Sākt no jauna",
   "run_restart_cancel": "Atcelt",
   "dh_lod": "Distant Horizons LOD",
-  "dh_lod_desc": "Tālais reljefs redzams jau pirmajā ienākšanas reizē. Tikai Java."
+  "dh_lod_desc": "Tālais reljefs redzams jau pirmajā ienākšanas reizē. Tikai Java.",
+  "run_retry_failed": "Atkārtot neizdevušās ({n})",
+  "run_retry_failed_tip": "No jauna būvē tikai neizdevušās daļas. Sākt uzbūvē visas vēl trūkstošās daļas.",
+  "run_retry_cell": "Atkārtot šo šūnu",
+  "offline_missing": "Lejupielādēt un sagatavot trūkstošo",
+  "offline_cached_all": "Viss ir kešatmiņā",
+  "offline_need": "~{size} · apm. {time}",
+  "offline_now": "Lejupielādēt un sagatavot tagad",
+  "offline_details": "Sīkāk",
+  "offline_first": "Vispirms lejupielādēt un sagatavot trūkstošos datus",
+  "offline_first_on": "Vispirms lejupielādēt un sagatavot trūkstošos datus: ieslēgts. Sākt ielādē trūkstošo, tad ģenerē.",
+  "offline_first_off": "Vispirms lejupielādēt un sagatavot trūkstošos datus: izslēgts. Sākt ģenerē uzreiz.",
+  "data_plan_moved": "Redzams galvenajā logā zem pogām, kamēr ieslēgtas papildfunkcijas.",
+  "advanced_features_end_desc": "Tas pats slēdzis, kas papildfunkciju augšā. Izslēgts Arnis darbojas kā parasti."
 }

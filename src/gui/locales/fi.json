@@ -585,5 +585,18 @@
   "run_restart_fresh": "Aloita alusta",
   "run_restart_cancel": "Peruuta",
   "dh_lod": "Distant Horizons -LODit",
-  "dh_lod_desc": "Kaukainen maasto näkyy jo ensimmäisellä liittymisellä. Vain Java."
+  "dh_lod_desc": "Kaukainen maasto näkyy jo ensimmäisellä liittymisellä. Vain Java.",
+  "run_retry_failed": "Yritä epäonnistuneita uudelleen ({n})",
+  "run_retry_failed_tip": "Rakentaa vain epäonnistuneet palat uudelleen. Aloita rakentaa kaikki vielä puuttuvat palat.",
+  "run_retry_cell": "Yritä tätä solua uudelleen",
+  "offline_missing": "Lataa ja valmistele puuttuvat",
+  "offline_cached_all": "Kaikki on välimuistissa",
+  "offline_need": "~{size} · noin {time}",
+  "offline_now": "Lataa ja valmistele nyt",
+  "offline_details": "Tiedot",
+  "offline_first": "Lataa ja valmistele puuttuvat tiedot ensin",
+  "offline_first_on": "Lataa ja valmistele puuttuvat tiedot ensin: päällä. Aloita hakee puuttuvat ja luo sitten maailman.",
+  "offline_first_off": "Lataa ja valmistele puuttuvat tiedot ensin: pois. Aloita luo maailman heti.",
+  "data_plan_moved": "Näkyy pääikkunassa painikkeiden alla, kun Lisäominaisuudet on päällä.",
+  "advanced_features_end_desc": "Sama kytkin kuin Lisäominaisuuksien alussa. Pois päältä Arnis toimii tavalliseen tapaan."
 }

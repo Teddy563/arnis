@@ -585,5 +585,18 @@
   "run_restart_fresh": "Repartir de zéro",
   "run_restart_cancel": "Annuler",
   "dh_lod": "LOD Distant Horizons",
-  "dh_lod_desc": "Le terrain lointain s'affiche dès la première connexion. Java uniquement."
+  "dh_lod_desc": "Le terrain lointain s'affiche dès la première connexion. Java uniquement.",
+  "run_retry_failed": "Relancer les échecs ({n})",
+  "run_retry_failed_tip": "Reconstruit seulement les morceaux en échec. Démarrer construit tous ceux qui manquent encore.",
+  "run_retry_cell": "Relancer cette cellule",
+  "offline_missing": "Télécharger et préparer ce qui manque",
+  "offline_cached_all": "Tout est en cache",
+  "offline_need": "~{size} · environ {time}",
+  "offline_now": "Télécharger et préparer",
+  "offline_details": "Détails",
+  "offline_first": "Télécharger et préparer d'abord les données manquantes",
+  "offline_first_on": "Télécharger et préparer d'abord les données manquantes : activé. Démarrer récupère ce qui manque, puis génère.",
+  "offline_first_off": "Télécharger et préparer d'abord les données manquantes : désactivé. Démarrer génère tout de suite.",
+  "data_plan_moved": "Affiché dans la fenêtre principale, sous les boutons, tant que les Fonctions avancées sont activées.",
+  "advanced_features_end_desc": "Le même interrupteur qu'en haut des Fonctions avancées. Désactivé, Arnis fonctionne comme d'habitude."
 }

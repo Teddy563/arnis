@@ -100,6 +100,8 @@
     <symbol id="i-grid-2x2" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
     <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
     <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M6 8h4"/><path d="M6 18h4"/><path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M14 8h4"/><path d="M14 18h4"/><path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/></symbol>
   </svg>
@@ -130,7 +132,7 @@
                   </button>
                   <!-- While a run goes, in the Start button's place (main.js syncRunControls) -->
                   <div id="run-controls" class="run-controls" hidden>
-                    <button type="button" id="run-pause" class="run-control">
+                    <button type="button" id="run-pause" class="run-control is-primary">
                       <svg class="icon" aria-hidden="true"><use href="#i-pause"></use></svg><span>Pause</span>
                     </button>
                     <button type="button" id="run-stop" class="run-control">
@@ -158,6 +160,10 @@
                     </button>
                   </div>
                 </div>
+                <!-- Extra Features on: Start downloads and bakes what is missing first (main.js) -->
+                <button type="button" id="offline-first-toggle" class="settings-button offline-first-toggle" aria-pressed="false" hidden>
+                  <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                </button>
                 <button type="button" class="settings-button" onclick="openSettings()" aria-label="Settings">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
@@ -176,6 +182,12 @@
               <!-- One World: which persistent world the next area joins (hidden unless the mode is on) -->
               <div id="one-world-status" class="one-world-status" style="display: none;" aria-live="polite"></div>
             </div>
+            <!-- After a job with failed pieces: build only those (main.js syncRunControls) -->
+            <div id="run-retry-row" class="run-controls run-retry-row" hidden>
+              <button type="button" id="run-retry" class="run-control">
+                <svg class="icon" aria-hidden="true"><use href="#i-refresh-cw"></use></svg><span>Retry failed</span>
+              </button>
+            </div>
             <span id="bbox-selection-info" class="bbox-selection-text" data-localize="select_area_prompt">Select an area on the map using the tools.</span>
             <!-- Under a size warning while Extra Features is off: the way to build it in pieces -->
             <button type="button" id="bbox-features-cta" style="display: none;" onclick="useExtraFeatures()">Use Extra Features to build it in pieces</button>
@@ -190,6 +202,22 @@
                 <div class="preview3d-mini-loader-bar"></div>
               </div>
             </div>
+          </div>
+
+          <!-- Extra Features on: what the selection needs before an offline run, as
+               one summary bar (the OSM Data Source transfer panel, moved here) and
+               the Download Plan's rows underneath, collapsed. One component, placed
+               by main.js placeOfflinePanel; it fills the grey space and never grows it. -->
+          <div id="offline-panel" class="offline-panel" hidden>
+            <div id="offline-summary" class="offline-summary"></div>
+            <details id="offline-details" class="offline-details">
+              <summary class="offline-details-head">
+                <span data-localize="offline_details">Details</span>
+                <span id="offline-details-count" class="offline-badge"></span>
+                <svg class="icon offline-chevron" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+              </summary>
+              <div id="offline-details-slot" class="offline-details-body"></div>
+            </details>
           </div>
 
           <div class="progress-section">
@@ -2415,6 +2443,10 @@
                   <div class="settings-control">
                     <button type="button" id="data-plan-button" class="clear-cache-button" data-localize="data_plan_button">Download &amp; Bake What&#x27;s Missing</button>
                   </div>
+                  <!-- Extra Features on: the plan below is on the main window instead -->
+                  <p id="data-plan-moved" class="data-plan-extract" data-localize="data_plan_moved" hidden>Shown on the main window under the buttons while Extra Features is on.</p>
+                  <!-- One component: here, or on the main window's offline panel (main.js placeOfflinePanel) -->
+                  <div id="data-plan-body" class="data-plan-body">
                   <ul id="data-plan-list" class="data-plan-list"></ul>
                   <p id="data-plan-extract" class="data-plan-extract" style="display: none;"></p>
                   <p id="data-plan-total" class="data-plan-extract" style="display: none;"></p>
@@ -2433,6 +2465,8 @@
                   <div id="transfer-panel" class="transfer-panel" style="display: none;">
                     <div class="prepare-head">
                       <span id="transfer-stage" class="prepare-title"></span>
+                      <!-- Main window only (the settings row has its own button) -->
+                      <button type="button" id="offline-download-button" class="clear-cache-button" data-localize="offline_now" hidden>Download &amp; bake now</button>
                       <button type="button" id="transfer-stop-button" class="clear-cache-button" data-localize="prepare_stop_button">Stop</button>
                     </div>
                     <div class="progress-row">
@@ -2442,6 +2476,7 @@
                     <p id="transfer-detail" class="data-plan-extract"></p>
                   </div>
                   <p id="bake-threads" class="data-plan-extract" style="display: none;"></p>
+                  </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">
                   <label for="osm-source-select" class="setting-label">
@@ -2691,6 +2726,26 @@
                   <a href="https://discord.gg/mA2g69Fhxq" target="_blank" rel="noopener noreferrer" class="discord-link">
                     <img src="./images/discord.png" alt="Discord" class="discord-logo">
                   </a>
+                </div>
+              </div>
+            </section>
+
+            <!-- The Extra Features switch again, at the end of the list. Not a
+                 setting of its own: it follows and sets advanced-features-toggle
+                 (main.js initAdvancedFeatures). -->
+            <section class="settings-section" id="settings-section-features-end">
+              <div class="setting-grid">
+                <div class="settings-row setting-tile is-wide">
+                  <label for="advanced-features-end-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-zap"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="advanced_features">Extra Features</span></span>
+                      <span class="setting-desc" data-localize="advanced_features_end_desc">The same switch as at the top of Extra Features. When off, Arnis runs as usual.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="advanced-features-end-toggle" name="advanced-features-end-toggle">
+                  </div>
                 </div>
               </div>
             </section>

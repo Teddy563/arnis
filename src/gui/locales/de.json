@@ -585,5 +585,18 @@
   "run_restart_fresh": "Neu beginnen",
   "run_restart_cancel": "Abbrechen",
   "dh_lod": "Distant-Horizons-LODs",
-  "dh_lod_desc": "Entferntes Terrain erscheint beim ersten Betreten. Nur Java."
+  "dh_lod_desc": "Entferntes Terrain erscheint beim ersten Betreten. Nur Java.",
+  "run_retry_failed": "Fehlgeschlagene wiederholen ({n})",
+  "run_retry_failed_tip": "Nur die fehlgeschlagenen Teile neu bauen. Start baut jedes noch fehlende Teil.",
+  "run_retry_cell": "Diese Zelle wiederholen",
+  "offline_missing": "Fehlendes laden & backen",
+  "offline_cached_all": "Alles ist zwischengespeichert",
+  "offline_need": "~{size} · etwa {time}",
+  "offline_now": "Jetzt laden & backen",
+  "offline_details": "Details",
+  "offline_first": "Fehlende Daten zuerst laden & backen",
+  "offline_first_on": "Fehlende Daten zuerst laden & backen: an. Start lädt das Fehlende, dann wird generiert.",
+  "offline_first_off": "Fehlende Daten zuerst laden & backen: aus. Start generiert sofort.",
+  "data_plan_moved": "Wird im Hauptfenster unter den Schaltflächen angezeigt, solange Zusatzfunktionen an sind.",
+  "advanced_features_end_desc": "Derselbe Schalter wie oben bei den Zusatzfunktionen. Aus läuft Arnis wie gewohnt."
 }

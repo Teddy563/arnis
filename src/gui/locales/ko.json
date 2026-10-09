@@ -585,5 +585,18 @@
   "run_restart_fresh": "처음부터",
   "run_restart_cancel": "취소",
   "dh_lod": "Distant Horizons LOD",
-  "dh_lod_desc": "처음 접속할 때부터 먼 지형이 보입니다. Java 전용."
+  "dh_lod_desc": "처음 접속할 때부터 먼 지형이 보입니다. Java 전용.",
+  "run_retry_failed": "실패한 조각 재시도 ({n})",
+  "run_retry_failed_tip": "실패한 조각만 다시 빌드합니다. 시작은 아직 없는 모든 조각을 빌드합니다.",
+  "run_retry_cell": "이 셀 재시도",
+  "offline_missing": "누락된 데이터 다운로드 및 베이크",
+  "offline_cached_all": "모두 캐시됨",
+  "offline_need": "~{size} · 약 {time}",
+  "offline_now": "지금 다운로드 및 베이크",
+  "offline_details": "세부 정보",
+  "offline_first": "누락된 데이터를 먼저 다운로드 및 베이크",
+  "offline_first_on": "누락된 데이터를 먼저 다운로드 및 베이크: 켜짐. 시작하면 누락된 것을 받은 뒤 생성합니다.",
+  "offline_first_off": "누락된 데이터를 먼저 다운로드 및 베이크: 꺼짐. 시작하면 바로 생성합니다.",
+  "data_plan_moved": "추가 기능이 켜져 있는 동안 메인 창의 버튼 아래에 표시됩니다.",
+  "advanced_features_end_desc": "추가 기능 맨 위의 스위치와 같습니다. 끄면 Arnis가 평소처럼 실행됩니다."
 }
