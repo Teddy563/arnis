@@ -141,6 +141,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_pause_generation,
             gui_stop_generation,
             gui_forget_finished_pieces,
+            gui_retry_pieces,
             gui_get_version,
             gui_get_update_info,
             gui_get_platform,
@@ -2256,6 +2257,18 @@ fn gui_forget_finished_pieces(
     crate::scale::forget_job(&one_world_dir(&save_path, &world_name), &bbox, unit_regions)
 }
 
+/// Retry: the next run builds only these pieces of its job (as the window's
+/// piece records number them, from 0), as `--only-pieces` would; the job's
+/// other missing pieces wait for a run after it. Taken by that run, whatever
+/// it is; an empty list disarms it.
+#[tauri::command]
+fn gui_retry_pieces(pieces: Vec<u32>) {
+    *crate::scale::RETRY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) =
+        (!pieces.is_empty()).then(|| pieces.iter().map(|p| p + 1).collect());
+}
+
 /// `--prewarm` lives in the CLI, so the window runs it there, on the same
 /// command line a piece gets, with its progress on the window's bar.
 /// Stop (`gui_cancel_bake`) kills the child; its half-done extract download
@@ -2357,6 +2370,11 @@ fn gui_start_generation(
     let one_world = one_world && world_format == "java" && celestial_body_name == "earth";
     let is_new_world = is_new_world && !one_world;
 
+    // A retry is for this run only, so taken before anything can refuse it.
+    let retry = crate::scale::RETRY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
     // Claim the process before touching any shared state. The frontend disables its button
     // for the same reason; this is the authoritative check behind it.
     let generation_slot = match BusySlot::acquire(BUSY_GENERATION) {
@@ -2404,11 +2422,14 @@ fn gui_start_generation(
     let prewarm = process.prewarm;
     let is_new_world = is_new_world && !prewarm;
     // Pieces are a One World feature; anywhere else the fields are inert.
-    let units = if one_world {
+    let mut units = if one_world {
         std::mem::take(&mut meld.units)
     } else {
         Default::default()
     };
+    if units.coordinates() && retry.is_some() {
+        units.only_pieces = retry;
+    }
     let pieced = units.coordinates();
     // The global pool was built once at startup, so a per-run count gets its
     // own pool. ponytail: threads that are not rayon workers (std::thread
@@ -2913,7 +2934,9 @@ fn gui_start_generation(
                             }
                         }
                         // Said once the run has let go of the process, below.
-                        if !crate::scale::STOP.load(std::sync::atomic::Ordering::Acquire) {
+                        if !crate::scale::STOP.load(std::sync::atomic::Ordering::Acquire)
+                            && e != crate::scale::PARTIAL
+                        {
                             emit_gui_error(&e);
                         }
                         return Err(e);
@@ -3207,6 +3230,10 @@ fn gui_start_generation(
         };
         match joined {
             Ok(Err(_)) if stopped => say_stopped(),
+            Ok(Err(e)) if e == crate::scale::PARTIAL => emit_gui_progress_update(
+                progress::MESSAGE_ONLY,
+                "Stopped. The retried pieces are built; starting again builds the rest.",
+            ),
             Err(e) if e.is_panic() => match e.into_panic().downcast::<progress::Stopped>() {
                 Ok(_) => say_stopped(),
                 Err(_) => {

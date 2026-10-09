@@ -830,6 +830,7 @@ pub fn prepare_unit(
         "One World: piece {} of area #{}: blocks x {}..={} z {}..={}",
         lease.piece, lease.area_id, rect[0], rect[2], rect[1], rect[3]
     );
+    crate::scale::child::fail_for_test(lease.piece);
     let replaced_chunks = existing_chunks(world_dir, &xzbbox);
     let [x0, z0, x1, z1] = lease.build;
     let build = XZBBox::rect_from_min_max(x0, z0, x1, z1)?;
