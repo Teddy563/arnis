@@ -441,6 +441,7 @@ fn run_cli() {
             one_world_paths = Some(world_dir);
         }
     }
+    deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
     if args.units.coordinates() {
         // A job built in pieces: this process only runs them.
         let world_dir = one_world_paths.clone().unwrap_or_default();

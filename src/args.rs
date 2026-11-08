@@ -492,6 +492,13 @@ pub struct Args {
         conflicts_with = "vanilla_height"
     )]
     pub max_y: Option<i32>,
+
+    /// EXPERIMENTAL. World seed mixed into every per-element and per-block random choice
+    /// (trees, rocks, flowers, building variety), so the same area can be rebuilt with a
+    /// different but repeatable look. Omitted or 0 keeps the default look. A One World
+    /// keeps the seed its first area was built with.
+    #[arg(long, value_name = "SEED")]
+    pub seed: Option<u64>,
     // --- end confluence:terrain ---
 }
 
