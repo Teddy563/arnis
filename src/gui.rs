@@ -1765,6 +1765,17 @@ fn gui_start_generation(
                 min_y: None,
                 max_y: None,
                 seed: None,
+                scatter: crate::args::ScatterArgs::default(),
+                cave_style: None,
+                cave_ores: None,
+                cave_seed: None,
+                cave_datum_y: None,
+                tree_realm: None,
+                tree_size_weights: None,
+                tree_pack_dir: None,
+                tree_pack_mode: Default::default(),
+                init_tree_pack_dir: None,
+                export_tree_packs: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

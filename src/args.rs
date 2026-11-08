@@ -526,6 +526,70 @@ pub struct Args {
     #[arg(long, value_name = "SEED")]
     pub seed: Option<u64>,
     // --- end confluence:terrain ---
+    // --- confluence:nature ---
+    #[command(flatten)]
+    pub scatter: ScatterArgs,
+
+    /// Force a tree realm instead of picking one from the area's location: auto, afr, asn,
+    /// aus, ena, eur, fl, ind, sam, wna or vanilla-plus. A forced realm skips the ecoregion
+    /// mixes and keeps its palms.
+    #[arg(long, value_name = "REALM", value_parser = clap::builder::PossibleValuesParser::new(crate::trees::tree_pack::REALMS))]
+    pub tree_realm: Option<String>,
+
+    /// Relative popularity of the schematic tree sizes, as name=percent pairs
+    /// (small, medium, big, tall, giant; 0-200, omitted ones stay 100). 0 turns a
+    /// size off. Measured canopy heights still pick their own size.
+    /// Example: --tree-size-weights big=150,tall=50,giant=0
+    #[arg(long, value_name = "LIST", value_parser = crate::trees::size_weights::SizeWeights::parse)]
+    pub tree_size_weights: Option<crate::trees::size_weights::SizeWeights>,
+
+    /// Experimental. A folder of your own tree schematics, laid out like the
+    /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
+    /// The folders say what a file is; the size folder (small, medium, big,
+    /// tall, giant) is optional and otherwise measured from the height. A file
+    /// that does not load is skipped with a warning. See --init-tree-pack-dir.
+    #[arg(long, value_name = "FOLDER")]
+    pub tree_pack_dir: Option<PathBuf>,
+
+    /// With --tree-pack-dir: add the folder's trees to the built-in ones, or
+    /// replace a realm's built-in trees wherever the folder has any for it.
+    #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
+    pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
+
+    /// Create the empty --tree-pack-dir layout of every bundled pack (realm,
+    /// community, tree type and size folders, with README.txt files) in FOLDER
+    /// and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub init_tree_pack_dir: Option<PathBuf>,
+
+    /// Write every bundled tree schematic into the --tree-pack-dir layout in
+    /// FOLDER, to edit or adapt, and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub export_tree_packs: Option<PathBuf>,
+
+    /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
+    /// more-vanilla (about 30% themed), all-mix (every theme at its default amount, about 77%
+    /// themed, the default) or more-mix (about 89% themed). --cave-biomes amounts override the
+    /// style's per theme.
+    #[arg(long = "cave-style", value_enum)]
+    pub cave_style: Option<crate::caves::CaveStyle>,
+
+    /// Ore veins in --caves: normal (vanilla's ore table, the default) or more (twice the
+    /// veins of every metal and gem ore, at vanilla's heights).
+    #[arg(long = "cave-ores", value_enum)]
+    pub cave_ores: Option<crate::caves::CaveOres>,
+
+    /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
+    /// layout. Omitted keeps the built-in seed, so an area always gets the same caves.
+    #[arg(long = "cave-seed", value_name = "SEED")]
+    pub cave_seed: Option<u64>,
+
+    /// Y that stands for vanilla's world floor in the cave passes, a multiple of 16 from
+    /// -2032 to 2016. One value for every run makes caves, the lava sea and the deepslate
+    /// line continuous across them, and plans pools, rivers and geodes past the run's edge.
+    #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
+    pub cave_datum_y: Option<i32>,
+    // --- end confluence:nature ---
 }
 
 /// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
@@ -555,6 +619,47 @@ impl WaterArgs {
             detail: self.water_detail,
             scale,
         }
+    }
+}
+
+/// Rocks and bushes on open land. Off unless asked for.
+#[derive(clap::Args, Debug)]
+pub struct ScatterArgs {
+    /// Scatter small andesite and tuff rocks over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub rocks: bool,
+
+    /// Share of 16x16 chunks that get a rock with --rocks, from 0.0 to 1.0.
+    #[arg(long, default_value_t = 0.02, value_parser = parse_density)]
+    pub rock_density: f64,
+
+    /// Scatter small bushes of ten species over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub bushes: bool,
+
+    /// Share of 16x16 chunks that get a bush with --bushes, from 0.0 to 1.0.
+    /// Where a chunk rolls both, the rock wins.
+    #[arg(long, default_value_t = 0.05, value_parser = parse_density)]
+    pub bush_density: f64,
+}
+
+impl Default for ScatterArgs {
+    fn default() -> Self {
+        Self {
+            rocks: false,
+            rock_density: 0.02,
+            bushes: false,
+            bush_density: 0.05,
+        }
+    }
+}
+
+fn parse_density(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if (0.0..=1.0).contains(&v) => Ok(v),
+        _ => Err(format!("{s}: expected a share from 0.0 to 1.0")),
     }
 }
 
@@ -1117,6 +1222,25 @@ pub const DEFAULT_WORLD_TIME: i64 = 6_000;
 pub const MIDNIGHT_TICKS: i64 = 18_000;
 
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // --- confluence:nature ---
+    let cave_preview = args.cave_zone_map.is_some();
+    if (args.cave_style.is_some() || args.cave_seed.is_some()) && !args.caves && !cave_preview {
+        return Err(
+            "--cave-style and --cave-seed only apply to --caves or --cave-zone-map.".to_string(),
+        );
+    }
+    if args.cave_ores.is_some() && !args.caves {
+        return Err("--cave-ores only applies to --caves.".to_string());
+    }
+    if let Some(y) = args.cave_datum_y {
+        if !args.caves {
+            return Err("--cave-datum-y only applies to --caves.".to_string());
+        }
+        if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+            return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+        }
+    }
+    // --- end confluence:nature ---
     // --- confluence:core ---
     if !args.one_world
         && (args.units.plan_units.is_some()
