@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+mod arnis_tiles;
 mod bedrock_addon;
 mod bedrock_block_map;
 mod bench;
@@ -197,6 +198,7 @@ fn run_cli() {
     if let Some(n) = args.max_downloads {
         net::set_max_requests(n as usize);
     }
+    retrieve_data::set_overpass_urls(args.overpass_url.clone());
 
     // A plan is a dry run: it neither sweeps the tile cache nor makes the update request.
     let planning = args.units.plan_units.is_some();

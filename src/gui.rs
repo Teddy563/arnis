@@ -1755,6 +1755,7 @@ fn gui_start_generation(
                 units: crate::args::UnitArgs::default(),
                 osm_pbf: None,
                 osm_pbf_url: None,
+                overpass_url: Vec::new(),
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

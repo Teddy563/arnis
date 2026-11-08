@@ -200,6 +200,12 @@ fn client() -> Result<Client> {
 /// The archive directory, refreshed daily. A stale copy still names archives that exist.
 fn manifest(client: &Client, base_url: &str) -> Result<Manifest> {
     let url = format!("{}/archives.json", base_url.trim_end_matches('/'));
+    // A local archive folder: the index is read in place, never cached.
+    if let Some(path) = pmtiles::local_path(&url) {
+        let body = std::fs::read(&path)
+            .map_err(|e| format!("tile archive index {}: {e}", path.display()))?;
+        return serde_json::from_slice(&body).map_err(|e| format!("bad archive index: {e}"));
+    }
     let cached = cache_root_for(base_url).map(|d| d.join("archives.json"));
     if let Some(p) = &cached {
         if let Ok(md) = std::fs::metadata(p) {
@@ -379,7 +385,10 @@ fn read_tiles(
             ));
         }
         let url = format!("{}/{}", base_url.trim_end_matches('/'), entry.file);
-        let cache = cache_root_for(base_url).map(|d| d.join(&entry.file));
+        // A local archive is read in place; copying it into the cache would only double it.
+        let cache = cache_root_for(base_url)
+            .filter(|_| pmtiles::local_path(base_url).is_none())
+            .map(|d| d.join(&entry.file));
         let mut archive = Archive::open_allowing(&client, &url, cache, &[TILE_TYPE_UNKNOWN])?;
 
         let mut located = Vec::new();
@@ -1085,6 +1094,46 @@ mod tests {
         assert!(check_size(&b, 2.0).is_err());
         assert!(check_size(&square(0.0, 99_000.0), 0.05).is_ok());
         assert!(check_size(&square(0.0, 101_000.0), 0.05).is_err());
+    }
+
+    /// Needs the network and `ARNIS_LOCAL_ARCHIVE`: a folder `arnis-tiles prepare` baked for the
+    /// parity area (or `ARNIS_LOCAL_ARCHIVE_BBOX=min_lat,min_lon,max_lat,max_lon`) from the
+    /// same OSM data as the public archive.
+    #[test]
+    #[ignore]
+    fn local_archive_equals_public() {
+        let dir = std::env::var("ARNIS_LOCAL_ARCHIVE").expect("set ARNIS_LOCAL_ARCHIVE");
+        let bbox = match std::env::var("ARNIS_LOCAL_ARCHIVE_BBOX") {
+            Ok(s) => LLBBox::from_str(&s).expect("min_lat,min_lon,max_lat,max_lon"),
+            Err(_) => LLBBox::new(44.4450, 26.0950, 44.4480, 26.1030).unwrap(),
+        };
+        let ids = |d: OsmData| {
+            let mut v: Vec<(String, u64)> = d
+                .elements()
+                .iter()
+                .map(|e| (e.r#type.clone(), e.id))
+                .collect();
+            v.sort();
+            v
+        };
+        let local = ids(fetch_data_from_tiles_quietly(bbox, &dir).unwrap());
+        let public = ids(fetch_data_from_tiles_quietly(bbox, DEFAULT_OSM_TILES_URL).unwrap());
+        assert!(!local.is_empty());
+        assert_eq!(local, public);
+    }
+
+    #[test]
+    fn a_local_index_is_read_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("archives.json"),
+            r#"{"zoom":13,"archives":[{"file":"ro.pmtiles","min_lat":43.6,"min_lon":20.2,"max_lat":48.3,"max_lon":29.7}]}"#,
+        )
+        .unwrap();
+        let client = Client::new();
+        let m = manifest(&client, dir.path().to_str().unwrap()).unwrap();
+        assert_eq!((m.zoom, m.archives[0].file.as_str()), (13, "ro.pmtiles"));
+        assert!(manifest(&client, dir.path().join("none").to_str().unwrap()).is_err());
     }
 
     #[test]

@@ -466,6 +466,17 @@ pub struct Args {
     /// The extract to download for `--osm-pbf geofabrik`, instead of picking one.
     #[arg(long, value_name = "URL", requires = "osm_pbf")]
     pub osm_pbf_url: Option<String>,
+
+    /// Self-hosted Overpass instance(s) to ask instead of Arnis's own, tried in order. Repeat
+    /// the flag or separate with commas. Only used when the OSM tile archive cannot answer (or
+    /// with --no-tile-archive).
+    #[arg(
+        long,
+        env = "ARNIS_OVERPASS_URL",
+        value_name = "URL",
+        value_delimiter = ','
+    )]
+    pub overpass_url: Vec<String>,
     // --- end confluence:data ---
 }
 
