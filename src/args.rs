@@ -464,6 +464,11 @@ pub struct Args {
     /// with longer dashes and no footways, paths, service roads, tracks or crossings).
     #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
     pub road_detail: RoadDetail,
+
+    /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
+    /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
+    #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
     // --- end confluence:build ---
 }
 
@@ -946,6 +951,8 @@ pub const DISASTER_GROUND_LEVEL: i32 = -40;
 /// beside Animals, and need mob griefing for their meteors to crater, so both keep natural
 /// spawning off.
 pub fn apply_feature_needs(args: &mut Args) {
+    // Overture only adds buildings, so --no-buildings has nothing to fetch.
+    args.overture &= args.buildings;
     if args.caves || args.disasters {
         args.fillground = true;
     }
@@ -2357,5 +2364,16 @@ mod tests {
         assert_eq!(retry.units.only_pieces, Some(vec![2, 5]));
         assert!(Args::try_parse_from(["arnis", "--one-world-workers", "0"]).is_err());
         assert!(Args::try_parse_from(["arnis", "--only-pieces", "0"]).is_err());
+    }
+
+    #[test]
+    fn no_buildings_skips_overture_fetch() {
+        let fetched = |extra: &[&str]| {
+            let mut args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra));
+            apply_feature_needs(&mut args);
+            args.overture
+        };
+        assert!(fetched(&[]));
+        assert!(!fetched(&["--no-buildings"]));
     }
 }

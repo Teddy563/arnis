@@ -1754,6 +1754,7 @@ fn gui_start_generation(
                 capabilities: false,
                 units: crate::args::UnitArgs::default(),
                 road_detail: Default::default(),
+                buildings: true,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
