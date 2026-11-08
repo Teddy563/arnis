@@ -458,12 +458,12 @@ struct HoleGroup {
 
 /// Outer rings grouped by the holes that cut them, so a pond on an island in a hole
 /// keeps its water.
-struct PolygonEdges {
+pub(crate) struct PolygonEdges {
     groups: Vec<HoleGroup>,
 }
 
 impl PolygonEdges {
-    fn new(outers: &[Vec<XZPoint>], inners: &[Vec<XZPoint>]) -> Self {
+    pub(crate) fn new(outers: &[Vec<XZPoint>], inners: &[Vec<XZPoint>]) -> Self {
         let groups = hole_groups(outers, inners, |p: &XZPoint| (p.x, p.z))
             .into_iter()
             .map(|(outer, cutting)| HoleGroup {
@@ -481,7 +481,7 @@ impl PolygonEdges {
     }
 
     /// Filled x-spans of row `z`, clamped to `[min_x, max_x]`.
-    fn row_spans(&self, z: i32, min_x: i32, max_x: i32) -> Vec<(i32, i32)> {
+    pub(crate) fn row_spans(&self, z: i32, min_x: i32, max_x: i32) -> Vec<(i32, i32)> {
         let mut spans: Vec<(i32, i32)> = Vec::new();
         for group in &self.groups {
             let group_spans = group.row_spans(z as f64, min_x, max_x);

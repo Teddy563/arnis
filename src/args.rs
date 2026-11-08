@@ -465,6 +465,11 @@ pub struct Args {
 /// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
 #[derive(clap::Args, Debug, Default)]
 pub struct WaterArgs {
+    /// River bed shape. `v1` gives mapped rivers, canals and streams a smooth U-shaped
+    /// bed that deepens with their width; lakes and the sea keep their bed.
+    #[arg(long, value_enum, default_value_t = crate::river_bed::RiverBed::Off)]
+    pub river_bed: crate::river_bed::RiverBed,
+
     /// Water detail. `scaled` rounds bed depths instead of flooring them and, on small
     /// maps, carves narrow bodies as bowls, narrows streams and lets water flow over
     /// roads not tagged as bridges.
@@ -476,7 +481,11 @@ impl WaterArgs {
     /// How far these options can carve beyond the land-cover estimate.
     pub fn carve_depth(&self, scale: f64) -> crate::water_detail::CarveDepth {
         crate::water_detail::CarveDepth {
-            floor: 0,
+            floor: if self.river_bed == crate::river_bed::RiverBed::Off {
+                0
+            } else {
+                crate::water_depth::MAX_WATER_DEPTH
+            },
             detail: self.water_detail,
             scale,
         }
