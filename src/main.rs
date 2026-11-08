@@ -171,6 +171,23 @@ fn exit_failed() -> ! {
     std::process::exit(1);
 }
 
+/// The One World folder: `--world-name` inside the saves folder.
+fn one_world_dir(args: &Args) -> PathBuf {
+    let base_dir = args.path.clone().unwrap_or_else(|| {
+        eprintln!(
+            "{} --one-world needs --output-dir (the saves folder).",
+            "Error:".red().bold()
+        );
+        std::process::exit(1);
+    });
+    let name = args
+        .world_name
+        .as_deref()
+        .and_then(world_utils::world_folder_name)
+        .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
+    base_dir.join(name)
+}
+
 fn run_cli() {
     let started = std::time::Instant::now();
     // Parsed ahead of the banner so `--capabilities` prints its line alone.
@@ -236,6 +253,17 @@ fn run_cli() {
     if let Err(e) = args::validate_args(&args) {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
+    }
+
+    if args.map_item_only {
+        match map_item::redraw_one_world_map(&one_world_dir(&args)) {
+            Ok(id) => println!("World map item (map #{id}) redrawn over every area."),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
     }
 
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world

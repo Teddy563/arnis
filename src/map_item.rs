@@ -53,12 +53,15 @@ impl MapStore {
         next_map_id(&self.dir)
     }
 
-    fn write_map(&self, map_id: i32, map_dat: &Value) -> Result<(), String> {
-        let name = match self.layout {
+    fn map_path(&self, map_id: i32) -> PathBuf {
+        self.dir.join(match self.layout {
             WorldLayout::Legacy => format!("map_{map_id}.dat"),
             WorldLayout::Dimensions => format!("{map_id}.dat"),
-        };
-        write_gzip_nbt(&self.dir.join(name), map_dat)
+        })
+    }
+
+    fn write_map(&self, map_id: i32, map_dat: &Value) -> Result<(), String> {
+        write_gzip_nbt(&self.map_path(map_id), map_dat)
     }
 
     fn write_counter(&self, last_id: i32) -> Result<(), String> {
@@ -430,6 +433,119 @@ pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
             store.write_counter(highest.max(store.next_id() - 1))
         }
         None => Ok(()),
+    }
+}
+
+/// Redraws a One World's map item from the area previews its manifest
+/// records, so it shows every area instead of the first. Repaints the locked
+/// map in the player's first hotbar slot (the one the spawn frame shows too),
+/// or adds a new one there. Returns the map id.
+pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
+    let manifest = crate::one_world::Manifest::load(world_path)?.ok_or_else(|| {
+        format!(
+            "{} is not a One World; a single run's map item already shows all of it.",
+            world_path.display()
+        )
+    })?;
+    let ext = manifest.extent().ok_or("the One World has no areas yet")?;
+    let _lock = crate::world_utils::SessionLock::acquire(world_path)
+        .map_err(|_| "the world is open in Minecraft or being generated".to_string())?;
+    let w = ext.max_x() - ext.min_x() + 1;
+    let h = ext.max_z() - ext.min_z() + 1;
+    let (bpp, scale, tracking) = map_geometry(w.max(h));
+    let (x_center, z_center) = (ext.min_x() + w / 2, ext.min_z() + h / 2);
+
+    // Oldest area first, so where areas overlap the newer one, written over it, shows.
+    let mut colors = vec![TRANSPARENT as i8; (MAP_SIZE * MAP_SIZE) as usize];
+    let mut drawn = 0;
+    for area in &manifest.areas {
+        let Some(path) = area
+            .preview
+            .as_deref()
+            .and_then(|p| crate::one_world::safe_preview_path(world_path, p))
+        else {
+            continue;
+        };
+        let img = match image::open(&path) {
+            Ok(img) => img.to_rgb8(),
+            Err(e) => {
+                eprintln!("Warning: area #{} preview skipped: {e}", area.id);
+                continue;
+            }
+        };
+        let rect = XZBBox::rect_from_min_max(area.min_x, area.min_z, area.max_x, area.max_z)?;
+        // Resampled to one pixel per map pixel, as the preview's own step is not recorded.
+        let step = bpp as u32;
+        let img = image::imageops::resize(
+            &img,
+            ((area.max_x - area.min_x + 1) as u32).div_ceil(step),
+            ((area.max_z - area.min_z + 1) as u32).div_ceil(step),
+            image::imageops::FilterType::Triangle,
+        );
+        let area_colors = build_colors(
+            &img, area.min_x, area.min_z, step, &rect, bpp, x_center, z_center,
+        );
+        for (c, a) in colors.iter_mut().zip(area_colors) {
+            if a != TRANSPARENT as i8 {
+                *c = a;
+            }
+        }
+        drawn += 1;
+    }
+    if drawn == 0 {
+        return Err("no area of this One World has a preview to draw from".to_string());
+    }
+
+    let store = MapStore::open(world_path)?;
+    let existing = hotbar_map_id(world_path).filter(|&id| {
+        matches!(read_gzip_nbt(&store.map_path(id)),
+            Ok(Value::Compound(root)) if matches!(root.get("data"),
+                Some(Value::Compound(d)) if d.get("locked") == Some(&Value::Byte(1))))
+    });
+    let map_id = existing.unwrap_or_else(|| store.next_id());
+    let map_dat = build_map_dat(
+        colors,
+        scale,
+        tracking,
+        x_center,
+        z_center,
+        store.data_version,
+    );
+    store.write_map(map_id, &map_dat)?;
+    if existing.is_none() {
+        sync_map_counter(world_path)?;
+        insert_into_inventory(world_path, map_id)?;
+    }
+    Ok(map_id)
+}
+
+/// The id of the filled map in the player's first hotbar slot, where
+/// `insert_into_inventory` puts the world map.
+fn hotbar_map_id(world_path: &Path) -> Option<i32> {
+    let Ok(Value::Compound(mut root)) = read_gzip_nbt(&world_path.join("level.dat")) else {
+        return None;
+    };
+    let Some(Value::Compound(mut data)) = root.remove("Data") else {
+        return None;
+    };
+    let Value::Compound(player) = data.remove("Player")? else {
+        return None;
+    };
+    let Some(Value::List(items)) = player.get("Inventory") else {
+        return None;
+    };
+    let item = items
+        .iter()
+        .find(|e| is_filled_map(e) && item_slot(e) == Some(0))?;
+    match item {
+        Value::Compound(m) => match m.get("components") {
+            Some(Value::Compound(c)) => match c.get("minecraft:map_id") {
+                Some(Value::Int(id)) => Some(*id),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -880,5 +996,82 @@ mod tests {
             panic!("inventory");
         };
         assert_eq!(items.iter().filter(|e| is_filled_map(e)).count(), 1);
+    }
+    #[test]
+    fn map_item_only_touches_no_region() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let previews = world.join(crate::one_world::PREVIEW_DIR);
+        std::fs::create_dir_all(&previews).unwrap();
+        // Two 128x256 areas side by side, one red and one blue.
+        let area = |id: u32, min_x: i32, rgb: [u8; 3]| {
+            let name = format!("area-{id}.png");
+            RgbImage::from_pixel(64, 128, image::Rgb(rgb))
+                .save(previews.join(&name))
+                .unwrap();
+            serde_json::json!({
+                "id": id, "generated_at": 0, "arnis_version": "test",
+                "min_x": min_x, "min_z": 0, "max_x": min_x + 127, "max_z": 255,
+                "min_lat": 0.0, "min_lon": 0.0, "max_lat": 0.0, "max_lon": 0.0,
+                "preview": format!("{}/{name}", crate::one_world::PREVIEW_DIR),
+            })
+        };
+        let manifest = serde_json::json!({
+            "version": crate::one_world::MANIFEST_VERSION, "created_with": "test",
+            "created_at": 0, "origin_lat": 0.0, "origin_lon": 0.0, "scale": 1.0,
+            "ground_level": -62, "terrain": false, "disable_height_limit": false,
+            "aws_only_elevation": false, "elevation": null, "next_area_id": 3,
+            "areas": [area(1, 0, [200, 0, 0]), area(2, 128, [0, 0, 200])],
+        });
+        std::fs::write(
+            crate::one_world::Manifest::path_in(&world),
+            manifest.to_string(),
+        )
+        .unwrap();
+
+        // A region file of the world: the redraw must not touch it.
+        let region = world.join("region");
+        std::fs::create_dir_all(&region).unwrap();
+        let region_file = region.join("r.0.0.mca");
+        std::fs::write(&region_file, b"chunks").unwrap();
+        let before = std::fs::metadata(&region_file).unwrap().modified().unwrap();
+        let regions = |dir: &Path| {
+            let mut names: Vec<_> = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let listed = regions(&region);
+
+        let colors = |id: i32| {
+            let Value::Compound(root) =
+                read_gzip_nbt(&world.join(format!("data/map_{id}.dat"))).unwrap()
+            else {
+                panic!("map root");
+            };
+            let Some(Value::Compound(data)) = root.get("data") else {
+                panic!("map data");
+            };
+            let Some(Value::ByteArray(c)) = data.get("colors") else {
+                panic!("colors");
+            };
+            c.to_vec()
+        };
+        let id = redraw_one_world_map(&world).unwrap();
+        // 256x256 blocks at 2 blocks per pixel: the left half red, the right half blue.
+        let c = colors(id);
+        assert_eq!(c[64 * 128 + 10], nearest_map_color(200, 0, 0) as i8);
+        assert_eq!(c[64 * 128 + 117], nearest_map_color(0, 0, 200) as i8);
+        // A second run repaints the same map rather than adding one.
+        assert_eq!(redraw_one_world_map(&world).unwrap(), id);
+        assert_eq!(hotbar_map_id(&world), Some(id));
+        assert_eq!(
+            std::fs::metadata(&region_file).unwrap().modified().unwrap(),
+            before
+        );
+        assert_eq!(regions(&region), listed);
     }
 }

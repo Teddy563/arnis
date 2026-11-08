@@ -467,6 +467,21 @@ pub struct Args {
     /// zstd level for --region-format blinear (Leaf's own default is 6).
     #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
     pub blinear_level: i32,
+
+    /// LAT,LON for block (0, 0) of a --one-world world this run creates, instead of the centre of
+    /// the first --bbox. A world that exists keeps its own origin.
+    #[arg(long, value_name = "LAT,LON", value_parser = parse_origin, allow_hyphen_values = true)]
+    pub origin: Option<(f64, f64)>,
+
+    /// Java only: after the run, put the world border around the generated area (a One World:
+    /// around all its areas) so players stay inside it.
+    #[arg(long, default_value_t = false)]
+    pub world_border: bool,
+
+    /// Redraw the map item of the One World at --output-dir and --world-name from its recorded
+    /// area previews, so it shows every area, and exit. Nothing is regenerated.
+    #[arg(long, default_value_t = false)]
+    pub map_item_only: bool,
     // --- end confluence:output ---
 }
 
@@ -513,6 +528,21 @@ impl UnitArgs {
 pub enum Workers {
     Auto,
     N(u32),
+}
+
+/// `--origin`: a point a Web Mercator frame can be centred on.
+fn parse_origin(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("{s}: expected LAT,LON with |LAT| <= 85 and |LON| <= 180");
+    let (lat, lon) = s.split_once(',').ok_or_else(bad)?;
+    let (lat, lon): (f64, f64) = (
+        lat.trim().parse().map_err(|_| bad())?,
+        lon.trim().parse().map_err(|_| bad())?,
+    );
+    if lat.abs() <= 85.0 && lon.abs() <= 180.0 {
+        Ok((lat, lon))
+    } else {
+        Err(bad())
+    }
 }
 
 fn parse_workers(s: &str) -> Result<Workers, String> {
@@ -1063,6 +1093,22 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     }
     // --- end confluence:core ---
     // --- confluence:output ---
+    if args.map_item_only {
+        if !args.one_world {
+            return Err(
+                "--map-item-only needs --one-world (the world at --output-dir and --world-name)."
+                    .to_string(),
+            );
+        }
+        // Nothing is generated, so no area is needed.
+        return Ok(());
+    }
+    if args.origin.is_some() && !args.one_world {
+        return Err("--origin only applies to --one-world.".to_string());
+    }
+    if args.world_border && (args.bedrock || args.luanti) {
+        return Err("--world-border applies to Java worlds only.".to_string());
+    }
     if args.region_format == RegionFormat::Blinear {
         if args.bedrock || args.luanti {
             return Err("--region-format blinear applies to Java worlds only.".to_string());
@@ -2411,5 +2457,28 @@ mod tests {
             assert!(validate_args(&args).is_err(), "{refused}");
         }
         assert!(Args::try_parse_from(["arnis", "--blinear-level", "23"]).is_err());
+    }
+
+    #[test]
+    fn origin_border_and_map_item_only_validate() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        assert_eq!(
+            parse(&["--origin", "-45.5, 170"]).origin,
+            Some((-45.5, 170.0))
+        );
+        assert!(Args::try_parse_from(["arnis", "--origin", "90,0"]).is_err());
+        assert!(validate_args(&parse(&["--origin", "1,2"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--origin", "1,2"])).is_ok());
+        assert!(validate_args(&parse(&["--world-border"])).is_ok());
+        assert!(validate_args(&parse(&["--world-border", "--bedrock"])).is_err());
+        assert!(validate_args(&parse(&["--map-item-only"])).is_err());
+        let world_only = Args::parse_from(["arnis", "--one-world", "--map-item-only"]);
+        assert!(validate_args(&world_only).is_ok(), "no bbox needed");
     }
 }

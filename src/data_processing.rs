@@ -2442,6 +2442,15 @@ pub fn generate_world_with_options(
         }
     }
 
+    // After the area is recorded, so a One World's border holds all its areas. A piece leaves it
+    // to the coordinator.
+    if args.world_border
+        && world_format == WorldFormat::JavaAnvil
+        && one_world.is_none_or(|run| run.unit.is_none())
+    {
+        crate::one_world::apply_world_border(&output_path, &xzbbox);
+    }
+
     if world_format == WorldFormat::JavaAnvil && extras.any() {
         let (places, settlement) = extras_places.unwrap_or_default();
         let surface = crate::datapack::disasters::Surface::finish();
