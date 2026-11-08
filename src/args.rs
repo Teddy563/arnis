@@ -481,6 +481,15 @@ pub struct Args {
     /// at any scale, so on a small-scale world they tower over the buildings around them.
     #[arg(long, value_parser = parse_props_min_scale)]
     pub props_min_scale: Option<f64>,
+
+    /// Chest loot table (JSON) for --interior, in place of the built-in one. A file that
+    /// cannot be read or fails validation is reported and the built-in table is used.
+    #[arg(long, value_name = "FILE")]
+    pub loot_table: Option<PathBuf>,
+
+    /// Write the built-in chest loot table to FILE as JSON to start from, and exit.
+    #[arg(long, value_name = "FILE")]
+    pub dump_loot_table: Option<PathBuf>,
     // --- end confluence:build ---
 }
 
