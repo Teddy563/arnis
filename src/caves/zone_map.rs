@@ -56,7 +56,8 @@ pub fn render(args: &Args) -> Result<(), String> {
         xzbbox.min_z(),
         xzbbox.max_z(),
     );
-    let decor = Decor::new(super::seed(args), super::biome_amounts(args));
+    let amounts = super::try_biome_amounts(args).map_err(|e| format!("--cave-biomes: {e}"))?;
+    let decor = Decor::new(super::seed(args), amounts);
 
     let span_x = (max_x - min_x + 1).max(1) as u32;
     let span_z = (max_z - min_z + 1).max(1) as u32;

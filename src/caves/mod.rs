@@ -189,18 +189,22 @@ pub enum CaveOres {
     More,
 }
 
-/// The `--cave-style` amounts with `--cave-biomes` over them. `validate_args` has already
-/// rejected a bad list, so a parse failure here can only come from a caller that skipped it.
-pub(crate) fn biome_amounts(args: &Args) -> BiomeAmounts {
+/// The `--cave-style` amounts with `--cave-biomes` over them, or why the list is bad.
+pub(crate) fn try_biome_amounts(args: &Args) -> Result<BiomeAmounts, String> {
     let style = BiomeAmounts::uniform(args.cave_style.unwrap_or_default().amount());
-    match args.cave_biomes.as_deref().map(|s| style.parse_onto(s)) {
-        Some(Ok(amounts)) => amounts,
-        Some(Err(e)) => {
-            eprintln!("Warning: --cave-biomes ignored ({e}); using the style's amounts");
-            style
-        }
-        None => style,
+    match args.cave_biomes.as_deref() {
+        Some(spec) => style.parse_onto(spec),
+        None => Ok(style),
     }
+}
+
+/// [`try_biome_amounts`] for the carve. `validate_args` has already rejected a bad list, so a
+/// failure here can only come from a caller that skipped it.
+pub(crate) fn biome_amounts(args: &Args) -> BiomeAmounts {
+    try_biome_amounts(args).unwrap_or_else(|e| {
+        eprintln!("Warning: --cave-biomes ignored ({e}); using the style's amounts");
+        BiomeAmounts::uniform(args.cave_style.unwrap_or_default().amount())
+    })
 }
 
 /// Carve caves into the solid fillground across the whole bbox.
@@ -724,14 +728,6 @@ mod tests {
     /// The styles keep the themed shares their amounts were measured at.
     #[test]
     fn style_shares_match() {
-        for style in [
-            CaveStyle::Vanilla,
-            CaveStyle::MoreVanilla,
-            CaveStyle::AllMix,
-            CaveStyle::MoreMix,
-        ] {
-            eprintln!("SHARE {style:?} {:.1}", themed_share(style));
-        }
         for (style, want) in [
             (CaveStyle::Vanilla, 0.0),
             (CaveStyle::MoreVanilla, 29.5),
