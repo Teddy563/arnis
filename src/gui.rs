@@ -1745,6 +1745,13 @@ fn gui_start_generation(
                 disasters,
                 moving_vehicles,
                 progress: None,
+                threads: None,
+                cpu_target: None,
+                ram_budget_mb: None,
+                max_downloads: None,
+                no_update_check: false,
+                no_cache_sweep: false,
+                capabilities: false,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

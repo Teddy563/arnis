@@ -1,4 +1,5 @@
 use crate::coordinate_system::geographic::LLBBox;
+use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -419,7 +420,61 @@ pub struct Args {
     /// Also report progress as JSON lines on stdout for programs driving the CLI.
     #[arg(long, value_enum)]
     pub progress: Option<ProgressFormat>,
+
+    /// Worker threads for generation. Defaults to 90% of the cores, or to RAYON_NUM_THREADS
+    /// when that is set; this flag wins over both.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "cpu_target")]
+    pub threads: Option<u32>,
+
+    /// Share of the cores to generate on, in percent (10-100). The same as --threads, worked
+    /// out from the core count; the default is 90.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(10..=100))]
+    pub cpu_target: Option<u32>,
+
+    /// Memory this run may assume it has, in MB, in place of the free-RAM reading when sizing
+    /// its parallel work, so several processes can split one machine.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    pub ram_budget_mb: Option<u64>,
+
+    /// Downloads this process keeps in flight at once (default 16).
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub max_downloads: Option<u32>,
+
+    /// Skip the check for a newer release on GitHub.
+    #[arg(long, env = "ARNIS_NO_UPDATE_CHECK", value_parser = FalseyValueParser::new())]
+    pub no_update_check: bool,
+
+    /// Skip the startup sweep that deletes cached elevation tiles older than 30 days.
+    #[arg(long, env = "ARNIS_NO_CACHE_SWEEP", value_parser = FalseyValueParser::new())]
+    pub no_cache_sweep: bool,
+
+    /// Print the flags this build supports as one JSON line and exit, so a program driving the
+    /// CLI can probe before using them.
+    #[arg(long)]
+    pub capabilities: bool,
     // --- end confluence:core ---
+}
+
+impl Args {
+    /// The thread count asked for with --threads or --cpu-target, if either. A percentage
+    /// rounds down like the 90% default, so `--cpu-target 90` equals no flag at all.
+    pub fn thread_count(&self) -> Option<usize> {
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        self.threads.map(|n| n as usize).or_else(|| {
+            self.cpu_target
+                .map(|pct| (cores * pct as usize / 100).max(1))
+        })
+    }
+}
+
+/// The line `--capabilities` prints: the version and every long flag.
+pub fn capabilities_json() -> String {
+    use clap::CommandFactory;
+    let flags: Vec<String> = Args::command()
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "flags": flags }).to_string()
 }
 
 /// Machine-readable progress formats for `--progress`.
@@ -1222,6 +1277,40 @@ fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capabilities_lists_every_long_flag() {
+        use clap::CommandFactory;
+        let v: serde_json::Value = serde_json::from_str(&capabilities_json()).unwrap();
+        assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+        let flags: Vec<&str> = v["flags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        for a in Args::command().get_arguments() {
+            if let Some(l) = a.get_long() {
+                assert!(flags.contains(&l), "missing --{l}");
+            }
+        }
+        assert!(flags.contains(&"threads") && flags.contains(&"capabilities"));
+    }
+
+    #[test]
+    fn threads_conflicts_cpu_target() {
+        let p = |x: &[&str]| Args::try_parse_from(["arnis"].iter().chain(x));
+        assert!(p(&["--threads", "4", "--cpu-target", "50"]).is_err());
+        assert!(p(&["--cpu-target", "9"]).is_err());
+        assert!(p(&["--threads", "0"]).is_err());
+        assert_eq!(p(&["--threads", "4"]).unwrap().thread_count(), Some(4));
+        assert_eq!(p(&[]).unwrap().thread_count(), None);
+        let cores = std::thread::available_parallelism().unwrap().get();
+        assert_eq!(
+            p(&["--cpu-target", "90"]).unwrap().thread_count(),
+            Some((cores * 9 / 10).max(1))
+        );
+    }
 
     #[test]
     fn gameplay_extras_are_java_only_but_vehicles_and_gravity_needs_another_body() {

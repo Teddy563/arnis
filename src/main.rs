@@ -159,11 +159,28 @@ fn exit_failed() -> ! {
 
 fn run_cli() {
     let started = std::time::Instant::now();
+    // Parsed ahead of the banner so `--capabilities` prints its line alone.
+    let mut args: Args = Args::parse();
+    if args.capabilities {
+        println!("{}", args::capabilities_json());
+        return;
+    }
     // Configure thread pool with 90% CPU cap to keep system responsive
-    floodfill_cache::configure_rayon_thread_pool(0.9);
+    match args.thread_count() {
+        Some(threads) => floodfill_cache::configure_rayon_threads(threads),
+        None => floodfill_cache::configure_rayon_thread_pool(0.9),
+    }
+    if let Some(mb) = args.ram_budget_mb {
+        data_processing::set_ram_budget_mb(mb);
+    }
+    if let Some(n) = args.max_downloads {
+        net::set_max_requests(n as usize);
+    }
 
     // Clean up old cached elevation tiles on startup
-    elevation_data::cleanup_old_cached_tiles();
+    if !args.no_cache_sweep {
+        elevation_data::cleanup_old_cached_tiles();
+    }
 
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
@@ -187,10 +204,10 @@ fn run_cli() {
     );
 
     // Fire-and-forget update check; prints a one-line notice on a background thread.
-    version_check::check_for_updates_async();
+    if !args.no_update_check {
+        version_check::check_for_updates_async();
+    }
 
-    // Parse input arguments
-    let mut args: Args = Args::parse();
     let asked_mob_spawning = args.mob_spawning;
     if args.progress == Some(args::ProgressFormat::Json) {
         progress_json::enable();
