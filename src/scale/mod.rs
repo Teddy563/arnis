@@ -114,6 +114,12 @@ impl Job {
                         "{pieces} pieces are too many for the map id space; use a larger --unit-regions."
                     ));
                 }
+                // Before any piece starts: a job interrupted and run again, or another
+                // run, must not hand out these ids to something else.
+                crate::map_item::reserve_map_ids(
+                    world_dir,
+                    map_base + pieces as i32 * MAP_IDS_PER_PIECE - 1,
+                )?;
                 write(
                     &state,
                     &json!({ "area_base": area_base, "map_base": map_base }),

@@ -62,15 +62,32 @@ impl MapStore {
     }
 
     fn write_counter(&self, last_id: i32) -> Result<(), String> {
+        // A piece of a job leaves the shared counter to its coordinator.
+        if COUNTER_IS_COORDINATORS.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
         let name = match self.layout {
             WorldLayout::Legacy => "idcounts.dat",
             WorldLayout::Dimensions => "last_id.dat",
         };
-        write_gzip_nbt(
-            &self.dir.join(name),
-            &build_idcounts(last_id, self.data_version),
-        )
+        let path = self.dir.join(name);
+        let bytes = gzip_nbt_bytes(&path, &build_idcounts(last_id, self.data_version))?;
+        crate::world_utils::replace_file_atomically(&path, &bytes)
     }
+}
+
+static COUNTER_IS_COORDINATORS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// In a piece of a job: pieces build side by side in id ranges reserved up front, so
+/// none of them writes the counter that the coordinator keeps.
+pub fn leave_counter_to_coordinator() {
+    COUNTER_IS_COORDINATORS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Moves the counter to `last_id`, reserving ids a job's pieces will use.
+pub fn reserve_map_ids(world_path: &Path, last_id: i32) -> Result<(), String> {
+    MapStore::open(world_path)?.write_counter(last_id)
 }
 
 /// Reads the world spawn XZ from level.dat so callers can align features with it.
@@ -427,7 +444,8 @@ pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
     match highest {
         Some(highest) => {
             let store = MapStore::open(world_path)?;
-            store.write_counter(highest.max(store.next_id() - 1))
+            // The job's reservation past the last map is released.
+            store.write_counter(highest)
         }
         None => Ok(()),
     }
@@ -511,6 +529,23 @@ mod tests {
         assert_eq!(map_geometry(2048), (16, 4, true));
         // Oversized worlds get a custom fit; the marker would misalign, so it's off.
         assert_eq!(map_geometry(3000), (24, 4, false));
+    }
+
+    #[test]
+    fn a_jobs_reserved_ids_survive_until_its_maps_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let data = world.join("data");
+        reserve_map_ids(&world, FIRST_MAP_ID + 999).unwrap();
+        // Another run in between starts past the reservation.
+        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);
+        // Done: the counter follows the maps that were really written.
+        let store = MapStore::open(&world).unwrap();
+        let blank = build_map_dat(vec![0; 16], 0, false, 0, 0, store.data_version);
+        store.write_map(FIRST_MAP_ID + 70, &blank).unwrap();
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 71);
     }
 
     #[test]
