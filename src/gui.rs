@@ -1744,6 +1744,7 @@ fn gui_start_generation(
                 zombie_outbreak,
                 disasters,
                 moving_vehicles,
+                progress: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

@@ -2,10 +2,10 @@
 //! driving the CLI. One record per line, each tagged with the protocol version:
 //!
 //! ```text
-//! {"v":1,"type":"phase","kind":"phase","name":"Generating area...","progress":20.0}
-//! {"v":1,"type":"progress","kind":"progress","progress":35.5}
-//! {"v":1,"type":"error","kind":"error","message":"..."}
-//! {"v":1,"type":"done","kind":"done","chunks":880,"cpu_s":388.0,"peak_rss_mb":2310,"wall_s":41.2}
+//! {"v":1,"type":"phase","name":"Generating area...","progress":20.0}
+//! {"v":1,"type":"progress","progress":35.5}
+//! {"v":1,"type":"error","message":"..."}
+//! {"v":1,"type":"done","chunks":880,"cpu_s":388.0,"peak_rss_mb":2310,"wall_s":41.2}
 //! ```
 //!
 //! `phase` marks a new status message (`progress` is null for one that leaves
@@ -45,25 +45,17 @@ fn enabled() -> bool {
 
 /// `v` and `type` lead every line so a reader can pick records out by prefix;
 /// serde_json sorts a plain object's keys, so they are fields of their own.
-/// `kind` repeats `type` for readers that key on that name.
 #[derive(Serialize)]
 struct Record<'a> {
     v: u8,
     #[serde(rename = "type")]
     kind: &'a str,
-    #[serde(rename = "kind")]
-    alias: &'a str,
     #[serde(flatten)]
     body: Value,
 }
 
 fn line(kind: &str, body: Value) -> Option<String> {
-    let record = Record {
-        v: 1,
-        kind,
-        alias: kind,
-        body,
-    };
+    let record = Record { v: 1, kind, body };
     serde_json::to_string(&record).ok()
 }
 
@@ -110,7 +102,7 @@ pub fn error(message: &str) {
     }
 }
 
-fn done_line(started: Instant) -> String {
+fn done_line(started: Instant) -> Option<String> {
     let usage = process_usage();
     line(
         "done",
@@ -121,13 +113,12 @@ fn done_line(started: Instant) -> String {
             "chunks": CHUNKS_WRITTEN.load(Ordering::Relaxed),
         }),
     )
-    .unwrap_or_default()
 }
 
 /// The closing record of a successful run started at `started`.
 pub fn done(started: Instant) {
-    if enabled() {
-        println!("{}", done_line(started));
+    if let (true, Some(line)) = (enabled(), done_line(started)) {
+        println!("{line}");
     }
 }
 
@@ -202,9 +193,11 @@ mod tests {
 
     #[test]
     fn done_line_has_contract_fields() {
-        let line = done_line(std::time::Instant::now());
+        let line = done_line(std::time::Instant::now()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(v["kind"], "done");
+        assert_eq!(v["type"], "done");
+        assert_eq!(v["v"], 1);
+        assert!(line.starts_with(r#"{"v":1,"type":"done""#), "{line}");
         for k in ["wall_s", "cpu_s", "peak_rss_mb", "chunks"] {
             assert!(v[k].is_number(), "{k} missing or not numeric: {line}");
         }
