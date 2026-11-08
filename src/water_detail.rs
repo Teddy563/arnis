@@ -79,6 +79,10 @@ pub struct CarveDepth {
 
 impl CarveDepth {
     pub fn bound(self, estimate: i32) -> i32 {
+        // No water in the land cover, nothing to carve: the datum stays where flags-off puts it.
+        if estimate == 0 {
+            return 0;
+        }
         self.detail
             .max_carve_depth(estimate, self.scale)
             .max(self.floor)
@@ -149,6 +153,29 @@ mod tests {
         assert_eq!(bowl_steps(2.5, 2.5), 1);
         // A 1-wide trickle stays surface-only.
         assert_eq!(bowl_steps(0.5, 0.5), 0);
+    }
+
+    #[test]
+    fn no_water_keeps_the_datum() {
+        for detail in [WaterDetail::Default, WaterDetail::Scaled] {
+            for scale in [0.25, 1.0] {
+                for floor in [0, crate::water_depth::MAX_WATER_DEPTH] {
+                    let c = CarveDepth {
+                        floor,
+                        detail,
+                        scale,
+                    };
+                    assert_eq!(c.bound(0), 0, "{detail:?} {scale} {floor}");
+                }
+            }
+        }
+        // With water the floor and the +1 still apply.
+        let c = CarveDepth {
+            floor: 6,
+            detail: WaterDetail::Scaled,
+            scale: 1.0,
+        };
+        assert_eq!(c.bound(2), 6);
     }
 
     #[test]
