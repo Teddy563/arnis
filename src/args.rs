@@ -1,4 +1,5 @@
 use crate::coordinate_system::geographic::LLBBox;
+use crate::element_processing::road_detail::RoadDetail;
 use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
@@ -590,6 +591,39 @@ pub struct Args {
     #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
     pub cave_datum_y: Option<i32>,
     // --- end confluence:nature ---
+    // --- confluence:build ---
+    /// How much road marking and how many minor ways to build: max (every marking and
+    /// way, as mapped), clean (centre lines and 2-block crossing bars) or compact (clean,
+    /// with longer dashes and no footways, paths, service roads, tracks or crossings).
+    #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
+    pub road_detail: RoadDetail,
+
+    /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
+    /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
+    #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
+
+    /// Which 3D props to place: all, none, or a list of boat, car, crane, excavator,
+    /// fountain, helicopter, jetbridge, landmark, lighthouse, plane, playground, starship,
+    /// tombstone, tractor and windturbine. Given, it decides the props whatever --no-3d
+    /// says; left out, they follow --no-3d.
+    #[arg(long, value_parser = crate::structures::PropSet::parse)]
+    pub props: Option<crate::structures::PropSet>,
+
+    /// Leave out every schematic prop below this world scale. Props keep their block size
+    /// at any scale, so on a small-scale world they tower over the buildings around them.
+    #[arg(long, value_parser = parse_props_min_scale)]
+    pub props_min_scale: Option<f64>,
+
+    /// Chest loot table (JSON) for --interior, in place of the built-in one. A file that
+    /// cannot be read or fails validation is reported and the built-in table is used.
+    #[arg(long, value_name = "FILE")]
+    pub loot_table: Option<PathBuf>,
+
+    /// Write the built-in chest loot table to FILE as JSON to start from, and exit.
+    #[arg(long, value_name = "FILE")]
+    pub dump_loot_table: Option<PathBuf>,
+    // --- end confluence:build ---
 }
 
 /// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
@@ -938,6 +972,20 @@ impl Args {
         self.mode.skip_objects() || self.scale < OBJECT_SKIP_SCALE
     }
 
+    /// The prop families this run places: `--props`, else all or none by `--no-3d`;
+    /// none below `--props-min-scale`.
+    pub fn props(&self) -> crate::structures::PropSet {
+        use crate::structures::PropSet;
+        if self.props_min_scale.is_some_and(|min| self.scale < min) {
+            return PropSet::NONE;
+        }
+        self.props.unwrap_or(if self.use_3d {
+            PropSet::ALL
+        } else {
+            PropSet::NONE
+        })
+    }
+
     /// Whether objects are being skipped only because the scale is below `OBJECT_SKIP_SCALE`.
     pub fn skip_objects_due_to_scale(&self) -> bool {
         !self.mode.skip_objects() && self.scale < OBJECT_SKIP_SCALE
@@ -1142,6 +1190,8 @@ pub const DISASTER_GROUND_LEVEL: i32 = -40;
 /// beside Animals, and need mob griefing for their meteors to crater, so both keep natural
 /// spawning off.
 pub fn apply_feature_needs(args: &mut Args) {
+    // Overture only adds buildings, so --no-buildings has nothing to fetch.
+    args.overture &= args.buildings;
     if args.caves || args.disasters {
         args.fillground = true;
     }
@@ -1150,6 +1200,13 @@ pub fn apply_feature_needs(args: &mut Args) {
     }
     if args.zombie_outbreak || args.disasters {
         args.mob_spawning = MobSpawning::Off;
+    }
+}
+
+fn parse_props_min_scale(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err(format!("{s}: expected a scale of 0 or more")),
     }
 }
 
@@ -2634,5 +2691,48 @@ mod tests {
         );
         let dh_only = Args::parse_from(["arnis", "--one-world", "--dh-lod-only"]);
         assert!(crate::output_args::validate(&dh_only).is_ok());
+    }
+
+    #[test]
+    fn no_buildings_skips_overture_fetch() {
+        let fetched = |extra: &[&str]| {
+            let mut args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra));
+            apply_feature_needs(&mut args);
+            args.overture
+        };
+        assert!(fetched(&[]));
+        assert!(!fetched(&["--no-buildings"]));
+    }
+
+    #[test]
+    fn props_override_no_3d() {
+        use crate::structures::{Prop, PropSet};
+        let parse =
+            |extra: &[&str]| Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra));
+        assert_eq!(parse(&[]).props(), PropSet::ALL);
+        assert_eq!(parse(&["--no-3d"]).props(), PropSet::NONE);
+        let car = parse(&["--no-3d", "--props", "car"]).props();
+        assert!(car.has(Prop::Car) && !car.has(Prop::Boat));
+        assert_eq!(parse(&["--props", "none"]).props(), PropSet::NONE);
+    }
+
+    #[test]
+    fn below_min_scale_no_props() {
+        use crate::structures::PropSet;
+        let at = |scale: &str| {
+            Args::parse_from([
+                "arnis",
+                "--bbox",
+                "1,2,3,4",
+                "--scale",
+                scale,
+                "--props-min-scale",
+                "0.5",
+            ])
+            .props()
+        };
+        assert_eq!(at("0.4"), PropSet::NONE);
+        assert_eq!(at("0.5"), PropSet::ALL);
+        assert!(Args::try_parse_from(["arnis", "--props-min-scale", "-1"]).is_err());
     }
 }

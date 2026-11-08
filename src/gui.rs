@@ -1776,6 +1776,12 @@ fn gui_start_generation(
                 tree_pack_mode: Default::default(),
                 init_tree_pack_dir: None,
                 export_tree_packs: None,
+                road_detail: Default::default(),
+                buildings: true,
+                props: None,
+                props_min_scale: None,
+                loot_table: None,
+                dump_loot_table: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
