@@ -302,6 +302,8 @@ pub struct WorldEditor<'a> {
     tree_slots: FnvHashSet<(i32, i32)>,
     /// Set for a One World run: merge into the world's existing regions.
     merge_into_existing: Option<crate::world_utils::WorldLayout>,
+    /// A piece of a job builds past its own area and writes only inside these block bounds.
+    write_bounds: Option<XZBBox>,
     metadata_extent: Option<(XZBBox, LLBBox)>,
 }
 
@@ -362,6 +364,7 @@ impl<'a> WorldEditor<'a> {
             frame_cells: FnvHashSet::default(),
             tree_slots: FnvHashSet::default(),
             merge_into_existing: None,
+            write_bounds: None,
             metadata_extent: None,
         }
     }
@@ -428,6 +431,7 @@ impl<'a> WorldEditor<'a> {
             frame_cells: FnvHashSet::default(),
             tree_slots: FnvHashSet::default(),
             merge_into_existing: None,
+            write_bounds: None,
             metadata_extent: None,
         }
     }
@@ -494,12 +498,22 @@ impl<'a> WorldEditor<'a> {
             frame_cells: FnvHashSet::default(),
             tree_slots: FnvHashSet::default(),
             merge_into_existing: None,
+            write_bounds: None,
             metadata_extent: None,
         }
     }
 
     pub fn set_merge_into_existing(&mut self, layout: crate::world_utils::WorldLayout) {
         self.merge_into_existing = Some(layout);
+    }
+
+    pub fn set_write_bounds(&mut self, bounds: XZBBox) {
+        self.write_bounds = Some(bounds);
+    }
+
+    /// The block bounds whose chunks this editor writes.
+    pub(crate) fn write_bounds(&self) -> &XZBBox {
+        self.write_bounds.as_ref().unwrap_or(self.xzbbox)
     }
 
     pub fn set_metadata_extent(&mut self, xzbbox: XZBBox, llbbox: LLBBox) {
@@ -509,10 +523,10 @@ impl<'a> WorldEditor<'a> {
     pub(crate) fn region_write_mode(&self) -> java::RegionWriteMode {
         match self.merge_into_existing {
             Some(layout) => java::RegionWriteMode::Merge {
-                min_x: self.xzbbox.min_x(),
-                min_z: self.xzbbox.min_z(),
-                max_x: self.xzbbox.max_x(),
-                max_z: self.xzbbox.max_z(),
+                min_x: self.write_bounds().min_x(),
+                min_z: self.write_bounds().min_z(),
+                max_x: self.write_bounds().max_x(),
+                max_z: self.write_bounds().max_z(),
                 layout,
             },
             None => java::RegionWriteMode::Fresh,

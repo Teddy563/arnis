@@ -30,6 +30,27 @@ pub const MANIFEST_VERSION: u32 = 3;
 /// built whole on both sides.
 pub const CLIP_PAD_BLOCKS: i32 = 128;
 
+/// How far past its own chunks a piece of a job builds, writing only its own: what is
+/// rooted in a neighbour's ground (a tree, a building's far wall) reaches across the seam
+/// as it does in a single run.
+// ponytail: fixed reach; something wider than this still loses its far side at a seam.
+pub const PIECE_HALO_BLOCKS: i32 = 32;
+// Whole chunks, so the piece's own chunk snap gives its build rect back exactly.
+const _: () = assert!(PIECE_HALO_BLOCKS % 16 == 0);
+
+/// What a piece over `rect` builds: `rect` grown by `PIECE_HALO_BLOCKS`, but never past
+/// the job's `selection`, which a single run would not build either.
+pub fn piece_build_rect(rect: &XZBBox, selection: &XZBBox) -> XZBBox {
+    let h = PIECE_HALO_BLOCKS;
+    XZBBox::rect_from_min_max(
+        (rect.min_x() - h).max(selection.min_x()),
+        (rect.min_z() - h).max(selection.min_z()),
+        (rect.max_x() + h).min(selection.max_x()),
+        (rect.max_z() + h).min(selection.max_z()),
+    )
+    .unwrap_or_else(|_| rect.clone())
+}
+
 const MAX_ABS_LAT: f64 = 85.0;
 
 /// Rounds to `decimals` places. serde_json reads such short decimals back
@@ -314,6 +335,8 @@ pub struct UnitLease {
     pub extending: bool,
     /// The piece's own range of map ids, so pieces running together never share one.
     pub first_map_id: i32,
+    /// The piece's own block rectangle: it builds past it and writes only inside.
+    pub rect: [i32; 4],
     /// The job's whole block rectangle, which metadata.json describes.
     pub job: [i32; 4],
     /// Whether a single run of the whole job would build in parallel tiles.
@@ -1185,5 +1208,16 @@ mod tests {
             .unwrap(),
         );
         assert!(Manifest::load(&world).unwrap().unwrap().extent().is_none());
+    }
+
+    #[test]
+    fn a_piece_builds_its_halo_but_never_past_the_selection() {
+        let selection = XZBBox::rect_from_min_max(-320, -176, 319, 175).unwrap();
+        let rect = XZBBox::rect_from_min_max(0, -176, 319, -1).unwrap();
+        let b = piece_build_rect(&rect, &selection);
+        let h = PIECE_HALO_BLOCKS;
+        // Grown towards its neighbours, held at the selection's own edges.
+        assert_eq!((b.min_x(), b.max_x()), (-h, 319));
+        assert_eq!((b.min_z(), b.max_z()), (-176, -1 + h));
     }
 }

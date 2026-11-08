@@ -225,6 +225,7 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
         area_id: job.area_base + i as u32,
         extending: head != Some(i),
         first_map_id: job.map_base + i as i32 * MAP_IDS_PER_PIECE,
+        rect: corners(&units[i].rect),
         job: corners(&rect),
         tiled: crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3,
     };
@@ -275,9 +276,14 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
             &lease,
             &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
         )?;
+        // The piece builds its halo too; its lease says which part it writes.
+        let built = one_world::piece_build_rect(&unit.rect, &rect);
+        let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
+        let (lo, hi) = (bbox.min(), bbox.max());
+        let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
         let argv = sizing.child_args(child_args(
             argv.iter().cloned(),
-            unit,
+            &bbox,
             &lease,
             spawn_piece == Some(i),
         ));
@@ -482,7 +488,7 @@ const SPAWN: &[&str] = &["--spawn-lat", "--spawn-lng"];
 /// piece's bbox at full precision and its lease.
 fn child_args(
     argv: impl Iterator<Item = OsString>,
-    unit: &WorkUnit,
+    bbox: &str,
     lease: &Path,
     keep_spawn: bool,
 ) -> Vec<OsString> {
@@ -502,7 +508,7 @@ fn child_args(
     }
     out.extend([
         "--bbox".into(),
-        unit.bbox_arg().into(),
+        bbox.into(),
         "--one-world-unit".into(),
         lease.as_os_str().to_owned(),
         "--progress".into(),
@@ -720,10 +726,15 @@ mod tests {
         ]
         .map(OsString::from);
         let got = |keep| {
-            child_args(argv.iter().cloned(), &units[3], Path::new("l.json"), keep)
-                .iter()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
+            child_args(
+                argv.iter().cloned(),
+                &units[3].bbox_arg(),
+                Path::new("l.json"),
+                keep,
+            )
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
         };
         let got_without_spawn = got(false);
         assert_eq!(

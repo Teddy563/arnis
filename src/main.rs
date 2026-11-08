@@ -837,11 +837,20 @@ fn run_cli() {
     // Without a spawn given, Java starts at the corner of the area like the GUI does. The
     // level.dat template's own spot lies outside the area: beside it in a flat world, and
     // over nothing at all in a void one.
+    // A piece of a job builds past its own area, so its corner is its own, not its halo's.
+    let (corner_x, corner_z) = args
+        .one_world_run
+        .as_ref()
+        .and_then(|r| r.unit.as_ref())
+        .map_or(
+            (pre_rotation_bbox.min_x(), pre_rotation_bbox.min_z()),
+            |u| (u.rect[0], u.rect[1]),
+        );
     let java_spawn = spawn_point.or_else(|| {
         (world_format == world_editor::WorldFormat::JavaAnvil).then(|| {
             map_transformation::rotate::rotate_xz_point(
-                pre_rotation_bbox.min_x() + 1,
-                pre_rotation_bbox.min_z() + 1,
+                corner_x + 1,
+                corner_z + 1,
                 args.rotation,
                 &pre_rotation_bbox,
             )
