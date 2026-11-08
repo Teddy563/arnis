@@ -10,6 +10,7 @@ use crate::element_processing::bridges::BridgeSurfaceMap;
 use crate::floodfill_cache::RoadMaskBitmap;
 use crate::ground::Ground;
 use crate::land_cover::{coord_hash, LC_WATER};
+use crate::water_detail::WaterDetail;
 use crate::world_editor::{min_y, WorldEditor};
 use fnv::FnvHashMap;
 
@@ -20,7 +21,7 @@ const SHOAL_DT_UNITS: u16 = 9;
 const DT_MAX: u8 = u8::MAX;
 
 /// Maximum water carve depth, in blocks (the deepest tier).
-const MAX_WATER_DEPTH: i32 = 6;
+pub(crate) const MAX_WATER_DEPTH: i32 = 6;
 
 /// Room a tunnel needs under the deepest bed, on top of the floor the carve leaves it. That
 /// bed lies on `min_y() + 1`; a bore keeping its cover under it needs it at `min_y() + 9`.
@@ -163,7 +164,12 @@ pub(crate) fn grid_span_to_block_span(
 }
 
 /// Run a chamfer DT over the LC_WATER mask and bake per-cell carve depth.
-pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterField {
+pub fn compute_big_water_field(
+    ground: &Ground,
+    xzbbox: &XZBBox,
+    detail: WaterDetail,
+    scale: f64,
+) -> BigWaterField {
     let min_x = xzbbox.min_x();
     let max_x = xzbbox.max_x();
     let min_z = xzbbox.min_z();
@@ -245,7 +251,7 @@ pub fn compute_big_water_field(ground: &Ground, xzbbox: &XZBBox) -> BigWaterFiel
                 let idx = c as usize;
                 let x = smin_x + (idx % sw) as i32;
                 let z = smin_z + (idx / sw) as i32;
-                let d = ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm);
+                let d = ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm, detail, scale);
                 nibble_set(&mut depth, idx, d as u8);
                 for_each_neighbor(idx, sw, sh, |n| {
                     if dt[n] != 0 && !bit_get(&baked, n) {
@@ -333,7 +339,8 @@ fn polygon_local_max(component_max_units: u16) -> i32 {
 }
 
 /// Depth from an effective DT: local_max * sqrt(dist/span), tier-clamped.
-fn depth_from_dt(dt_eff: f64, component_max_units: u16) -> i32 {
+/// `round` is `--water-detail scaled`: flooring drops half a block on every column.
+fn depth_from_dt(dt_eff: f64, component_max_units: u16, round: bool) -> i32 {
     if dt_eff < f64::from(SHOAL_DT_UNITS) {
         return 0;
     }
@@ -350,16 +357,32 @@ fn depth_from_dt(dt_eff: f64, component_max_units: u16) -> i32 {
         35.0
     };
     let t = (dist_blocks / span).clamp(0.0, 1.0);
-    ((f64::from(local_max) * t.sqrt()).floor() as i32).clamp(0, local_max)
+    let depth = f64::from(local_max) * t.sqrt();
+    let depth = if round { depth.round() } else { depth.floor() };
+    (depth as i32).clamp(0, local_max)
 }
 
 /// Per-cell carve depth, with deterministic contour wobble on the bank lines.
-fn ocean_depth_for_cell(x: i32, z: i32, dt_units: u16, component_max_units: u16) -> i32 {
+fn ocean_depth_for_cell(
+    x: i32,
+    z: i32,
+    dt_units: u16,
+    component_max_units: u16,
+    detail: WaterDetail,
+    scale: f64,
+) -> i32 {
     if dt_units == 0 {
         return 0;
     }
+    if detail.uses_bowl(scale) {
+        return crate::water_detail::bowl_depth(x, z, dt_units, component_max_units, scale);
+    }
     let wobble = (crate::ground_generation::value_noise_01(x, z, 12) - 0.5) * 4.0;
-    depth_from_dt(f64::from(dt_units) + wobble, component_max_units)
+    depth_from_dt(
+        f64::from(dt_units) + wobble,
+        component_max_units,
+        detail.rounds_depth(),
+    )
 }
 
 /// Safe upper bound on a map's deepest carve, from the pre-repair water mask.
@@ -393,7 +416,7 @@ pub fn estimate_max_carve_depth(
     let hr = world_height.saturating_sub(1).max(1) as f64 / gh.saturating_sub(1).max(1) as f64;
     let block_max_dt = f64::from(grid_max_dt) * wr.max(hr).max(1.0);
     let comp_max = block_max_dt.min(f64::from(u16::MAX)) as u16;
-    depth_from_dt(block_max_dt + 2.0, comp_max)
+    depth_from_dt(block_max_dt + 2.0, comp_max, false)
 }
 
 /// Water a tunnel crosses: how deep the carve can dig there, and the lowest terrain of the
@@ -485,7 +508,7 @@ pub fn bore_crossings(
             // One body size from each depth tier.
             let depth = [0u16, 21, 45, 75]
                 .into_iter()
-                .map(|size| depth_from_dt(dt_eff, size))
+                .map(|size| depth_from_dt(dt_eff, size, false))
                 .max()
                 .unwrap_or(0);
             BoreCrossing { depth, lowest_m }
@@ -1052,13 +1075,36 @@ mod tests {
 
     #[test]
     fn depth_zero_inside_shoal_and_on_land() {
-        assert_eq!(ocean_depth_for_cell(0, 0, 0, 0), 0);
-        assert_eq!(ocean_depth_for_cell(10, 10, 3, 200), 0);
+        assert_eq!(
+            ocean_depth_for_cell(0, 0, 0, 0, WaterDetail::Default, 1.0),
+            0
+        );
+        assert_eq!(
+            ocean_depth_for_cell(10, 10, 3, 200, WaterDetail::Default, 1.0),
+            0
+        );
+    }
+
+    #[test]
+    fn rounded_depth_is_never_shallower_and_still_steps_one_block() {
+        for cm in [10u16, 30, 60, 200] {
+            let mut prev = 0;
+            for dt in 0..=300u32 {
+                let d = depth_from_dt(f64::from(dt), cm, true);
+                let floored = depth_from_dt(f64::from(dt), cm, false);
+                assert!(d == floored || d == floored + 1, "dt={dt} cm={cm}");
+                assert!(d >= prev && d - prev <= 1, "dt={dt} cm={cm}");
+                prev = d;
+            }
+        }
     }
 
     #[test]
     fn depth_clamps_to_tier_max() {
-        assert_eq!(ocean_depth_for_cell(5, 5, u16::from(DT_MAX), 200), 6);
+        assert_eq!(
+            ocean_depth_for_cell(5, 5, u16::from(DT_MAX), 200, WaterDetail::Default, 1.0),
+            6
+        );
         assert_eq!(polygon_local_max(10), 2);
         assert_eq!(polygon_local_max(60), 4);
         assert_eq!(polygon_local_max(100), 6);
@@ -1070,7 +1116,7 @@ mod tests {
             let lm = polygon_local_max(cm);
             let mut prev = 0;
             for dt in 0..=300u32 {
-                let d = depth_from_dt(f64::from(dt), cm);
+                let d = depth_from_dt(f64::from(dt), cm, false);
                 assert!(d >= prev, "non-monotonic at dt={dt} cm={cm}");
                 assert!(d - prev <= 1, "step >1 at dt={dt} cm={cm}");
                 assert!(d <= lm);
@@ -1230,7 +1276,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         let (bbox, ground) = lake();
-        let bwf = compute_big_water_field(&ground, &bbox);
+        let bwf = compute_big_water_field(&ground, &bbox, WaterDetail::Default, 1.0);
         let bed_at = |x: i32, z: i32| {
             lc_carved_bed(&ground, &bwf, XZPoint::new(x, z), x, z, 0).expect("lake")
         };
@@ -1287,7 +1333,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         let (bbox, ground) = lake();
-        let bwf = compute_big_water_field(&ground, &bbox);
+        let bwf = compute_big_water_field(&ground, &bbox, WaterDetail::Default, 1.0);
         let mut editor = lake_editor(&bbox, &ground);
         let mut footprint = RoadMaskBitmap::new(&bbox);
         // Roofs four and two under the surface, where the lake is carved six deep.
@@ -1520,7 +1566,8 @@ mod water_field_traversal_tests {
                 let idx = c as usize;
                 let x = smin_x + (idx % sw) as i32;
                 let z = smin_z + (idx / sw) as i32;
-                let d = ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm);
+                let d =
+                    ocean_depth_for_cell(x, z, u16::from(dt[idx]), cm, WaterDetail::Default, 1.0);
                 nibble_set(&mut depth, idx, d as u8);
             }
         }
@@ -1530,7 +1577,7 @@ mod water_field_traversal_tests {
     fn assert_matches_reference(label: &str, grid: Vec<Vec<u8>>) -> BigWaterField {
         let bbox = XZBBox::rect_from_min_max(0, 0, SIDE as i32 - 1, SIDE as i32 - 1).unwrap();
         let ground = ground_from(grid);
-        let field = compute_big_water_field(&ground, &bbox);
+        let field = compute_big_water_field(&ground, &bbox, WaterDetail::Default, 1.0);
         let (depth, sw, sh, smin_x, smin_z) = single_pass_reference(&ground, &bbox);
         assert_eq!((field.width, field.height), (sw, sh), "{label}: sub-rect");
         assert_eq!(

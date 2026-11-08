@@ -913,7 +913,8 @@ mod tests {
                 footprint.set(x, z);
             }
         }
-        let bwf = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+        let bwf =
+            crate::water_depth::compute_big_water_field(&ground, &xzbbox, Default::default(), 1.0);
         let road_mask = CoordinateBitmap::new_empty();
         let surface = 5;
         let mut surfaces = FnvHashMap::default();
@@ -1007,7 +1008,8 @@ mod tests {
         );
         let mut editor = WorldEditor::new(PathBuf::from("/dev/null/unused"), &xzbbox, llbbox);
         editor.set_ground(Arc::new(ground.clone()));
-        let bwf = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+        let bwf =
+            crate::water_depth::compute_big_water_field(&ground, &xzbbox, Default::default(), 1.0);
         let none = CoordinateBitmap::new_empty();
 
         generate_water_area_from_way(
@@ -1044,7 +1046,8 @@ mod tests {
         );
         let mut editor = WorldEditor::new(PathBuf::from("/dev/null/unused"), &xzbbox, llbbox);
         editor.set_ground(Arc::new(ground.clone()));
-        let bwf = crate::water_depth::compute_big_water_field(&ground, &xzbbox);
+        let bwf =
+            crate::water_depth::compute_big_water_field(&ground, &xzbbox, Default::default(), 1.0);
         let none = CoordinateBitmap::new_empty();
 
         generate_water_area_from_way(

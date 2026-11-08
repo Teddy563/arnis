@@ -456,6 +456,31 @@ pub struct Args {
     #[command(flatten)]
     pub units: UnitArgs,
     // --- end confluence:core ---
+    // --- confluence:terrain ---
+    #[command(flatten)]
+    pub water: WaterArgs,
+    // --- end confluence:terrain ---
+}
+
+/// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+pub struct WaterArgs {
+    /// Water detail. `scaled` rounds bed depths instead of flooring them and, on small
+    /// maps, carves narrow bodies as bowls, narrows streams and lets water flow over
+    /// roads not tagged as bridges.
+    #[arg(long, value_enum, default_value_t = crate::water_detail::WaterDetail::Default)]
+    pub water_detail: crate::water_detail::WaterDetail,
+}
+
+impl WaterArgs {
+    /// How far these options can carve beyond the land-cover estimate.
+    pub fn carve_depth(&self, scale: f64) -> crate::water_detail::CarveDepth {
+        crate::water_detail::CarveDepth {
+            floor: 0,
+            detail: self.water_detail,
+            scale,
+        }
+    }
 }
 
 /// Large One World jobs cut into region-group pieces.
