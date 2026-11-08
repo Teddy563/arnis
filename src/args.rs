@@ -459,6 +459,19 @@ pub struct Args {
     // --- confluence:terrain ---
     #[command(flatten)]
     pub water: WaterArgs,
+
+    /// Experimental. Where the Köppen climate behind surfaces and biomes is read:
+    /// origin (once, at the bbox centre or the One World origin, default) or
+    /// per-position (at every block, with organic borders, so a large world
+    /// crosses climate zones; biome latitude follows each block too).
+    #[arg(long, value_enum, default_value_t = crate::climate_field::ClimateMode::Origin)]
+    pub climate_mode: crate::climate_field::ClimateMode,
+
+    /// Experimental. Render the per-position Köppen climate layout for --bbox to
+    /// `<PREFIX>.png` and exit without generating a world; prints a
+    /// `CLIMATEMAP {json}` line with each climate's share.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<PathBuf>,
     // --- end confluence:terrain ---
 }
 
@@ -1070,6 +1083,15 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     // --- end confluence:core ---
+    // --- confluence:terrain ---
+    if args.climate_map.is_some() && args.bbox.is_none() {
+        return Err("--climate-map needs --bbox.".to_string());
+    }
+    // Rotation resamples the ground grids, which the per-position climate does not follow.
+    if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
+        return Err("--climate-mode per-position does not support --rotation.".to_string());
+    }
+    // --- end confluence:terrain ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
         validate_scale(args.scale)?;
@@ -1305,8 +1327,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview {
-        // The probe and the cave preview write no world, so they need no output directory.
+    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
+        // The probe, the cave preview and the climate map write no world, so they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
