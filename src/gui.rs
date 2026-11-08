@@ -1756,6 +1756,8 @@ fn gui_start_generation(
                 water: crate::args::WaterArgs::default(),
                 climate_mode: crate::climate_field::ClimateMode::Origin,
                 climate_map: None,
+                min_y: None,
+                max_y: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

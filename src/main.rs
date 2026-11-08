@@ -76,6 +76,7 @@ mod water_steps;
 mod work_units;
 mod world_editor;
 mod world_utils;
+mod y_bounds;
 
 use args::Args;
 use clap::Parser;
@@ -234,6 +235,7 @@ fn run_cli() {
     }
     args::apply_body_defaults(&mut args);
     args::apply_feature_needs(&mut args);
+    y_bounds::apply(&mut args);
 
     // Validate arguments (path requirements differ between Java and Bedrock)
     if let Err(e) = args::validate_args(&args) {

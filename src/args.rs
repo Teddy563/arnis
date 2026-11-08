@@ -472,6 +472,26 @@ pub struct Args {
     /// `CLIMATEMAP {json}` line with each climate's share.
     #[arg(long = "climate-map", value_name = "PREFIX")]
     pub climate_map: Option<PathBuf>,
+
+    /// Lowest Y of the extended-height world, a multiple of 16 from -2032 to -64. Needs
+    /// --disable-height-limit; the default is the pack's -2032.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub min_y: Option<i32>,
+
+    /// Highest Y of the extended-height world, one less than a multiple of 16 from 319 to
+    /// 2031. Needs --disable-height-limit; the default is the pack's 2031.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub max_y: Option<i32>,
     // --- end confluence:terrain ---
 }
 
@@ -1091,6 +1111,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
         return Err("--climate-mode per-position does not support --rotation.".to_string());
     }
+    crate::y_bounds::check(args)?;
     // --- end confluence:terrain ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
