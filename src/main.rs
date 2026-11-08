@@ -178,8 +178,11 @@ fn run_cli() {
         net::set_max_requests(n as usize);
     }
 
+    // A plan is a dry run: it neither sweeps the tile cache nor makes the update request.
+    let planning = args.units.plan_units.is_some();
+
     // Clean up old cached elevation tiles on startup
-    if !args.no_cache_sweep {
+    if !args.no_cache_sweep && !planning {
         elevation_data::cleanup_old_cached_tiles();
     }
 
@@ -205,7 +208,7 @@ fn run_cli() {
     );
 
     // Fire-and-forget update check; prints a one-line notice on a background thread.
-    if !args.no_update_check {
+    if !args.no_update_check && !planning {
         version_check::check_for_updates_async();
     }
 
