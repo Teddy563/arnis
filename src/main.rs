@@ -13,6 +13,7 @@ mod canopy;
 mod caves;
 mod celestial;
 mod climate;
+mod climate_field;
 mod clipping;
 mod colors;
 mod coordinate_system;
@@ -58,6 +59,7 @@ mod progress;
 mod progress_json;
 mod projection;
 mod retrieve_data;
+mod river_bed;
 mod scale;
 mod structures;
 #[cfg(feature = "gui")]
@@ -70,10 +72,12 @@ mod trees;
 mod version_check;
 mod voxy;
 mod water_depth;
+mod water_detail;
 mod water_steps;
 mod work_units;
 mod world_editor;
 mod world_utils;
+mod y_bounds;
 
 use args::Args;
 use clap::Parser;
@@ -270,6 +274,7 @@ fn run_cli() {
     }
     args::apply_body_defaults(&mut args);
     args::apply_feature_needs(&mut args);
+    y_bounds::apply(&mut args);
 
     // These two need no area, so they skip the general validation.
     if args.map_item_only || args.dh_lod_only {
@@ -298,6 +303,14 @@ fn run_cli() {
     if let Err(e) = args::validate_args(&args) {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
+    }
+
+    if args.climate_map.is_some() {
+        if let Err(e) = climate_field::render(&args) {
+            eprintln!("{}: {}", "Error".red().bold(), e);
+            std::process::exit(1);
+        }
+        return;
     }
 
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world
@@ -490,6 +503,7 @@ fn run_cli() {
             one_world_paths = Some(world_dir);
         }
     }
+    deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
     if args.units.coordinates() {
         // A job built in pieces: this process only runs them.
         let world_dir = one_world_paths.clone().unwrap_or_default();

@@ -482,6 +482,80 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub dh_lod_only: bool,
     // --- end confluence:output ---
+    // --- confluence:terrain ---
+    #[command(flatten)]
+    pub water: WaterArgs,
+
+    /// Experimental. Where the Köppen climate behind surfaces and biomes is read:
+    /// origin (once, at the bbox centre or the One World origin, default) or
+    /// per-position (at every block, with organic borders, so a large world
+    /// crosses climate zones; biome latitude follows each block too).
+    #[arg(long, value_enum, default_value_t = crate::climate_field::ClimateMode::Origin)]
+    pub climate_mode: crate::climate_field::ClimateMode,
+
+    /// Experimental. Render the per-position Köppen climate layout for --bbox to
+    /// `<PREFIX>.png` and exit without generating a world; prints a
+    /// `CLIMATEMAP {json}` line with each climate's share.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<PathBuf>,
+
+    /// Lowest Y of the extended-height world, a multiple of 16 from -2032 to -64. Needs
+    /// --disable-height-limit; the default is the pack's -2032.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub min_y: Option<i32>,
+
+    /// Highest Y of the extended-height world, one less than a multiple of 16 from 319 to
+    /// 2031. Needs --disable-height-limit; the default is the pack's 2031.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub max_y: Option<i32>,
+
+    /// EXPERIMENTAL. World seed mixed into every per-element and per-block random choice
+    /// (trees, rocks, flowers, building variety), so the same area can be rebuilt with a
+    /// different but repeatable look. Omitted or 0 keeps the default look. A One World
+    /// keeps the seed its first area was built with.
+    #[arg(long, value_name = "SEED")]
+    pub seed: Option<u64>,
+    // --- end confluence:terrain ---
+}
+
+/// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+pub struct WaterArgs {
+    /// River bed shape. `v1` gives mapped rivers, canals and streams a smooth U-shaped
+    /// bed that deepens with their width; lakes and the sea keep their bed.
+    #[arg(long, value_enum, default_value_t = crate::river_bed::RiverBed::Off)]
+    pub river_bed: crate::river_bed::RiverBed,
+
+    /// Water detail. `scaled` rounds bed depths instead of flooring them and, on small
+    /// maps, carves narrow bodies as bowls, narrows streams and lets water flow over
+    /// roads not tagged as bridges.
+    #[arg(long, value_enum, default_value_t = crate::water_detail::WaterDetail::Default)]
+    pub water_detail: crate::water_detail::WaterDetail,
+}
+
+impl WaterArgs {
+    /// How far these options can carve beyond the land-cover estimate.
+    pub fn carve_depth(&self, scale: f64) -> crate::water_detail::CarveDepth {
+        crate::water_detail::CarveDepth {
+            floor: if self.river_bed == crate::river_bed::RiverBed::Off {
+                0
+            } else {
+                crate::water_depth::MAX_WATER_DEPTH
+            },
+            detail: self.water_detail,
+            scale,
+        }
+    }
 }
 
 /// Large One World jobs cut into region-group pieces.
@@ -1065,6 +1139,16 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     // --- confluence:output ---
     crate::output_args::validate(args)?;
     // --- end confluence:output ---
+    // --- confluence:terrain ---
+    if args.climate_map.is_some() && args.bbox.is_none() {
+        return Err("--climate-map needs --bbox.".to_string());
+    }
+    // Rotation resamples the ground grids, which the per-position climate does not follow.
+    if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
+        return Err("--climate-mode per-position does not support --rotation.".to_string());
+    }
+    crate::y_bounds::check(args)?;
+    // --- end confluence:terrain ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
         validate_scale(args.scale)?;
@@ -1300,8 +1384,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview {
-        // The probe and the cave preview write no world, so they need no output directory.
+    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
+        // The probe, the cave preview and the climate map write no world, so they need no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
