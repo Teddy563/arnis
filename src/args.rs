@@ -414,6 +414,19 @@ pub struct Args {
     /// Bedrock 1.21.120+; Bedrock has no traffic lights to stop at.
     #[arg(long, alias = "moving-cars", default_value_t = false)]
     pub moving_vehicles: bool,
+
+    // --- confluence:core ---
+    /// Also report progress as JSON lines on stdout for programs driving the CLI.
+    #[arg(long, value_enum)]
+    pub progress: Option<ProgressFormat>,
+    // --- end confluence:core ---
+}
+
+/// Machine-readable progress formats for `--progress`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum ProgressFormat {
+    /// One JSON object per line.
+    Json,
 }
 
 /// Accepts the panel resolutions the atlas budget logic can halve cleanly.
