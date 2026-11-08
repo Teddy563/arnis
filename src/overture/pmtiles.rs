@@ -357,6 +357,14 @@ pub fn tile_count(bbox: &LLBBox, z: u8) -> u64 {
     u64::from(max_x - min_x + 1) * u64::from(max_y - min_y + 1)
 }
 
+/// Where an archive cached in `dir` keeps tile `z/x/y`.
+pub fn tile_cache_path(dir: &std::path::Path, z: u8, x: u32, y: u32) -> PathBuf {
+    dir.join("t")
+        .join(z.to_string())
+        .join(x.to_string())
+        .join(format!("{y}.bin"))
+}
+
 /// Web-Mercator tile containing a coordinate at the given zoom.
 pub fn lonlat_to_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
     let n = f64::from(1u32 << z);
@@ -566,12 +574,7 @@ impl Archive {
                 location.length
             ));
         }
-        let path = self.cache_dir.as_ref().map(|d| {
-            d.join("t")
-                .join(z.to_string())
-                .join(x.to_string())
-                .join(format!("{y}.bin"))
-        });
+        let path = self.cache_dir.as_ref().map(|d| tile_cache_path(d, z, x, y));
         let raw = self.read_cached(client, location.offset, u64::from(location.length), path)?;
         decompress(self.header.tile_compression, raw, MAX_TILE_BYTES)
     }
@@ -666,6 +669,7 @@ fn fetch_range(client: &Client, url: &str, offset: u64, length: u64) -> Result<V
             .map_err(|e| format!("{}: {e}", path.display()))?;
         return Ok(bytes);
     }
+    crate::net::ensure_online(url)?;
     let mut last_error = String::new();
 
     for attempt in 0..RANGE_ATTEMPTS {

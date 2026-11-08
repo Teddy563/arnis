@@ -1756,6 +1756,9 @@ fn gui_start_generation(
                 osm_pbf: None,
                 osm_pbf_url: None,
                 overpass_url: Vec::new(),
+                offline: false,
+                prewarm: false,
+                prewarm_first: false,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

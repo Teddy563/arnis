@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT_SECS: u64 = 20;
 const MAX_GLB_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(crate) fn cache_root() -> PathBuf {
-    dirs::cache_dir()
+    crate::elevation::cache::user_cache_dir()
         .map(|d| d.join(CACHE_SUBDIR))
         .unwrap_or_else(|| PathBuf::from("./.arnis_custom_cache"))
 }
@@ -47,6 +47,7 @@ pub(super) fn fetch_glb(url: &str, filename: &str) -> Result<Vec<u8>, String> {
     }
 
     let client = client()?;
+    crate::net::ensure_online("3D models")?;
     let _permit = crate::net::request_permit();
     let mut resp = client.get(url).send().map_err(|e| e.to_string())?;
     if !resp.status().is_success() {

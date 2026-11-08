@@ -1,5 +1,6 @@
 //! Process-wide ceiling on in-flight HTTP requests, and how a request failed.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
@@ -23,9 +24,17 @@ pub fn max_requests() -> usize {
 
 /// `--offline`: every download is refused before it starts.
 static OFFLINE: AtomicBool = AtomicBool::new(false);
+/// What an offline run wanted and the cache did not have, with a count of the refused requests.
+static OFFLINE_MISSES: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
 
-#[allow(dead_code)]
+/// Turning it on forgets the misses of an earlier run in this process.
 pub fn set_offline(on: bool) {
+    if on {
+        OFFLINE_MISSES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
     OFFLINE.store(on, Ordering::Relaxed);
 }
 
@@ -33,13 +42,25 @@ pub fn offline() -> bool {
     OFFLINE.load(Ordering::Relaxed)
 }
 
-/// Called in front of a download that only a cache miss reaches. Offline it
-/// refuses, naming `what` the cache lacks.
+/// Called in front of a download that only a cache miss reaches. Offline it refuses, and
+/// records `what` so the run can stop and name everything the cache lacks instead of building
+/// flat ground or leaving objects out.
 pub fn ensure_online(what: &str) -> Result<(), String> {
-    if offline() {
-        return Err(format!("--offline: {what} is not in the cache"));
+    if !offline() {
+        return Ok(());
     }
-    Ok(())
+    *OFFLINE_MISSES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(what.to_string())
+        .or_default() += 1;
+    Err(format!("--offline: {what} is not in the cache"))
+}
+
+/// Everything [`ensure_online`] refused so far, by name.
+pub fn offline_misses() -> Vec<(String, usize)> {
+    let misses = OFFLINE_MISSES.lock().unwrap_or_else(|e| e.into_inner());
+    misses.iter().map(|(k, v)| (k.clone(), *v)).collect()
 }
 
 static IN_FLIGHT: Mutex<usize> = Mutex::new(0);
@@ -130,6 +151,23 @@ mod tests {
 
     fn in_flight() -> usize {
         *IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn offline_refuses_and_names_what_was_missing() {
+        // Downloads elsewhere in the crate would be refused while this runs.
+        let _guard = SERIALIZE.lock().unwrap_or_else(|e| e.into_inner());
+        let _floor = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let what = "net test source";
+        assert!(ensure_online(what).is_ok());
+        set_offline(true);
+        let refused = (ensure_online(what), ensure_online(what));
+        set_offline(false);
+        assert!(refused.0.unwrap_err().contains(what));
+        assert!(refused.1.is_err());
+        assert!(offline_misses().contains(&(what.to_string(), 2)));
     }
 
     #[test]

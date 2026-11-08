@@ -67,7 +67,7 @@ pub fn bake_for_job(src: &Source, selection: LLBBox) -> Result<()> {
 }
 
 fn cache_root() -> Result<PathBuf> {
-    dirs::cache_dir()
+    crate::elevation::cache::user_cache_dir()
         .map(|d| cache_root_in(&d))
         .ok_or_else(|| "no cache directory for the .pbf bake".to_string())
 }
