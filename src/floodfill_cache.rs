@@ -1173,7 +1173,8 @@ pub fn configure_rayon_thread_pool(cpu_fraction: f64) {
         .map(|n| n.get())
         .unwrap_or(4);
 
-    let target_threads = ((available_cores as f64) * cpu_fraction).floor() as usize;
+    // Integer percent, as Args::thread_count does, so both round the same way.
+    let target_threads = available_cores * (cpu_fraction * 100.0).round() as usize / 100;
     let target_threads = target_threads.max(1); // At least 1 thread
 
     // Only configure if we haven't already (this can only be called once)

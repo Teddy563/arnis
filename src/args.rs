@@ -467,14 +467,14 @@ impl Args {
     }
 }
 
-/// The line `--capabilities` prints: the version and every long flag.
+/// The line `--capabilities` prints: a JSON array of every long flag.
 pub fn capabilities_json() -> String {
     use clap::CommandFactory;
     let flags: Vec<String> = Args::command()
         .get_arguments()
         .filter_map(|a| a.get_long().map(str::to_string))
         .collect();
-    serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "flags": flags }).to_string()
+    serde_json::to_string(&flags).unwrap_or_default()
 }
 
 /// Machine-readable progress formats for `--progress`.
@@ -1281,14 +1281,10 @@ mod tests {
     #[test]
     fn capabilities_lists_every_long_flag() {
         use clap::CommandFactory;
-        let v: serde_json::Value = serde_json::from_str(&capabilities_json()).unwrap();
-        assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
-        let flags: Vec<&str> = v["flags"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f.as_str().unwrap())
-            .collect();
+        let line = capabilities_json();
+        assert!(line.starts_with('[') && !line.contains('\n'));
+        let v: Vec<String> = serde_json::from_str(&line).unwrap();
+        let flags: Vec<&str> = v.iter().map(String::as_str).collect();
         for a in Args::command().get_arguments() {
             if let Some(l) = a.get_long() {
                 assert!(flags.contains(&l), "missing --{l}");
@@ -1302,6 +1298,9 @@ mod tests {
         let p = |x: &[&str]| Args::try_parse_from(["arnis"].iter().chain(x));
         assert!(p(&["--threads", "4", "--cpu-target", "50"]).is_err());
         assert!(p(&["--cpu-target", "9"]).is_err());
+        assert!(p(&["--cpu-target", "10"]).is_ok());
+        assert!(p(&["--cpu-target", "100"]).is_ok());
+        assert!(p(&["--cpu-target", "101"]).is_err());
         assert!(p(&["--threads", "0"]).is_err());
         assert_eq!(p(&["--threads", "4"]).unwrap().thread_count(), Some(4));
         assert_eq!(p(&[]).unwrap().thread_count(), None);
