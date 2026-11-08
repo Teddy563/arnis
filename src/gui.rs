@@ -1753,6 +1753,8 @@ fn gui_start_generation(
                 no_cache_sweep: false,
                 capabilities: false,
                 units: crate::args::UnitArgs::default(),
+                region_format: crate::args::RegionFormat::Mca,
+                blinear_level: 6,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.

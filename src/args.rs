@@ -456,6 +456,18 @@ pub struct Args {
     #[command(flatten)]
     pub units: UnitArgs,
     // --- end confluence:core ---
+
+    // --- confluence:output ---
+    /// EXPERIMENTAL. Java region container. blinear writes Leaf's B_Linear v3 (r.X.Z.b_linear),
+    /// which only Leaf 1.21.11+ and 26.x servers read: not Paper, not older Leaf, not the vanilla
+    /// client. Not with --one-world, --voxy-lod or --dh-lod.
+    #[arg(long = "region-format", value_enum, default_value_t = RegionFormat::Mca)]
+    pub region_format: RegionFormat,
+
+    /// zstd level for --region-format blinear (Leaf's own default is 6).
+    #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
+    pub blinear_level: i32,
+    // --- end confluence:output ---
 }
 
 /// Large One World jobs cut into region-group pieces.
@@ -514,6 +526,11 @@ fn parse_workers(s: &str) -> Result<Workers, String> {
 }
 
 impl Args {
+    /// The zstd level when regions are written as B_Linear.
+    pub fn blinear_level(&self) -> Option<i32> {
+        (self.region_format == RegionFormat::Blinear).then_some(self.blinear_level)
+    }
+
     /// The thread count asked for with --threads or --cpu-target, if either. A percentage
     /// rounds down like the 90% default, so `--cpu-target 90` equals no flag at all.
     pub fn thread_count(&self) -> Option<usize> {
@@ -825,6 +842,15 @@ impl FacadeMode {
     }
 }
 
+/// Java region container; the chunk NBT is the same in both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum RegionFormat {
+    /// Anvil r.X.Z.mca, read by every server and the client.
+    Mca,
+    /// Leaf B_Linear v3 r.X.Z.b_linear (experimental, Leaf servers only).
+    Blinear,
+}
+
 /// What a Java world generates past the area Arnis wrote.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum WorldType {
@@ -1036,6 +1062,23 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     // --- end confluence:core ---
+    // --- confluence:output ---
+    if args.region_format == RegionFormat::Blinear {
+        if args.bedrock || args.luanti {
+            return Err("--region-format blinear applies to Java worlds only.".to_string());
+        }
+        // One World merges into existing .mca files, and nothing here reads B_Linear back; the LOD
+        // builders and the map preview read the Anvil regions.
+        if args.one_world {
+            return Err("--region-format blinear does not combine with --one-world.".to_string());
+        }
+        if args.voxy_lod || args.dh_lod {
+            return Err(
+                "--region-format blinear does not combine with --voxy-lod or --dh-lod.".to_string(),
+            );
+        }
+    }
+    // --- end confluence:output ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
         validate_scale(args.scale)?;
@@ -2348,5 +2391,25 @@ mod tests {
         assert_eq!(retry.units.only_pieces, Some(vec![2, 5]));
         assert!(Args::try_parse_from(["arnis", "--one-world-workers", "0"]).is_err());
         assert!(Args::try_parse_from(["arnis", "--only-pieces", "0"]).is_err());
+    }
+
+    #[test]
+    fn blinear_with_lod_is_refused() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        let bl = ["--region-format", "blinear"];
+        assert!(validate_args(&parse(&bl)).is_ok());
+        assert_eq!(parse(&bl).blinear_level(), Some(6));
+        assert_eq!(parse(&[]).blinear_level(), None);
+        for refused in ["--dh-lod", "--voxy-lod", "--one-world", "--bedrock"] {
+            let args = parse(&[bl[0], bl[1], refused]);
+            assert!(validate_args(&args).is_err(), "{refused}");
+        }
+        assert!(Args::try_parse_from(["arnis", "--blinear-level", "23"]).is_err());
     }
 }
