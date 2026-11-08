@@ -180,6 +180,29 @@ fn run_cli() {
         println!("{}", args::capabilities_json());
         return;
     }
+    let tree_dir = match (&args.init_tree_pack_dir, &args.export_tree_packs) {
+        (Some(dir), _) => Some(trees::pack_dir::init(dir).map(|n| {
+            format!(
+                "Tree pack folders created in {} ({n} tree types).",
+                dir.display()
+            )
+        })),
+        (_, Some(dir)) => Some(
+            trees::pack_dir::export(dir)
+                .map(|n| format!("{n} tree schematics exported to {}.", dir.display())),
+        ),
+        _ => None,
+    };
+    if let Some(result) = tree_dir {
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     // Configure thread pool with 90% CPU cap to keep system responsive
     match args.thread_count() {
         Some(threads) => floodfill_cache::configure_rayon_threads(threads),

@@ -1754,6 +1754,12 @@ fn gui_start_generation(
                 capabilities: false,
                 units: crate::args::UnitArgs::default(),
                 scatter: crate::args::ScatterArgs::default(),
+                tree_realm: None,
+                tree_size_weights: None,
+                tree_pack_dir: None,
+                tree_pack_mode: Default::default(),
+                init_tree_pack_dir: None,
+                export_tree_packs: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
