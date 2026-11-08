@@ -857,7 +857,8 @@ pub fn generate_world_with_options(
     let void_world =
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
-    if void_world && !extending {
+    editor.set_blinear_level(args.blinear_level());
+    if (void_world || args.blinear_level().is_some()) && !extending {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
         crate::world_utils::remove_untouched_template_region(&output_path);
@@ -2447,6 +2448,15 @@ pub fn generate_world_with_options(
         ) {
             eprintln!("Warning: Failed to apply world settings: {e}");
         }
+    }
+
+    // After the area is recorded, so a One World's border holds all its areas. A piece leaves it
+    // to the coordinator.
+    if args.world_border
+        && world_format == WorldFormat::JavaAnvil
+        && one_world.is_none_or(|run| run.unit.is_none())
+    {
+        crate::one_world::apply_world_border(&output_path, &xzbbox);
     }
 
     if world_format == WorldFormat::JavaAnvil && extras.any() {

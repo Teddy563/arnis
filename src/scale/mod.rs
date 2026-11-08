@@ -427,6 +427,9 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
     if let Err(e) = crate::world_utils::touch_last_played(world_dir) {
         eprintln!("Warning: Failed to update LastPlayed: {e}");
     }
+    if args.world_border {
+        one_world::apply_world_border(world_dir, &rect);
+    }
     // The job is built; its state is not needed any more.
     let _ = std::fs::remove_dir_all(&job.dir);
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
