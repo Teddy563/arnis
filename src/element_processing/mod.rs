@@ -31,6 +31,7 @@ pub mod parking_garage;
 pub mod power;
 pub mod rail_track;
 pub mod railways;
+pub mod road_detail;
 pub mod road_markings;
 pub mod rooftops;
 pub mod signage;

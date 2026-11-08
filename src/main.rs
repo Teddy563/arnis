@@ -57,6 +57,9 @@ mod progress;
 mod progress_json;
 mod projection;
 mod retrieve_data;
+// Read by the field parcels once they land.
+#[allow(dead_code)]
+mod road_bearings;
 mod scale;
 mod structures;
 #[cfg(feature = "gui")]

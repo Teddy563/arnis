@@ -1,4 +1,5 @@
 use crate::coordinate_system::geographic::LLBBox;
+use crate::element_processing::road_detail::RoadDetail;
 use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
@@ -456,6 +457,14 @@ pub struct Args {
     #[command(flatten)]
     pub units: UnitArgs,
     // --- end confluence:core ---
+
+    // --- confluence:build ---
+    /// How much road marking and how many minor ways to build: max (every marking and
+    /// way, as mapped), clean (centre lines and 2-block crossing bars) or compact (clean,
+    /// with longer dashes and no footways, paths, service roads, tracks or crossings).
+    #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
+    pub road_detail: RoadDetail,
+    // --- end confluence:build ---
 }
 
 /// Large One World jobs cut into region-group pieces.
