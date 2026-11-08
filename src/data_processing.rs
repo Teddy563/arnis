@@ -865,15 +865,20 @@ pub fn generate_world_with_options(
         editor.set_merge_into_existing(crate::world_utils::WorldLayout::of(&run.world_dir));
         // metadata.json describes the whole world, not this area alone.
         if let Ok(Some(manifest)) = crate::one_world::Manifest::load(&run.world_dir) {
+            // A piece describes its whole job, which the other pieces are still building.
+            let job = run.unit.as_ref().map_or(xzbbox.clone(), |u| {
+                XZBBox::rect_from_min_max(u.job[0], u.job[1], u.job[2], u.job[3])
+                    .unwrap_or_else(|_| xzbbox.clone())
+            });
             let union = match manifest.extent() {
                 Some(ext) => XZBBox::rect_from_min_max(
-                    ext.min_x().min(xzbbox.min_x()),
-                    ext.min_z().min(xzbbox.min_z()),
-                    ext.max_x().max(xzbbox.max_x()),
-                    ext.max_z().max(xzbbox.max_z()),
+                    ext.min_x().min(job.min_x()),
+                    ext.min_z().min(job.min_z()),
+                    ext.max_x().max(job.max_x()),
+                    ext.max_z().max(job.max_z()),
                 )
                 .unwrap_or_else(|_| xzbbox.clone()),
-                None => xzbbox.clone(),
+                None => job,
             };
             if let Ok(ll) = crate::projection::llbbox_for_rect(&manifest.projection(), &union) {
                 editor.set_metadata_extent(union, ll);
@@ -964,7 +969,10 @@ pub fn generate_world_with_options(
     // generated into again after its last. The preview and branding maps come first.
     let wants_map_item = args.map_item && world_format == WorldFormat::JavaAnvil && !extending;
     let place_branding = world_format == WorldFormat::JavaAnvil && !extending;
-    let first_map_id = if world_format == WorldFormat::JavaAnvil {
+    let first_map_id = if let Some(unit) = one_world.and_then(|run| run.unit.as_ref()) {
+        // A piece of a job has its own range, as pieces build side by side.
+        unit.first_map_id
+    } else if world_format == WorldFormat::JavaAnvil {
         let layout = crate::world_utils::WorldLayout::of(&output_path);
         crate::map_item::next_map_id(&layout.maps_dir(&output_path))
     } else {
@@ -1399,7 +1407,11 @@ pub fn generate_world_with_options(
     // format-dependent block-entity schema (banners) only matches Java output.
     // Restrict the parallel tile path to Java; Bedrock/Luanti large worlds use
     // the sequential path (correct, just not tile-parallel).
-    let use_parallel_tiles = tiles.len() >= 3 && matches!(world_format, WorldFormat::JavaAnvil);
+    // A piece of a job takes the path the whole job would, or its blocks differ from a single run's.
+    let wants_tiles = one_world
+        .and_then(|run| run.unit.as_ref())
+        .map_or(tiles.len() >= 3, |unit| unit.tiled);
+    let use_parallel_tiles = wants_tiles && matches!(world_format, WorldFormat::JavaAnvil);
 
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.
@@ -2392,7 +2404,8 @@ pub fn generate_world_with_options(
     }
     bench.mark("map_preview");
 
-    if let Some(run) = one_world {
+    // A piece of a job is recorded by its coordinator, once it has seen the piece succeed.
+    if let Some(run) = one_world.filter(|run| run.unit.is_none()) {
         let png = run.preview_path();
         let preview_path = png.is_file().then_some(png.as_path());
         crate::one_world::record_area(

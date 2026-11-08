@@ -57,6 +57,7 @@ mod progress;
 mod progress_json;
 mod projection;
 mod retrieve_data;
+mod scale;
 mod structures;
 #[cfg(feature = "gui")]
 mod telemetry;
@@ -148,6 +149,18 @@ fn release_one_world(failed: bool) {
         if let (true, Some(dir)) = (failed, created) {
             let _ = fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// From here on a failure keeps the world this run created: a job built in
+/// pieces resumes from the pieces it finished.
+fn keep_one_world() {
+    if let Some(run) = ONE_WORLD_RUN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        run.created = None;
     }
 }
 
@@ -371,33 +384,64 @@ fn run_cli() {
                 |()| 0,
             ));
         }
-        let session =
-            one_world::prepare(&world_dir, &effective_bbox, &mut args).unwrap_or_else(|e| {
-                eprintln!("{} {}", "Error:".red().bold(), e);
-                std::process::exit(1);
+        if let Some(lease) = args.units.one_world_unit.clone() {
+            // A piece of a job: the coordinator holds the world's lock.
+            scale::child::watch_parent();
+            effective_bbox =
+                one_world::prepare_unit(&world_dir, &effective_bbox, &mut args, &lease)
+                    .unwrap_or_else(|e| {
+                        eprintln!("{} {}", "Error:".red().bold(), e);
+                        exit_failed();
+                    });
+            world_editor::set_world_bounds(
+                ground::extended_min_y_for(&args),
+                ground::world_top_y_for(&args),
+            );
+            one_world_paths = Some(world_dir);
+        } else {
+            let session = one_world::prepare(&world_dir, &effective_bbox, &mut args)
+                .unwrap_or_else(|e| {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
+                });
+            effective_bbox = session.llbbox;
+            // The world decides the build height.
+            world_editor::set_world_bounds(
+                ground::extended_min_y_for(&args),
+                ground::world_top_y_for(&args),
+            );
+            *ONE_WORLD_RUN.lock().unwrap_or_else(|e| e.into_inner()) = Some(OneWorldRun {
+                lock: session.lock,
+                created: session.created.then(|| world_dir.clone()),
             });
-        effective_bbox = session.llbbox;
-        // The world decides the build height.
-        world_editor::set_world_bounds(
-            ground::extended_min_y_for(&args),
-            ground::world_top_y_for(&args),
-        );
-        *ONE_WORLD_RUN.lock().unwrap_or_else(|e| e.into_inner()) = Some(OneWorldRun {
-            lock: session.lock,
-            created: session.created.then(|| world_dir.clone()),
-        });
-        if args.disable_height_limit && session.created {
-            let (min_y, max_y) = world_utils::TALL_DATAPACK_FULL_RANGE;
-            if let Err(e) = world_utils::install_tall_datapack(&world_dir, min_y, max_y) {
-                eprintln!(
-                    "{} Failed to install tall-world datapack: {}",
-                    "Error:".red().bold(),
-                    e
-                );
+            if args.disable_height_limit && session.created {
+                let (min_y, max_y) = world_utils::TALL_DATAPACK_FULL_RANGE;
+                if let Err(e) = world_utils::install_tall_datapack(&world_dir, min_y, max_y) {
+                    eprintln!(
+                        "{} Failed to install tall-world datapack: {}",
+                        "Error:".red().bold(),
+                        e
+                    );
+                    exit_failed();
+                }
+            }
+            one_world_paths = Some(world_dir);
+        }
+    }
+    if args.units.coordinates() {
+        // A job built in pieces: this process only runs them.
+        let world_dir = one_world_paths.clone().unwrap_or_default();
+        match scale::run(&args, &world_dir) {
+            Err(e) if e == scale::PARTIAL => println!("{e}"),
+            Err(e) => {
+                eprintln!("{} {}", "Error:".red().bold(), e);
                 exit_failed();
             }
+            Ok(()) => {}
         }
-        one_world_paths = Some(world_dir);
+        release_one_world(false);
+        progress_json::done(started);
+        return;
     }
     let args = args;
 

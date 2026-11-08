@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 
 pub const MANIFEST_FILE: &str = "arnis_one_world.json";
 pub const PREVIEW_DIR: &str = "arnis_one_world/previews";
+/// Where a job built in pieces keeps its state, one folder per job.
+pub const JOBS_DIR: &str = "arnis_one_world/jobs";
 pub const DEFAULT_WORLD_NAME: &str = "Arnis One World";
 /// 2: merges write into empty region files. Version 1 worlds still hold
 /// region template chunks outside their areas and are repaired once.
@@ -298,6 +300,24 @@ pub struct RunContext {
     pub area_id: u32,
     /// Set when this run builds one piece of a job.
     pub piece: Option<PieceRef>,
+    /// Set in a piece of a job, whose coordinator holds the world's lock and records the area.
+    pub unit: Option<UnitLease>,
+}
+
+/// What a job's coordinator tells one of its pieces, in the file `--one-world-unit` names.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UnitLease {
+    /// Position in the job's plan.
+    pub piece: u32,
+    pub area_id: u32,
+    /// False for the one piece that makes the world's map item and settings.
+    pub extending: bool,
+    /// The piece's own range of map ids, so pieces running together never share one.
+    pub first_map_id: i32,
+    /// The job's whole block rectangle, which metadata.json describes.
+    pub job: [i32; 4],
+    /// Whether a single run of the whole job would build in parallel tiles.
+    pub tiled: bool,
 }
 
 impl RunContext {
@@ -386,17 +406,51 @@ pub fn prepare(world_dir: &Path, requested: &LLBBox, args: &mut Args) -> Result<
         .map_err(|e| format!("Failed to create {}: {e}", world_dir.display()))?;
     let lock = SessionLock::acquire(world_dir).map_err(|_| open_in_minecraft(world_dir))?;
     let mut owned = false;
-    let resolved = resolve(world_dir, requested, args, lock, &mut owned);
-    if resolved.is_err() && fresh_dir {
-        // Everything in it is ours once the check under the lock passed.
-        // Before that only an empty folder is removed.
-        let _ = if owned {
-            std::fs::remove_dir_all(world_dir)
-        } else {
-            std::fs::remove_dir(world_dir)
-        };
+    match resolve(world_dir, requested, args, &mut owned) {
+        Ok((created, llbbox)) => Ok(Session {
+            created,
+            llbbox,
+            lock,
+        }),
+        Err(e) => {
+            drop(lock);
+            if fresh_dir {
+                // Everything in it is ours once the check under the lock passed.
+                // Before that only an empty folder is removed.
+                let _ = if owned {
+                    std::fs::remove_dir_all(world_dir)
+                } else {
+                    std::fs::remove_dir(world_dir)
+                };
+            }
+            Err(e)
+        }
     }
-    resolved
+}
+
+/// Opens the world for one piece of a job. The coordinator holds the world's lock and
+/// has created the world, so this takes no lock and creates nothing; the lease it
+/// reads decides the area id and whether the piece makes the world's extras.
+pub fn prepare_unit(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &mut Args,
+    lease: &Path,
+) -> Result<LLBBox, String> {
+    let lease: UnitLease = std::fs::read_to_string(lease)
+        .map_err(|e| format!("Failed to read {}: {e}", lease.display()))
+        .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))?;
+    if Manifest::load(world_dir)?.is_none() {
+        return Err(format!("{} is not a One World.", world_dir.display()));
+    }
+    crate::scale::child::fail_for_test(lease.piece as usize);
+    let (_, llbbox) = resolve(world_dir, requested, args, &mut false)?;
+    if let Some(run) = args.one_world_run.as_mut() {
+        run.area_id = lease.area_id;
+        run.extending = lease.extending;
+        run.unit = Some(lease);
+    }
+    Ok(llbbox)
 }
 
 /// The part of `prepare` that runs under the world's lock.
@@ -405,9 +459,8 @@ fn resolve(
     world_dir: &Path,
     requested: &LLBBox,
     args: &mut Args,
-    lock: SessionLock,
     owned: &mut bool,
-) -> Result<Session, String> {
+) -> Result<(bool, LLBBox), String> {
     let (mut manifest, created) = match Manifest::load(world_dir)? {
         Some(manifest) => {
             if !world_dir.join("level.dat").is_file() {
@@ -534,6 +587,7 @@ fn resolve(
         replaced_chunks: replaced,
         area_id,
         piece: None,
+        unit: None,
     });
     args.projection = crate::projection::ProjectionKind::WebMercator;
     args.bbox = Some(llbbox);
@@ -609,11 +663,7 @@ fn resolve(
         );
     }
 
-    Ok(Session {
-        created,
-        llbbox,
-        lock,
-    })
+    Ok((created, llbbox))
 }
 
 /// Records a finished area and drops the ones it fully covers.

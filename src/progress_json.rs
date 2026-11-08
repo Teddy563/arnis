@@ -89,7 +89,6 @@ pub fn progress(progress: f64, message: &str) {
 }
 
 /// Any other record type, such as a job's `piece` and `result` records.
-#[allow(dead_code)] // used by the coordinator (piece records)
 pub fn record(kind: &str, body: Value) {
     if enabled() {
         emit(kind, body);

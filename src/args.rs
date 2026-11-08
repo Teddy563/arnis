@@ -473,6 +473,44 @@ pub struct UnitArgs {
     /// One piece of a job, run by the job's coordinator.
     #[arg(long, hide = true)]
     pub one_world_unit: Option<PathBuf>,
+
+    /// Build a --one-world selection in pieces, this many at once, each in its own process
+    /// sharing the job's threads, memory and downloads. auto picks 2 to 6 from the free RAM
+    /// and cores. Pieces are 4 x 4 regions unless --unit-regions says otherwise; run the same
+    /// command again to resume an interrupted job.
+    #[arg(long, value_name = "auto|N", value_parser = parse_workers)]
+    pub one_world_workers: Option<Workers>,
+
+    /// Build only these pieces of the job (numbered from 1, as the job prints them), say one
+    /// that failed; the others wait for the next run of the same job.
+    #[arg(long, value_name = "N,N...", value_delimiter = ',',
+          value_parser = clap::value_parser!(u32).range(1..))]
+    pub only_pieces: Option<Vec<u32>>,
+}
+
+impl UnitArgs {
+    /// Whether this run coordinates a job of pieces rather than building one area itself.
+    pub fn coordinates(&self) -> bool {
+        (self.unit_regions.is_some() || self.one_world_workers.is_some())
+            && self.one_world_unit.is_none()
+    }
+}
+
+/// How many pieces of a job run at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Workers {
+    Auto,
+    N(u32),
+}
+
+fn parse_workers(s: &str) -> Result<Workers, String> {
+    match s {
+        "auto" => Ok(Workers::Auto),
+        _ => match s.parse::<u32>() {
+            Ok(n @ 1..=64) => Ok(Workers::N(n)),
+            _ => Err(format!("{s}: expected auto or a count from 1 to 64")),
+        },
+    }
 }
 
 impl Args {
@@ -983,11 +1021,18 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     if !args.one_world
         && (args.units.plan_units.is_some()
             || args.units.unit_regions.is_some()
-            || args.units.one_world_unit.is_some())
+            || args.units.one_world_unit.is_some()
+            || args.units.one_world_workers.is_some()
+            || args.units.only_pieces.is_some())
     {
         return Err(
-            "--plan-units, --unit-regions and --one-world-unit only apply to --one-world."
+            "--plan-units, --unit-regions, --one-world-workers and --only-pieces only apply to --one-world."
                 .to_string(),
+        );
+    }
+    if args.units.only_pieces.is_some() && !args.units.coordinates() {
+        return Err(
+            "--only-pieces only applies to a job built in pieces (--unit-regions).".to_string(),
         );
     }
     // --- end confluence:core ---
@@ -2287,5 +2332,21 @@ mod tests {
             assert!(Args::try_parse_from(["arnis", "--plan-units", bad]).is_err());
             assert!(Args::try_parse_from(["arnis", "--unit-regions", bad]).is_err());
         }
+        // Pieces built side by side, or only some of them, need a One World job.
+        let w = parse(&["--one-world", "--one-world-workers", "auto"]);
+        assert!(validate_args(&w).is_ok() && w.units.coordinates());
+        assert_eq!(
+            parse(&["--one-world", "--one-world-workers", "3"])
+                .units
+                .one_world_workers,
+            Some(Workers::N(3))
+        );
+        assert!(validate_args(&parse(&["--one-world-workers", "auto"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--only-pieces", "2"])).is_err());
+        let retry = parse(&["--one-world", "--unit-regions", "2", "--only-pieces", "2,5"]);
+        assert!(validate_args(&retry).is_ok());
+        assert_eq!(retry.units.only_pieces, Some(vec![2, 5]));
+        assert!(Args::try_parse_from(["arnis", "--one-world-workers", "0"]).is_err());
+        assert!(Args::try_parse_from(["arnis", "--only-pieces", "0"]).is_err());
     }
 }

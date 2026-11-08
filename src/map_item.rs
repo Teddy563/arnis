@@ -410,6 +410,29 @@ pub fn write_branding_map_only(world_path: &Path, map_id: i32) -> Result<(), Str
     store.write_counter(map_id)
 }
 
+/// Moves the id counter past every map file in the world. Pieces of a job build side by
+/// side, each in its own range of ids, and leave the counter where the last to finish put it.
+pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
+    let dir = WorldLayout::of(world_path).maps_dir(world_path);
+    let highest = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let id = name.strip_suffix(".dat")?;
+            id.strip_prefix("map_").unwrap_or(id).parse::<i32>().ok()
+        })
+        .max();
+    match highest {
+        Some(highest) => {
+            let store = MapStore::open(world_path)?;
+            store.write_counter(highest.max(store.next_id() - 1))
+        }
+        None => Ok(()),
+    }
+}
+
 /// Writes one locked map per decal tile and bumps the id counter past them.
 pub fn write_decal_maps(
     world_path: &Path,
