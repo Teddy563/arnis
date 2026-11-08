@@ -266,6 +266,31 @@ fn run_cli() {
         return;
     }
 
+    if args.dh_lod_only {
+        let world_dir = one_world_dir(&args);
+        // The world decides the build range its LODs are cut against.
+        if let Ok(Some(manifest)) = one_world::Manifest::load(&world_dir) {
+            args.disable_height_limit = manifest.disable_height_limit;
+            args.height_multiplier = manifest.height_multiplier;
+        }
+        world_editor::set_world_bounds(
+            ground::extended_min_y_for(&args),
+            ground::world_top_y_for(&args),
+        );
+        match distant_horizons::from_existing(&world_dir) {
+            Ok(s) => println!(
+                "Distant Horizons LODs: {} sections written to {}.",
+                s.sections,
+                world_dir.display()
+            ),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world
     // exists. It uses the same zone picker, seed and --cave-biomes amounts as --caves.
     if args.cave_zone_map.is_some() {

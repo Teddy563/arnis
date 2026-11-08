@@ -1262,7 +1262,7 @@ fn compute_lighting(
 /// The skipped gaps are air, so the skylight leaving a run passes through unchanged and seeds
 /// the run below, and block light cannot cross their 16-plus blocks. A gap plane that is not
 /// uniform cannot be carried that way, so those chunks fall back to one full-span pass.
-fn compute_chunk_lighting(sections: &[Section], span: (i8, i8)) -> SectionLight {
+pub(crate) fn compute_chunk_lighting(sections: &[Section], span: (i8, i8)) -> SectionLight {
     let (min_section_y, max_section_y) = span;
     let len = (max_section_y as i32 - min_section_y as i32 + 1).max(0) as usize;
     let mut out: SectionLight = vec![(Vec::new(), Vec::new()); len];
@@ -2261,6 +2261,41 @@ mod merge_tests {
             None,
         )
         .unwrap();
+    }
+
+    /// LODs from the region files of a world on disk: a database appears, no region changes.
+    #[test]
+    fn dh_lod_only_touches_no_region() {
+        let _g = crate::world_editor::FLOOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &region_with(&[(5, 5), (6, 5)], STONE),
+            RegionWriteMode::Fresh,
+        );
+        let mca = dir.path().join("region").join("r.0.0.mca");
+        let before = (
+            std::fs::read(&mca).unwrap(),
+            std::fs::metadata(&mca).unwrap().modified().unwrap(),
+        );
+
+        let summary = crate::distant_horizons::from_existing(dir.path()).unwrap();
+        assert!(summary.sections > 0, "LOD rows written");
+        assert!(dir
+            .path()
+            .join("data")
+            .join("DistantHorizons.sqlite")
+            .is_file());
+        let after = (
+            std::fs::read(&mca).unwrap(),
+            std::fs::metadata(&mca).unwrap().modified().unwrap(),
+        );
+        assert!(before == after, "region file untouched");
+        assert!(
+            crate::distant_horizons::from_existing(tempfile::tempdir().unwrap().path()).is_err()
+        );
     }
 
     /// The same region through both containers carries the same chunk NBT.

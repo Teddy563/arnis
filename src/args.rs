@@ -482,6 +482,11 @@ pub struct Args {
     /// area previews, so it shows every area, and exit. Nothing is regenerated.
     #[arg(long, default_value_t = false)]
     pub map_item_only: bool,
+
+    /// Write the Distant Horizons LODs of the One World at --output-dir and --world-name from its
+    /// region files, and exit. For a world made without --dh-lod. Nothing is regenerated.
+    #[arg(long, default_value_t = false)]
+    pub dh_lod_only: bool,
     // --- end confluence:output ---
 }
 
@@ -1093,10 +1098,10 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     }
     // --- end confluence:core ---
     // --- confluence:output ---
-    if args.map_item_only {
+    if args.map_item_only || args.dh_lod_only {
         if !args.one_world {
             return Err(
-                "--map-item-only needs --one-world (the world at --output-dir and --world-name)."
+                "--map-item-only and --dh-lod-only need --one-world (the world at --output-dir and --world-name)."
                     .to_string(),
             );
         }
@@ -2478,7 +2483,10 @@ mod tests {
         assert!(validate_args(&parse(&["--world-border"])).is_ok());
         assert!(validate_args(&parse(&["--world-border", "--bedrock"])).is_err());
         assert!(validate_args(&parse(&["--map-item-only"])).is_err());
+        assert!(validate_args(&parse(&["--dh-lod-only"])).is_err());
         let world_only = Args::parse_from(["arnis", "--one-world", "--map-item-only"]);
         assert!(validate_args(&world_only).is_ok(), "no bbox needed");
+        let dh_only = Args::parse_from(["arnis", "--one-world", "--dh-lod-only"]);
+        assert!(validate_args(&dh_only).is_ok());
     }
 }
