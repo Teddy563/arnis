@@ -427,8 +427,8 @@ pub fn write_branding_map_only(world_path: &Path, map_id: i32) -> Result<(), Str
     store.write_counter(map_id)
 }
 
-/// Moves the id counter past every map file in the world. Pieces of a job build side by
-/// side, each in its own range of ids, and leave the counter where the last to finish put it.
+/// Raises the id counter past every map file in the world. It never lowers it: another
+/// job's reservation past these maps must survive.
 pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
     let dir = WorldLayout::of(world_path).maps_dir(world_path);
     let highest = std::fs::read_dir(&dir)
@@ -444,8 +444,7 @@ pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
     match highest {
         Some(highest) => {
             let store = MapStore::open(world_path)?;
-            // The job's reservation past the last map is released.
-            store.write_counter(highest)
+            store.write_counter(highest.max(store.next_id() - 1))
         }
         None => Ok(()),
     }
@@ -540,12 +539,31 @@ mod tests {
         reserve_map_ids(&world, FIRST_MAP_ID + 999).unwrap();
         // Another run in between starts past the reservation.
         assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);
-        // Done: the counter follows the maps that were really written.
+        // Done: the maps are below the reservation, so the counter stays where it is.
         let store = MapStore::open(&world).unwrap();
         let blank = build_map_dat(vec![0; 16], 0, false, 0, 0, store.data_version);
         store.write_map(FIRST_MAP_ID + 70, &blank).unwrap();
         sync_map_counter(&world).unwrap();
-        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 71);
+        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);
+    }
+
+    #[test]
+    fn sync_never_lowers_the_counter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world =
+            std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
+        let data = world.join("data");
+        let store = MapStore::open(&world).unwrap();
+        let blank = build_map_dat(vec![0; 16], 0, false, 0, 0, store.data_version);
+        // A map below the counter leaves it where it is.
+        reserve_map_ids(&world, FIRST_MAP_ID + 999).unwrap();
+        store.write_map(FIRST_MAP_ID + 70, &blank).unwrap();
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);
+        // A map above the counter raises it past that map.
+        store.write_map(FIRST_MAP_ID + 1200, &blank).unwrap();
+        sync_map_counter(&world).unwrap();
+        assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1201);
     }
 
     #[test]

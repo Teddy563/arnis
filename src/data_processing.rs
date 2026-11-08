@@ -807,10 +807,11 @@ pub fn generate_world_with_options(
     let extending = one_world.is_some_and(|run| run.extending);
     // A piece of a job builds `PIECE_HALO_BLOCKS` past its own chunks, so what is rooted
     // there reaches in as it does in a single run, and writes and previews only its own.
-    let own_rect = one_world
-        .and_then(|run| run.unit.as_ref())
-        .and_then(|u| XZBBox::rect_from_min_max(u.rect[0], u.rect[1], u.rect[2], u.rect[3]).ok())
-        .unwrap_or_else(|| xzbbox.clone());
+    let own_rect = match one_world.and_then(|run| run.unit.as_ref()) {
+        Some(u) => XZBBox::rect_from_min_max(u.rect[0], u.rect[1], u.rect[2], u.rect[3])
+            .map_err(|e| format!("piece lease rect {:?} is invalid: {e}", u.rect))?,
+        None => xzbbox.clone(),
+    };
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
 
     // Before anything reads a footprint: nothing is built on a runway.
