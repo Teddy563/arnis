@@ -59,6 +59,18 @@ pub struct GeneratedArea {
     pub max_lat: f64,
     pub max_lon: f64,
     pub preview: Option<String>,
+    /// Set when this area is one piece of a job built in pieces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub piece: Option<PieceRef>,
+}
+
+/// Which piece of which job built an area.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PieceRef {
+    /// The job, named by its block rectangle and piece size.
+    pub job: String,
+    /// Position in the job's plan (`WorkUnit::index`).
+    pub index: u32,
 }
 
 impl GeneratedArea {
@@ -255,6 +267,24 @@ pub fn existing_chunks(world_dir: &Path, rect: &XZBBox) -> u64 {
     count
 }
 
+/// The frame `requested` lands in: the world's own, or for a world that does
+/// not exist yet the one `prepare` would create. Reads only; takes no lock.
+pub fn frame_for(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &Args,
+) -> Result<WebMercatorProjection, String> {
+    Ok(match Manifest::load(world_dir)? {
+        Some(manifest) => manifest.projection(),
+        None => Manifest::new(
+            args,
+            (requested.min().lat() + requested.max().lat()) / 2.0,
+            (requested.min().lng() + requested.max().lng()) / 2.0,
+        )
+        .projection(),
+    })
+}
+
 /// The One World a run lands in, carried in `Args::one_world_run`.
 #[derive(Clone, Debug)]
 pub struct RunContext {
@@ -266,6 +296,8 @@ pub struct RunContext {
     /// Chunks of this area that already exist and are replaced.
     pub replaced_chunks: u64,
     pub area_id: u32,
+    /// Set when this run builds one piece of a job.
+    pub piece: Option<PieceRef>,
 }
 
 impl RunContext {
@@ -501,6 +533,7 @@ fn resolve(
         elevation: manifest.elevation,
         replaced_chunks: replaced,
         area_id,
+        piece: None,
     });
     args.projection = crate::projection::ProjectionKind::WebMercator;
     args.bbox = Some(llbbox);
@@ -623,6 +656,7 @@ pub fn record_area(
         max_lat: llbbox.max().lat(),
         max_lon: llbbox.max().lng(),
         preview: preview_rel.clone(),
+        piece: run.piece.clone(),
     });
     manifest.next_area_id = manifest.next_area_id.max(run.area_id.saturating_add(1));
     manifest.save(&run.world_dir)?;
@@ -695,6 +729,43 @@ mod tests {
     fn record(args: &Args, s: &Session, elevation: Option<ElevationAffine>) {
         let run = args.one_world_run.clone().unwrap();
         record_area(&run, &s.llbbox, &rect(args, s), elevation, None).unwrap();
+    }
+
+    /// A manifest the stock v3.4.0 exe wrote still opens, and one carrying
+    /// piece records is still read by v3.4.0's own struct (unknown fields ignored).
+    #[test]
+    fn v340_manifest_still_opens() {
+        #[derive(Deserialize)]
+        struct V340Area {
+            id: u32,
+            min_x: i32,
+            max_z: i32,
+        }
+        #[derive(Deserialize)]
+        struct V340 {
+            version: u32,
+            next_area_id: u32,
+            areas: Vec<V340Area>,
+        }
+        let text = include_str!("../tests/fixtures/one_world_v340.json");
+        let mut m: Manifest = serde_json::from_str(text).unwrap();
+        m.validate().unwrap();
+        assert!(m.areas.iter().all(|a| a.piece.is_none()));
+        let plain = serde_json::to_string(&m).unwrap();
+        assert!(!plain.contains("piece"), "no piece key unless one is set");
+        m.areas[0].piece = Some(PieceRef {
+            job: "j".into(),
+            index: 3,
+        });
+        let old: V340 = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!((old.version, old.next_area_id), (m.version, m.next_area_id));
+        assert_eq!(
+            (old.areas[0].id, old.areas[0].min_x),
+            (m.areas[0].id, m.areas[0].min_x)
+        );
+        assert_eq!(old.areas[0].max_z, m.areas[0].max_z);
+        let back: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
     }
 
     #[test]

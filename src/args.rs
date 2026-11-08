@@ -452,7 +452,27 @@ pub struct Args {
     /// CLI can probe before using them.
     #[arg(long)]
     pub capabilities: bool,
+
+    #[command(flatten)]
+    pub units: UnitArgs,
     // --- end confluence:core ---
+}
+
+/// Large One World jobs cut into region-group pieces.
+#[derive(clap::Args, Debug, Default)]
+pub struct UnitArgs {
+    /// Print how --one-world would cut --bbox into pieces of at most N x N regions (one JSON
+    /// line on stdout) and exit without generating.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub plan_units: Option<i32>,
+
+    /// Piece size of a --one-world job, at most N x N regions.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
+    pub unit_regions: Option<i32>,
+
+    /// One piece of a job, run by the job's coordinator.
+    #[arg(long, hide = true)]
+    pub one_world_unit: Option<PathBuf>,
 }
 
 impl Args {
@@ -959,6 +979,18 @@ pub const DEFAULT_WORLD_TIME: i64 = 6_000;
 pub const MIDNIGHT_TICKS: i64 = 18_000;
 
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // --- confluence:core ---
+    if !args.one_world
+        && (args.units.plan_units.is_some()
+            || args.units.unit_regions.is_some()
+            || args.units.one_world_unit.is_some())
+    {
+        return Err(
+            "--plan-units, --unit-regions and --one-world-unit only apply to --one-world."
+                .to_string(),
+        );
+    }
+    // --- end confluence:core ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
         validate_scale(args.scale)?;
@@ -2236,5 +2268,24 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn unit_flags_need_one_world_and_a_sane_range() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        assert!(validate_args(&parse(&["--one-world", "--plan-units", "4"])).is_ok());
+        assert!(validate_args(&parse(&["--plan-units", "4"])).is_err());
+        assert!(validate_args(&parse(&["--unit-regions", "4"])).is_err());
+        assert!(validate_args(&parse(&["--one-world", "--unit-regions", "64"])).is_ok());
+        for bad in ["0", "65"] {
+            assert!(Args::try_parse_from(["arnis", "--plan-units", bad]).is_err());
+            assert!(Args::try_parse_from(["arnis", "--unit-regions", bad]).is_err());
+        }
     }
 }

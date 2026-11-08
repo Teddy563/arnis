@@ -69,6 +69,7 @@ mod version_check;
 mod voxy;
 mod water_depth;
 mod water_steps;
+mod work_units;
 mod world_editor;
 mod world_utils;
 
@@ -357,6 +358,16 @@ fn run_cli() {
             .and_then(world_utils::world_folder_name)
             .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
         let world_dir = base_dir.join(name);
+        if let Some(n) = args.units.plan_units {
+            let planned = work_units::print_plan(&world_dir, &effective_bbox, &args, n);
+            std::process::exit(planned.map_or_else(
+                |e| {
+                    eprintln!("{} {e}", "Error:".red().bold());
+                    1
+                },
+                |()| 0,
+            ));
+        }
         let session =
             one_world::prepare(&world_dir, &effective_bbox, &mut args).unwrap_or_else(|e| {
                 eprintln!("{} {}", "Error:".red().bold(), e);
