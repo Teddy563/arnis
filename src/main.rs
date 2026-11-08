@@ -49,6 +49,7 @@ mod one_world;
 mod ore_generation;
 mod osm_parser;
 mod osm_tiles;
+mod output_args;
 mod overture;
 #[cfg(feature = "gui")]
 mod preview_3d;
@@ -171,6 +172,27 @@ fn exit_failed() -> ! {
     std::process::exit(1);
 }
 
+/// `--dh-lod-only`: LODs from the regions of the One World at `world_dir`.
+fn redraw_dh_lods(args: &mut Args, world_dir: &std::path::Path) -> Result<String, String> {
+    let _lock = world_utils::SessionLock::acquire(world_dir)
+        .map_err(|_| "the world is open in Minecraft or being generated".to_string())?;
+    // The world decides the build range its LODs are cut against.
+    if let Ok(Some(manifest)) = one_world::Manifest::load(world_dir) {
+        args.disable_height_limit = manifest.disable_height_limit;
+        args.height_multiplier = manifest.height_multiplier;
+    }
+    world_editor::set_world_bounds(
+        ground::extended_min_y_for(args),
+        ground::world_top_y_for(args),
+    );
+    let s = distant_horizons::from_existing(world_dir).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Distant Horizons LODs: {} sections written to {}.",
+        s.sections,
+        world_dir.display()
+    ))
+}
+
 /// The One World folder: `--world-name` inside the saves folder.
 fn one_world_dir(args: &Args) -> PathBuf {
     let base_dir = args.path.clone().unwrap_or_else(|| {
@@ -249,46 +271,33 @@ fn run_cli() {
     args::apply_body_defaults(&mut args);
     args::apply_feature_needs(&mut args);
 
+    // These two need no area, so they skip the general validation.
+    if args.map_item_only || args.dh_lod_only {
+        if let Err(e) = output_args::validate(&args) {
+            eprintln!("{}: {}", "Error".red().bold(), e);
+            std::process::exit(1);
+        }
+        let world_dir = one_world_dir(&args);
+        let result = if args.map_item_only {
+            map_item::redraw_one_world_map(&world_dir)
+                .map(|id| format!("World map item (map #{id}) redrawn over every area."))
+        } else {
+            redraw_dh_lods(&mut args, &world_dir)
+        };
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // Validate arguments (path requirements differ between Java and Bedrock)
     if let Err(e) = args::validate_args(&args) {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
-    }
-
-    if args.map_item_only {
-        match map_item::redraw_one_world_map(&one_world_dir(&args)) {
-            Ok(id) => println!("World map item (map #{id}) redrawn over every area."),
-            Err(e) => {
-                eprintln!("{} {e}", "Error:".red().bold());
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
-    if args.dh_lod_only {
-        let world_dir = one_world_dir(&args);
-        // The world decides the build range its LODs are cut against.
-        if let Ok(Some(manifest)) = one_world::Manifest::load(&world_dir) {
-            args.disable_height_limit = manifest.disable_height_limit;
-            args.height_multiplier = manifest.height_multiplier;
-        }
-        world_editor::set_world_bounds(
-            ground::extended_min_y_for(&args),
-            ground::world_top_y_for(&args),
-        );
-        match distant_horizons::from_existing(&world_dir) {
-            Ok(s) => println!(
-                "Distant Horizons LODs: {} sections written to {}.",
-                s.sections,
-                world_dir.display()
-            ),
-            Err(e) => {
-                eprintln!("{} {e}", "Error:".red().bold());
-                std::process::exit(1);
-            }
-        }
-        return;
     }
 
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world

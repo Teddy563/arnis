@@ -1753,7 +1753,7 @@ fn gui_start_generation(
                 no_cache_sweep: false,
                 capabilities: false,
                 units: crate::args::UnitArgs::default(),
-                region_format: crate::args::RegionFormat::Mca,
+                region_format: crate::output_args::RegionFormat::Mca,
                 blinear_level: 6,
                 origin: None,
                 world_border: false,

@@ -1202,7 +1202,21 @@ pub fn set_world_border(
             .join("data")
             .join("minecraft")
             .join("world_border.dat");
-        let mut root = read_gzip_nbt(&path)?;
+        // A new world has no such file until the game saves one: start it with the keys set here.
+        let mut root = if path.is_file() {
+            read_gzip_nbt(&path)?
+        } else {
+            let mut top = std::collections::HashMap::from([(
+                "data".to_string(),
+                Value::Compound(std::collections::HashMap::new()),
+            )]);
+            if let Some(v) = level_data_version(world_path) {
+                top.insert("DataVersion".to_string(), Value::Int(v));
+            }
+            fs::create_dir_all(path.parent().unwrap_or(world_path))
+                .map_err(|e| format!("Failed to create {}: {e}", path.display()))?;
+            Value::Compound(top)
+        };
         let Value::Compound(ref mut top) = root else {
             return Err(format!("{} root is not a compound", path.display()));
         };
@@ -2554,5 +2568,18 @@ mod lock_tests {
         assert_eq!(border["center_z"], Value::Double(30.0));
         assert_eq!(border["size"], Value::Double(100.0));
         assert_eq!(border["damage_per_block"], Value::Double(0.2));
+
+        // A fresh 26.1 world has no such file yet: it is created.
+        fs::remove_file(&path).unwrap();
+        set_world_border(&world, &area).unwrap();
+        let Value::Compound(root) = read_gzip_nbt(&path).unwrap() else {
+            panic!("root");
+        };
+        let Some(Value::Compound(border)) = root.get("data") else {
+            panic!("data");
+        };
+        assert_eq!(border["center_x"], Value::Double(0.0));
+        assert_eq!(border["lerp_time"], Value::Long(0));
+        assert!(root.contains_key("DataVersion"));
     }
 }

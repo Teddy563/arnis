@@ -851,7 +851,7 @@ pub fn generate_world_with_options(
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
     editor.set_blinear_level(args.blinear_level());
-    if void_world && !extending {
+    if (void_world || args.blinear_level().is_some()) && !extending {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
         crate::world_utils::remove_untouched_template_region(&output_path);

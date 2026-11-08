@@ -458,33 +458,27 @@ pub struct Args {
     // --- end confluence:core ---
 
     // --- confluence:output ---
-    /// EXPERIMENTAL. Java region container. blinear writes Leaf's B_Linear v3 (r.X.Z.b_linear),
-    /// which only Leaf 1.21.11+ and 26.x servers read: not Paper, not older Leaf, not the vanilla
-    /// client. Not with --one-world, --voxy-lod or --dh-lod.
-    #[arg(long = "region-format", value_enum, default_value_t = RegionFormat::Mca)]
-    pub region_format: RegionFormat,
+    /// EXPERIMENTAL. Java region container; blinear writes Leaf 1.21.11+ and 26.x B_Linear regions (not with --one-world, --voxy-lod or --dh-lod).
+    #[arg(long = "region-format", value_enum, default_value_t = crate::output_args::RegionFormat::Mca)]
+    pub region_format: crate::output_args::RegionFormat,
 
     /// zstd level for --region-format blinear (Leaf's own default is 6).
     #[arg(long = "blinear-level", default_value_t = 6, value_parser = clap::value_parser!(i32).range(1..=22))]
     pub blinear_level: i32,
 
-    /// LAT,LON for block (0, 0) of a --one-world world this run creates, instead of the centre of
-    /// the first --bbox. A world that exists keeps its own origin.
-    #[arg(long, value_name = "LAT,LON", value_parser = parse_origin, allow_hyphen_values = true)]
+    /// LAT,LON for block (0, 0) of a --one-world world this run creates, instead of the centre of the first --bbox.
+    #[arg(long, value_name = "LAT,LON", value_parser = crate::output_args::parse_origin, allow_hyphen_values = true)]
     pub origin: Option<(f64, f64)>,
 
-    /// Java only: after the run, put the world border around the generated area (a One World:
-    /// around all its areas) so players stay inside it.
+    /// Java only: put the world border around the generated area (a One World: around all its areas) after the run.
     #[arg(long, default_value_t = false)]
     pub world_border: bool,
 
-    /// Redraw the map item of the One World at --output-dir and --world-name from its recorded
-    /// area previews, so it shows every area, and exit. Nothing is regenerated.
+    /// Redraw the map item of the One World at --output-dir and --world-name from its area previews and exit.
     #[arg(long, default_value_t = false)]
     pub map_item_only: bool,
 
-    /// Write the Distant Horizons LODs of the One World at --output-dir and --world-name from its
-    /// region files, and exit. For a world made without --dh-lod. Nothing is regenerated.
+    /// Write the Distant Horizons LODs of the One World at --output-dir and --world-name from its region files and exit.
     #[arg(long, default_value_t = false)]
     pub dh_lod_only: bool,
     // --- end confluence:output ---
@@ -535,21 +529,6 @@ pub enum Workers {
     N(u32),
 }
 
-/// `--origin`: a point a Web Mercator frame can be centred on.
-fn parse_origin(s: &str) -> Result<(f64, f64), String> {
-    let bad = || format!("{s}: expected LAT,LON with |LAT| <= 85 and |LON| <= 180");
-    let (lat, lon) = s.split_once(',').ok_or_else(bad)?;
-    let (lat, lon): (f64, f64) = (
-        lat.trim().parse().map_err(|_| bad())?,
-        lon.trim().parse().map_err(|_| bad())?,
-    );
-    if lat.abs() <= 85.0 && lon.abs() <= 180.0 {
-        Ok((lat, lon))
-    } else {
-        Err(bad())
-    }
-}
-
 fn parse_workers(s: &str) -> Result<Workers, String> {
     match s {
         "auto" => Ok(Workers::Auto),
@@ -561,11 +540,6 @@ fn parse_workers(s: &str) -> Result<Workers, String> {
 }
 
 impl Args {
-    /// The zstd level when regions are written as B_Linear.
-    pub fn blinear_level(&self) -> Option<i32> {
-        (self.region_format == RegionFormat::Blinear).then_some(self.blinear_level)
-    }
-
     /// The thread count asked for with --threads or --cpu-target, if either. A percentage
     /// rounds down like the 90% default, so `--cpu-target 90` equals no flag at all.
     pub fn thread_count(&self) -> Option<usize> {
@@ -877,15 +851,6 @@ impl FacadeMode {
     }
 }
 
-/// Java region container; the chunk NBT is the same in both.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
-pub enum RegionFormat {
-    /// Anvil r.X.Z.mca, read by every server and the client.
-    Mca,
-    /// Leaf B_Linear v3 r.X.Z.b_linear (experimental, Leaf servers only).
-    Blinear,
-}
-
 /// What a Java world generates past the area Arnis wrote.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum WorldType {
@@ -1098,37 +1063,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     }
     // --- end confluence:core ---
     // --- confluence:output ---
-    if args.map_item_only || args.dh_lod_only {
-        if !args.one_world {
-            return Err(
-                "--map-item-only and --dh-lod-only need --one-world (the world at --output-dir and --world-name)."
-                    .to_string(),
-            );
-        }
-        // Nothing is generated, so no area is needed.
-        return Ok(());
-    }
-    if args.origin.is_some() && !args.one_world {
-        return Err("--origin only applies to --one-world.".to_string());
-    }
-    if args.world_border && (args.bedrock || args.luanti) {
-        return Err("--world-border applies to Java worlds only.".to_string());
-    }
-    if args.region_format == RegionFormat::Blinear {
-        if args.bedrock || args.luanti {
-            return Err("--region-format blinear applies to Java worlds only.".to_string());
-        }
-        // One World merges into existing .mca files, and nothing here reads B_Linear back; the LOD
-        // builders and the map preview read the Anvil regions.
-        if args.one_world {
-            return Err("--region-format blinear does not combine with --one-world.".to_string());
-        }
-        if args.voxy_lod || args.dh_lod {
-            return Err(
-                "--region-format blinear does not combine with --voxy-lod or --dh-lod.".to_string(),
-            );
-        }
-    }
+    crate::output_args::validate(args)?;
     // --- end confluence:output ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
@@ -2485,8 +2420,11 @@ mod tests {
         assert!(validate_args(&parse(&["--map-item-only"])).is_err());
         assert!(validate_args(&parse(&["--dh-lod-only"])).is_err());
         let world_only = Args::parse_from(["arnis", "--one-world", "--map-item-only"]);
-        assert!(validate_args(&world_only).is_ok(), "no bbox needed");
+        assert!(
+            crate::output_args::validate(&world_only).is_ok(),
+            "no bbox needed"
+        );
         let dh_only = Args::parse_from(["arnis", "--one-world", "--dh-lod-only"]);
-        assert!(validate_args(&dh_only).is_ok());
+        assert!(crate::output_args::validate(&dh_only).is_ok());
     }
 }

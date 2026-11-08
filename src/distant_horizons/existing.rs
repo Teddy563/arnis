@@ -58,7 +58,7 @@ fn ingest_region(writer: &DhWriter, dir: &Path, rx: i32, rz: i32) -> Result<(), 
         let (sx, sz) = morton_16(column);
         for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             let (cx, cz) = (sx * 2 + dx, sz * 2 + dz);
-            let Some(raw) = region.read_chunk(cx as usize, cz as usize)? else {
+            let Ok(Some(raw)) = region.read_chunk(cx as usize, cz as usize) else {
                 continue;
             };
             let Ok(ChunkSections { sections }) = fastnbt::from_bytes(&raw) else {

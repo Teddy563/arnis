@@ -1307,9 +1307,11 @@ mod tests {
     }
 
     /// The same bbox under two origins is the same area in a shifted frame: equal size, every
-    /// corner translated by the same amount (the planner sees the shifted frame too).
+    /// corner translated by the same amount (the planner sees the shifted frame too); an origin
+    /// a whole number of chunks away moves the snapped area by exactly those chunks. This checks
+    /// the frame, not generated blocks: block content under `--origin` is only smoke-tested.
     #[test]
-    fn origin_shifts_frame_not_content() {
+    fn origin_shifts_the_frame() {
         let req = LLBBox::from_str(MUNICH).unwrap();
         let corners = |origin: &[&str]| {
             let args = args_for(MUNICH, origin);
@@ -1324,6 +1326,19 @@ mod tests {
             (a.0 - b.0, a.1 - b.1),
             (a.2 - b.2, a.3 - b.3),
             "one translation"
+        );
+
+        // Origin B is block (48, 80) of frame A, so every block of B sits (48, 80) lower.
+        let frame_a = frame_for(Path::new("does-not-exist"), &req, &args_for(MUNICH, &[])).unwrap();
+        let origin = format!(
+            "{:.9},{:.9}",
+            frame_a.lat_for_z(80.0),
+            frame_a.lon_for_x(48.0)
+        );
+        let c = corners(&["--origin", &origin]);
+        assert_eq!(
+            (a.0 - c.0, a.1 - c.1, a.2 - c.2, a.3 - c.3),
+            (48, 80, 48, 80)
         );
     }
 }
