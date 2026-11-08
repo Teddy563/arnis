@@ -16,6 +16,7 @@ mod climate;
 mod clipping;
 mod colors;
 mod coordinate_system;
+mod data_plan;
 mod data_processing;
 mod datapack;
 mod decals;
@@ -48,6 +49,7 @@ mod net;
 mod one_world;
 mod ore_generation;
 mod osm_parser;
+mod osm_pbf;
 mod osm_tiles;
 mod overture;
 #[cfg(feature = "gui")]
@@ -65,6 +67,7 @@ mod terrain_surface;
 #[cfg(test)]
 mod test_utilities;
 mod tile;
+mod transfer;
 mod trees;
 mod version_check;
 mod voxy;
@@ -105,6 +108,10 @@ mod progress {
     }
     pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
         crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_transfer(progress: f64, message: &str, transfer: &crate::transfer::Transfer) {
+        crate::progress_json::progress(progress, message);
+        crate::progress_json::record("transfer", serde_json::json!(transfer));
     }
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
@@ -631,6 +638,7 @@ fn run_cli() {
                 args.save_json_file.as_deref(),
                 &args.osm_tiles_url,
                 !args.no_tile_archive,
+                osm_pbf::Source::from_args(&args).as_ref(),
             )
             .unwrap_or_else(|e| {
                 eprintln!("{} Failed to fetch data: {e}", "Error:".red().bold());

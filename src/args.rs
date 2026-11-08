@@ -456,6 +456,17 @@ pub struct Args {
     #[command(flatten)]
     pub units: UnitArgs,
     // --- end confluence:core ---
+
+    // --- confluence:data ---
+    /// Read OpenStreetMap from an .osm.pbf extract instead of the tile archive: a file path,
+    /// or `geofabrik` for the smallest Geofabrik region holding the area, downloaded once.
+    #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
+    pub osm_pbf: Option<String>,
+
+    /// The extract to download for `--osm-pbf geofabrik`, instead of picking one.
+    #[arg(long, value_name = "URL", requires = "osm_pbf")]
+    pub osm_pbf_url: Option<String>,
+    // --- end confluence:data ---
 }
 
 /// Large One World jobs cut into region-group pieces.

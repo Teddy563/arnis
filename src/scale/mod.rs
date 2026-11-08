@@ -168,6 +168,10 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
     let job = Job::open(world_dir, &rect, n, of)?;
 
     println!("One World: building {of} piece(s) of up to {n}x{n} regions");
+    // The extract is read once, here; each piece then cuts its own area from the bake.
+    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_objects()) {
+        crate::osm_pbf::bake_for_job(&src, selection)?;
+    }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
     let piece_record = |i: usize, state: &str, extra: Value| {

@@ -1,6 +1,6 @@
 //! Process-wide ceiling on in-flight HTTP requests, and how a request failed.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 /// Sits above every per-provider download pool (4-8 threads), so ordinary
@@ -15,6 +15,31 @@ static MAX_REQUESTS: AtomicUsize = AtomicUsize::new(MAX_CONCURRENT_REQUESTS);
 /// Changes the ceiling. Call before any download starts.
 pub fn set_max_requests(n: usize) {
     MAX_REQUESTS.store(n.max(1), Ordering::Relaxed);
+}
+
+pub fn max_requests() -> usize {
+    MAX_REQUESTS.load(Ordering::Relaxed)
+}
+
+/// `--offline`: every download is refused before it starts.
+static OFFLINE: AtomicBool = AtomicBool::new(false);
+
+#[allow(dead_code)]
+pub fn set_offline(on: bool) {
+    OFFLINE.store(on, Ordering::Relaxed);
+}
+
+pub fn offline() -> bool {
+    OFFLINE.load(Ordering::Relaxed)
+}
+
+/// Called in front of a download that only a cache miss reaches. Offline it
+/// refuses, naming `what` the cache lacks.
+pub fn ensure_online(what: &str) -> Result<(), String> {
+    if offline() {
+        return Err(format!("--offline: {what} is not in the cache"));
+    }
+    Ok(())
 }
 
 static IN_FLIGHT: Mutex<usize> = Mutex::new(0);
@@ -47,7 +72,7 @@ pub static PERMIT_TEST_LOCK: Mutex<()> = Mutex::new(());
 #[must_use]
 pub fn request_permit() -> RequestPermit {
     let mut in_flight = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
-    while *in_flight >= MAX_REQUESTS.load(Ordering::Relaxed) {
+    while *in_flight >= max_requests() {
         in_flight = SLOT_FREED
             .wait(in_flight)
             .unwrap_or_else(|e| e.into_inner());

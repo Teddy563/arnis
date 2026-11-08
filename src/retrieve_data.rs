@@ -294,6 +294,7 @@ pub const AREA_TOO_LARGE: &str = "Area too large, try a smaller one.";
 ///
 /// Both front-ends go through here; deciding separately is how the GUI kept querying Overpass
 /// after the CLI had moved to the archive.
+#[allow(clippy::too_many_arguments)]
 pub fn fetch_osm_data(
     bbox: LLBBox,
     scale: f64,
@@ -302,7 +303,15 @@ pub fn fetch_osm_data(
     save_file: Option<&str>,
     tiles_url: &str,
     use_tile_archive: bool,
+    pbf: Option<&crate::osm_pbf::Source>,
 ) -> Result<OsmData, Box<dyn std::error::Error>> {
+    if let Some(src) = pbf {
+        let mut data = crate::osm_pbf::fetch_data_from_pbf(src, bbox)?;
+        if let Some(path) = save_file {
+            save_osm_json(&mut data, &bbox, path)?;
+        }
+        return Ok(data);
+    }
     if use_tile_archive && !tiles_url.is_empty() {
         // Overpass turns away what the archive does for size, after a long wait.
         if let Err(e) = crate::osm_tiles::check_size(&bbox, scale) {
