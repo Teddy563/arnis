@@ -496,6 +496,29 @@ pub struct Args {
     /// FOLDER, to edit or adapt, and exit.
     #[arg(long, value_name = "FOLDER")]
     pub export_tree_packs: Option<PathBuf>,
+
+    /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
+    /// more-vanilla (about 30% themed), all-mix (every theme at its default amount, about 77%
+    /// themed, the default) or more-mix (about 89% themed). --cave-biomes amounts override the
+    /// style's per theme.
+    #[arg(long = "cave-style", value_enum)]
+    pub cave_style: Option<crate::caves::CaveStyle>,
+
+    /// Ore veins in --caves: normal (vanilla's ore table, the default) or more (twice the
+    /// veins of every metal and gem ore, at vanilla's heights).
+    #[arg(long = "cave-ores", value_enum)]
+    pub cave_ores: Option<crate::caves::CaveOres>,
+
+    /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
+    /// layout. Omitted keeps the built-in seed, so an area always gets the same caves.
+    #[arg(long = "cave-seed", value_name = "SEED")]
+    pub cave_seed: Option<u64>,
+
+    /// Y that stands for vanilla's world floor in the cave passes, a multiple of 16 from
+    /// -2032 to 2016. One value for every run makes caves, the lava sea and the deepslate
+    /// line continuous across them, and plans pools, rivers and geodes past the run's edge.
+    #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
+    pub cave_datum_y: Option<i32>,
     // --- end confluence:nature ---
 }
 
@@ -1099,6 +1122,25 @@ pub const DEFAULT_WORLD_TIME: i64 = 6_000;
 pub const MIDNIGHT_TICKS: i64 = 18_000;
 
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // --- confluence:nature ---
+    let cave_preview = args.cave_zone_map.is_some();
+    if (args.cave_style.is_some() || args.cave_seed.is_some()) && !args.caves && !cave_preview {
+        return Err(
+            "--cave-style and --cave-seed only apply to --caves or --cave-zone-map.".to_string(),
+        );
+    }
+    if args.cave_ores.is_some() && !args.caves {
+        return Err("--cave-ores only applies to --caves.".to_string());
+    }
+    if let Some(y) = args.cave_datum_y {
+        if !args.caves {
+            return Err("--cave-datum-y only applies to --caves.".to_string());
+        }
+        if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+            return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+        }
+    }
+    // --- end confluence:nature ---
     // --- confluence:core ---
     if !args.one_world
         && (args.units.plan_units.is_some()
