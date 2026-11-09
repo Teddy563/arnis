@@ -153,6 +153,11 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
 /// Builds the selection `args` was opened on, piece by piece. Each piece runs this
 /// command line again with its own bbox and lease.
 pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
+    run_with(args, world_dir, std::env::args_os().skip(1).collect())
+}
+
+/// `run` with the command line the pieces repeat; the window has none of its own to give.
+pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<(), String> {
     let ctx = args
         .one_world_run
         .as_ref()
@@ -186,7 +191,11 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
         if let (Value::Object(body), Value::Object(extra)) = (&mut body, extra) {
             body.extend(extra);
         }
-        progress_json::record("piece", body);
+        crate::progress::emit_gui_piece(&body);
+        // `queued` is for the window's map; the NDJSON stream keeps the states it had.
+        if state != "queued" {
+            progress_json::record("piece", body);
+        }
     };
     for unit in &units {
         let i = unit.index as usize;
@@ -196,7 +205,10 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
                 piece_record(i, "skipped", json!({}));
                 lock(&results)[i] = Some(r);
             }
-            None if wanted(i) => queue.push_back(i),
+            None if wanted(i) => {
+                piece_record(i, "queued", json!({}));
+                queue.push_back(i);
+            }
             None => {}
         }
     }
@@ -223,7 +235,6 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
             sizing.workers, sizing.threads
         );
     }
-    let argv: Vec<OsString> = std::env::args_os().skip(1).collect();
     let lease_for = |i: usize| UnitLease {
         piece: i as u32,
         area_id: job.area_base + i as u32,

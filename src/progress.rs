@@ -161,6 +161,16 @@ pub fn emit_gui_progress_update_ex(progress: f64, message: &str, streaming: bool
     }
 }
 
+/// A job's `piece` record (see `progress_json`), for the map in the window.
+pub fn emit_gui_piece(piece: &serde_json::Value) {
+    if let Some(window) = get_main_window() {
+        let payload = json!({ "progress": MESSAGE_ONLY, "message": "", "piece": piece });
+        if let Err(e) = window.emit("progress-update", payload) {
+            eprintln!("Failed to emit progress event: {e}");
+        }
+    }
+}
+
 /// A progress emit that also says where a download or bake is, for the bar in
 /// the OSM Data Source panel (`transfer` in the payload). Also sent on
 /// `--progress json` as a `transfer` record, so a child's reaches the window.

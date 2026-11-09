@@ -1,8 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
-// The window (Wave 2) is the only caller of the whole module.
-#[allow(dead_code)]
 mod arnis_tiles;
 mod bedrock_addon;
 mod bedrock_block_map;
@@ -20,8 +18,6 @@ mod climate_field;
 mod clipping;
 mod colors;
 mod coordinate_system;
-// The window (Wave 2) is the only caller of the whole module.
-#[allow(dead_code)]
 mod data_plan;
 mod data_processing;
 mod datapack;
@@ -121,6 +117,7 @@ mod progress {
     pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
         crate::progress_json::progress(progress, message);
     }
+    pub fn emit_gui_piece(_piece: &serde_json::Value) {}
     pub fn emit_gui_transfer(progress: f64, message: &str, transfer: &crate::transfer::Transfer) {
         crate::progress_json::progress(progress, message);
         crate::progress_json::record("transfer", serde_json::json!(transfer));

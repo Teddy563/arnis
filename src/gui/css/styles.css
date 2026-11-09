@@ -872,3 +872,31 @@ input[type="range"] {
     background-color: #0f0f0f98;
   }
 }
+
+/* Run controls of a job built in pieces (Meld features) */
+.run-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.run-controls[hidden],
+.run-controls .run-button[hidden] {
+  display: none;
+}
+
+.run-button {
+  flex: 1;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ececec;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.run-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

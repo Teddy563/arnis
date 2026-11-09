@@ -93,6 +93,7 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
         .and_then(|p| fs2::available_space(p).ok())
 }
 
+#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
 /// One place downloads or bakes are kept.
 #[derive(serde::Serialize, Debug, PartialEq)]
 pub struct Location {
@@ -107,6 +108,7 @@ pub struct Location {
     pub changeable: bool,
 }
 
+#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
 /// Where the OSM sources keep their downloads and bakes, under the cache
 /// root `root`, with the Local Archive in `archive`. The cache root's size is
 /// `cache_bytes`, every cache added up, as the window works it out.

@@ -121,6 +121,13 @@ pub fn run_gui() -> Result<(), String> {
             gui_set_save_path,
             gui_pick_save_directory,
             gui_start_generation,
+            gui_pause_generation,
+            gui_local_archive_info,
+            gui_data_plan,
+            gui_prepare_plan,
+            gui_bake_archive,
+            gui_cancel_bake,
+            gui_stop_generation,
             gui_get_version,
             gui_get_update_info,
             gui_get_platform,
@@ -1634,6 +1641,7 @@ const BUSY_IDLE: u8 = 0;
 const BUSY_GENERATION: u8 = 1;
 const BUSY_PRECOMPUTE: u8 = 2;
 const BUSY_CLEAR: u8 = 3;
+const BUSY_BAKE: u8 = 4;
 
 /// Owns [`BUSY`] for the length of one job and clears it on drop, including
 /// on the early-return paths before the worker is spawned.
@@ -1651,6 +1659,7 @@ impl BusySlot {
             // short one that finishes.
             Err(BUSY_PRECOMPUTE) => Err("A precompute is running.".to_string()),
             Err(BUSY_CLEAR) => Err("The caches are being cleared.".to_string()),
+            Err(BUSY_BAKE) => Err("A bake is running.".to_string()),
             Err(_) => Err("A generation is already running.".to_string()),
         }
     }
@@ -1660,6 +1669,462 @@ impl Drop for BusySlot {
     fn drop(&mut self) {
         BUSY.store(BUSY_IDLE, std::sync::atomic::Ordering::Release);
     }
+}
+
+/// The long flag names the window sends (`js/meld-features.js`). Anything else in `flags` is
+/// refused: the pieces repeat `flags` verbatim, so a flag the parent ignores would reach them.
+const WINDOW_FLAGS: &[&str] = &[
+    "one-world-workers",
+    "only-pieces",
+    "threads",
+    "cpu-target",
+    "ram-budget-mb",
+    "max-downloads",
+    "seed",
+    "min-y",
+    "max-y",
+    "road-detail",
+    "no-buildings",
+    "props",
+    "rocks",
+    "rock-density",
+    "bushes",
+    "bush-density",
+    "tree-realm",
+    "tree-pack-dir",
+    "tree-pack-mode",
+    "cave-style",
+    "cave-ores",
+    "river-bed",
+    "water-detail",
+    "climate-mode",
+    "origin",
+    "world-border",
+    "region-format",
+    "blinear-level",
+    "osm-pbf",
+    "osm-pbf-url",
+    "osm-tiles-url",
+    "overpass-url",
+    "offline",
+];
+
+/// `flags` as the window may send them: `--name` or `--name=value`, the name one of
+/// [`WINDOW_FLAGS`] (all of them `--capabilities` flags).
+fn check_window_flags(flags: &[String]) -> Result<(), String> {
+    for flag in flags {
+        let name = flag.strip_prefix("--").and_then(|f| f.split('=').next());
+        if !name.is_some_and(|n| WINDOW_FLAGS.contains(&n)) {
+            return Err(format!("{flag}: not a setting the window can pass."));
+        }
+    }
+    Ok(())
+}
+
+/// The "Meld features" settings, parsed by the CLI's own parser so the window accepts exactly
+/// what the flags accept, and checked the way `validate_args` checks them: the window never
+/// runs it. No flags is the stock run.
+fn confluence_args(
+    flags: &[String],
+    one_world: bool,
+    world_format: &str,
+    is_new_world: bool,
+) -> Result<Args, String> {
+    use clap::Parser;
+    check_window_flags(flags)?;
+    let mut extra =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| {
+                let text = e.to_string();
+                let line = text.lines().next().unwrap_or_default();
+                line.trim_start_matches("error: ").to_string()
+            })?;
+    // Pieces are a One World feature; anywhere else the fields are inert.
+    if !one_world {
+        extra.units = Default::default();
+    }
+    extra.one_world = one_world;
+    extra.bedrock = world_format == "bedrock";
+    extra.luanti = world_format.starts_with("luanti");
+    if extra.units.only_pieces.is_some() && !extra.units.coordinates() {
+        return Err("Retrying pieces only applies to a job built in pieces.".to_string());
+    }
+    if extra.min_y.is_some() || extra.max_y.is_some() {
+        if !is_new_world || extra.bedrock || extra.luanti {
+            return Err("Lowest and highest Y only apply to a new Java world.".to_string());
+        }
+        extra.disable_height_limit = true;
+    }
+    crate::y_bounds::check(&extra)?;
+    crate::output_args::validate(&extra)?;
+    Ok(extra)
+}
+
+/// Copies the parsed "Meld features" settings onto the run's `Args`.
+fn apply_confluence(args: &mut Args, extra: Args) {
+    args.threads = extra.threads;
+    args.cpu_target = extra.cpu_target;
+    args.ram_budget_mb = extra.ram_budget_mb;
+    args.max_downloads = extra.max_downloads;
+    args.units = extra.units;
+    args.region_format = extra.region_format;
+    args.blinear_level = extra.blinear_level;
+    args.origin = extra.origin;
+    args.world_border = extra.world_border;
+    args.water = extra.water;
+    args.climate_mode = extra.climate_mode;
+    args.min_y = extra.min_y;
+    args.max_y = extra.max_y;
+    if extra.disable_height_limit {
+        args.disable_height_limit = true;
+        args.vanilla_height = false;
+    }
+    args.seed = extra.seed;
+    args.scatter = extra.scatter;
+    args.cave_style = extra.cave_style;
+    args.cave_ores = extra.cave_ores;
+    args.cave_seed = extra.cave_seed;
+    args.cave_datum_y = extra.cave_datum_y;
+    args.tree_realm = extra.tree_realm;
+    args.tree_size_weights = extra.tree_size_weights;
+    args.tree_pack_dir = extra.tree_pack_dir;
+    args.tree_pack_mode = extra.tree_pack_mode;
+    args.road_detail = extra.road_detail;
+    args.buildings = extra.buildings;
+    args.props = extra.props;
+    args.props_min_scale = extra.props_min_scale;
+    args.osm_pbf = extra.osm_pbf;
+    args.osm_pbf_url = extra.osm_pbf_url;
+    args.osm_tiles_url = extra.osm_tiles_url;
+    args.overpass_url = extra.overpass_url;
+    args.offline = extra.offline;
+}
+
+/// The command line a job's pieces repeat. A piece is a run of this executable, and the window
+/// was started without a command line, so it is rebuilt from the settings: the window's own
+/// fields, then `flags`. `--bbox`, the spawn and the per-process knobs are the coordinator's
+/// to set per piece.
+fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi::OsString> {
+    use clap::ValueEnum;
+    fn name<T: ValueEnum>(v: &T) -> String {
+        v.to_possible_value()
+            .map(|p| p.get_name().to_string())
+            .unwrap_or_default()
+    }
+    let mut out: Vec<std::ffi::OsString> = vec!["--one-world".into()];
+    // One token each: a world named like a flag must stay a value.
+    let joined = |flag: &str, value: &std::ffi::OsStr| {
+        let mut token = std::ffi::OsString::from(format!("{flag}="));
+        token.push(value);
+        token
+    };
+    if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
+        out.push(joined("--output-dir", dir.as_os_str()));
+        out.push(joined("--world-name", world));
+    }
+    let mut values = vec![
+        format!("--downloader={}", args.downloader),
+        format!("--scale={}", args.scale),
+        format!("--height-multiplier={}", args.height_multiplier),
+        format!("--body={}", name(&args.body)),
+        format!("--projection={}", args.projection),
+        format!("--ground-level={}", args.ground_level),
+        format!("--mode={}", name(&args.mode)),
+        format!("--post-apocalyptic={}", args.post_apocalyptic),
+        format!("--winter={}", args.winter),
+        format!("--interior={}", args.interior),
+        format!("--fields={}", name(&args.fields)),
+        format!("--max-tree-size={}", name(&args.max_tree_size)),
+        format!("--canopy-height={}", args.canopy_height),
+        format!("--overture={}", args.overture),
+        format!("--overture-source={}", name(&args.overture_source)),
+        format!("--rotation={}", args.rotation),
+        format!("--map-item={}", args.map_item),
+        format!("--gamemode={}", name(&args.gamemode)),
+        format!("--world-time={}", args.world_time),
+        format!("--world-type={}", name(&args.world_type)),
+        format!("--mob-spawning={}", name(&args.mob_spawning)),
+        format!("--signage={}", name(&args.signage)),
+        format!(
+            "--mapillary-facade-mode={}",
+            name(&args.mapillary_facade_mode)
+        ),
+        format!("--facade-detail={}", name(&args.facade_detail)),
+        format!("--facade-px={}", args.facade_px),
+    ];
+    let switches = [
+        ("--fillground", args.fillground),
+        ("--caves", args.caves),
+        ("--legacy-trees", args.legacy_trees),
+        ("--no-3d", !args.use_3d),
+        ("--debug", args.debug),
+        ("--vanilla-height", args.vanilla_height),
+        ("--disable-height-limit", args.disable_height_limit),
+        ("--aws-only-elevation", args.aws_only_elevation),
+        ("--bake-lighting", args.bake_lighting),
+        ("--voxy-lod", args.voxy_lod),
+        ("--dh-lod", args.dh_lod),
+        ("--map-preview", args.map_preview),
+        ("--building-facades", args.building_facades),
+        ("--body-gravity", args.body_gravity),
+        ("--traffic-lights", args.traffic_lights),
+        ("--discoveries", args.discoveries),
+        ("--pause-menu", args.pause_menu),
+        ("--zombie-outbreak", args.zombie_outbreak),
+        ("--disasters", args.disasters),
+        ("--moving-vehicles", args.moving_vehicles),
+    ];
+    values.extend(switches.iter().filter(|f| f.1).map(|f| f.0.to_string()));
+    if let Some(t) = args.timeout {
+        values.push(format!("--timeout={}", t.as_secs()));
+    }
+    if let Some(on) = args.mapillary_facades {
+        values.push(format!("--mapillary-facades={on}"));
+    }
+    // ponytail: the token rides on the pieces' command lines, visible to this user's other
+    // processes; pass it in their environment if that matters.
+    if let Some(token) = &args.mapillary_token {
+        values.push(format!("--mapillary-token={token}"));
+    }
+    out.extend(
+        values
+            .into_iter()
+            .chain(flags.iter().cloned())
+            .map(Into::into),
+    );
+    out
+}
+
+fn cache_root() -> PathBuf {
+    crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// The Local Archive folder an empty field means, and where arnis-tiles is
+/// (`None` when it is not installed).
+#[derive(serde::Serialize)]
+struct LocalArchiveInfo {
+    default_folder: String,
+    arnis_tiles: Option<String>,
+}
+
+#[tauri::command]
+fn gui_local_archive_info(tiles_path: String) -> LocalArchiveInfo {
+    LocalArchiveInfo {
+        default_folder: crate::arnis_tiles::default_folder(&cache_root())
+            .display()
+            .to_string(),
+        arnis_tiles: crate::arnis_tiles::locate(&tiles_path).map(|p| p.display().to_string()),
+    }
+}
+
+/// The archive folder a Local Archive field names; empty is the default.
+fn archive_folder(folder: &str) -> Result<PathBuf, String> {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return Ok(crate::arnis_tiles::default_folder(&cache_root()));
+    }
+    crate::overture::pmtiles::local_path(folder)
+        .ok_or_else(|| format!("{folder} is not a folder on this computer."))
+}
+
+/// The Download Plan panel: what a run of the selection with these settings reads, and how
+/// much of it the caches already hold. Reads the disk only.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn gui_data_plan(
+    bbox_text: String,
+    world_scale: f64,
+    terrain_enabled: bool,
+    skip_osm_objects: bool,
+    canopy_height_enabled: bool,
+    overture_enabled: bool,
+    aws_only_elevation: bool,
+    flags: Vec<String>,
+) -> Result<crate::data_plan::DataPlan, String> {
+    use clap::Parser;
+    check_window_flags(&flags)?;
+    let mut args =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| e.to_string())?;
+    crate::args::validate_scale(world_scale)?;
+    args.scale = world_scale;
+    args.mode = if skip_osm_objects {
+        crate::args::GenerationMode::TerrainOnly
+    } else if terrain_enabled {
+        crate::args::GenerationMode::GeoTerrain
+    } else {
+        crate::args::GenerationMode::GeoOnly
+    };
+    args.canopy_height = canopy_height_enabled;
+    args.overture = overture_enabled;
+    args.aws_only_elevation = aws_only_elevation;
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    Ok(crate::data_plan::plan(&cache_root(), &args, bbox))
+}
+
+/// arnis-tiles' own index cache and scratch.
+fn arnis_tiles_state() -> PathBuf {
+    cache_root().join("arnis").join("arnis-tiles")
+}
+
+fn arnis_tiles_exe(tiles_path: &str) -> Result<PathBuf, String> {
+    crate::arnis_tiles::locate(tiles_path).ok_or_else(|| {
+        format!(
+            "arnis-tiles not found; get it from {}",
+            crate::arnis_tiles::HOME
+        )
+    })
+}
+
+/// One extract of the Prepare Countries list.
+#[derive(serde::Serialize)]
+struct PrepareRow {
+    #[serde(flatten)]
+    extract: crate::arnis_tiles::Extract,
+    /// The folder already holds its archive.
+    baked: bool,
+    /// Its archive: on disk once baked, else estimated from the download.
+    archive_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct PreparePlan {
+    extracts: Vec<PrepareRow>,
+    total_bytes: u64,
+    uncovered_points: u64,
+    /// The folder the archives go to, and the free space on its disk.
+    folder: String,
+    free_bytes: Option<u64>,
+    /// The most a bake of the extracts not yet baked holds on disk at once.
+    peak_bytes: u64,
+}
+
+/// Prepare Countries: the Geofabrik extracts covering the selection (`arnis-tiles prepare
+/// --dry-run`), each marked baked when the folder already holds its archive, with the sizes
+/// of what a bake downloads and leaves.
+#[tauri::command(async)]
+fn gui_prepare_plan(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+) -> Result<PreparePlan, String> {
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let exe = arnis_tiles_exe(&tiles_path)?;
+    let plan = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
+    let archives = crate::osm_tiles::local_coverage(&folder, &bbox)
+        .map(|c| c.archives)
+        .unwrap_or_default();
+    let on_disk = |id: &str| archives.iter().find(|a| a.name == id);
+    let todo: Vec<u64> = plan
+        .extracts
+        .iter()
+        .filter(|e| on_disk(&e.id).is_none())
+        .map(|e| e.bytes)
+        .collect();
+    Ok(PreparePlan {
+        extracts: plan
+            .extracts
+            .into_iter()
+            .map(|e| {
+                let baked = on_disk(&e.id);
+                PrepareRow {
+                    baked: baked.is_some(),
+                    archive_bytes: baked
+                        .and_then(|a| a.bytes)
+                        .unwrap_or_else(|| crate::data_plan::archive_bytes(e.bytes)),
+                    extract: e,
+                }
+            })
+            .collect(),
+        total_bytes: plan.total_bytes,
+        uncovered_points: plan.uncovered_points,
+        free_bytes: crate::data_plan::free_bytes(&folder),
+        folder: folder.display().to_string(),
+        peak_bytes: crate::data_plan::archive_peak_bytes(&todo),
+    })
+}
+
+/// Set by Stop: ends a country bake.
+static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Download & Bake: `arnis-tiles prepare` for the selection into the folder, on the threads a
+/// generation would get (`flags`), with its progress on the main bar. `Ok(false)` when stopped.
+#[tauri::command(async)]
+fn gui_bake_archive(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+    flags: Vec<String>,
+) -> Result<bool, String> {
+    let args = confluence_args(&flags, false, "java", false)?;
+    let cores = crate::transfer::cores();
+    let threads = args.thread_count().unwrap_or(cores * 9 / 10).max(1);
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let exe = arnis_tiles_exe(&tiles_path)?;
+    let _slot = BusySlot::acquire(BUSY_BAKE)?;
+    BAKE_CANCEL.store(false, std::sync::atomic::Ordering::Release);
+    progress::reset_progress_floor();
+    progress::emit_gui_progress_update(0.0, "Choosing the extracts to bake...");
+    let result = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox).and_then(|plan| {
+        crate::arnis_tiles::bake(
+            &exe,
+            &arnis_tiles_state(),
+            &folder,
+            &bbox,
+            &plan.extracts,
+            0.0,
+            threads,
+            &BAKE_CANCEL,
+            &mut |pct, msg, t| progress::emit_gui_transfer(pct, msg, t),
+        )
+    });
+    match &result {
+        Ok(true) => progress::emit_gui_progress_update(100.0, "Done! The local archive is ready."),
+        Ok(false) => progress::emit_gui_progress_update(
+            progress::MESSAGE_ONLY,
+            "Bake stopped. Finished countries are kept; nothing half written was left.",
+        ),
+        Err(e) => progress::emit_gui_error(e),
+    }
+    result
+}
+
+/// Stops a running bake. Harmless when nothing runs.
+#[tauri::command]
+fn gui_cancel_bake() {
+    BAKE_CANCEL.store(true, std::sync::atomic::Ordering::Release);
+}
+
+/// Offline Mode stops a run the caches could not serve, naming what they lacked, rather than
+/// build flat or empty ground there.
+fn offline_complete() -> Result<(), String> {
+    let missing = crate::net::offline_misses();
+    if !crate::net::offline() || missing.is_empty() {
+        return Ok(());
+    }
+    let what: Vec<String> = missing.into_iter().map(|(what, _)| what).collect();
+    let msg = format!(
+        "Offline Mode: not downloaded yet: {}. Turn it off to fetch the area first.",
+        what.join(", ")
+    );
+    // In full, where emit_gui_error would cut the list short.
+    emit_gui_progress_update(0.0, &format!("Error! {msg}"));
+    Err(msg)
+}
+
+/// Pause holds a job's queue: the running pieces finish, none starts until Resume.
+#[tauri::command]
+fn gui_pause_generation(paused: bool) {
+    crate::scale::PAUSE.store(paused, std::sync::atomic::Ordering::Release);
+}
+
+/// Stop: a job kills its running pieces and keeps the finished ones, so starting the same
+/// area again resumes it.
+#[tauri::command]
+fn gui_stop_generation() {
+    crate::scale::STOP.store(true, std::sync::atomic::Ordering::Release);
 }
 
 // Everything before the `spawn` below - the spawn point written into level.dat -
@@ -1721,6 +2186,8 @@ fn gui_start_generation(
     body_gravity: bool,
     one_world: bool,
     one_world_name: String,
+    // The "Meld features" settings as CLI flags (`--name=value`); none when the switch is off.
+    flags: Vec<String>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1749,6 +2216,25 @@ fn gui_start_generation(
     };
 
     progress::reset_progress_floor();
+    crate::scale::PAUSE.store(false, std::sync::atomic::Ordering::Release);
+    crate::scale::STOP.store(false, std::sync::atomic::Ordering::Release);
+
+    let extra = match confluence_args(&flags, one_world, &world_format, is_new_world) {
+        Ok(extra) => extra,
+        Err(msg) => {
+            emit_gui_error(&msg);
+            return Err(msg);
+        }
+    };
+    // Process-wide, so set every run: a run without them gets the network and Arnis's own
+    // Overpass back.
+    crate::net::set_offline(extra.offline);
+    crate::retrieve_data::set_overpass_urls(extra.overpass_url.clone());
+    // The global pool was built at startup; a thread count asked for here gets its own.
+    let pool = extra
+        .thread_count()
+        .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().ok());
+    crate::data_processing::set_ram_budget_mb(extra.ram_budget_mb.unwrap_or(0));
 
     // Resolved before validation: off Earth the slider value is ignored, so
     // validating it could reject a run over a scale that never gets used.
@@ -1822,7 +2308,7 @@ fn gui_start_generation(
     tauri::async_runtime::spawn(async move {
         // Held until the worker finishes, on every path, so the globals stay this run's.
         let _generation_slot = generation_slot;
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+        let work = move || -> Result<(), String> {
             let world_path = if one_world {
                 one_world_dir(&selected_world, &one_world_name)
             } else {
@@ -2069,13 +2555,21 @@ fn gui_start_generation(
                 prewarm: false,
                 prewarm_first: false,
             };
+            apply_confluence(&mut args, extra);
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
             crate::args::apply_body_defaults(&mut args);
             crate::args::apply_feature_needs(&mut args);
+            crate::y_bounds::apply(&mut args);
 
             let mut one_world_extending = false;
             if one_world {
+                // Asked for before `prepare` settles the world's values, as the user's own
+                // command line would ask.
+                let pieces_argv = args
+                    .units
+                    .coordinates()
+                    .then(|| piece_argv(&args, &world_path, &flags));
                 let session = match crate::one_world::prepare(&world_path, &bbox, &mut args) {
                     Ok(session) => session,
                     Err(e) => {
@@ -2108,7 +2602,43 @@ fn gui_start_generation(
                         .and_then(|n| n.to_str())
                         .unwrap_or(crate::one_world::DEFAULT_WORLD_NAME),
                 );
+                if let Some(argv) = pieces_argv {
+                    // The coordinator places the spawn, as --spawn-lat/--spawn-lng.
+                    (args.spawn_lat, args.spawn_lng) = spawn_point.unzip();
+                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
+                        eprintln!("{e}");
+                        // Finished pieces are kept: generating the same area again resumes.
+                        if let Some(g) = cleanup_guard.as_mut() {
+                            g.disarm();
+                        }
+                        if e == crate::scale::STOPPED {
+                            emit_gui_progress_update(
+                                progress::MESSAGE_ONLY,
+                                "Stopped. Finished pieces are kept; starting again resumes them.",
+                            );
+                        } else if e == crate::scale::PARTIAL {
+                            emit_gui_progress_update(
+                                progress::MESSAGE_ONLY,
+                                "The retried pieces are built; starting again builds the rest.",
+                            );
+                        } else {
+                            emit_gui_error(&e);
+                        }
+                        return Err(e);
+                    }
+                    if let Some(g) = cleanup_guard.as_mut() {
+                        g.disarm();
+                    }
+                    drop(_session_lock);
+                    emit_gui_progress_update(100.0, "Done! World generation completed.");
+                    println!("{}", "Done! World generation completed.".green().bold());
+                    return Ok(());
+                }
             }
+            // Same as run_cli: after a One World has applied the seed it keeps, before
+            // anything rolls a die. Process-wide, so set every run.
+            crate::deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
             let args = args;
 
             // Same as run_cli: checked with the run's final scale and options, and a One
@@ -2375,6 +2905,7 @@ fn gui_start_generation(
                 (fetch_result, overture_data, ground_handle.join().ok())
             });
 
+            offline_complete()?;
             let Some(ground) = ground else {
                 let error_msg = "Terrain fetch failed unexpectedly".to_string();
                 eprintln!("{error_msg}");
@@ -2495,9 +3026,12 @@ fn gui_start_generation(
                     Err(e.to_string())
                 }
             }
-        })
-        .await
-        {
+        };
+        let blocking = move || match pool {
+            Some(pool) => pool.install(work),
+            None => work(),
+        };
+        if let Err(e) = tokio::task::spawn_blocking(blocking).await {
             let error_msg = format!("Error in blocking task: {e}");
             eprintln!("{error_msg}");
             emit_gui_error(&error_msg);
@@ -2685,6 +3219,137 @@ mod locale_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The switch off sends no flags, and no flags leave every setting at the stock run's.
+    #[test]
+    fn switch_off_passes_no_new_flags() {
+        use clap::Parser;
+        let extra = confluence_args(&[], false, "java", true).unwrap();
+        let stock = Args::try_parse_from(["arnis"]).unwrap();
+        assert_eq!(format!("{extra:?}"), format!("{stock:?}"));
+    }
+
+    /// Every flag the window can send is one the CLI parser takes.
+    #[test]
+    fn every_flag_the_window_sends_parses() {
+        let flags: Vec<String> = [
+            "--seed=7",
+            "--min-y=-64",
+            "--max-y=319",
+            "--road-detail=compact",
+            "--no-buildings",
+            "--props=none",
+            "--rocks",
+            "--bushes",
+            "--tree-realm=vanilla-plus",
+            "--tree-pack-dir=trees",
+            "--tree-pack-mode=replace",
+            "--cave-style=more-mix",
+            "--cave-ores=more",
+            "--river-bed=v1",
+            "--water-detail=scaled",
+            "--climate-mode=per-position",
+            "--world-border",
+            "--region-format=blinear",
+            "--ram-budget-mb=4096",
+            "--threads=4",
+            "--rock-density=0.1",
+            "--bush-density=0.2",
+            "--blinear-level=9",
+            "--osm-pbf=geofabrik",
+            "--osm-pbf-url=https://example.org/x.osm.pbf",
+            "--osm-tiles-url=archive",
+            "--overpass-url=https://a.example,https://b.example",
+            "--offline",
+        ]
+        .map(String::from)
+        .to_vec();
+        let extra = confluence_args(&flags, false, "java", true).unwrap();
+        assert!(!extra.buildings && extra.world_border && extra.disable_height_limit);
+        assert!(extra.offline && extra.overpass_url.len() == 2 && extra.osm_pbf.is_some());
+        let one = ["--origin=44.4,26.1".to_string()];
+        assert!(confluence_args(&one, true, "java", false)
+            .unwrap()
+            .origin
+            .is_some());
+        // Y limits are refused for a world that cannot take them.
+        let y = ["--min-y=-64".to_string()];
+        assert!(confluence_args(&y, true, "java", false).is_err());
+        assert!(confluence_args(&y, false, "bedrock", true).is_err());
+    }
+
+    /// With no flags the settings copied onto a run change nothing in it.
+    #[test]
+    fn no_flags_leave_the_run_as_it_was() {
+        use clap::Parser;
+        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
+        let before = format!("{args:?}");
+        apply_confluence(
+            &mut args,
+            confluence_args(&[], false, "java", true).unwrap(),
+        );
+        assert_eq!(format!("{args:?}"), before);
+    }
+
+    /// The names the window may send exist, and nothing else gets through.
+    #[test]
+    fn only_the_windows_own_flags_are_accepted() {
+        let known: Vec<String> = serde_json::from_str(&crate::args::capabilities_json()).unwrap();
+        for name in WINDOW_FLAGS {
+            assert!(known.iter().any(|k| k == name), "--{name} is not a flag");
+        }
+        for bad in [
+            "--output-dir=x",
+            "--path",
+            "--spawn-lat=1",
+            "seed=1",
+            "--world-name=a",
+        ] {
+            assert!(check_window_flags(&[bad.to_string()]).is_err(), "{bad}");
+        }
+        assert!(check_window_flags(&["--seed=1".into(), "--offline".into()]).is_ok());
+    }
+
+    /// A world folder named like a flag stays a value on the pieces' command line.
+    #[test]
+    fn a_world_named_like_a_flag_stays_a_value() {
+        use clap::Parser;
+        let args = Args::try_parse_from(["arnis"]).unwrap();
+        let argv = piece_argv(&args, Path::new("saves/--seed=9"), &[]);
+        let back =
+            Args::try_parse_from(std::iter::once(std::ffi::OsString::from("arnis")).chain(argv))
+                .unwrap();
+        assert_eq!(back.world_name.as_deref(), Some("--seed=9"));
+        assert_eq!(back.seed, None);
+    }
+
+    #[test]
+    fn the_flags_reach_the_run_and_its_pieces() {
+        use clap::Parser;
+        let flags: Vec<String> = [
+            "--one-world-workers=2",
+            "--seed=7",
+            "--road-detail=clean",
+            "--no-buildings",
+            "--only-pieces=2,3",
+        ]
+        .map(String::from)
+        .to_vec();
+        let extra = confluence_args(&flags, true, "java", false).unwrap();
+        assert!(extra.units.coordinates() && !extra.buildings && extra.seed == Some(7));
+        // Pieces are a One World feature: elsewhere the job flags are dropped.
+        let solo = confluence_args(&flags, false, "java", true).unwrap();
+        assert!(!solo.units.coordinates() && solo.units.only_pieces.is_none());
+        // A piece asked with the window's settings parses back to them.
+        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
+        apply_confluence(&mut args, extra);
+        let argv = piece_argv(&args, Path::new("saves/World"), &flags);
+        let back =
+            Args::try_parse_from(std::iter::once(std::ffi::OsString::from("arnis")).chain(argv))
+                .unwrap();
+        assert_eq!((back.scale, back.winter, back.seed), (2.0, true, Some(7)));
+        assert_eq!(back.world_name.as_deref(), Some("World"));
+    }
 
     #[test]
     fn a_one_world_off_java_or_off_earth_is_refused() {

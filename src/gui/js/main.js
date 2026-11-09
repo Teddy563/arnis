@@ -10,6 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
+import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -148,7 +149,7 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
   });
 
@@ -1061,6 +1062,11 @@ function setupProgressListener() {
   const progressDetail = document.getElementById("progress-detail");
 
   window.__TAURI__.event.listen("progress-update", (event) => {
+    if (event.payload.piece) {
+      notePiece(event.payload.piece);
+      showRunControls(!generationButtonEnabled);
+      return;
+    }
     const { progress, message, streaming } = event.payload;
 
     if (progress != -1) {
@@ -1287,6 +1293,31 @@ function initSettings() {
         btn.classList.add("active");
       });
     });
+  });
+
+  initMeldFeatures();
+  initRunControls({
+    invoke,
+    post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
+    start: () => startGeneration(),
+    localize: (element, key) => localizeElement(window.localization, { element }, key),
+  });
+  initDataPanel({
+    invoke,
+    area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
+    plan: () => {
+      const mode = document.getElementById("generation-mode-select").value;
+      const height = document.getElementById("disable-height-limit-toggle");
+      return {
+        worldScale: parseFloat(document.getElementById("scale-value-slider").value),
+        terrainEnabled: mode === "geo-terrain" || mode === "terrain-only",
+        skipOsmObjects: mode === "terrain-only",
+        canopyHeightEnabled: document.getElementById("canopy-height-toggle").checked,
+        overtureEnabled: document.getElementById("overture-toggle").checked,
+        awsOnlyElevation: document.getElementById("aws-only-elevation-toggle").checked,
+        flags: meldFlags({ oneWorld: false, java: true, caves: false, extendHeight: false, lods: false }),
+      };
+    },
   });
 
   // Blueprint greys out the traffic lights.
@@ -3848,6 +3879,7 @@ let generationButtonEnabled = true;
 // rename, is in flight - see canEditCustomWorldName()).
 function setGenerationButtonEnabled(enabled) {
   generationButtonEnabled = enabled;
+  showRunControls(!enabled);
   refreshWorldNameEditUI();
   // The two jobs exclude each other in the backend, so the other one greys out.
   refreshPrecomputeButton();
@@ -3958,8 +3990,24 @@ async function startGeneration() {
       return;
     }
 
+    // The Meld features fields, said in a sentence here: the backend's error is cut short.
+    const meldBad = meldProblem({
+      oneWorld: isOneWorldEnabled(),
+      java: getEffectiveWorldFormat() === "java",
+      extendHeight: document.getElementById("disable-height-limit-toggle").checked && !isOneWorldEnabled() && getEffectiveWorldFormat() === "java",
+    });
+    if (meldBad) {
+      const info = document.getElementById('progress-info');
+      if (info) {
+        info.textContent = meldBad;
+        info.style.color = "#fa7878";
+      }
+      return;
+    }
+
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
+    clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
@@ -4040,7 +4088,14 @@ async function startGeneration() {
         disasters: gameplayToggle('disasters-toggle'),
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : ""
+        oneWorldName: oneWorld ? oneWorldFolderName() : "",
+        flags: meldFlags({
+          oneWorld: oneWorld,
+          java: getEffectiveWorldFormat() === "java",
+          caves: caves,
+          extendHeight: disable_height_limit && !oneWorld && getEffectiveWorldFormat() === "java",
+          lods: voxy_lod || dh_lod
+        })
     });
 
     console.log("Generation process started.");
