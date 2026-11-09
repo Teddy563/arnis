@@ -179,6 +179,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let job = Job::open(world_dir, &rect, n, of)?;
 
     println!("One World: building {of} piece(s) of up to {n}x{n} regions");
+    // The extract is read once, here; each piece then cuts its own area from the bake.
+    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
+        crate::osm_pbf::bake_for_job(&src, selection)?;
+    }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
     let piece_record = |i: usize, state: &str, extra: Value| {
@@ -237,6 +241,58 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         job: corners(&rect),
         tiled: crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3,
     };
+
+    // `--prewarm-first`: one piece at a time, each with the job's whole download allowance, so N
+    // workers then read the caches instead of all fetching at once. `--prewarm` stops after it.
+    if args.prewarm || args.prewarm_first {
+        let warm: Vec<usize> = (0..of)
+            .filter(|&i| wanted(i) && job.finished(i).is_none())
+            .collect();
+        for (k, &i) in warm.iter().enumerate() {
+            if STOP.load(Ordering::Acquire) {
+                return Err(STOPPED.to_string());
+            }
+            let lease = job.dir.join(format!("piece-{i}.lease.json"));
+            write(
+                &lease,
+                &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
+            )?;
+            // Warm what the piece will build: its rect plus the halo.
+            let built = one_world::piece_build_rect(&units[i].rect, &rect);
+            let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
+            let (lo, hi) = (bbox.min(), bbox.max());
+            let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
+            let mut warm_argv = child_args(argv.iter().cloned(), &bbox, &lease, false);
+            let downloads = args.max_downloads.unwrap_or(16).to_string();
+            warm_argv.extend([
+                "--prewarm".into(),
+                "--max-downloads".into(),
+                downloads.into(),
+            ]);
+            println!("  piece {}/{of}: warming the caches", i + 1);
+            // The job's bar: the pieces warmed so far plus this one's share.
+            let report = |f: f64| {
+                let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
+                crate::progress::emit_gui_progress_update(pct, "");
+            };
+            run_piece_until(&warm_argv, &[], &STOP, report).map_err(|f| {
+                if STOP.load(Ordering::Acquire) {
+                    STOPPED.to_string()
+                } else {
+                    format!("warming piece {} failed: {}", i + 1, f.message)
+                }
+            })?;
+        }
+        if args.prewarm {
+            // Only the leases it wrote: a job already under way keeps its resume records.
+            for &i in &warm {
+                let _ = std::fs::remove_file(job.dir.join(format!("piece-{i}.lease.json")));
+            }
+            let _ = std::fs::remove_dir(&job.dir);
+            let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
+            return Ok(());
+        }
+    }
 
     // Each piece's fraction done, and the highest job percentage sent.
     let done: Mutex<(Vec<f64>, f64)> = Mutex::new((
@@ -491,6 +547,10 @@ const PER_PIECE: &[&str] = &[
     "--only-pieces",
 ];
 
+/// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
+/// refuses one given twice. They take no value, so the next argument is kept.
+const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first"];
+
 /// Only the piece the world spawns in gets the spawn point: the others do not contain it,
 /// and a run refuses a spawn outside its area.
 const SPAWN: &[&str] = &["--spawn-lat", "--spawn-lng"];
@@ -511,6 +571,9 @@ fn child_args(
         }
         let text = arg.to_string_lossy();
         let name = text.split('=').next().unwrap_or_default();
+        if PER_PIECE_SWITCHES.contains(&name) {
+            continue;
+        }
         if PER_PIECE.contains(&name) || (!keep_spawn && SPAWN.contains(&name)) {
             skip_value = !text.contains('=');
             continue;
