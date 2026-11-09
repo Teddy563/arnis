@@ -76,7 +76,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const localization = await getLocalization();
   await applyLocalization(localization);
   updateFormatToggleUI(selectedWorldFormat);
-  initFooter();
   initEasterEggs();
   checkForUpdates();
 });
@@ -205,6 +204,9 @@ async function applyLocalization(localization) {
   // The line above has just written the idle label over a button that may be
   // saying Cancel, so put the running state back.
   refreshPrecomputeButton();
+  // The pass wrote the footer's raw template ("{year}", "{version}") back; every
+  // pass fills it in, whoever started it.
+  initFooter();
 }
 
 // Function to initialize the footer with the current year and version
