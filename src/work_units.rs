@@ -204,4 +204,64 @@ mod tests {
             );
         }
     }
+
+    /// The overlay draws `bounds`, so it must sit where `rect` does: pieces meet on region
+    /// boundaries, tile the job, and `bounds` projects back to `rect` within a block.
+    #[test]
+    fn the_piece_grid_is_what_the_overlay_draws() {
+        let req = LLBBox::new(44.40, 26.00, 44.52, 26.22).unwrap();
+        for scale in [1.0, 0.5, 0.25, 0.05] {
+            let proj = WebMercatorProjection::new(44.46, 26.11, scale);
+            let world = snap_bbox_to_chunks(&proj, &req).unwrap().0;
+            for n in [1, 2] {
+                let side = 512 * n;
+                let units = plan_units(&proj, &world, n).unwrap();
+                let mut area = 0u64;
+                for (i, a) in units.iter().enumerate() {
+                    let [x0, z0, x1, z1] = r(&a.rect);
+                    // Interior edges are region boundaries; the job's own edges are chunks.
+                    assert!(x0 == world.min_x() || x0 % side == 0, "s={scale} n={n}");
+                    assert!(z0 == world.min_z() || z0 % side == 0, "s={scale} n={n}");
+                    assert!(
+                        x1 == world.max_x() || (x1 + 1) % side == 0,
+                        "s={scale} n={n}"
+                    );
+                    assert!(
+                        z1 == world.max_z() || (z1 + 1) % side == 0,
+                        "s={scale} n={n}"
+                    );
+                    area += a.chunks();
+                    for b in &units[i + 1..] {
+                        let [bx0, bz0, bx1, bz1] = r(&b.rect);
+                        assert!(
+                            x1 < bx0 || bx1 < x0 || z1 < bz0 || bz1 < z0,
+                            "s={scale} n={n}"
+                        );
+                    }
+                    let (lo, hi) = (a.bbox.min(), a.bbox.max());
+                    let back = [
+                        proj.x_for_lon(lo.lng()),
+                        proj.z_for_lat(hi.lat()),
+                        proj.x_for_lon(hi.lng()) - 1.0,
+                        proj.z_for_lat(lo.lat()) - 1.0,
+                    ];
+                    for (b, want) in back.iter().zip([x0, z0, x1, z1]) {
+                        assert!(
+                            (b - f64::from(want)).abs() <= 1.0,
+                            "s={scale} n={n}: {b} vs {want}"
+                        );
+                    }
+                }
+                let (w, h) = (
+                    world.max_x() - world.min_x() + 1,
+                    world.max_z() - world.min_z() + 1,
+                );
+                assert_eq!(
+                    area,
+                    (w as u64 / 16) * (h as u64 / 16),
+                    "s={scale} n={n}: gap"
+                );
+            }
+        }
+    }
 }

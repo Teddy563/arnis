@@ -197,6 +197,14 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             progress_json::record("piece", body);
         }
     };
+    // How far a running piece is, for its outline in the window. Not in the NDJSON stream: that
+    // keeps one record per state change.
+    let piece_progress = |i: usize, worker: usize, pct: f64| {
+        crate::progress::emit_gui_piece(&json!({
+            "piece": i, "of": of, "state": "start", "rect": corners(&units[i].rect),
+            "bounds": bounds(&units[i]), "worker": worker, "pct": pct.round(),
+        }));
+    };
     for unit in &units {
         let i = unit.index as usize;
         match job.finished(i) {
@@ -335,8 +343,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
 
-    // Builds piece `i`: Ok(None) when Stop ended it.
-    let build = |i: usize| -> Result<Option<PieceResult>, String> {
+    // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it.
+    let build = |i: usize, w: usize| -> Result<Option<PieceResult>, String> {
         let unit = &units[i];
         let lease = job.dir.join(format!("piece-{i}.lease.json"));
         write(
@@ -364,12 +372,27 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 unit.rect.min_z(),
                 if attempt > 0 { " (retry)" } else { "" }
             );
-            piece_record(i, if attempt > 0 { "retry" } else { "start" }, json!({}));
-            match run_piece_until(&argv, &sizing.child_env(), &STOP, |f| report(i, f)) {
+            let slot = w + 1;
+            piece_record(
+                i,
+                if attempt > 0 { "retry" } else { "start" },
+                json!({"worker": slot, "pct": 0}),
+            );
+            // The window hears of a piece's progress once a second, or at 5 % more.
+            let mut sent = (std::time::Instant::now(), 0.0f64);
+            let seen = |f: f64| {
+                report(i, f);
+                let pct = f * 100.0;
+                if sent.0.elapsed().as_secs() >= 1 || pct - sent.1 >= 5.0 {
+                    sent = (std::time::Instant::now(), pct);
+                    piece_progress(i, slot, pct);
+                }
+            };
+            match run_piece_until(&argv, &sizing.child_env(), &STOP, seen) {
                 Ok(r) => break r,
                 // Killed by Stop: not a failure, and built again on resume.
                 Err(_) if STOP.load(Ordering::Acquire) => {
-                    piece_record(i, "stopped", json!({}));
+                    piece_record(i, "stopped", json!({"worker": slot}));
                     return Ok(None);
                 }
                 // Never once the job is aborting: a piece killed with it looks like a crash.
@@ -383,7 +406,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
                 }
                 Err(f) => {
-                    piece_record(i, "failed", json!({}));
+                    piece_record(i, "failed", json!({"worker": slot, "error": f.message}));
                     aborting.store(true, Ordering::Relaxed);
                     return Err(format!("piece {} of {of} failed: {}", i + 1, f.message));
                 }
@@ -417,7 +440,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         piece_record(
             i,
             "done",
-            json!({"peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s, "pieces_done": pieces_done}),
+            json!({"peak_rss_mb": r.peak_rss_mb, "wall_s": r.wall_s, "pieces_done": pieces_done,
+                   "worker": w + 1, "pct": 100}),
         );
         progress_json::CHUNKS_WRITTEN.fetch_add(r.chunks, Ordering::Relaxed);
         report(i, 1.0);
@@ -426,10 +450,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
 
     if let Some(i) = head {
-        build(i).map_err(|e| format!("{e}\n{RESUME}"))?;
+        build(i, 0).map_err(|e| format!("{e}\n{RESUME}"))?;
     }
     let queue = Mutex::new(queue);
-    let work = || -> Result<(), String> {
+    let work = |w: usize| -> Result<(), String> {
         while !aborting.load(Ordering::Relaxed) && !STOP.load(Ordering::Acquire) {
             // Paused: the queue waits while the running pieces finish.
             if PAUSE.load(Ordering::Acquire) && !lock(&queue).is_empty() {
@@ -449,7 +473,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 *lock(&running) -= 1;
                 break;
             };
-            let built = build(i);
+            let built = build(i, w);
             *lock(&running) -= 1;
             // `auto` lowers the cap once a finished piece shows pieces need more memory.
             if let Ok(Some(PieceResult {
@@ -469,9 +493,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         Ok(())
     };
     std::thread::scope(|s| {
-        for _ in 0..sizing.workers {
-            s.spawn(|| {
-                if let Err(e) = work() {
+        for w in 0..sizing.workers {
+            let (work, aborting, failure) = (&work, &aborting, &failure);
+            s.spawn(move || {
+                if let Err(e) = work(w) {
                     aborting.store(true, Ordering::Relaxed);
                     lock(&failure).get_or_insert(e);
                 }
