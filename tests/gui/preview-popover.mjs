@@ -1,6 +1,6 @@
 // Run: node tests/gui/preview-popover.mjs
 // The setting preview popover, with a stub document (no browser): which picture each setting and
-// choice button maps to, where the popover goes, hover/focus/Escape, a missing file, and that every
+// choice button maps to, hover/focus/Escape, a missing file, and that every
 // picture the page names exists and every locale has its caption.
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -37,7 +37,7 @@ const doc = node({
 });
 globalThis.document = doc;
 globalThis.window = { innerWidth: 1000, innerHeight: 650, localization: { preview_rocks_on: 'Rocks: on', preview_road_detail_clean: 'Road Detail: Clean' }, addEventListener() {} };
-const { previewName, captionKey, place, initPreviews } = await import('../../src/gui/js/preview-popover.js');
+const { previewName, captionKey, initPreviews } = await import('../../src/gui/js/preview-popover.js');
 
 // names
 assert.equal(previewName(swIcon, null), 'rocks-off');
@@ -46,13 +46,6 @@ assert.equal(previewName(swIcon, null), 'rocks-on');
 assert.equal(previewName(segIcon, null), 'road-detail-max', 'the active button');
 assert.equal(previewName(segIcon, segs[1]), 'road-detail-clean', 'the hovered button');
 assert.equal(captionKey('post-apocalyptic-on'), 'preview_post_apocalyptic_on');
-
-// placement: centred in the window, kept inside it
-const pop = { w: 740, h: 560 };
-let at = place(pop, 1000, 700);
-assert.deepEqual(at, { left: 130, top: 70 }, 'the centre of the window');
-at = place(pop, 600, 400);
-assert.deepEqual(at, { left: 16, top: 16 }, 'a window smaller than the picture: top left margin');
 
 // switch, select, slider and number box rows, and a row that carries the data itself
 const sel = node({ value: 'x' });
@@ -116,8 +109,6 @@ assert.equal(img.src, 'images/previews3d/rocks-on.webp');
 fire(swIcon, 'mouseleave');
 staleLoad();
 assert.ok(!el.classList.contains('is-visible'), 'a late load does not show it');
-initPreviews();
-assert.equal(body.children.length, 1, 'a second initPreviews makes no second popover');
 
 // switching the language replaces window.localization; the next hover reads the new text
 window.localization = { preview_rocks_on: 'Pietre: activat' };

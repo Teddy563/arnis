@@ -6,7 +6,6 @@
 
 const BASE = 'images/previews3d/';
 const W = 720, H = 540; // the pictures' pixel size; the page shows them as large as the window allows (settings.css)
-const MARGIN = 16; // px between the popover and the viewport edge
 
 // File name (no extension) for a setting in its current state, or for `button`, a choice button the
 // pointer is on. `el` is the setting's ? icon or its row and carries data-preview-on/-off (a switch),
@@ -39,19 +38,7 @@ export function previewName(el, button) {
 
 export const captionKey = (name) => `preview_${name.replace(/[^a-z0-9]+/gi, '_')}`;
 
-// Top-left corner for a popover of size `pop`: the centre of the window, kept inside it.
-export function place(pop, vw, vh) {
-  return {
-    left: Math.max(MARGIN, (vw - pop.w) / 2),
-    top: Math.max(MARGIN, (vh - pop.h) / 2),
-  };
-}
-
-let started = false;
-
 export function initPreviews() {
-  if (started) return; // the popover is created once, whoever calls this
-  started = true;
   const pop = document.createElement('div');
   pop.className = 'preview-popover';
   pop.id = 'preview-popover';
@@ -99,10 +86,6 @@ export function initPreviews() {
     img.alt = '';
     img.src = `${BASE}${name}.webp`;
     caption.textContent = text;
-    const r = pop.getBoundingClientRect();
-    const at = place({ w: r.width || W, h: r.height || H }, window.innerWidth, window.innerHeight);
-    pop.style.left = `${at.left}px`;
-    pop.style.top = `${at.top}px`;
     open = true;
   };
 

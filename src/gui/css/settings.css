@@ -568,8 +568,10 @@ label[for].setting-label {
    pointer so it never steals the hover from the control under it. */
 .preview-popover {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   box-sizing: border-box;
   padding: 10px 10px 6px;
   background-color: #2a2a2a;
@@ -1106,10 +1108,6 @@ body.meld-off .meld-only {
   color: var(--ui-muted);
 }
 
-.settings-page .meld-data-out[hidden] {
-  display: none;
-}
-
 .settings-page .meld-data-out .meld-data-line {
   display: flex;
   justify-content: space-between;
@@ -1134,11 +1132,6 @@ body.meld-off .meld-only {
   border-radius: inherit;
   pointer-events: none;
   opacity: 0.85;
-  -webkit-mask:
-    radial-gradient(circle at 0 0, #000 9px, transparent 22px),
-    radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
-    radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
-    radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
   mask:
     radial-gradient(circle at 0 0, #000 9px, transparent 22px),
     radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
