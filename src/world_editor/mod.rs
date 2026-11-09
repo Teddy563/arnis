@@ -45,8 +45,6 @@ use fastnbt::{IntArray, Value};
 use fnv::{FnvHashMap, FnvHashSet};
 use serde::Serialize;
 use std::collections::{hash_map::Entry, HashMap};
-use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -2860,14 +2858,6 @@ impl<'a> WorldEditor<'a> {
     pub(crate) fn save_metadata(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let metadata_path = self.world_dir.join("metadata.json");
 
-        let mut file = File::create(&metadata_path).map_err(|e| {
-            format!(
-                "Failed to create metadata file at {}: {}",
-                metadata_path.display(),
-                e
-            )
-        })?;
-
         let (xzbbox, llbbox) = match &self.metadata_extent {
             Some((xz, ll)) => (xz.clone(), *ll),
             None => (self.xzbbox.clone(), self.llbbox),
@@ -2890,8 +2880,9 @@ impl<'a> WorldEditor<'a> {
         let contents = serde_json::to_string(&metadata)
             .map_err(|e| format!("Failed to serialize metadata to JSON: {}", e))?;
 
-        write!(&mut file, "{}", contents)
-            .map_err(|e| format!("Failed to write metadata to file: {}", e))?;
+        // Atomic, since the pieces of a job write it side by side.
+        crate::world_utils::replace_file_atomically(&metadata_path, contents.as_bytes())
+            .map_err(|e| format!("Failed to write metadata to file: {e}"))?;
 
         Ok(())
     }
