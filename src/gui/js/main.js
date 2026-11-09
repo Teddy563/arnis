@@ -1354,6 +1354,7 @@ function initSettings() {
     // the hold to start waits for the plan it starts.
     changed: () => {
       refreshBboxSelectionInfo();
+      refreshStartButton();
       document.getElementById('run-confirm-hold').disabled = !planPieces();
       if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
     },
@@ -3626,6 +3627,9 @@ function refreshStartButton() {
   if (!label) return;
   let key = 'start_generation';
   let fallback = 'Start Generation';
+  let vars;
+  // A job in pieces an earlier run built part of says how much.
+  const plan = planPieces();
   const stopping = liveActive() && liveStatus.phase === 'stopping';
   if (stopping) {
     key = 'live_stopping_button';
@@ -3636,9 +3640,13 @@ function refreshStartButton() {
   } else if (isLiveMode()) {
     key = 'live_play';
     fallback = 'Play Live';
+  } else if (plan && plan.done && plan.done < plan.n) {
+    key = 'plan_resume';
+    fallback = 'Resume ({n} of {m})';
+    vars = { n: plan.done, m: plan.n };
   }
   label.dataset.localize = key;
-  label.textContent = oneWorldText(key, fallback);
+  label.textContent = oneWorldText(key, fallback, vars);
   const wrap = button.closest('.start-button-wrap');
   if (wrap) {
     wrap.classList.toggle('is-live', liveActive() && !stopping);

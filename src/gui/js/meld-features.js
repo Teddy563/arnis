@@ -366,7 +366,7 @@ let planSeq = 0;
 // Past this many pieces the map would crawl; the totals still show.
 const MAX_DRAWN = 3000;
 
-// The last plan drawn, { n pieces, w workers }, while it is the current one; null otherwise.
+// The last plan drawn, { n pieces, w workers, done }, while it is the current one; null otherwise.
 let lastPlan = null;
 export const planPieces = () => lastPlan;
 // Whether Start would run a job in pieces (it asks first: main.js, the hold to confirm).
@@ -465,13 +465,6 @@ function showPlan(rows, warn = '', ring = false) {
   box.hidden = !rows.length;
 }
 
-// The Start button says how much of this job an earlier run built, while some is left.
-function startLabel(done, of) {
-  const label = document.querySelector('#start-button [data-localize]');
-  if (!label) return;
-  label.textContent = done && done < of ? t('plan_resume', 'Resume ({n} of {m})', { n: done, m: of }) : t('start_generation', 'Start Generation');
-}
-
 async function updatePlan() {
   const { req, flags, key } = planWanted();
   if (key === planKey) return;
@@ -483,7 +476,6 @@ async function updatePlan() {
       onPlan();
     }
     showPlan([]);
-    startLabel(0);
     if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
     return;
   }
@@ -493,18 +485,17 @@ async function updatePlan() {
   } catch (e) {
     if (seq !== planSeq) return;
     showPlan([div('', String(e))]);
-    startLabel(0);
     return;
   }
   if (seq !== planSeq) return;
   const units = plan.units || [];
   const e = plan.estimate || {};
   const done = units.filter((u) => u.done).length;
-  lastPlan = { n: units.length, w: e.workers };
+  // `done`: how much of this job an earlier run built (main.js says "Resume (n of m)").
+  lastPlan = { n: units.length, w: e.workers, done };
   onPlan();
   planSizes.clear();
   units.forEach((u) => planSizes.set(u.index, u.size));
-  startLabel(done, units.length);
   const regions = (list) => list.reduce((n, u) => n + u.regions, 0);
   const ring = regions(units.filter((u) => u.ring));
   const totals = { pieces: units.length, regions: regions(units), ring };
