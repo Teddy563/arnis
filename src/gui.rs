@@ -1888,11 +1888,7 @@ fn gui_data_plan(
     aws_only_elevation: bool,
     flags: Vec<String>,
 ) -> Result<crate::data_plan::DataPlan, String> {
-    use clap::Parser;
-    check_window_flags(&flags)?;
-    let mut args =
-        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
-            .map_err(|e| e.to_string())?;
+    let mut args = confluence_args(&flags, false, "java", false)?;
     crate::args::validate_scale(world_scale)?;
     args.scale = world_scale;
     args.mode = if skip_osm_objects {
