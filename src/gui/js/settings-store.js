@@ -88,6 +88,8 @@ const SETTINGS = [
   { id: 'meld-props-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
   { id: 'meld-rocks-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-bushes-toggle', kind: 'checkbox', store: OWN },
+  { id: 'meld-rock-density-input', kind: 'number', store: OWN },
+  { id: 'meld-bush-density-input', kind: 'number', store: OWN },
   { id: 'meld-tree-realm-select', kind: 'select', store: OWN },
   { id: 'meld-tree-pack-dir-input', kind: 'text', store: OWN },
   { id: 'meld-tree-pack-mode-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
@@ -99,6 +101,12 @@ const SETTINGS = [
   { id: 'meld-origin-input', kind: 'text', store: OWN },
   { id: 'meld-world-border-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-region-format-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
+  { id: 'meld-blinear-level-input', kind: 'number', store: OWN },
+  { id: 'meld-osm-source-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
+  { id: 'meld-archive-folder-input', kind: 'text', store: OWN },
+  { id: 'meld-pbf-url-input', kind: 'text', store: OWN },
+  { id: 'meld-overpass-input', kind: 'text', store: OWN },
+  { id: 'meld-offline-toggle', kind: 'checkbox', store: OWN },
 
   // Not persisted: picking a bbox force-resets the angle to 0 anyway.
   { id: 'rotation-angle-input', kind: 'number', store: NONE },

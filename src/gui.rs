@@ -122,6 +122,11 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_save_directory,
             gui_start_generation,
             gui_pause_generation,
+            gui_local_archive_info,
+            gui_data_plan,
+            gui_prepare_plan,
+            gui_bake_archive,
+            gui_cancel_bake,
             gui_stop_generation,
             gui_get_version,
             gui_get_update_info,
@@ -1356,6 +1361,7 @@ const BUSY_IDLE: u8 = 0;
 const BUSY_GENERATION: u8 = 1;
 const BUSY_PRECOMPUTE: u8 = 2;
 const BUSY_CLEAR: u8 = 3;
+const BUSY_BAKE: u8 = 4;
 
 /// Owns [`BUSY`] for the length of one job and clears it on drop, including
 /// on the early-return paths before the worker is spawned.
@@ -1373,6 +1379,7 @@ impl BusySlot {
             // short one that finishes.
             Err(BUSY_PRECOMPUTE) => Err("A precompute is running.".to_string()),
             Err(BUSY_CLEAR) => Err("The caches are being cleared.".to_string()),
+            Err(BUSY_BAKE) => Err("A bake is running.".to_string()),
             Err(_) => Err("A generation is already running.".to_string()),
         }
     }
@@ -1455,6 +1462,11 @@ fn apply_confluence(args: &mut Args, extra: Args) {
     args.buildings = extra.buildings;
     args.props = extra.props;
     args.props_min_scale = extra.props_min_scale;
+    args.osm_pbf = extra.osm_pbf;
+    args.osm_pbf_url = extra.osm_pbf_url;
+    args.osm_tiles_url = extra.osm_tiles_url;
+    args.overpass_url = extra.overpass_url;
+    args.offline = extra.offline;
 }
 
 /// The command line a job's pieces repeat. A piece is a run of this executable, and the window
@@ -1544,6 +1556,224 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
             .map(Into::into),
     );
     out
+}
+
+fn cache_root() -> PathBuf {
+    crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// The Local Archive folder an empty field means, and where arnis-tiles is
+/// (`None` when it is not installed).
+#[derive(serde::Serialize)]
+struct LocalArchiveInfo {
+    default_folder: String,
+    arnis_tiles: Option<String>,
+}
+
+#[tauri::command]
+fn gui_local_archive_info(tiles_path: String) -> LocalArchiveInfo {
+    LocalArchiveInfo {
+        default_folder: crate::arnis_tiles::default_folder(&cache_root())
+            .display()
+            .to_string(),
+        arnis_tiles: crate::arnis_tiles::locate(&tiles_path).map(|p| p.display().to_string()),
+    }
+}
+
+/// The archive folder a Local Archive field names; empty is the default.
+fn archive_folder(folder: &str) -> Result<PathBuf, String> {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return Ok(crate::arnis_tiles::default_folder(&cache_root()));
+    }
+    crate::overture::pmtiles::local_path(folder)
+        .ok_or_else(|| format!("{folder} is not a folder on this computer."))
+}
+
+/// The Download Plan panel: what a run of the selection with these settings reads, and how
+/// much of it the caches already hold. Reads the disk only.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn gui_data_plan(
+    bbox_text: String,
+    world_scale: f64,
+    terrain_enabled: bool,
+    skip_osm_objects: bool,
+    canopy_height_enabled: bool,
+    overture_enabled: bool,
+    aws_only_elevation: bool,
+    flags: Vec<String>,
+) -> Result<crate::data_plan::DataPlan, String> {
+    use clap::Parser;
+    let mut args =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| e.to_string())?;
+    crate::args::validate_scale(world_scale)?;
+    args.scale = world_scale;
+    args.mode = if skip_osm_objects {
+        crate::args::GenerationMode::TerrainOnly
+    } else if terrain_enabled {
+        crate::args::GenerationMode::GeoTerrain
+    } else {
+        crate::args::GenerationMode::GeoOnly
+    };
+    args.canopy_height = canopy_height_enabled;
+    args.overture = overture_enabled;
+    args.aws_only_elevation = aws_only_elevation;
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    Ok(crate::data_plan::plan(&cache_root(), &args, bbox))
+}
+
+/// arnis-tiles' own index cache and scratch.
+fn arnis_tiles_state() -> PathBuf {
+    cache_root().join("arnis").join("arnis-tiles")
+}
+
+fn arnis_tiles_exe(tiles_path: &str) -> Result<PathBuf, String> {
+    crate::arnis_tiles::locate(tiles_path).ok_or_else(|| {
+        format!(
+            "arnis-tiles not found; get it from {}",
+            crate::arnis_tiles::HOME
+        )
+    })
+}
+
+/// One extract of the Prepare Countries list.
+#[derive(serde::Serialize)]
+struct PrepareRow {
+    #[serde(flatten)]
+    extract: crate::arnis_tiles::Extract,
+    /// The folder already holds its archive.
+    baked: bool,
+    /// Its archive: on disk once baked, else estimated from the download.
+    archive_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct PreparePlan {
+    extracts: Vec<PrepareRow>,
+    total_bytes: u64,
+    uncovered_points: u64,
+    /// The folder the archives go to, and the free space on its disk.
+    folder: String,
+    free_bytes: Option<u64>,
+    /// The most a bake of the extracts not yet baked holds on disk at once.
+    peak_bytes: u64,
+}
+
+/// Prepare Countries: the Geofabrik extracts covering the selection (`arnis-tiles prepare
+/// --dry-run`), each marked baked when the folder already holds its archive, with the sizes
+/// of what a bake downloads and leaves.
+#[tauri::command(async)]
+fn gui_prepare_plan(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+) -> Result<PreparePlan, String> {
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let exe = arnis_tiles_exe(&tiles_path)?;
+    let plan = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
+    let archives = crate::osm_tiles::local_coverage(&folder, &bbox)
+        .map(|c| c.archives)
+        .unwrap_or_default();
+    let on_disk = |id: &str| archives.iter().find(|a| a.name == id);
+    let todo: Vec<u64> = plan
+        .extracts
+        .iter()
+        .filter(|e| on_disk(&e.id).is_none())
+        .map(|e| e.bytes)
+        .collect();
+    Ok(PreparePlan {
+        extracts: plan
+            .extracts
+            .into_iter()
+            .map(|e| {
+                let baked = on_disk(&e.id);
+                PrepareRow {
+                    baked: baked.is_some(),
+                    archive_bytes: baked
+                        .and_then(|a| a.bytes)
+                        .unwrap_or_else(|| crate::data_plan::archive_bytes(e.bytes)),
+                    extract: e,
+                }
+            })
+            .collect(),
+        total_bytes: plan.total_bytes,
+        uncovered_points: plan.uncovered_points,
+        free_bytes: crate::data_plan::free_bytes(&folder),
+        folder: folder.display().to_string(),
+        peak_bytes: crate::data_plan::archive_peak_bytes(&todo),
+    })
+}
+
+/// Set by Stop: ends a country bake.
+static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Download & Bake: `arnis-tiles prepare` for the selection into the folder, on the threads a
+/// generation would get (`flags`), with its progress on the main bar. `Ok(false)` when stopped.
+#[tauri::command(async)]
+fn gui_bake_archive(
+    bbox_text: String,
+    folder: String,
+    tiles_path: String,
+    flags: Vec<String>,
+) -> Result<bool, String> {
+    let args = confluence_args(&flags, false, "java", false)?;
+    let cores = crate::transfer::cores();
+    let threads = args.thread_count().unwrap_or(cores * 9 / 10).max(1);
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let folder = archive_folder(&folder)?;
+    let exe = arnis_tiles_exe(&tiles_path)?;
+    let _slot = BusySlot::acquire(BUSY_BAKE)?;
+    BAKE_CANCEL.store(false, std::sync::atomic::Ordering::Release);
+    progress::reset_progress_floor();
+    progress::emit_gui_progress_update(0.0, "Choosing the extracts to bake...");
+    let result = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox).and_then(|plan| {
+        crate::arnis_tiles::bake(
+            &exe,
+            &arnis_tiles_state(),
+            &folder,
+            &bbox,
+            &plan.extracts,
+            0.0,
+            threads,
+            &BAKE_CANCEL,
+            &mut |pct, msg, t| progress::emit_gui_transfer(pct, msg, t),
+        )
+    });
+    match &result {
+        Ok(true) => progress::emit_gui_progress_update(100.0, "Done! The local archive is ready."),
+        Ok(false) => progress::emit_gui_progress_update(
+            progress::MESSAGE_ONLY,
+            "Bake stopped. Finished countries are kept; nothing half written was left.",
+        ),
+        Err(e) => progress::emit_gui_error(e),
+    }
+    result
+}
+
+/// Stops a running bake. Harmless when nothing runs.
+#[tauri::command]
+fn gui_cancel_bake() {
+    BAKE_CANCEL.store(true, std::sync::atomic::Ordering::Release);
+}
+
+/// Offline Mode stops a run the caches could not serve, naming what they lacked, rather than
+/// build flat or empty ground there.
+fn offline_complete() -> Result<(), String> {
+    let missing = crate::net::offline_misses();
+    if !crate::net::offline() || missing.is_empty() {
+        return Ok(());
+    }
+    let what: Vec<String> = missing.into_iter().map(|(what, _)| what).collect();
+    let msg = format!(
+        "Offline Mode: not downloaded yet: {}. Turn it off to fetch the area first.",
+        what.join(", ")
+    );
+    // In full, where emit_gui_error would cut the list short.
+    emit_gui_progress_update(0.0, &format!("Error! {msg}"));
+    Err(msg)
 }
 
 /// Pause holds a job's queue: the running pieces finish, none starts until Resume.
@@ -1653,6 +1883,10 @@ fn gui_start_generation(
             return Err(msg);
         }
     };
+    // Process-wide, so set every run: a run without them gets the network and Arnis's own
+    // Overpass back.
+    crate::net::set_offline(extra.offline);
+    crate::retrieve_data::set_overpass_urls(extra.overpass_url.clone());
     // The global pool was built at startup; a thread count asked for here gets its own.
     let pool = extra
         .thread_count()
@@ -2333,6 +2567,7 @@ fn gui_start_generation(
                 (fetch_result, overture_data, ground_handle.join().ok())
             });
 
+            offline_complete()?;
             let Some(ground) = ground else {
                 let error_msg = "Terrain fetch failed unexpectedly".to_string();
                 eprintln!("{error_msg}");
@@ -2674,11 +2909,20 @@ mod tests {
             "--region-format=blinear",
             "--ram-budget-mb=4096",
             "--threads=4",
+            "--rock-density=0.1",
+            "--bush-density=0.2",
+            "--blinear-level=9",
+            "--osm-pbf=geofabrik",
+            "--osm-pbf-url=https://example.org/x.osm.pbf",
+            "--osm-tiles-url=archive",
+            "--overpass-url=https://a.example,https://b.example",
+            "--offline",
         ]
         .map(String::from)
         .to_vec();
         let extra = confluence_args(&flags, false, "java", true).unwrap();
         assert!(!extra.buildings && extra.world_border && extra.disable_height_limit);
+        assert!(extra.offline && extra.overpass_url.len() == 2 && extra.osm_pbf.is_some());
         let one = ["--origin=44.4,26.1".to_string()];
         assert!(confluence_args(&one, true, "java", false)
             .unwrap()

@@ -10,7 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1296,6 +1296,23 @@ function initSettings() {
     invoke,
     post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
     start: () => startGeneration(),
+  });
+  initDataPanel({
+    invoke,
+    area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
+    plan: () => {
+      const mode = document.getElementById("generation-mode-select").value;
+      const height = document.getElementById("disable-height-limit-toggle");
+      return {
+        worldScale: parseFloat(document.getElementById("scale-value-slider").value),
+        terrainEnabled: mode === "geo-terrain" || mode === "terrain-only",
+        skipOsmObjects: mode === "terrain-only",
+        canopyHeightEnabled: document.getElementById("canopy-height-toggle").checked,
+        overtureEnabled: document.getElementById("overture-toggle").checked,
+        awsOnlyElevation: document.getElementById("aws-only-elevation-toggle").checked,
+        flags: meldFlags({ oneWorld: false, java: true, caves: false, extendHeight: false, lods: false }),
+      };
+    },
   });
 
   // Blueprint greys out the traffic lights.

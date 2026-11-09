@@ -56,6 +56,7 @@ fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>, setting: &str) -> Opt
         .find(|p| p.is_file())
 }
 
+#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
 /// Where `prepare` into `folder` keeps the download of `e`; it takes a
 /// file already there as downloaded.
 pub fn pbf_path(folder: &Path, e: &Extract) -> Option<PathBuf> {
@@ -64,6 +65,7 @@ pub fn pbf_path(folder: &Path, e: &Extract) -> Option<PathBuf> {
         .then(|| folder.join("work").join("pbf").join(name))
 }
 
+#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
 /// `prepare` into `folder` has published `id` and will skip it.
 pub fn finalized(folder: &Path, id: &str) -> bool {
     folder

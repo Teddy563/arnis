@@ -7,6 +7,7 @@ const choice = (id) => {
   const active = document.querySelector(`#${id} .segment.active`);
   return active ? active.dataset.v : '';
 };
+let defaultArchive = '';
 const on = (id) => Boolean(el(id) && el(id).checked);
 
 export function initMeldFeatures() {
@@ -53,8 +54,14 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
   if (choice('meld-props-group') !== 'auto') add('--props', choice('meld-props-group'));
 
   // Nature
-  if (on('meld-rocks-toggle')) f.push('--rocks');
-  if (on('meld-bushes-toggle')) f.push('--bushes');
+  if (on('meld-rocks-toggle')) {
+    f.push('--rocks');
+    if (value('meld-rock-density-input') !== '0.02') add('--rock-density', value('meld-rock-density-input'));
+  }
+  if (on('meld-bushes-toggle')) {
+    f.push('--bushes');
+    if (value('meld-bush-density-input') !== '0.05') add('--bush-density', value('meld-bush-density-input'));
+  }
   if (value('meld-tree-realm-select') !== 'auto') add('--tree-realm', value('meld-tree-realm-select'));
   if (value('meld-tree-pack-dir-input')) {
     add('--tree-pack-dir', value('meld-tree-pack-dir-input'));
@@ -68,11 +75,22 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
   if (choice('meld-water-detail-group') !== 'default') add('--water-detail', choice('meld-water-detail-group'));
   if (choice('meld-climate-mode-group') !== 'origin') add('--climate-mode', choice('meld-climate-mode-group'));
 
+  // Data
+  const source = choice('meld-osm-source-group');
+  if (source === 'archive') add('--osm-tiles-url', value('meld-archive-folder-input') || defaultArchive);
+  if (source === 'region') {
+    f.push('--osm-pbf=geofabrik');
+    add('--osm-pbf-url', value('meld-pbf-url-input'));
+  }
+  add('--overpass-url', value('meld-overpass-input'));
+  if (on('meld-offline-toggle')) f.push('--offline');
+
   // Map and World
   if (oneWorld) add('--origin', value('meld-origin-input'));
   if (java && on('meld-world-border-toggle')) f.push('--world-border');
   if (java && !oneWorld && !lods && choice('meld-region-format-group') !== 'mca') {
     add('--region-format', choice('meld-region-format-group'));
+    if (value('meld-blinear-level-input') !== '6') add('--blinear-level', value('meld-blinear-level-input'));
   }
   return f;
 }
@@ -134,4 +152,79 @@ export function showRunControls(running) {
   el('run-retry-button').hidden = running || !unfinished;
   if (!running) paused = false;
   el('run-pause-button').textContent = 'Pause';
+}
+
+// ---- Data panel: Prepare Countries and the Download Plan ----
+
+const mb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
+
+function lines(box, rows) {
+  box.replaceChildren(
+    ...rows.map(([a, b]) => {
+      const line = document.createElement('div');
+      line.className = 'meld-data-line';
+      const l = document.createElement('span');
+      l.textContent = a;
+      const r = document.createElement('span');
+      r.textContent = b;
+      line.append(l, r);
+      return line;
+    })
+  );
+  box.hidden = false;
+}
+
+// `area()` is the selected bbox; `plan()` the settings a run's plan depends on.
+export function initDataPanel({ invoke, area, plan }) {
+  const list = el('meld-prepare-list');
+  const out = el('meld-plan-out');
+  const folder = () => value('meld-archive-folder-input');
+  const say = (box, text) => lines(box, [[text, '']]);
+  invoke('gui_local_archive_info', { tilesPath: '' })
+    .then((info) => { defaultArchive = (info && info.default_folder) || ''; })
+    .catch(() => {});
+
+  el('meld-prepare-check').addEventListener('click', async () => {
+    if (!area()) return say(list, 'Select an area on the map first.');
+    say(list, 'Asking Geofabrik...');
+    try {
+      const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder(), tilesPath: '' });
+      const rows = p.extracts.map((e) => [`${e.name}${e.baked ? ' (baked)' : ''}`, `${mb(e.bytes)} download, ${mb(e.archive_bytes)} archive`]);
+      rows.push(['Archive folder', p.folder]);
+      if (p.free_bytes != null) rows.push(['Free space / peak during the bake', `${mb(p.free_bytes)} / ${mb(p.peak_bytes)}`]);
+      if (p.uncovered_points) rows.push(['Not covered by any country (open sea)', `${p.uncovered_points} points`]);
+      lines(list, rows);
+    } catch (e) {
+      say(list, String(e));
+    }
+  });
+
+  const stop = el('meld-prepare-stop');
+  el('meld-prepare-bake').addEventListener('click', async () => {
+    if (!area()) return say(list, 'Select an area on the map first.');
+    stop.hidden = false;
+    say(list, 'Baking: the progress is on the main bar.');
+    try {
+      const done = await invoke('gui_bake_archive', {
+        bboxText: area(), folder: folder(), tilesPath: '', flags: plan().flags,
+      });
+      say(list, done ? 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.' : 'Stopped. Finished countries are kept.');
+    } catch (e) {
+      say(list, String(e));
+    }
+    stop.hidden = true;
+  });
+  stop.addEventListener('click', () => invoke('gui_cancel_bake'));
+
+  el('meld-plan-show').addEventListener('click', async () => {
+    if (!area()) return say(out, 'Select an area on the map first.');
+    try {
+      const p = await invoke('gui_data_plan', { bboxText: area(), ...plan() });
+      const rows = p.items.map((i) => [`${i.source}: ${i.cached} of ${i.total} cached`, i.missing_bytes != null ? `${mb(i.missing_bytes)} to download` : 'size unknown']);
+      if (p.free_bytes != null) rows.push(['Free space', mb(p.free_bytes)]);
+      lines(out, rows.length ? rows : [['Nothing to download.', '']]);
+    } catch (e) {
+      say(out, String(e));
+    }
+  });
 }
