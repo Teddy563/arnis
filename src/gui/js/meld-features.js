@@ -25,6 +25,8 @@ export function initMeldFeatures() {
   const apply = () => {
     document.body.classList.toggle('meld-off', !toggle.checked);
     document.body.classList.toggle('map-first', toggle.checked);
+    // Off, a finished job's pieces leave the map with the rest of Meld features.
+    if (!toggle.checked && !running && pieces.size) resetPieces();
   };
   toggle.addEventListener('change', apply);
   apply();

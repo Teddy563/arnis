@@ -949,7 +949,10 @@ $(document).ready(function () {
     // One World: the user hid the areas, and the world they were hidden for.
     var oneWorldOverlayHidden = false;
     // Slider positions: a One World shows its areas opaque unless told otherwise.
-    var overlayOpacity = { world: 50, oneWorld: 100 };
+    var overlayOpacity = { world: 50, oneWorld: 70 };
+    // The world's preview images draw under the selection and the piece outlines (overlayPane
+    // is 400).
+    map.createPane('arnisPreview').style.zIndex = 350;
     var oneWorldFittedPath = null;
 
     function setWorldOverlayOpacity(value) {
@@ -974,6 +977,7 @@ $(document).ready(function () {
         if (!data.areas) {
             var bounds = L.latLngBounds([data.min_lat, data.min_lon], [data.max_lat, data.max_lon]);
             return L.imageOverlay(data.image_base64, bounds, {
+                pane: 'arnisPreview',
                 opacity: opacityValue,
                 interactive: false,
                 zIndex: 500
@@ -984,6 +988,7 @@ $(document).ready(function () {
             var b = L.latLngBounds([area.min_lat, area.min_lon], [area.max_lat, area.max_lon]);
             if (area.image_base64) {
                 group.addLayer(L.imageOverlay(area.image_base64, b, {
+                    pane: 'arnisPreview',
                     opacity: opacityValue,
                     interactive: false,
                     zIndex: 500 + index
