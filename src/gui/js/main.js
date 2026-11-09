@@ -1149,6 +1149,16 @@ function setupProgressListener() {
         // has something new to say.
         window.arnisPreview3D?.refreshFacades();
         noteGenerationDone();
+      } else if (message.startsWith("Stopped.") || message.startsWith("The retried pieces are built")) {
+        // A job in pieces ends here when stopped or when only some pieces were asked for.
+        progressInfo.style.color = "#ececec";
+        setGenerationButtonEnabled(true);
+        window.arnisPreview3D?.setGenerationRunning(false);
+        resetEta();
+        if (lastRunOneWorld) {
+          oneWorldOverlayKey = null;
+          refreshOneWorldState();
+        }
       } else {
         progressInfo.style.color = "#ececec";
       }
