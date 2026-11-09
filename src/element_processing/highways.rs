@@ -1893,6 +1893,7 @@ fn generate_highways_internal(
                 Vec::new()
             } else {
                 let road_width = 2 * block_range + 1;
+                let oneway = road_markings::oneway_sign(highway_type, &way.tags) != 0;
                 lane_lines(highway_type, &way.tags, block_range, markings)
                     .into_iter()
                     .filter(|l| {
@@ -1901,6 +1902,7 @@ fn generate_highways_internal(
                             &way.tags,
                             road_width,
                             l.centre,
+                            oneway,
                         )
                     })
                     .collect()
