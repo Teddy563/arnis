@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -806,6 +806,11 @@ function registerMessageEvent() {
       displayBboxInfoText(bboxText);
     }
 
+    // "Select this area" on a search result: the area and a ring of regions around it.
+    if (event.data && event.data.type === 'selectArea' && event.source === getMapFrame()?.contentWindow) {
+      selectWithRing(event.data.bounds);
+    }
+
     // World toggled on the map toolbar
     if (event.data && event.data.type === 'bodyChanged') {
       setCelestialBody(event.data.body);
@@ -1323,6 +1328,27 @@ function initSettings() {
     localize: (element, key) => localizeElement(window.localization, { element }, key),
     key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}`,
     map: () => getMapFrame()?.contentWindow,
+  });
+  initJobPlan({
+    // A job in pieces of a One World with a selection; Live mode builds no pieces.
+    request: () => {
+      const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
+      if (!bbox || oneWorldMode() !== 'on' || !savePath || !document.getElementById('meld-workers-select').value) return null;
+      return { savePath, worldName: oneWorldFolderName(), bboxText: bbox, worldScale: readGenerationSettings(true).worldScale };
+    },
+  });
+  // The map offers "Select this area" on a country or region, the edge handles and the size
+  // readout only with Meld features on; the readout counts regions at the world scale.
+  const meldToggle = document.getElementById('advanced-meld-features-toggle');
+  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale });
+  document.addEventListener('change', pushMeldToMap);
+  getMapFrame()?.addEventListener('load', pushMeldToMap);
+  pushMeldToMap();
+  // A One World's built land, and a ring of regions around it to build next.
+  document.getElementById('plan-expand-button').addEventListener('click', () => {
+    if (!builtAreas.length) return;
+    const pick = (f, key) => f(...builtAreas.map((a) => a[key]));
+    selectWithRing([pick(Math.min, 'min_lat'), pick(Math.min, 'min_lon'), pick(Math.max, 'max_lat'), pick(Math.max, 'max_lon')], true);
   });
   initDataPanel({
     invoke,
@@ -3273,7 +3299,15 @@ function releaseOneWorldPins() {
   postToMap({ type: 'setRotationLocked', locked: false });
 }
 
+// The areas of the One World on the map, which "Expand" rings.
+let builtAreas = [];
+function setBuiltAreas(areas) {
+  builtAreas = areas;
+  document.getElementById('plan-expand-button').hidden = !areas.length;
+}
+
 function clearOneWorldOverlays() {
+  setBuiltAreas([]);
   if (oneWorldOverlayKey === null) return;
   oneWorldOverlayKey = null;
   postToMap({ type: 'oneWorldOverlays', areas: [] });
@@ -3342,6 +3376,7 @@ async function refreshOneWorldState() {
     const overlays = await invoke('gui_get_one_world_overlays', { worldPath: info.world_path });
     if (seq !== oneWorldRefreshSeq) return;
     oneWorldOverlayKey = key;
+    setBuiltAreas((overlays && overlays.areas) || []);
     postToMap({
       type: 'oneWorldOverlays',
       world_path: info.world_path,

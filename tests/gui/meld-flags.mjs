@@ -60,4 +60,18 @@ assert.strictEqual(meldProblem(ctx), '');
 assert.deepStrictEqual(meldFlags(ctx), ['--seed=7']);
 document.getElementById('meld-min-y-input').value = '-65';
 assert.match(meldProblem(ctx), /multiple of 16/);
+document.getElementById('meld-min-y-input').value = '';
+
+// A job in pieces: its defaults send nothing new; each control is its own flag.
+document.getElementById('meld-workers-select').value = '2';
+assert.deepStrictEqual(meldFlags(ctx), ['--one-world-workers=2', '--seed=7']);
+document.getElementById('meld-margin-input').value = '5';
+assert.match(meldProblem(ctx), /from 0 to 4/);
+document.getElementById('meld-margin-input').value = '2';
+document.getElementById('meld-piece-order-select').value = 'west';
+document.getElementById('meld-skip-built-toggle').checked = true;
+document.getElementById('meld-stitch-map-toggle').checked = true;
+assert.deepStrictEqual(meldFlags(ctx), ['--one-world-workers=2', '--margin-regions=2', '--piece-order=west', '--skip-built', '--stitch-map', '--seed=7']);
+// Not without One World.
+assert.ok(!meldFlags({ ...ctx, oneWorld: false }).some((f) => f.includes('margin')));
 console.log('meld-flags: ok');

@@ -64,6 +64,7 @@ export function meldProblem({ oneWorld, java, extendHeight }) {
     whole('meld-threads-input', 1, 4096),
     whole('meld-ram-budget-input', 1, 100000000),
     whole('meld-cpu-target-input', 10, 100),
+    whole('meld-margin-input', 0, 4),
     whole('meld-seed-input', 0, Number.MAX_SAFE_INTEGER),
     extendHeight ? whole('meld-min-y-input', -2032, -64, 'floor') : '',
     extendHeight ? whole('meld-max-y-input', 319, 2031, 'top') : '',
@@ -83,16 +84,28 @@ export function meldProblem({ oneWorld, java, extendHeight }) {
 
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
 // as typed: the backend parses it with the CLI's own parser and says what is wrong.
-export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
+// `plan` is for the plan drawn before a run: it leaves a pending retry for the run itself.
+export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = false }) {
   if (!on('advanced-meld-features-toggle')) return [];
   const f = [];
   // Never for another selection or world than the pieces came from.
-  if (retryNext.length && keyOf() === jobKey) f.push(`--only-pieces=${retryNext.join(',')}`);
-  retryNext = [];
+  if (!plan) {
+    if (retryNext.length && keyOf() === jobKey) f.push(`--only-pieces=${retryNext.join(',')}`);
+    retryNext = [];
+  }
   const add = (flag, v) => v !== '' && f.push(`${flag}=${v}`);
 
   // Scale
   if (oneWorld) add('--one-world-workers', value('meld-workers-select'));
+  // How the job is cut and built: only a job in pieces has them.
+  if (oneWorld && value('meld-workers-select')) {
+    if (choice('meld-snap-group') !== 'off') add('--snap-regions', choice('meld-snap-group'));
+    if (value('meld-margin-input') !== '0') add('--margin-regions', value('meld-margin-input'));
+    if (choice('meld-piece-size-group') !== '4') add('--unit-regions', choice('meld-piece-size-group'));
+    if (value('meld-piece-order-select') !== 'centre') add('--piece-order', value('meld-piece-order-select'));
+    if (on('meld-skip-built-toggle')) f.push('--skip-built');
+    if (on('meld-stitch-map-toggle')) f.push('--stitch-map');
+  }
   const threads = value('meld-threads-input');
   if (threads) add('--threads', threads);
   else if (value('meld-cpu-target-input') !== '90') add('--cpu-target', value('meld-cpu-target-input'));
@@ -184,6 +197,7 @@ const outlines = () =>
       text: {
         piece: t('run_piece', 'Piece {n}', { n: i + 1 }),
         state: t(key, fallback),
+        size: sizeText(i),
         worker: p.worker ? t('run_worker', 'Worker {n}', { n: p.worker }) : '',
         // The first line is the failure; the child's output after it stays in the log.
         error: (p.error || '').split('\n')[0],
@@ -205,6 +219,23 @@ export function summary() {
     running: count((p) => RUNNING.has(p.state)),
     failed: count((p) => p.state === 'failed'),
   });
+}
+
+// When this run started: the ETA counts only what it built.
+let runStart = 0;
+
+// " · about 12 min left": the rate of this run so far (its finished pieces and the running
+// ones' share), carried over what is left. Nothing until a piece has finished.
+function eta() {
+  if (!running) return '';
+  const all = [...pieces.values()];
+  const built = all.filter((p) => p.state === 'done' && p.end >= runStart).length;
+  if (!built) return '';
+  const share = all.filter((p) => RUNNING.has(p.state)).reduce((sum, p) => sum + (p.pct || 0) / 100, 0);
+  const left = all.filter((p) => p.state === 'queued' || RUNNING.has(p.state)).length - share;
+  if (left <= 0) return '';
+  const min = ((Date.now() - runStart) / (built + share)) * left / 60000;
+  return ' · ' + t('run_eta', 'about {time} left', { time: minutes(min) });
 }
 
 // One run of the job over the given pieces (1-based, as --only-pieces takes them). The run's
@@ -280,6 +311,7 @@ export function notePiece(piece) {
 // A new run starts clean; a retry keeps the pieces it does not rebuild. `bbox` is the selection
 // the run is for.
 export function clearPieces() {
+  runStart = Date.now();
   if (retryNext.length) return;
   jobKey = keyOf();
   forgetPieces();
@@ -287,6 +319,7 @@ export function clearPieces() {
 
 // The selection changed under a finished job: its pieces (and Retry) no longer fit it.
 export function dropStalePieces() {
+  schedulePlan();
   if (running || !pieces.size || keyOf() === jobKey) return;
   resetPieces();
 }
@@ -310,7 +343,9 @@ export function showRunControls(isRunning) {
   running = isRunning;
   // The hint to click a failed piece comes and goes with the run.
   if (wasRunning !== running && pieces.size) postToMap({ type: 'pieceOutlines', pieces: outlines() });
-  el('run-summary').textContent = pieces.size ? summary() : '';
+  el('run-summary').textContent = pieces.size ? summary() + eta() : '';
+  // A run that ended built pieces: the plan's states are read again.
+  if (wasRunning && !running) schedulePlan(true);
   const unfinished = [...pieces.values()].some((p) => RETRYABLE.has(p.state));
   el('run-controls').hidden = pieces.size === 0 || !(running || unfinished);
   el('run-pause-button').hidden = el('run-stop-button').hidden = !running;
@@ -320,6 +355,144 @@ export function showRunControls(isRunning) {
     setPaused(false);
     call('gui_pause_generation', { paused: false });
   }
+}
+
+// ---- The plan of a job in pieces, drawn before it runs ----
+
+// `request()` is what the plan is for ({ savePath, worldName, bboxText, worldScale }), or null
+// when no job in pieces would run.
+let planRequest = () => null;
+let planTimer = 0;
+let planKey = '';
+// Only the newest answer is drawn.
+let planSeq = 0;
+// Past this many pieces the map would crawl; the totals still show.
+const MAX_DRAWN = 3000;
+
+export function initJobPlan({ request }) {
+  planRequest = request;
+  // Any setting may change the plan; an unchanged request is not asked again.
+  ['change', 'click'].forEach((type) => document.addEventListener(type, () => schedulePlan()));
+  schedulePlan();
+}
+
+// What the plan would be asked for now, and its key; null when no job in pieces would run.
+function planWanted() {
+  const req = on('advanced-meld-features-toggle') && !running ? planRequest() : null;
+  const flags = req ? meldFlags({ oneWorld: true, java: true, plan: true }) : [];
+  return { req, flags, key: req ? JSON.stringify([req, flags]) : '' };
+}
+
+// `fresh` asks again even for an unchanged request: the world under it changed. A changed
+// request clears the old plan from the map at once and drops any answer still on its way.
+export function schedulePlan(fresh = false) {
+  if (fresh) planKey = '';
+  if (planWanted().key !== planKey) {
+    planSeq++;
+    if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
+  }
+  clearTimeout(planTimer);
+  planTimer = setTimeout(updatePlan, 250);
+}
+
+// Selects `bounds` ([south, west, north, east]) with a ring of regions around it: a job in
+// pieces with a margin of at least one region. `skipBuilt` leaves out what the world has.
+export function selectWithRing(bounds, skipBuilt = false) {
+  const set = (id, prop, v) => {
+    if (!el(id) || el(id)[prop] === v) return;
+    el(id)[prop] = v;
+    el(id).dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  if (!value('meld-workers-select')) set('meld-workers-select', 'value', 'auto');
+  if (value('meld-margin-input') === '0') set('meld-margin-input', 'value', '1');
+  if (skipBuilt) set('meld-skip-built-toggle', 'checked', true);
+  postToMap({ type: 'setBbox', bounds });
+}
+
+const gb = (mbs) => (mbs >= 1048576 ? `${(mbs / 1048576).toFixed(1)} TB` : mbs >= 1024 ? `${(mbs / 1024).toFixed(1)} GB` : `${Math.round(mbs)} MB`);
+const range = ([lo, hi], unit) => (unit(lo) === unit(hi) ? unit(lo) : `${unit(lo)}–${unit(hi)}`);
+const minutes = (m) => (m >= 60
+  ? t('plan_hours', '{h} h {m} min', { h: Math.floor(m / 60), m: Math.round(m % 60) })
+  : t('plan_minutes', '{m} min', { m: Math.max(1, Math.round(m)) }));
+
+// "4 × 4 regions" for the piece numbered `i` in the last plan.
+const planSizes = new Map();
+const sizeText = (i) => (planSizes.has(i) ? t('plan_piece_size', '{n} × {m} regions', { n: planSizes.get(i), m: planSizes.get(i) }) : '');
+
+// The plan's lines, a warning, and the legend of what the map shows: the selection, the
+// pieces to build and, with a margin, the ring around it.
+function showPlan(rows, warn = '', ring = false) {
+  const box = el('job-plan');
+  if (!box) return;
+  const div = (className, textContent) => Object.assign(document.createElement('div'), { className, textContent });
+  box.replaceChildren(...rows.map((text) => div('', text)));
+  if (warn) box.append(div('job-plan-warn', warn));
+  if (rows.length > 1) {
+    const legend = div('job-plan-legend', '');
+    const keys = [['selection', 'plan_legend_selection', 'Selection'], ['pieces', 'plan_legend_pieces', 'Pieces to build']];
+    if (ring) keys.push(['ring', 'plan_legend_ring', 'Ring (margin)']);
+    for (const [kind, key, fallback] of keys) {
+      const item = document.createElement('span');
+      item.append(Object.assign(document.createElement('i'), { className: `swatch swatch-${kind}` }), t(key, fallback));
+      legend.append(item);
+    }
+    box.append(legend);
+  }
+  box.hidden = !rows.length;
+}
+
+// The Start button says how much of this job an earlier run built, while some is left.
+function startLabel(done, of) {
+  const label = document.querySelector('#start-button [data-localize]');
+  if (!label) return;
+  label.textContent = done && done < of ? t('plan_resume', 'Resume ({n} of {m})', { n: done, m: of }) : t('start_generation', 'Start Generation');
+}
+
+async function updatePlan() {
+  const { req, flags, key } = planWanted();
+  if (key === planKey) return;
+  planKey = key;
+  const seq = ++planSeq;
+  if (!req) {
+    showPlan([]);
+    startLabel(0);
+    if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
+    return;
+  }
+  let plan;
+  try {
+    plan = await call('gui_plan_job', { ...req, flags });
+  } catch (e) {
+    if (seq !== planSeq) return;
+    showPlan([String(e)]);
+    startLabel(0);
+    return;
+  }
+  if (seq !== planSeq) return;
+  const units = plan.units || [];
+  const e = plan.estimate || {};
+  const done = units.filter((u) => u.done).length;
+  planSizes.clear();
+  units.forEach((u) => planSizes.set(u.index, u.size));
+  startLabel(done, units.length);
+  showPlan([
+    t('plan_totals', '{pieces} pieces · {regions} regions', { pieces: units.length, regions: units.reduce((n, u) => n + u.regions, 0) }),
+    t('plan_disk', 'Disk {disk} · RAM {ram} per worker', { disk: range(e.disk_mb, gb), ram: range(e.ram_mb, gb) }),
+    t('plan_time', 'Time {time} with {workers} workers (estimate, warm caches)', { time: range(e.time_min, minutes), workers: e.workers }),
+    ...(units.length > MAX_DRAWN ? [t('plan_too_many', 'Too many pieces to draw on the map.')] : []),
+  ], e.free_disk_mb != null && e.disk_mb[1] > e.free_disk_mb ? t('plan_low_disk', 'Only {free} free on this disk.', { free: gb(e.free_disk_mb) }) : '',
+  units.some((u) => u.ring));
+  // A job's own outlines (running, or left to retry) stay until they go stale.
+  if (pieces.size) return;
+  const planned = units.length > MAX_DRAWN ? [] : units.map((u) => {
+    const state = u.done ? 'done' : u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
+    const [key, fallback] = state === 'planned' ? ['plan_state', 'Planned'] : STATE_TEXT[state];
+    return {
+      i: u.index, n: u.index + 1, state, ring: u.ring, bounds: u.bbox.split(',').map(Number),
+      text: { piece: t('run_piece', 'Piece {n}', { n: u.index + 1 }), state: t(key, fallback), size: sizeText(u.index), worker: '', error: '', hint: '' },
+    };
+  });
+  postToMap({ type: 'pieceOutlines', pieces: planned });
 }
 
 // ---- Data panel: Prepare Countries and the Download Plan ----

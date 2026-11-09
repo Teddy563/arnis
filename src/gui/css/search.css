@@ -95,3 +95,18 @@
     text-align: center;
     color: #999;
 }
+
+.search-select-area {
+    margin-top: 6px;
+    padding: 3px 8px;
+    border: 1px solid #e6b73d;
+    border-radius: 3px;
+    background: white;
+    color: #333;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.search-select-area:hover {
+    background-color: #fdf3d8;
+}

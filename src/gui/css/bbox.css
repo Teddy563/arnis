@@ -520,13 +520,16 @@ body,
   cursor: pointer;
 }
 
+/* The piece's number (and percent) centred inside it; bbox.js sizes it to the piece */
 .leaflet-tooltip.piece-label {
-  background: rgba(0, 0, 0, 0.65);
+  background: none;
   border: 0;
   box-shadow: none;
   color: #fff;
-  font-weight: 600;
-  padding: 1px 5px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px #000;
   pointer-events: none;
 }
 

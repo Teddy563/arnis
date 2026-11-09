@@ -1486,15 +1486,17 @@ $(document).ready(function () {
     var pieceLayer = L.layerGroup().addTo(map);
     var PIECE_COLORS = {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
-        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43'
+        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff'
     };
+    // How full each state's cup is: a running piece fills to its percent, a finished one to the top.
+    var PIECE_FULL = { done: 1, skipped: 1, failed: 1, stopped: 1 };
     // Colour is never the only sign of a state: an icon in the label, and the line's pattern.
     var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8' };
     var PIECE_DASH = { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5' };
     var lastPieces = [];
     var pieceHalo = false;
     // Below this width on screen (px), a piece's number would not fit in it.
-    var PIECE_LABEL_MIN_PX = 44;
+    var PIECE_LABEL_MIN_PX = 28;
 
     function pieceElapsed(p) {
         if (!p.since) return '';
@@ -1511,6 +1513,7 @@ $(document).ready(function () {
         var box = document.createElement('div');
         var running = p.state === 'start' || p.state === 'retry';
         box.appendChild(row(p.text.piece + ' \u00B7 ' + p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : '')));
+        if (p.text.size) box.appendChild(row(p.text.size));
         if (p.text.worker) box.appendChild(row(p.text.worker));
         if (p.since) box.appendChild(row(pieceElapsed(p)));
         if (p.text.error) box.appendChild(row(p.text.error));
@@ -1542,11 +1545,32 @@ $(document).ready(function () {
                 item.label = L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false })
                     .setLatLng(item.rect.getBounds().getCenter()).addTo(pieceLayer);
             }
+            // A plan drawn again may give this number another place: a layer kept by number but
+            // left where it was drew an old plan's piece over the new one's.
+            if (!item.rect.getBounds().equals([[b[0], b[1]], [b[2], b[3]]])) {
+                item.rect.setBounds(L.latLngBounds([b[0], b[1]], [b[2], b[3]]));
+                item.label.setLatLng(item.rect.getBounds().getCenter());
+            }
             item.p = p;
+            // A plan's pieces are thin outlines, its ring (margin) fainter and dotted. A job's
+            // pieces are empty cups that fill from the bottom.
+            var planned = p.state === 'planned';
             item.rect.setStyle({
-                color: color, weight: p.state === 'failed' ? 3 : 2, fillColor: color,
-                fillOpacity: p.state === 'queued' ? 0.05 : 0.18, dashArray: PIECE_DASH[p.state] || null
+                color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
+                opacity: planned && p.ring ? 0.7 : 1,
+                fillOpacity: planned ? (p.ring ? 0.02 : 0.07) : 0,
+                dashArray: planned && p.ring ? '2 4' : PIECE_DASH[p.state] || null
             });
+            var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
+            if (full > 0) {
+                var cup = [[b[0], b[1]], [b[0] + (b[2] - b[0]) * Math.min(1, full), b[3]]];
+                if (!item.fill) item.fill = L.rectangle(cup, { stroke: false, interactive: false, fillOpacity: 0.35 }).addTo(pieceLayer);
+                else item.fill.setBounds(cup);
+                item.fill.setStyle({ fillColor: color });
+            } else if (item.fill) {
+                pieceLayer.removeLayer(item.fill);
+                item.fill = null;
+            }
             var path = item.rect.getElement();
             if (path) {
                 path.classList.toggle('piece-running', running);
@@ -1565,7 +1589,7 @@ $(document).ready(function () {
         Object.keys(pieceLayers).forEach(function(i) {
             if (seen[i]) return;
             var item = pieceLayers[i];
-            [item.rect, item.label, item.halo].forEach(function(l) { if (l) pieceLayer.removeLayer(l); });
+            [item.rect, item.label, item.halo, item.fill].forEach(function(l) { if (l) pieceLayer.removeLayer(l); });
             delete pieceLayers[i];
         });
         updatePieceLabels();
@@ -1577,9 +1601,17 @@ $(document).ready(function () {
             var item = pieceLayers[i];
             var sw = map.latLngToContainerPoint(item.rect.getBounds().getSouthWest());
             var ne = map.latLngToContainerPoint(item.rect.getBounds().getNorthEast());
-            var small = Math.min(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y)) < PIECE_LABEL_MIN_PX;
+            var side = Math.min(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y));
             var el = item.label.getElement();
-            if (el) el.classList.toggle('piece-label-off', small);
+            if (!el) return;
+            el.classList.toggle('piece-label-off', side < PIECE_LABEL_MIN_PX);
+            // The number grows with the piece on screen.
+            var size = Math.max(11, Math.min(26, Math.round(side / 5))) + 'px';
+            // Re-centred only when the size changes: Leaflet centres by the label's width.
+            if (el.style.fontSize !== size) {
+                el.style.fontSize = size;
+                item.label.update();
+            }
         });
     }
     map.on('zoomend', updatePieceLabels);
@@ -1676,6 +1708,14 @@ $(document).ready(function () {
 
         if (event.data && event.data.type === 'livePlayers') {
             setLivePlayers(event.data.active, event.data.canTeleport, event.data.players);
+        }
+
+        // Meld features on: a country or region found by the search can be selected whole.
+        if (event.data && event.data.type === 'meldFeatures') {
+            var was = window.arnisMeldOn;
+            window.arnisMeldOn = Boolean(event.data.on);
+            window.arnisWorldScale = Number(event.data.scale) || 1;
+            if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 
         // One World keeps rotation at 0.

@@ -171,6 +171,9 @@
               </div>
               <span id="progress-detail">0%</span>
             </div>
+            <!-- The plan of a job in pieces before it runs, and the ring around a One World's built land. -->
+            <div id="job-plan" class="job-plan meld-only" role="status" aria-live="polite" hidden></div>
+            <button type="button" id="plan-expand-button" class="run-button plan-expand meld-only" hidden data-localize="plan_expand">Expand around the built land</button>
             <!-- A job built in pieces: Pause, Stop and Retry. Hidden unless Meld features is on. -->
             <div id="run-controls" class="run-controls meld-only" hidden>
               <div id="run-summary" class="run-summary" role="status" aria-live="polite"></div>
@@ -1731,6 +1734,96 @@
                   </label>
                   <div class="settings-control">
                     <select id="meld-workers-select" name="meld-workers-select" class="settings-select"><option value="" selected data-localize="meld_workers_off">Off</option><option value="auto" data-localize="meld_workers_auto">Auto</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-frame"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_snap">Snap to Pieces</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_snap_tip" data-tooltip="Off builds the selection as drawn. Cover grows it to whole pieces, Fit shrinks it to the whole pieces inside, Merge keeps its edges but folds a strip thinner than a quarter region into its neighbour. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_snap_desc">How the selection meets the piece grid.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-snap-group"><button type="button" class="segment active" data-default data-v="off" data-localize="meld_snap_off">Off</button><button type="button" class="segment" data-v="cover" data-localize="meld_snap_cover">Cover</button><button type="button" class="segment" data-v="fit" data-localize="meld_snap_fit">Fit</button><button type="button" class="segment" data-v="merge" data-localize="meld_snap_merge">Merge</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-margin-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-map-plus"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_margin">Margin Regions</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_margin_tip" data-tooltip="Regions of 512 × 512 blocks added on every side of the selection, after snapping. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_margin_desc">A ring of regions around the selection, from 0 to 4.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="number" id="meld-margin-input" min="0" max="4" step="1" value="0">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_piece_size">Piece Size</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_piece_size_tip" data-tooltip="Largest piece, in regions per side. Auto mixes 8 × 8, 4 × 4 and 2 × 2 pieces, as large as fit the selection and the memory. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_piece_size_desc">Regions per side of each piece.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-piece-size-group"><button type="button" class="segment" data-v="auto" data-localize="meld_piece_size_auto">Auto</button><button type="button" class="segment" data-v="2">2</button><button type="button" class="segment active" data-default data-v="4">4</button><button type="button" class="segment" data-v="8">8</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-piece-order-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-compass"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_piece_order">Build Order</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_piece_order_tip" data-tooltip="Which pieces are built first. Piece numbers stay the same, so a retry still names the same pieces. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_piece_order_desc">Where the job starts building.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="meld-piece-order-select" name="meld-piece-order-select" class="settings-select"><option value="centre" selected data-localize="meld_piece_order_centre">Centre out</option><option value="west" data-localize="meld_piece_order_west">West to east</option><option value="east" data-localize="meld_piece_order_east">East to west</option><option value="north" data-localize="meld_piece_order_north">North to south</option><option value="south" data-localize="meld_piece_order_south">South to north</option></select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile">
+                  <label for="meld-skip-built-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-history"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_skip_built">Skip Built Pieces</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_skip_built_tip" data-tooltip="Leaves out the pieces whose every chunk is already in the world, say from an earlier job over part of this one. Off rebuilds them. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_skip_built_desc">Build only what the world is missing.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-skip-built-toggle" name="meld-skip-built-toggle">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile">
+                  <label for="meld-stitch-map-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-map"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_stitch_map">Stitch Map Item</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_stitch_map_tip" data-tooltip="Once every piece is built, redraws the map item in the hotbar over all of them. Off, it shows the first piece only. Needs the map item. Parallel pieces only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_stitch_map_desc">One map item over the whole job.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-stitch-map-toggle" name="meld-stitch-map-toggle">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">

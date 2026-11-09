@@ -873,6 +873,57 @@ input[type="range"] {
   }
 }
 
+/* The plan of a job in pieces, before it runs (Meld features) */
+.job-plan {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.job-plan[hidden],
+.plan-expand[hidden] {
+  display: none;
+}
+
+/* What the map shows, in the map's own colours (bbox.js PIECE_COLORS, the selection's yellow) */
+.job-plan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 12px;
+  margin-top: 4px;
+}
+
+.job-plan-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  border: 2px solid #fecc44;
+  border-radius: 2px;
+}
+
+.job-plan-legend .swatch-pieces {
+  border: 1px solid #5aa9ff;
+  background: rgba(90, 169, 255, 0.25);
+}
+
+.job-plan-legend .swatch-ring {
+  border: 1px dotted #5aa9ff;
+  opacity: 0.8;
+}
+
+.job-plan-warn {
+  color: #fa7878;
+}
+
+.plan-expand {
+  width: 100%;
+  margin-top: 8px;
+}
+
 /* Run controls of a job built in pieces (Meld features) */
 .run-controls {
   display: flex;
