@@ -2235,6 +2235,11 @@ fn gui_start_generation(
         .thread_count()
         .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().ok());
     crate::data_processing::set_ram_budget_mb(extra.ram_budget_mb.unwrap_or(0));
+    crate::net::set_max_requests(
+        extra
+            .max_downloads
+            .map_or(crate::net::MAX_CONCURRENT_REQUESTS, |n| n as usize),
+    );
 
     // Resolved before validation: off Earth the slider value is ignored, so
     // validating it could reject a run over a scale that never gets used.
