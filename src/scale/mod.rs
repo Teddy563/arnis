@@ -10,8 +10,9 @@
 //! manifest by the coordinator alone, as an area that names its job and position.
 //!
 //! A job keeps its state in `arnis_one_world/jobs/<x0>_<z0>_<x1>_<z1>_n<N>/` (the rectangle
-//! is the union of the pieces): the ids it reserved, one `done-<piece>.json` per finished
-//! piece and the piece leases. Running the same command again resumes it.
+//! is the union of the pieces): the ids it reserved and each piece's share of them, one
+//! `done-r<rx>_<rz>_s<n>.json` per finished piece (a 3.5.0 job's `done-<index>.json` is
+//! read too) and the piece leases. Running the same command again resumes it.
 
 use crate::args::{Args, UnitSize};
 use crate::coordinate_system::cartesian::XZBBox;
@@ -77,10 +78,23 @@ struct Job {
     dir: PathBuf,
     area_base: u32,
     map_base: i32,
+    /// Each piece's share of the reserved ids, by region key. A 3.5.0 job has none: its
+    /// pieces' shares follow their plan index.
+    slots: serde_json::Map<String, Value>,
+}
+
+/// A finished piece's file names its regions and size, so it stays its own whatever order
+/// the pieces build in: `done-r<rx>_<rz>_s<n>.json`.
+fn done_key(u: &WorkUnit) -> String {
+    format!(
+        "r{}",
+        u.region_key().replacen(',', "_", 1).replacen(',', "_s", 1)
+    )
 }
 
 impl Job {
-    fn open(world_dir: &Path, name: String, pieces: usize) -> Result<Self, String> {
+    fn open(world_dir: &Path, name: String, units: &[WorkUnit]) -> Result<Self, String> {
+        let pieces = units.len();
         let dir = world_dir.join(one_world::JOBS_DIR).join(&name);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
@@ -88,11 +102,15 @@ impl Job {
         let kept = std::fs::read_to_string(&state)
             .ok()
             .and_then(|t| serde_json::from_str::<Value>(&t).ok());
-        let (area_base, map_base) = match kept
+        let (area_base, map_base, slots) = match kept
             .as_ref()
-            .map(|v| (v["area_base"].as_u64(), v["map_base"].as_i64()))
+            .map(|v| (v["area_base"].as_u64(), v["map_base"].as_i64(), &v["slots"]))
         {
-            Some((Some(a), Some(m))) => (a as u32, m as i32),
+            Some((Some(a), Some(m), slots)) => (
+                a as u32,
+                m as i32,
+                slots.as_object().cloned().unwrap_or_default(),
+            ),
             _ => {
                 // Reserved once, so a run in between cannot take a piece's ids.
                 let _guard = lock(&MANIFEST);
@@ -115,11 +133,15 @@ impl Job {
                     world_dir,
                     map_base + pieces as i32 * MAP_IDS_PER_PIECE - 1,
                 )?;
+                let slots: serde_json::Map<String, Value> = units
+                    .iter()
+                    .map(|u| (done_key(u), json!(u.index)))
+                    .collect();
                 write(
                     &state,
-                    &json!({ "area_base": area_base, "map_base": map_base }),
+                    &json!({ "area_base": area_base, "map_base": map_base, "slots": slots }),
                 )?;
-                (area_base, map_base)
+                (area_base, map_base, slots)
             }
         };
         Ok(Self {
@@ -127,15 +149,37 @@ impl Job {
             dir,
             area_base,
             map_base,
+            slots,
         })
     }
 
-    fn done_path(&self, piece: usize) -> PathBuf {
-        self.dir.join(format!("done-{piece}.json"))
+    /// The piece's share of the job's area and map ids.
+    fn slot(&self, u: &WorkUnit) -> u32 {
+        self.slots
+            .get(&done_key(u))
+            .and_then(Value::as_u64)
+            .map_or(u.index, |s| s as u32)
     }
 
-    fn finished(&self, piece: usize) -> Option<PieceResult> {
-        let text = std::fs::read_to_string(self.done_path(piece)).ok()?;
+    fn area_id(&self, u: &WorkUnit) -> u32 {
+        self.area_base + self.slot(u)
+    }
+
+    fn first_map_id(&self, u: &WorkUnit) -> i32 {
+        self.map_base + self.slot(u) as i32 * MAP_IDS_PER_PIECE
+    }
+
+    fn done_path(&self, u: &WorkUnit) -> PathBuf {
+        self.dir.join(format!("done-{}.json", done_key(u)))
+    }
+
+    /// What the piece reported, if it is built: under its region key, or under its plan
+    /// index in a job folder from 3.5.0.
+    fn finished(&self, u: &WorkUnit) -> Option<PieceResult> {
+        let old = self.dir.join(format!("done-{}.json", u.index));
+        let text = std::fs::read_to_string(self.done_path(u))
+            .or_else(|_| std::fs::read_to_string(old))
+            .ok()?;
         serde_json::from_str(&text).ok()
     }
 }
@@ -180,7 +224,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         return Err(format!("--only-pieces {bad}: this job has {of} pieces."));
     }
     let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
-    let job = Job::open(world_dir, plan.name, of)?;
+    let job = Job::open(world_dir, plan.name, &units)?;
 
     match size {
         UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
@@ -222,7 +266,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
     for unit in &units {
         let i = unit.index as usize;
-        match job.finished(i) {
+        match job.finished(unit) {
             Some(r) => {
                 println!("  piece {}/{of}: already built", i + 1);
                 piece_record(i, "skipped", json!({}));
@@ -271,9 +315,9 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         .collect();
     let lease_for = |i: usize| UnitLease {
         piece: i as u32,
-        area_id: job.area_base + i as u32,
+        area_id: job.area_id(&units[i]),
         extending: head != Some(i),
-        first_map_id: job.map_base + i as i32 * MAP_IDS_PER_PIECE,
+        first_map_id: job.first_map_id(&units[i]),
         rect: corners(&units[i].rect),
         job: corners(&rect),
         tiled: crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3,
@@ -283,7 +327,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // workers then read the caches instead of all fetching at once. `--prewarm` stops after it.
     if args.prewarm || args.prewarm_first {
         let warm: Vec<usize> = (0..of)
-            .filter(|&i| wanted(i) && job.finished(i).is_none())
+            .filter(|&i| wanted(i) && job.finished(&units[i]).is_none())
             .collect();
         for (k, &i) in warm.iter().enumerate() {
             if STOP.load(Ordering::Acquire) {
@@ -447,7 +491,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         // Recorded here, not by the piece, so the manifest has one writer.
         {
             let _guard = lock(&MANIFEST);
-            let area_id = job.area_base + i as u32;
+            let area_id = job.area_id(unit);
             let run = RunContext {
                 area_id,
                 piece: Some(PieceRef {
@@ -466,7 +510,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             )
             .map_err(|e| format!("The area was written but could not be recorded: {e}"))?;
         }
-        write(&job.done_path(i), &json!(r))?;
+        write(&job.done_path(unit), &json!(r))?;
         crate::keep_one_world();
         let pieces_done = finished.fetch_add(1, Ordering::Relaxed) + 1;
         piece_record(
@@ -854,6 +898,43 @@ mod tests {
         assert!(msg.contains("--only-pieces 3,7,"), "{msg}");
         let args = <Args as clap::Parser>::try_parse_from(["arnis", "--only-pieces", "3,7"]);
         assert_eq!(args.unwrap().units.only_pieces, Some(vec![3, 7]));
+    }
+
+    /// A job folder from 3.5.0 (`done-<index>.json`, no slots) resumes, and a new one keys
+    /// its pieces by region.
+    #[test]
+    fn job_folders_resume_by_region_key_and_by_35_index() {
+        let proj = crate::projection::WebMercatorProjection::new(44.4465, 26.099, 1.0);
+        let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
+        let (world, _) = crate::projection::snap_bbox_to_chunks(&proj, &req).unwrap();
+        let units = work_units::plan_units(&proj, &world, 1).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(one_world::JOBS_DIR).join("j");
+        std::fs::create_dir_all(&dir).unwrap();
+        // 3.5.0: ids by plan index, piece 0 done.
+        std::fs::write(dir.join("job.json"), r#"{"area_base":5,"map_base":100}"#).unwrap();
+        std::fs::write(dir.join("done-0.json"), r#"{"chunks":7}"#).unwrap();
+        let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert_eq!(job.finished(&units[0]).map(|r| r.chunks), Some(7));
+        assert!(job.finished(&units[1]).is_none());
+        assert_eq!(job.area_id(&units[2]), 7);
+        assert_eq!(job.first_map_id(&units[2]), 100 + 2 * MAP_IDS_PER_PIECE);
+        // New pieces finish under their region key.
+        let key = units[1].region_key();
+        let (rx, rest) = key.split_once(',').unwrap();
+        let (rz, s) = rest.split_once(',').unwrap();
+        let want = dir.join(format!("done-r{rx}_{rz}_s{s}.json"));
+        assert_eq!(job.done_path(&units[1]), want);
+        std::fs::write(&want, r#"{"chunks":9}"#).unwrap();
+        assert_eq!(job.finished(&units[1]).map(|r| r.chunks), Some(9));
+        // Slots kept in job.json win over the index.
+        let slots = json!({ done_key(&units[2]): 11 });
+        let state = json!({"area_base": 5, "map_base": 100, "slots": slots});
+        std::fs::write(dir.join("job.json"), state.to_string()).unwrap();
+        let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert_eq!(job.area_id(&units[2]), 16);
+        assert_eq!(job.first_map_id(&units[2]), 100 + 11 * MAP_IDS_PER_PIECE);
+        assert_eq!(job.area_id(&units[3]), 8);
     }
 
     #[test]
