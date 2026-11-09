@@ -428,12 +428,12 @@ pub struct Args {
 
     /// Worker threads for generation. Defaults to 90% of the cores, or to RAYON_NUM_THREADS
     /// when that is set; this flag wins over both.
-    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=4096))]
     pub threads: Option<u32>,
 
     /// Memory this run may assume it has, in MB, in place of the free-RAM reading when sizing
     /// its parallel work, so several processes can split one machine.
-    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..=100_000_000))]
     pub ram_budget_mb: Option<u64>,
 
     /// Downloads this process keeps in flight at once (default 16).
