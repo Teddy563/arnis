@@ -1557,9 +1557,8 @@ $(document).ready(function () {
             var planned = p.state === 'planned';
             item.rect.setStyle({
                 color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
-                opacity: planned && p.ring ? 0.7 : 1,
-                fillOpacity: planned ? (p.ring ? 0.02 : 0.07) : 0,
-                dashArray: planned && p.ring ? '2 4' : PIECE_DASH[p.state] || null
+                fillOpacity: planned ? (p.ring ? 0.03 : 0.08) : 0,
+                dashArray: planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
             });
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
             if (full > 0) {
@@ -2366,6 +2365,7 @@ $(document).ready(function () {
     function clearBboxHandles() {
         _bboxHandles.forEach(function (h) { map.removeLayer(h); });
         _bboxHandles = [];
+        sizeLabel = null;
     }
 
     function refreshBboxHandles() {
@@ -2465,9 +2465,6 @@ $(document).ready(function () {
             marker.addTo(map);
             _bboxHandles.push(marker);
         });
-        sizeLabel = L.tooltip({ permanent: true, direction: 'top', className: 'bbox-size', interactive: false, offset: [0, -6] });
-        sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b)).addTo(map);
-        _bboxHandles.push(sizeLabel);
     }
 
     // "3.2 × 2.1 km · about 42 regions" at the world scale the window last sent.
@@ -2486,7 +2483,13 @@ $(document).ready(function () {
     function liveSelection(rect) {
         if (!window.arnisMeldOn) return;
         var b = rect.getBounds();
-        if (sizeLabel) sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b));
+        // Shown while dragging only: at rest it would sit over the ring's piece numbers.
+        if (!sizeLabel) {
+            sizeLabel = L.tooltip({ permanent: true, direction: 'top', className: 'bbox-size', interactive: false, offset: [0, -6] });
+            sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).addTo(map);
+            _bboxHandles.push(sizeLabel);
+        }
+        sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b));
         var now = Date.now();
         if (now - liveSync < 300) return;
         liveSync = now;
