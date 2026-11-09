@@ -467,6 +467,9 @@ pub fn print_plan(
             let e = Estimate::of(&[u], args.scale, 1);
             serde_json::json!({
                 "index": u.index,
+                // `key` is the lattice cell in units of the piece's own size, so pieces of
+                // different sizes in an auto plan can share one; `region_key` ("rx,rz,size")
+                // is the piece's unique id.
                 "key": format!("{},{}", u.gx, u.gz),
                 "size": u.size,
                 "region_key": u.region_key(),

@@ -246,6 +246,16 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         return Err(format!("--only-pieces {bad}: this job has {of} pieces."));
     }
     let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
+    let order = work_units::build_order(&units, args.units.piece_order.as_ref())?;
+    // Snapping or a mask can leave the requested spawn outside every piece.
+    if let Some((x, z)) = user_spawn_xz(args, &selection)
+        .filter(|&(x, z)| !units.iter().any(|u| contains(&u.rect, x, z)))
+    {
+        eprintln!(
+            "Warning: the spawn point (--spawn-lat/--spawn-lng, block {x}, {z}) is in no piece \
+             of this job; the world spawns in its first piece instead."
+        );
+    }
     let job = Job::open(world_dir, plan.name, &units)?;
 
     match size {
@@ -286,7 +296,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             "bounds": bounds(&units[i]), "worker": worker, "pct": pct.round(),
         }));
     };
-    for i in work_units::build_order(&units, args.units.piece_order.as_ref())? {
+    for i in order {
         let unit = &units[i];
         match job.finished(unit) {
             Some(r) => {
