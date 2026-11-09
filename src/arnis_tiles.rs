@@ -56,24 +56,6 @@ fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>, setting: &str) -> Opt
         .find(|p| p.is_file())
 }
 
-#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
-/// Where `prepare` into `folder` keeps the download of `e`; it takes a
-/// file already there as downloaded.
-pub fn pbf_path(folder: &Path, e: &Extract) -> Option<PathBuf> {
-    let name = e.url.rsplit('/').next()?;
-    (name.ends_with(".pbf") && !name.contains(['/', '\\', ':']) && !name.starts_with('.'))
-        .then(|| folder.join("work").join("pbf").join(name))
-}
-
-#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
-/// `prepare` into `folder` has published `id` and will skip it.
-pub fn finalized(folder: &Path, id: &str) -> bool {
-    folder
-        .join("work")
-        .join(format!("{id}.finalized"))
-        .is_file()
-}
-
 /// The default archive folder under the cache root.
 pub fn default_folder(root: &Path) -> PathBuf {
     root.join("arnis").join("local-archive")
@@ -712,31 +694,6 @@ mod tests {
         // Another extract's files say nothing about this one.
         p.observe(folder, &all[0], since);
         assert_eq!(p.transfer(&all, 0.0, 0.0, 6).done_bytes, 700);
-    }
-
-    #[test]
-    fn the_window_downloads_where_prepare_looks() {
-        let folder = Path::new("arch");
-        let e = extract("liechtenstein", 1);
-        assert_eq!(
-            pbf_path(folder, &e),
-            Some(
-                folder
-                    .join("work")
-                    .join("pbf")
-                    .join("liechtenstein-latest.osm.pbf")
-            )
-        );
-        let bad = Extract {
-            url: "https://example.invalid/x/..\\evil.pbf".into(),
-            ..e.clone()
-        };
-        assert_eq!(pbf_path(folder, &bad), None);
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!finalized(dir.path(), "liechtenstein"));
-        std::fs::create_dir_all(dir.path().join("work")).unwrap();
-        std::fs::write(dir.path().join("work").join("liechtenstein.finalized"), b"").unwrap();
-        assert!(finalized(dir.path(), "liechtenstein"));
     }
 
     #[test]

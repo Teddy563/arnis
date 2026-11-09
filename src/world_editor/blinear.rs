@@ -138,62 +138,9 @@ fn encode_bucket(
     Some((raw.len(), frame))
 }
 
-/// XXH32 (one-shot), the chunk checksum Leaf verifies. Inline rather than a crate:
-/// it is the only hash the format needs.
+/// XXH32 (one-shot), the chunk checksum Leaf verifies.
 fn xxh32(input: &[u8], seed: u32) -> u32 {
-    const P1: u32 = 0x9E37_79B1;
-    const P2: u32 = 0x85EB_CA77;
-    const P3: u32 = 0xC2B2_AE3D;
-    const P4: u32 = 0x27D4_EB2F;
-    const P5: u32 = 0x1656_67B1;
-    let read = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-    let round = |acc: u32, lane: u32| {
-        acc.wrapping_add(lane.wrapping_mul(P2))
-            .rotate_left(13)
-            .wrapping_mul(P1)
-    };
-
-    let mut stripes = input.chunks_exact(16);
-    let mut h = if input.len() >= 16 {
-        let mut v = [
-            seed.wrapping_add(P1).wrapping_add(P2),
-            seed.wrapping_add(P2),
-            seed,
-            seed.wrapping_sub(P1),
-        ];
-        for stripe in &mut stripes {
-            for (i, acc) in v.iter_mut().enumerate() {
-                *acc = round(*acc, read(&stripe[i * 4..]));
-            }
-        }
-        v[0].rotate_left(1)
-            .wrapping_add(v[1].rotate_left(7))
-            .wrapping_add(v[2].rotate_left(12))
-            .wrapping_add(v[3].rotate_left(18))
-    } else {
-        seed.wrapping_add(P5)
-    };
-    h = h.wrapping_add(input.len() as u32);
-
-    let mut tail = stripes.remainder();
-    while tail.len() >= 4 {
-        h = h
-            .wrapping_add(read(tail).wrapping_mul(P3))
-            .rotate_left(17)
-            .wrapping_mul(P4);
-        tail = &tail[4..];
-    }
-    for &byte in tail {
-        h = h
-            .wrapping_add(u32::from(byte).wrapping_mul(P5))
-            .rotate_left(11)
-            .wrapping_mul(P1);
-    }
-    h ^= h >> 15;
-    h = h.wrapping_mul(P2);
-    h ^= h >> 13;
-    h = h.wrapping_mul(P3);
-    h ^ (h >> 16)
+    twox_hash::XxHash32::oneshot(seed, input)
 }
 
 /// Reader for tests: makes the checks Leaf makes (superblock, version, chunk hash)

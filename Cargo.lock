@@ -244,6 +244,7 @@ dependencies = [
  "tempfile",
  "tiff",
  "tokio",
+ "twox-hash 2.1.2",
  "vek",
  "windows 0.62.2",
  "zip",
