@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} mora biti večkratnik števila 16 od {min} do {max}.",
   "meld_err_section_end": "{name} mora biti za ena manj od večkratnika števila 16, od {min} do {max}.",
   "meld_err_share": "{name} mora biti število od 0 do 1.",
-  "meld_err_origin": "{name} mora biti v obliki LAT,LON, na primer 44.44,26.10."
+  "meld_err_origin": "{name} mora biti v obliki LAT,LON, na primer 44.44,26.10.",
+  "preview_rocks_on": "Skale: vklopljeno (gostota 1; privzeto 0.02)",
+  "preview_rocks_off": "Skale: izklopljeno",
+  "preview_bushes_on": "Grmovje: vklopljeno (gostota 1; privzeto 0.05)",
+  "preview_river_bed_off": "Strugo reke: izklopljeno (prerez reke)",
+  "preview_river_bed_v1": "Strugo reke: Gladko (prerez reke)",
+  "preview_buildings_on": "Stavbe: vklopljeno (privzeto)",
+  "preview_buildings_off": "Stavbe: izklopljeno",
+  "preview_road_detail_max": "Podrobnost cest: Največ",
+  "preview_road_detail_clean": "Podrobnost cest: Čisto",
+  "preview_road_detail_compact": "Podrobnost cest: Kompaktno",
+  "preview_winter_on": "Zima: vklopljeno",
+  "preview_post_apocalyptic_on": "Postapokaliptično: vklopljeno",
+  "preview_caves_on": "Jame: vklopljeno (prerez griča)",
+  "preview_caves_off": "Jame: izklopljeno (prerez griča)",
+  "preview_legacy_trees_on": "Klasična drevesa: vklopljeno",
+  "preview_legacy_trees_off": "Klasična drevesa: izklopljeno (privzeto)"
 }

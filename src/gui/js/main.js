@@ -9,6 +9,7 @@ import {
   cancelSettingsResetConfirm,
   flushSettingsStore,
 } from './settings-store.js';
+import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
 import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
@@ -69,6 +70,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initClearCacheButton();
   initPrecomputeFacadesButton();
   initTooltips();
+  initPreviews();
   handleBboxInput();
   const localization = await getLocalization();
   await applyLocalization(localization);

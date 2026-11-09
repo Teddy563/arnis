@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} має бути кратним 16 у межах від {min} до {max}.",
   "meld_err_section_end": "{name} має бути на одиницю меншим за кратне 16, у межах від {min} до {max}.",
   "meld_err_share": "{name} має бути числом від 0 до 1.",
-  "meld_err_origin": "{name} має бути у форматі LAT,LON, наприклад 44.44,26.10."
+  "meld_err_origin": "{name} має бути у форматі LAT,LON, наприклад 44.44,26.10.",
+  "preview_rocks_on": "Камені: увімк. (щільність 1; за замовчуванням 0.02)",
+  "preview_rocks_off": "Камені: вимк.",
+  "preview_bushes_on": "Кущі: увімк. (щільність 1; за замовчуванням 0.05)",
+  "preview_river_bed_off": "Русло річки: вимк. (розріз річки)",
+  "preview_river_bed_v1": "Русло річки: Згладжене (розріз річки)",
+  "preview_buildings_on": "Будівлі: увімк. (за замовчуванням)",
+  "preview_buildings_off": "Будівлі: вимк.",
+  "preview_road_detail_max": "Деталізація доріг: Максимум",
+  "preview_road_detail_clean": "Деталізація доріг: Чиста",
+  "preview_road_detail_compact": "Деталізація доріг: Компактна",
+  "preview_winter_on": "Зима: увімк.",
+  "preview_post_apocalyptic_on": "Постапокаліпсис: увімк.",
+  "preview_caves_on": "Печери: увімк. (розріз пагорба)",
+  "preview_caves_off": "Печери: вимк. (розріз пагорба)",
+  "preview_legacy_trees_on": "Класичні дерева: увімк.",
+  "preview_legacy_trees_off": "Класичні дерева: вимк. (за замовчуванням)"
 }

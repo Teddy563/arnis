@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} doit être un multiple de 16 compris entre {min} et {max}.",
   "meld_err_section_end": "{name} doit être un de moins qu'un multiple de 16, entre {min} et {max}.",
   "meld_err_share": "{name} doit être un nombre de 0 à 1.",
-  "meld_err_origin": "{name} doit être au format LAT,LON, par exemple 44.44,26.10."
+  "meld_err_origin": "{name} doit être au format LAT,LON, par exemple 44.44,26.10.",
+  "preview_rocks_on": "Rochers: activé (densité 1; par défaut 0.02)",
+  "preview_rocks_off": "Rochers: désactivé",
+  "preview_bushes_on": "Buissons: activé (densité 1; par défaut 0.05)",
+  "preview_river_bed_off": "Lit des rivières: désactivé (coupe de la rivière)",
+  "preview_river_bed_v1": "Lit des rivières: Lissé (coupe de la rivière)",
+  "preview_buildings_on": "Bâtiments: activé (par défaut)",
+  "preview_buildings_off": "Bâtiments: désactivé",
+  "preview_road_detail_max": "Détail des routes: Max",
+  "preview_road_detail_clean": "Détail des routes: Épuré",
+  "preview_road_detail_compact": "Détail des routes: Compact",
+  "preview_winter_on": "Hiver: activé",
+  "preview_post_apocalyptic_on": "Post-apocalyptique: activé",
+  "preview_caves_on": "Grottes: activé (coupe d'une colline)",
+  "preview_caves_off": "Grottes: désactivé (coupe d'une colline)",
+  "preview_legacy_trees_on": "Arbres classiques: activé",
+  "preview_legacy_trees_off": "Arbres classiques: désactivé (par défaut)"
 }

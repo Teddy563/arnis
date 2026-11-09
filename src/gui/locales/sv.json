@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} måste vara en multipel av 16 mellan {min} och {max}.",
   "meld_err_section_end": "{name} måste vara ett mindre än en multipel av 16, mellan {min} och {max}.",
   "meld_err_share": "{name} måste vara ett tal från 0 till 1.",
-  "meld_err_origin": "{name} måste vara LAT,LON, till exempel 44.44,26.10."
+  "meld_err_origin": "{name} måste vara LAT,LON, till exempel 44.44,26.10.",
+  "preview_rocks_on": "Stenar: på (densitet 1; standard 0.02)",
+  "preview_rocks_off": "Stenar: av",
+  "preview_bushes_on": "Buskar: på (densitet 1; standard 0.05)",
+  "preview_river_bed_off": "Flodbädd: av (genomskärning av floden)",
+  "preview_river_bed_v1": "Flodbädd: Mjuk (genomskärning av floden)",
+  "preview_buildings_on": "Byggnader: på (standard)",
+  "preview_buildings_off": "Byggnader: av",
+  "preview_road_detail_max": "Vägdetaljer: Max",
+  "preview_road_detail_clean": "Vägdetaljer: Rent",
+  "preview_road_detail_compact": "Vägdetaljer: Kompakt",
+  "preview_winter_on": "Vinter: på",
+  "preview_post_apocalyptic_on": "Postapokalyptisk: på",
+  "preview_caves_on": "Grottor: på (genomskärning av en kulle)",
+  "preview_caves_off": "Grottor: av (genomskärning av en kulle)",
+  "preview_legacy_trees_on": "Klassiska träd: på",
+  "preview_legacy_trees_off": "Klassiska träd: av (standard)"
 }

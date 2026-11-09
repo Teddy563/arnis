@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} on oltava 16:n monikerta väliltä {min}–{max}.",
   "meld_err_section_end": "{name} on oltava yhtä pienempi kuin 16:n monikerta, väliltä {min}–{max}.",
   "meld_err_share": "{name} on oltava luku väliltä 0–1.",
-  "meld_err_origin": "{name} on oltava muodossa LAT,LON, esimerkiksi 44.44,26.10."
+  "meld_err_origin": "{name} on oltava muodossa LAT,LON, esimerkiksi 44.44,26.10.",
+  "preview_rocks_on": "Kivet: päällä (tiheys 1; oletus 0.02)",
+  "preview_rocks_off": "Kivet: pois",
+  "preview_bushes_on": "Pensaat: päällä (tiheys 1; oletus 0.05)",
+  "preview_river_bed_off": "Joenpohja: pois (poikkileikkaus joesta)",
+  "preview_river_bed_v1": "Joenpohja: Tasainen (poikkileikkaus joesta)",
+  "preview_buildings_on": "Rakennukset: päällä (oletus)",
+  "preview_buildings_off": "Rakennukset: pois",
+  "preview_road_detail_max": "Tieyksityiskohdat: Enimmäis",
+  "preview_road_detail_clean": "Tieyksityiskohdat: Siisti",
+  "preview_road_detail_compact": "Tieyksityiskohdat: Tiivis",
+  "preview_winter_on": "Talvi: päällä",
+  "preview_post_apocalyptic_on": "Postapokalyptinen: päällä",
+  "preview_caves_on": "Luolat: päällä (poikkileikkaus kukkulasta)",
+  "preview_caves_off": "Luolat: pois (poikkileikkaus kukkulasta)",
+  "preview_legacy_trees_on": "Perinteiset puut: päällä",
+  "preview_legacy_trees_off": "Perinteiset puut: pois (oletus)"
 }

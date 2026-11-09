@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} jābūt 16 reizinājumam no {min} līdz {max}.",
   "meld_err_section_end": "{name} jābūt par vienu mazākam nekā 16 reizinājumam, no {min} līdz {max}.",
   "meld_err_share": "{name} jābūt skaitlim no 0 līdz 1.",
-  "meld_err_origin": "{name} jābūt formātā LAT,LON, piemēram, 44.44,26.10."
+  "meld_err_origin": "{name} jābūt formātā LAT,LON, piemēram, 44.44,26.10.",
+  "preview_rocks_on": "Akmeņi: ieslēgts (blīvums 1; noklusējums 0.02)",
+  "preview_rocks_off": "Akmeņi: izslēgts",
+  "preview_bushes_on": "Krūmi: ieslēgts (blīvums 1; noklusējums 0.05)",
+  "preview_river_bed_off": "Upes gultne: izslēgts (upes griezums)",
+  "preview_river_bed_v1": "Upes gultne: Gluds (upes griezums)",
+  "preview_buildings_on": "Ēkas: ieslēgts (noklusējums)",
+  "preview_buildings_off": "Ēkas: izslēgts",
+  "preview_road_detail_max": "Ceļu detalizācija: Maks.",
+  "preview_road_detail_clean": "Ceļu detalizācija: Tīrs",
+  "preview_road_detail_compact": "Ceļu detalizācija: Kompakts",
+  "preview_winter_on": "Ziema: ieslēgts",
+  "preview_post_apocalyptic_on": "Postapokaliptisks: ieslēgts",
+  "preview_caves_on": "Alas: ieslēgts (kalna griezums)",
+  "preview_caves_off": "Alas: izslēgts (kalna griezums)",
+  "preview_legacy_trees_on": "Klasiskie koki: ieslēgts",
+  "preview_legacy_trees_off": "Klasiskie koki: izslēgts (noklusējums)"
 }

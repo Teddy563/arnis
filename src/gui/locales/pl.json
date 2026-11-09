@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} musi być wielokrotnością 16 w zakresie od {min} do {max}.",
   "meld_err_section_end": "{name} musi być o jeden mniejsze od wielokrotności 16, w zakresie od {min} do {max}.",
   "meld_err_share": "{name} musi być liczbą od 0 do 1.",
-  "meld_err_origin": "{name} musi mieć postać LAT,LON, na przykład 44.44,26.10."
+  "meld_err_origin": "{name} musi mieć postać LAT,LON, na przykład 44.44,26.10.",
+  "preview_rocks_on": "Skały: włączone (gęstość 1; domyślnie 0.02)",
+  "preview_rocks_off": "Skały: wyłączone",
+  "preview_bushes_on": "Krzaki: włączone (gęstość 1; domyślnie 0.05)",
+  "preview_river_bed_off": "Koryto rzeki: wyłączone (przekrój rzeki)",
+  "preview_river_bed_v1": "Koryto rzeki: Gładkie (przekrój rzeki)",
+  "preview_buildings_on": "Budynki: włączone (domyślnie)",
+  "preview_buildings_off": "Budynki: wyłączone",
+  "preview_road_detail_max": "Szczegółowość dróg: Maksymalna",
+  "preview_road_detail_clean": "Szczegółowość dróg: Czysta",
+  "preview_road_detail_compact": "Szczegółowość dróg: Kompaktowa",
+  "preview_winter_on": "Zima: włączone",
+  "preview_post_apocalyptic_on": "Postapokaliptyczny: włączone",
+  "preview_caves_on": "Jaskinie: włączone (przekrój wzgórza)",
+  "preview_caves_off": "Jaskinie: wyłączone (przekrój wzgórza)",
+  "preview_legacy_trees_on": "Klasyczne drzewa: włączone",
+  "preview_legacy_trees_off": "Klasyczne drzewa: wyłączone (domyślnie)"
 }

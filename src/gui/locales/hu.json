@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} a 16 többszöröse kell legyen, {min} és {max} között.",
   "meld_err_section_end": "{name} a 16 többszörösénél eggyel kisebb kell legyen, {min} és {max} között.",
   "meld_err_share": "{name} 0 és 1 közötti szám kell legyen.",
-  "meld_err_origin": "{name} LAT,LON formátumú kell legyen, például 44.44,26.10."
+  "meld_err_origin": "{name} LAT,LON formátumú kell legyen, például 44.44,26.10.",
+  "preview_rocks_on": "Sziklák: be (sűrűség 1; alapértelmezett 0.02)",
+  "preview_rocks_off": "Sziklák: ki",
+  "preview_bushes_on": "Bokrok: be (sűrűség 1; alapértelmezett 0.05)",
+  "preview_river_bed_off": "Folyómeder: ki (folyó keresztmetszete)",
+  "preview_river_bed_v1": "Folyómeder: Sima (folyó keresztmetszete)",
+  "preview_buildings_on": "Épületek: be (alapértelmezett)",
+  "preview_buildings_off": "Épületek: ki",
+  "preview_road_detail_max": "Útrészletesség: Maximális",
+  "preview_road_detail_clean": "Útrészletesség: Tiszta",
+  "preview_road_detail_compact": "Útrészletesség: Tömör",
+  "preview_winter_on": "Tél: be",
+  "preview_post_apocalyptic_on": "Posztapokaliptikus: be",
+  "preview_caves_on": "Barlangok: be (domb keresztmetszete)",
+  "preview_caves_off": "Barlangok: ki (domb keresztmetszete)",
+  "preview_legacy_trees_on": "Klasszikus fák: be",
+  "preview_legacy_trees_off": "Klasszikus fák: ki (alapértelmezett)"
 }

@@ -460,5 +460,21 @@
   "meld_err_multiple": "{name} trebuie să fie multiplu de 16, între {min} și {max}.",
   "meld_err_section_end": "{name} trebuie să fie cu unu mai mic decât un multiplu de 16, între {min} și {max}.",
   "meld_err_share": "{name} trebuie să fie un număr între 0 și 1.",
-  "meld_err_origin": "{name} trebuie să fie LAT,LON, de exemplu 44.44,26.10."
+  "meld_err_origin": "{name} trebuie să fie LAT,LON, de exemplu 44.44,26.10.",
+  "preview_rocks_on": "Pietre: pornit (densitate 1; implicit 0.02)",
+  "preview_rocks_off": "Pietre: oprit",
+  "preview_bushes_on": "Tufișuri: pornit (densitate 1; implicit 0.05)",
+  "preview_river_bed_off": "Albia râurilor: oprit (secțiune prin râu)",
+  "preview_river_bed_v1": "Albia râurilor: Netedă (secțiune prin râu)",
+  "preview_buildings_on": "Clădiri: pornit (implicit)",
+  "preview_buildings_off": "Clădiri: oprit",
+  "preview_road_detail_max": "Detaliul drumurilor: Maxim",
+  "preview_road_detail_clean": "Detaliul drumurilor: Curat",
+  "preview_road_detail_compact": "Detaliul drumurilor: Compact",
+  "preview_winter_on": "Iarnă: pornit",
+  "preview_post_apocalyptic_on": "Post-apocaliptic: pornit",
+  "preview_caves_on": "Peșteri: pornit (secțiune printr-un deal)",
+  "preview_caves_off": "Peșteri: oprit (secțiune printr-un deal)",
+  "preview_legacy_trees_on": "Copaci clasici: pornit",
+  "preview_legacy_trees_off": "Copaci clasici: oprit (implicit)"
 }
