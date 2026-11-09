@@ -435,9 +435,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
     let running = Mutex::new(0usize);
     let cap = AtomicUsize::new(sizing.workers);
-    // The head piece draws the map item from itself alone; once all are built it is redrawn
-    // from every piece's preview, which each piece then writes.
-    let stitch_map = args.map_item && !args.bedrock && !args.luanti && of > 1;
+    // `--stitch-map`: the head piece draws the map item from itself alone; once all are built
+    // it is redrawn from every piece's preview (a One World area always writes one).
+    let stitch_map =
+        args.units.stitch_map && args.map_item && !args.bedrock && !args.luanti && of > 1;
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
     // Pieces that failed for good; the others keep building.
@@ -456,15 +457,12 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
         let (lo, hi) = (bbox.min(), bbox.max());
         let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
-        let mut argv = sizing.child_args(child_args(
+        let argv = sizing.child_args(child_args(
             argv.iter().cloned(),
             &bbox,
             &lease,
             spawn_piece == Some(i),
         ));
-        if stitch_map && !args.map_preview {
-            argv.push("--map-preview".into());
-        }
         let mut attempt = 0;
         let r = loop {
             println!(
@@ -712,7 +710,12 @@ const PER_PIECE: &[&str] = &[
 
 /// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
 /// refuses one given twice. They take no value, so the next argument is kept.
-const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first", "--skip-built"];
+const PER_PIECE_SWITCHES: &[&str] = &[
+    "--prewarm",
+    "--prewarm-first",
+    "--skip-built",
+    "--stitch-map",
+];
 
 /// Only the piece the world spawns in gets the spawn point: the others do not contain it,
 /// and a run refuses a spawn outside its area.
@@ -1026,6 +1029,7 @@ mod tests {
             "MLY|secret",
             "--mapillary-token=MLY|secret",
             "--skip-built",
+            "--stitch-map",
             "--snap-regions",
             "cover",
             "--margin-regions=1",

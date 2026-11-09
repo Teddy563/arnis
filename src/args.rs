@@ -786,6 +786,11 @@ pub struct UnitArgs {
     /// (Multi)Polygon, Feature or FeatureCollection, or an Osmosis .poly file.
     #[arg(long, value_name = "FILE")]
     pub plan_mask: Option<PathBuf>,
+
+    /// Once every piece of a --one-world job is built, redraw the world's map item over all
+    /// of them; without it the map shows the first piece only.
+    #[arg(long)]
+    pub stitch_map: bool,
 }
 
 /// `--piece-order`.
@@ -948,6 +953,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (u.skip_built, "--skip-built"),
         (u.piece_order.is_some(), "--piece-order"),
         (u.plan_mask.is_some(), "--plan-mask"),
+        (u.stitch_map, "--stitch-map"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1607,9 +1613,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
-    if (args.units.skip_built || args.units.piece_order.is_some()) && !args.units.coordinates() {
+    if (args.units.skip_built || args.units.piece_order.is_some() || args.units.stitch_map)
+        && !args.units.coordinates()
+    {
         return Err(
-            "--skip-built and --piece-order only apply to a job built in pieces (--unit-regions)."
+            "--skip-built, --piece-order and --stitch-map only apply to a job built in pieces (--unit-regions)."
                 .to_string(),
         );
     }
@@ -2041,6 +2049,15 @@ mod tests {
         assert!(order("0,1").is_err() && order("up").is_err());
         assert!(refused(&with(&["--piece-order", "west"]), "--piece-order"));
         assert!(refused(&with(&["--plan-mask", "m.geojson"]), "--plan-mask"));
+        assert!(refused(&with(&["--stitch-map"]), "--stitch-map"));
+        assert!(!refused(
+            &with(&["--unit-regions", "1", "--stitch-map"]),
+            "--stitch-map"
+        ));
+        let live = p(&["--live", "--one-world", "--stitch-map"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--stitch-map"));
         let live = p(&["--live", "--one-world", "--plan-mask", "m.geojson"]).unwrap();
         assert!(refuse_live_extras(&live)
             .unwrap_err()
