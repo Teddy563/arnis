@@ -1403,6 +1403,24 @@ $(document).ready(function () {
         map.fire('draw:created', { layer: lyr, layerType: 'polygon' });
     }
 
+    var pieceLayer = L.layerGroup().addTo(map);
+    var PIECE_COLORS = {
+        queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
+        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43'
+    };
+    function drawPieceOutlines(pieces) {
+        pieceLayer.clearLayers();
+        pieces.forEach(function(p) {
+            var color = PIECE_COLORS[p.state] || '#8a8a8a';
+            var b = p.bounds;
+            L.rectangle([[b[0], b[1]], [b[2], b[3]]], {
+                color: color, weight: 2, fillColor: color,
+                fillOpacity: p.state === 'queued' ? 0.05 : 0.18,
+                dashArray: p.state === 'queued' ? '4 4' : null, interactive: false
+            }).addTo(pieceLayer);
+        });
+    }
+
     // Listen for messages from parent window
     window.addEventListener('message', function(event) {
         if (event.source !== window.parent) return;
@@ -1451,6 +1469,11 @@ $(document).ready(function () {
             if (!worldOverlayEnabled) {
                 toggleWorldOverlay();
             }
+        }
+
+        // A job built in pieces: one outline per piece, coloured by its state.
+        if (event.data && event.data.type === 'pieceOutlines') {
+            drawPieceOutlines(event.data.pieces || []);
         }
 
         // Handle world changed (disable preview)

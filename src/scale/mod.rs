@@ -187,6 +187,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         if let (Value::Object(body), Value::Object(extra)) = (&mut body, extra) {
             body.extend(extra);
         }
+        crate::progress::emit_gui_piece(&body);
         progress_json::record("piece", body);
     };
     for unit in &units {
@@ -197,7 +198,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 piece_record(i, "skipped", json!({}));
                 lock(&results)[i] = Some(r);
             }
-            None if wanted(i) => queue.push_back(i),
+            None if wanted(i) => {
+                piece_record(i, "queued", json!({}));
+                queue.push_back(i);
+            }
             None => {}
         }
     }

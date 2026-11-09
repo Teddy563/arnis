@@ -171,6 +171,12 @@
               </div>
               <span id="progress-detail">0%</span>
             </div>
+            <!-- A job built in pieces: Pause, Stop and Retry. Hidden unless Meld features is on. -->
+            <div id="run-controls" class="run-controls meld-only" hidden>
+              <button type="button" id="run-pause-button" class="run-button">Pause</button>
+              <button type="button" id="run-stop-button" class="run-button">Stop</button>
+              <button type="button" id="run-retry-button" class="run-button" hidden>Retry failed pieces</button>
+            </div>
           </div>
         </div>
       </section>

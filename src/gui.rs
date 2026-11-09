@@ -121,6 +121,8 @@ pub fn run_gui() -> Result<(), String> {
             gui_set_save_path,
             gui_pick_save_directory,
             gui_start_generation,
+            gui_pause_generation,
+            gui_stop_generation,
             gui_get_version,
             gui_get_update_info,
             gui_get_platform,
@@ -1542,6 +1544,19 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
             .map(Into::into),
     );
     out
+}
+
+/// Pause holds a job's queue: the running pieces finish, none starts until Resume.
+#[tauri::command]
+fn gui_pause_generation(paused: bool) {
+    crate::scale::PAUSE.store(paused, std::sync::atomic::Ordering::Release);
+}
+
+/// Stop: a job kills its running pieces and keeps the finished ones, so starting the same
+/// area again resumes it.
+#[tauri::command]
+fn gui_stop_generation() {
+    crate::scale::STOP.store(true, std::sync::atomic::Ordering::Release);
 }
 
 // Everything before the `spawn` below - the spawn point written into level.dat -

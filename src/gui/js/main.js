@@ -10,7 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1054,6 +1054,11 @@ function setupProgressListener() {
   const progressDetail = document.getElementById("progress-detail");
 
   window.__TAURI__.event.listen("progress-update", (event) => {
+    if (event.payload.piece) {
+      notePiece(event.payload.piece);
+      showRunControls(!generationButtonEnabled);
+      return;
+    }
     const { progress, message, streaming } = event.payload;
 
     if (progress != -1) {
@@ -1287,6 +1292,11 @@ function initSettings() {
   });
 
   initMeldFeatures();
+  initRunControls({
+    invoke,
+    post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
+    start: () => startGeneration(),
+  });
 
   // Blueprint greys out the traffic lights.
   document.getElementById("generation-mode-select").addEventListener("change", () => refreshGameplayRows());
@@ -3379,6 +3389,7 @@ let generationButtonEnabled = true;
 // rename, is in flight - see canEditCustomWorldName()).
 function setGenerationButtonEnabled(enabled) {
   generationButtonEnabled = enabled;
+  showRunControls(!enabled);
   refreshWorldNameEditUI();
   // The two jobs exclude each other in the backend, so the other one greys out.
   refreshPrecomputeButton();
@@ -3419,6 +3430,7 @@ async function startGeneration() {
 
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
+    clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;

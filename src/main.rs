@@ -112,6 +112,7 @@ mod progress {
     pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
         crate::progress_json::progress(progress, message);
     }
+    pub fn emit_gui_piece(_piece: &serde_json::Value) {}
     pub fn emit_map_preview_ready() {}
     pub fn emit_show_in_folder(_path: &str) {}
     pub fn is_running_with_gui() -> bool {
