@@ -47,9 +47,7 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
 
   // Scale
   if (oneWorld) add('--one-world-workers', value('meld-workers-select'));
-  const threads = value('meld-threads-input');
-  if (threads) add('--threads', threads);
-  else if (value('meld-cpu-target-input') !== '90') add('--cpu-target', value('meld-cpu-target-input'));
+  add('--threads', value('meld-threads-input'));
   add('--ram-budget-mb', value('meld-ram-budget-input'));
 
   // Generation

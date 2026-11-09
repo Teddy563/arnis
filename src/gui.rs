@@ -1677,7 +1677,6 @@ const WINDOW_FLAGS: &[&str] = &[
     "one-world-workers",
     "only-pieces",
     "threads",
-    "cpu-target",
     "ram-budget-mb",
     "max-downloads",
     "seed",

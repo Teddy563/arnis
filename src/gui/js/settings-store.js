@@ -80,7 +80,6 @@ const SETTINGS = [
   // Meld features. Off, none of the controls below is shown or sent.
   { id: 'advanced-meld-features-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-workers-select', kind: 'select', store: OWN },
-  { id: 'meld-cpu-target-input', kind: 'number', store: OWN },
   { id: 'meld-ram-budget-input', kind: 'text', store: OWN },
   { id: 'meld-threads-input', kind: 'text', store: OWN },
   { id: 'meld-seed-input', kind: 'text', store: OWN },

@@ -1,11 +1,11 @@
 //! How many pieces of a job run at once, and what each may use.
 //!
 //! A fixed count (`--one-world-workers N`) splits what one run would take:
-//! `--threads`/`--cpu-target` else 90% of the cores, `--ram-budget-mb` else
+//! `--threads` else 90% of the cores, `--ram-budget-mb` else
 //! free memory, `--max-downloads` else 16.
 //!
 //! `auto` sizes from the machine:
-//! - budget = cores x CPU target (`--cpu-target`, default 75%), or `--threads`;
+//! - budget = cores x 75%, or `--threads`;
 //! - W = clamp(min(pieces, budget / MIN_THREADS, free RAM / piece RAM), 2, MAX_WORKERS);
 //! - T = budget / W.
 //!

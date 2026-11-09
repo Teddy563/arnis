@@ -721,7 +721,6 @@ const PER_PIECE: &[&str] = &[
     "--plan-units",
     "--progress",
     "--threads",
-    "--cpu-target",
     "--ram-budget-mb",
     "--max-downloads",
     "--one-world-unit",
