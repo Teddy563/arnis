@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1303,8 +1303,7 @@ function initSettings() {
   refreshHeightDisplay();
 
   // Segmented controls whose click only moves the active segment
-  ["gamemode-group", "world-type-group", "mob-spawning-group", "signage-group"].forEach((id) => {
-    const group = document.getElementById(id);
+  document.querySelectorAll('#gamemode-group, #world-type-group, #mob-spawning-group, #signage-group, .segmented-control[id^="meld-"]').forEach((group) => {
     group.querySelectorAll(".segment").forEach((btn) => {
       btn.addEventListener("click", () => {
         group.querySelectorAll(".segment").forEach((b) => b.classList.remove("active"));
@@ -2872,10 +2871,9 @@ function refreshWorldNameEditUI() {
   const editButton = document.getElementById('world-name-edit-button');
   if (editButton) {
     editButton.style.display = canEditCustomWorldName() ? '' : 'none';
-    const loc = window.localization || {};
     const title = isOneWorldEnabled()
-      ? (loc.world_name_edit_one_world || 'Choose the One World to extend or create')
-      : (loc.world_name_edit_title || 'Name the next world');
+      ? oneWorldText('world_name_edit_one_world', 'Choose the One World to extend or create')
+      : oneWorldText('world_name_edit_title', 'Name the next world');
     editButton.title = title;
     editButton.setAttribute('aria-label', title);
   }
@@ -3105,12 +3103,6 @@ function setOneWorldName(name) {
   oneWorldName = name;
   if (name) localStorage.setItem(ONE_WORLD_NAME_KEY, name);
   else localStorage.removeItem(ONE_WORLD_NAME_KEY);
-}
-
-function oneWorldText(key, fallback, vars) {
-  let text = (window.localization && window.localization[key]) || fallback;
-  for (const k in (vars || {})) text = text.split('{' + k + '}').join(vars[k]);
-  return text;
 }
 
 function setOneWorldStatus(text, tone) {

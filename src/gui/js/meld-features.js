@@ -12,9 +12,9 @@ const on = (id) => Boolean(el(id) && el(id).checked);
 
 // A string from the loaded language, `{name}` placeholders filled in; the English text is the
 // fallback while no language is loaded.
-const t = (key, fallback, vars = {}) => {
+export const t = (key, fallback, vars = {}) => {
   let s = (window.localization && window.localization[key]) || fallback;
-  for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+  for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(v);
   return s;
 };
 
@@ -24,15 +24,6 @@ export function initMeldFeatures() {
   const apply = () => document.body.classList.toggle('meld-off', !toggle.checked);
   toggle.addEventListener('change', apply);
   apply();
-
-  // A click only moves the active segment; settings-store.js clicks too, to restore.
-  document.querySelectorAll('.segmented-control[id^="meld-"]').forEach((group) => {
-    group.querySelectorAll('.segment').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        group.querySelectorAll('.segment').forEach((b) => b.classList.toggle('active', b === btn));
-      });
-    });
-  });
 }
 
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
