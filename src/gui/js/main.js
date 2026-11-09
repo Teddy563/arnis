@@ -1311,7 +1311,6 @@ function initSettings() {
     area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
     plan: () => {
       const mode = document.getElementById("generation-mode-select").value;
-      const height = document.getElementById("disable-height-limit-toggle");
       return {
         worldScale: parseFloat(document.getElementById("scale-value-slider").value),
         terrainEnabled: mode === "geo-terrain" || mode === "terrain-only",
