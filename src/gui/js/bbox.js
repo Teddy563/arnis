@@ -2394,6 +2394,7 @@ $(document).ready(function () {
             });
             marker.on('drag', function (ev) {
                 rect.setBounds(new L.LatLngBounds(fixedCorner, ev.target.getLatLng()));
+                liveSelection(rect);
             });
             marker.on('dragend', function () {
                 _syncFromRect(rect);
@@ -2423,6 +2424,7 @@ $(document).ready(function () {
                 [startB.getSouth() + dLat, startB.getWest() + dLng],
                 [startB.getNorth() + dLat, startB.getEast() + dLng]
             ));
+            liveSelection(rect);
         });
         mover.on('dragend', function () {
             _syncFromRect(rect);
@@ -2430,7 +2432,97 @@ $(document).ready(function () {
         });
         mover.addTo(map);
         _bboxHandles.push(mover);
+        if (window.arnisMeldOn) meldHandles(rect);
     }
+
+    // ---- Meld features: edge handles, move from inside, a size readout, a live plan ----
+
+    // Each edge's midpoint moves that edge alone.
+    var EDGES = [
+        { cls: 'ns', at: function (b) { return [b.getNorth(), b.getCenter().lng]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [p.lat, b.getEast()]]; } },
+        { cls: 'ns', at: function (b) { return [b.getSouth(), b.getCenter().lng]; }, set: function (b, p) { return [[p.lat, b.getWest()], [b.getNorth(), b.getEast()]]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getEast()]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [b.getNorth(), p.lng]]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getWest()]; }, set: function (b, p) { return [[b.getSouth(), p.lng], [b.getNorth(), b.getEast()]]; } }
+    ];
+    var sizeLabel = null;
+    var liveSync = 0;
+
+    function meldHandles(rect) {
+        var b = rect.getBounds();
+        EDGES.forEach(function (e) {
+            var icon = L.divIcon({ className: 'bbox-handle bbox-handle-' + e.cls, iconSize: [10, 10], iconAnchor: [5, 5] });
+            var marker = L.marker(e.at(b), { icon: icon, draggable: true, zIndexOffset: 2000 });
+            var start = null;
+            marker.on('dragstart', function () { start = rect.getBounds(); });
+            marker.on('drag', function (ev) {
+                rect.setBounds(L.latLngBounds(e.set(start, ev.target.getLatLng())));
+                liveSelection(rect);
+            });
+            marker.on('dragend', function () {
+                _syncFromRect(rect);
+                refreshBboxHandles();
+            });
+            marker.addTo(map);
+            _bboxHandles.push(marker);
+        });
+        sizeLabel = L.tooltip({ permanent: true, direction: 'top', className: 'bbox-size', interactive: false, offset: [0, -6] });
+        sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b)).addTo(map);
+        _bboxHandles.push(sizeLabel);
+    }
+
+    // "3.2 × 2.1 km · about 42 regions" at the world scale the window last sent.
+    function sizeText(b) {
+        var mid = b.getCenter().lat;
+        var w = map.distance([mid, b.getWest()], [mid, b.getEast()]);
+        var h = map.distance([b.getSouth(), b.getWest()], [b.getNorth(), b.getWest()]);
+        var side = 512 / (window.arnisWorldScale || 1);
+        return mapText('map_selection_size', '{w} × {h} km · about {r} regions')
+            .replace('{w}', (w / 1000).toFixed(1)).replace('{h}', (h / 1000).toFixed(1))
+            .replace('{r}', Math.ceil(w / side) * Math.ceil(h / side));
+    }
+
+    // While a handle drags: the readout follows, and with Meld features the window gets the
+    // selection a few times a second, so the planned pieces (snapped when Snap is on) follow too.
+    function liveSelection(rect) {
+        if (!window.arnisMeldOn) return;
+        var b = rect.getBounds();
+        if (sizeLabel) sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b));
+        var now = Date.now();
+        if (now - liveSync < 300) return;
+        liveSync = now;
+        _syncFromRect(rect);
+    }
+
+    // Meld features: a drag that starts inside the selection moves it (not the map).
+    var inside = null;
+    map.on('mousedown', function (ev) {
+        var rect = window.arnisMeldOn && _getBboxRect();
+        if (!rect || !rect.getBounds().contains(ev.latlng) || ev.originalEvent.button !== 0) return;
+        if (drawControl && drawControl._toolbars && (drawControl._toolbars.draw || {})._activeMode) return;
+        inside = { from: ev.latlng, b: rect.getBounds(), rect: rect };
+        map.dragging.disable();
+    });
+    map.on('mousemove', function (ev) {
+        if (!inside) return;
+        var dLat = ev.latlng.lat - inside.from.lat;
+        var dLng = ev.latlng.lng - inside.from.lng;
+        var b = inside.b;
+        inside.rect.setBounds(L.latLngBounds([b.getSouth() + dLat, b.getWest() + dLng], [b.getNorth() + dLat, b.getEast() + dLng]));
+        if (!inside.moved) clearBboxHandles();
+        inside.moved = true;
+        liveSelection(inside.rect);
+    });
+    map.on('mouseup', function () {
+        if (!inside) return;
+        var moved = inside.moved;
+        var rect = inside.rect;
+        inside = null;
+        map.dragging.enable();
+        // A click (say on a failed piece, to retry it) moved nothing.
+        if (!moved) return;
+        _syncFromRect(rect);
+        refreshBboxHandles();
+    });
 
     // Show a brief toast notification on the map
     function showRotationToast(message) {

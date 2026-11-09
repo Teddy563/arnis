@@ -467,6 +467,28 @@ body,
   cursor: move;
 }
 
+/* Meld features: an edge's midpoint moves that edge; the selection's size above it */
+.bbox-handle-ns {
+  cursor: ns-resize;
+}
+
+.bbox-handle-ew {
+  cursor: ew-resize;
+}
+
+.leaflet-tooltip.bbox-size {
+  background: rgba(28, 28, 28, 0.85);
+  border: 0;
+  color: #fecc44;
+  font-weight: 600;
+  padding: 2px 6px;
+  box-shadow: none;
+}
+
+.leaflet-tooltip-top.bbox-size::before {
+  display: none;
+}
+
 /* Live mode: where each player is */
 .live-player-marker {
   position: relative;
