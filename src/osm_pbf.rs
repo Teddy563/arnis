@@ -5,9 +5,6 @@
 //! would and keeps the cut on disk (the bake), so a repeat run, and every piece of a job,
 //! reads the bake instead of the extract.
 
-// The window (a later wave) calls the plan, size and cleanup entry points.
-#![allow(dead_code)]
-
 use crate::args::Args;
 use crate::coordinate_system::geographic::LLBBox;
 use crate::osm_parser::{OsmData, OsmElement, OsmMember};
@@ -331,6 +328,7 @@ fn remember_size(downloads: &Path, name: &str, bytes: u64) {
 
 /// The download size of the extract at `url`, from one HEAD request, kept
 /// for later plans. Never asked offline.
+#[allow(dead_code)] // Wave 2 calls this
 pub fn remote_size(url: &str) -> Result<u64> {
     let name = download_name(url).ok_or_else(|| format!("not a .pbf url: {url}"))?;
     crate::net::ensure_online("OpenStreetMap extract size")?;
@@ -361,6 +359,7 @@ fn content_length_header(headers: &reqwest::header::HeaderMap) -> Option<u64> {
 }
 
 /// Removes what a stopped download left half done (`*.part`).
+#[allow(dead_code)] // Wave 2 calls this
 pub fn remove_partial_downloads() {
     let Ok(root) = cache_root() else { return };
     let Ok(entries) = std::fs::read_dir(root.join("downloads")) else {

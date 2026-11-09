@@ -38,6 +38,17 @@ pub fn set_offline(on: bool) {
     OFFLINE.store(on, Ordering::Relaxed);
 }
 
+/// `--prewarm`: the run is there to fill the caches.
+static PREWARM: AtomicBool = AtomicBool::new(false);
+
+pub fn set_prewarm(on: bool) {
+    PREWARM.store(on, Ordering::Relaxed);
+}
+
+pub fn prewarm() -> bool {
+    PREWARM.load(Ordering::Relaxed)
+}
+
 pub fn offline() -> bool {
     OFFLINE.load(Ordering::Relaxed)
 }

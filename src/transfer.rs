@@ -5,9 +5,6 @@
 //! as a `transfer` field, and a child process (`--progress json`) sends it as
 //! a `transfer` record, which the parent passes on to the window.
 
-// The window (a later wave) reads the whole record; the CLI sends part of it.
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]

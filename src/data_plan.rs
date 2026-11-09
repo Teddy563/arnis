@@ -1,8 +1,5 @@
 //! What a run of the selected area would download, read off the caches on
 //! disk alone: no request is made. The window shows it before an offline run.
-// The window (a later wave) is the caller; the CLI uses only the sizes.
-#![allow(dead_code)]
-
 use crate::args::Args;
 use crate::coordinate_system::geographic::LLBBox;
 use std::path::{Path, PathBuf};

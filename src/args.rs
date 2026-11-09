@@ -458,8 +458,7 @@ pub struct Args {
     // --- end confluence:core ---
 
     // --- confluence:data ---
-    /// Read OpenStreetMap from an .osm.pbf extract instead of the tile archive: a file path,
-    /// or `geofabrik` for the smallest Geofabrik region holding the area, downloaded once.
+    /// Read OpenStreetMap from an .osm.pbf file, or from `geofabrik` for the smallest Geofabrik region holding the area, instead of the tile archive.
     #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
     pub osm_pbf: Option<String>,
 
@@ -467,9 +466,7 @@ pub struct Args {
     #[arg(long, value_name = "URL", requires = "osm_pbf")]
     pub osm_pbf_url: Option<String>,
 
-    /// Self-hosted Overpass instance(s) to ask instead of Arnis's own, tried in order. Repeat
-    /// the flag or separate with commas. Only used when the OSM tile archive cannot answer (or
-    /// with --no-tile-archive).
+    /// Self-hosted Overpass instance(s) to ask in place of Arnis's own, tried in order; repeat the flag or separate with commas.
     #[arg(
         long,
         env = "ARNIS_OVERPASS_URL",
@@ -478,20 +475,15 @@ pub struct Args {
     )]
     pub overpass_url: Vec<String>,
 
-    /// Never use the network: read OSM, Overture, elevation, land cover, canopy and 3D models
-    /// from the caches only. A run that needs anything they lack stops and lists it instead of
-    /// building flat or empty ground. Fill the caches first with --prewarm.
+    /// Never use the network: read everything from the caches and stop with a list of what they lack.
     #[arg(long, env = "ARNIS_OFFLINE", value_parser = FalseyValueParser::new())]
     pub offline: bool,
 
-    /// Download and cache every input this command would read for --bbox (OSM, Overture,
-    /// elevation, land cover, canopy, 3D models), then exit without writing a world. Run it with
-    /// the same options as the run it warms. Mapillary imagery is not included.
+    /// Download and cache every input this command would read for --bbox, then exit without writing a world.
     #[arg(long, conflicts_with = "offline")]
     pub prewarm: bool,
 
-    /// With --unit-regions: warm the caches for every piece, one piece at a time, before the
-    /// pieces start building, so parallel workers read from disk instead of all fetching at once.
+    /// With --unit-regions, warm the caches for every piece, one at a time, before the pieces start building.
     #[arg(long, conflicts_with = "offline")]
     pub prewarm_first: bool,
     // --- end confluence:data ---

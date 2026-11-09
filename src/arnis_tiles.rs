@@ -5,9 +5,6 @@
 //! sidecar next to the Arnis executable, and a dev build finds it on PATH or
 //! at the path set in the window.
 
-// The window (a later wave) drives the bake; the CLI reads the folder it makes.
-#![allow(dead_code)]
-
 use std::ffi::OsStr;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};

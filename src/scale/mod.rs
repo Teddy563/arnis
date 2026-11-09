@@ -169,7 +169,7 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
 
     println!("One World: building {of} piece(s) of up to {n}x{n} regions");
     // The extract is read once, here; each piece then cuts its own area from the bake.
-    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_objects()) {
+    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
         crate::osm_pbf::bake_for_job(&src, selection)?;
     }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
@@ -264,7 +264,11 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
             })?;
         }
         if args.prewarm {
-            let _ = std::fs::remove_dir_all(&job.dir);
+            // Only the leases it wrote: a job already under way keeps its resume records.
+            for &i in &warm {
+                let _ = std::fs::remove_file(job.dir.join(format!("piece-{i}.lease.json")));
+            }
+            let _ = std::fs::remove_dir(&job.dir);
             let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
             return Ok(());
         }

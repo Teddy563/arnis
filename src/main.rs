@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+// The window (Wave 2) is the only caller of the whole module.
+#[allow(dead_code)]
 mod arnis_tiles;
 mod bedrock_addon;
 mod bedrock_block_map;
@@ -17,6 +19,8 @@ mod climate;
 mod clipping;
 mod colors;
 mod coordinate_system;
+// The window (Wave 2) is the only caller of the whole module.
+#[allow(dead_code)]
 mod data_plan;
 mod data_processing;
 mod datapack;
@@ -221,6 +225,7 @@ fn run_cli() {
     }
     retrieve_data::set_overpass_urls(args.overpass_url.clone());
     net::set_offline(args.offline);
+    net::set_prewarm(args.prewarm);
 
     // A plan is a dry run: it neither sweeps the tile cache nor makes the update request.
     let planning = args.units.plan_units.is_some();
@@ -609,7 +614,10 @@ fn run_cli() {
     // The Mapillary facade pipeline needs only the bbox too, and its downloads
     // are the longest thing in a run that uses it, so it starts here and is
     // collected inside `generate_world_with_options`, just before the buildings.
-    let facade_job = if args.prewarm {
+    let facade_job = if args.prewarm || net::offline() {
+        if net::offline() {
+            println!("--offline: skipping Mapillary street-level imagery");
+        }
         mapillary::FacadeJob::default()
     } else {
         mapillary::FacadeJob::start(&args, effective_bbox)
@@ -670,8 +678,9 @@ fn run_cli() {
                 osm_pbf::Source::from_args(&args).as_ref(),
             )
             .unwrap_or_else(|e| {
-                // Offline, the other fetches finish first so the error lists all that is missing.
-                if net::offline() {
+                // Offline, the other fetches finish first so the error lists all that is missing;
+                // a failure that is not a cache miss (a bad .pbf or archive) still stops here.
+                if net::offline() && !net::offline_misses().is_empty() {
                     return osm_parser::OsmData::empty();
                 }
                 eprintln!("{} Failed to fetch data: {e}", "Error:".red().bold());
