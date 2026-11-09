@@ -982,3 +982,37 @@ label[for].setting-label {
     transition: none !important;
   }
 }
+
+/* Meld features: everything marked meld-only is hidden while the Advanced switch is off */
+body.meld-off .meld-only {
+  display: none !important;
+}
+
+.settings-page .meld-card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ui-tile-border);
+  border-radius: 12px;
+}
+
+.settings-page .meld-card-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.settings-page input.meld-short,
+.settings-page .meld-card input[type="number"] {
+  width: 120px;
+  text-align: center;
+}
+
+.settings-page .meld-card .setting-grid {
+  grid-template-columns: minmax(0, 1fr);
+}

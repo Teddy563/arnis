@@ -1382,6 +1382,168 @@ impl Drop for BusySlot {
     }
 }
 
+/// The "Meld features" settings, parsed by the CLI's own parser so the window accepts exactly
+/// what the flags accept, and checked the way `validate_args` checks them: the window never
+/// runs it. No flags is the stock run.
+fn confluence_args(
+    flags: &[String],
+    one_world: bool,
+    world_format: &str,
+    is_new_world: bool,
+) -> Result<Args, String> {
+    use clap::Parser;
+    let mut extra =
+        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
+            .map_err(|e| {
+                let text = e.to_string();
+                let line = text.lines().next().unwrap_or_default();
+                line.trim_start_matches("error: ").to_string()
+            })?;
+    // Pieces are a One World feature; anywhere else the fields are inert.
+    if !one_world {
+        extra.units = Default::default();
+    }
+    extra.one_world = one_world;
+    extra.bedrock = world_format == "bedrock";
+    extra.luanti = world_format.starts_with("luanti");
+    if extra.units.only_pieces.is_some() && !extra.units.coordinates() {
+        return Err("Retrying pieces only applies to a job built in pieces.".to_string());
+    }
+    if extra.min_y.is_some() || extra.max_y.is_some() {
+        if !is_new_world || extra.bedrock || extra.luanti {
+            return Err("Lowest and highest Y only apply to a new Java world.".to_string());
+        }
+        extra.disable_height_limit = true;
+    }
+    crate::y_bounds::check(&extra)?;
+    crate::output_args::validate(&extra)?;
+    Ok(extra)
+}
+
+/// Copies the parsed "Meld features" settings onto the run's `Args`.
+fn apply_confluence(args: &mut Args, extra: Args) {
+    args.threads = extra.threads;
+    args.cpu_target = extra.cpu_target;
+    args.ram_budget_mb = extra.ram_budget_mb;
+    args.max_downloads = extra.max_downloads;
+    args.units = extra.units;
+    args.region_format = extra.region_format;
+    args.blinear_level = extra.blinear_level;
+    args.origin = extra.origin;
+    args.world_border = extra.world_border;
+    args.water = extra.water;
+    args.climate_mode = extra.climate_mode;
+    args.min_y = extra.min_y;
+    args.max_y = extra.max_y;
+    if extra.disable_height_limit {
+        args.disable_height_limit = true;
+        args.vanilla_height = false;
+    }
+    args.seed = extra.seed;
+    args.scatter = extra.scatter;
+    args.cave_style = extra.cave_style;
+    args.cave_ores = extra.cave_ores;
+    args.cave_seed = extra.cave_seed;
+    args.cave_datum_y = extra.cave_datum_y;
+    args.tree_realm = extra.tree_realm;
+    args.tree_size_weights = extra.tree_size_weights;
+    args.tree_pack_dir = extra.tree_pack_dir;
+    args.tree_pack_mode = extra.tree_pack_mode;
+    args.road_detail = extra.road_detail;
+    args.buildings = extra.buildings;
+    args.props = extra.props;
+    args.props_min_scale = extra.props_min_scale;
+}
+
+/// The command line a job's pieces repeat. A piece is a run of this executable, and the window
+/// was started without a command line, so it is rebuilt from the settings: the window's own
+/// fields, then `flags`. `--bbox`, the spawn and the per-process knobs are the coordinator's
+/// to set per piece.
+fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi::OsString> {
+    use clap::ValueEnum;
+    fn name<T: ValueEnum>(v: &T) -> String {
+        v.to_possible_value()
+            .map(|p| p.get_name().to_string())
+            .unwrap_or_default()
+    }
+    let mut out: Vec<std::ffi::OsString> = vec!["--one-world".into()];
+    if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
+        out.extend(["--output-dir".into(), dir.into(), "--world-name".into()]);
+        out.push(world.into());
+    }
+    let mut values = vec![
+        format!("--downloader={}", args.downloader),
+        format!("--scale={}", args.scale),
+        format!("--height-multiplier={}", args.height_multiplier),
+        format!("--body={}", name(&args.body)),
+        format!("--projection={}", args.projection),
+        format!("--ground-level={}", args.ground_level),
+        format!("--mode={}", name(&args.mode)),
+        format!("--post-apocalyptic={}", args.post_apocalyptic),
+        format!("--winter={}", args.winter),
+        format!("--interior={}", args.interior),
+        format!("--fields={}", name(&args.fields)),
+        format!("--max-tree-size={}", name(&args.max_tree_size)),
+        format!("--canopy-height={}", args.canopy_height),
+        format!("--overture={}", args.overture),
+        format!("--overture-source={}", name(&args.overture_source)),
+        format!("--rotation={}", args.rotation),
+        format!("--map-item={}", args.map_item),
+        format!("--gamemode={}", name(&args.gamemode)),
+        format!("--world-time={}", args.world_time),
+        format!("--world-type={}", name(&args.world_type)),
+        format!("--mob-spawning={}", name(&args.mob_spawning)),
+        format!("--signage={}", name(&args.signage)),
+        format!(
+            "--mapillary-facade-mode={}",
+            name(&args.mapillary_facade_mode)
+        ),
+        format!("--facade-detail={}", name(&args.facade_detail)),
+        format!("--facade-px={}", args.facade_px),
+    ];
+    let switches = [
+        ("--fillground", args.fillground),
+        ("--caves", args.caves),
+        ("--legacy-trees", args.legacy_trees),
+        ("--no-3d", !args.use_3d),
+        ("--debug", args.debug),
+        ("--vanilla-height", args.vanilla_height),
+        ("--disable-height-limit", args.disable_height_limit),
+        ("--aws-only-elevation", args.aws_only_elevation),
+        ("--bake-lighting", args.bake_lighting),
+        ("--voxy-lod", args.voxy_lod),
+        ("--dh-lod", args.dh_lod),
+        ("--map-preview", args.map_preview),
+        ("--building-facades", args.building_facades),
+        ("--body-gravity", args.body_gravity),
+        ("--traffic-lights", args.traffic_lights),
+        ("--discoveries", args.discoveries),
+        ("--pause-menu", args.pause_menu),
+        ("--zombie-outbreak", args.zombie_outbreak),
+        ("--disasters", args.disasters),
+        ("--moving-vehicles", args.moving_vehicles),
+    ];
+    values.extend(switches.iter().filter(|f| f.1).map(|f| f.0.to_string()));
+    if let Some(t) = args.timeout {
+        values.push(format!("--timeout={}", t.as_secs()));
+    }
+    if let Some(on) = args.mapillary_facades {
+        values.push(format!("--mapillary-facades={on}"));
+    }
+    // ponytail: the token rides on the pieces' command lines, visible to this user's other
+    // processes; pass it in their environment if that matters.
+    if let Some(token) = &args.mapillary_token {
+        values.push(format!("--mapillary-token={token}"));
+    }
+    out.extend(
+        values
+            .into_iter()
+            .chain(flags.iter().cloned())
+            .map(Into::into),
+    );
+    out
+}
+
 // Everything before the `spawn` below - the spawn point written into level.dat -
 // runs synchronously in this call, and a plain
 // `#[tauri::command]` would run all of it on the main thread with the window
@@ -1441,6 +1603,8 @@ fn gui_start_generation(
     body_gravity: bool,
     one_world: bool,
     one_world_name: String,
+    // The "Meld features" settings as CLI flags (`--name=value`); none when the switch is off.
+    flags: Vec<String>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -1464,6 +1628,21 @@ fn gui_start_generation(
     };
 
     progress::reset_progress_floor();
+    crate::scale::PAUSE.store(false, std::sync::atomic::Ordering::Release);
+    crate::scale::STOP.store(false, std::sync::atomic::Ordering::Release);
+
+    let extra = match confluence_args(&flags, one_world, &world_format, is_new_world) {
+        Ok(extra) => extra,
+        Err(msg) => {
+            emit_gui_error(&msg);
+            return Err(msg);
+        }
+    };
+    // The global pool was built at startup; a thread count asked for here gets its own.
+    let pool = extra
+        .thread_count()
+        .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().ok());
+    crate::data_processing::set_ram_budget_mb(extra.ram_budget_mb.unwrap_or(0));
 
     // Resolved before validation: off Earth the slider value is ignored, so
     // validating it could reject a run over a scale that never gets used.
@@ -1543,7 +1722,7 @@ fn gui_start_generation(
     tauri::async_runtime::spawn(async move {
         // Held until the worker finishes, on every path, so the globals stay this run's.
         let _generation_slot = generation_slot;
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+        let work = move || -> Result<(), String> {
             let world_path = if one_world {
                 one_world_dir(&selected_world, &one_world_name)
             } else {
@@ -1783,13 +1962,21 @@ fn gui_start_generation(
                 loot_table: None,
                 dump_loot_table: None,
             };
+            apply_confluence(&mut args, extra);
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
             crate::args::apply_body_defaults(&mut args);
             crate::args::apply_feature_needs(&mut args);
+            crate::y_bounds::apply(&mut args);
 
             let mut one_world_extending = false;
             if one_world {
+                // Asked for before `prepare` settles the world's values, as the user's own
+                // command line would ask.
+                let pieces_argv = args
+                    .units
+                    .coordinates()
+                    .then(|| piece_argv(&args, &world_path, &flags));
                 let session = match crate::one_world::prepare(&world_path, &bbox, &mut args) {
                     Ok(session) => session,
                     Err(e) => {
@@ -1822,7 +2009,43 @@ fn gui_start_generation(
                         .and_then(|n| n.to_str())
                         .unwrap_or(crate::one_world::DEFAULT_WORLD_NAME),
                 );
+                if let Some(argv) = pieces_argv {
+                    // The coordinator places the spawn, as --spawn-lat/--spawn-lng.
+                    (args.spawn_lat, args.spawn_lng) = spawn_point.unzip();
+                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
+                        eprintln!("{e}");
+                        // Finished pieces are kept: generating the same area again resumes.
+                        if let Some(g) = cleanup_guard.as_mut() {
+                            g.disarm();
+                        }
+                        if e == crate::scale::STOPPED {
+                            emit_gui_progress_update(
+                                progress::MESSAGE_ONLY,
+                                "Stopped. Finished pieces are kept; starting again resumes them.",
+                            );
+                        } else if e == crate::scale::PARTIAL {
+                            emit_gui_progress_update(
+                                progress::MESSAGE_ONLY,
+                                "The retried pieces are built; starting again builds the rest.",
+                            );
+                        } else {
+                            emit_gui_error(&e);
+                        }
+                        return Err(e);
+                    }
+                    if let Some(g) = cleanup_guard.as_mut() {
+                        g.disarm();
+                    }
+                    drop(_session_lock);
+                    emit_gui_progress_update(100.0, "Done! World generation completed.");
+                    println!("{}", "Done! World generation completed.".green().bold());
+                    return Ok(());
+                }
             }
+            // Same as run_cli: after a One World has applied the seed it keeps, before
+            // anything rolls a die. Process-wide, so set every run.
+            crate::deterministic_rng::set_world_seed(args.seed.unwrap_or(0));
             let args = args;
 
             // Same as run_cli: checked with the run's final scale and options, and a One
@@ -2202,9 +2425,12 @@ fn gui_start_generation(
                     Err(e.to_string())
                 }
             }
-        })
-        .await
-        {
+        };
+        let blocking = move || match pool {
+            Some(pool) => pool.install(work),
+            None => work(),
+        };
+        if let Err(e) = tokio::task::spawn_blocking(blocking).await {
             let error_msg = format!("Error in blocking task: {e}");
             eprintln!("{error_msg}");
             emit_gui_error(&error_msg);
@@ -2392,6 +2618,43 @@ mod locale_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The switch off sends no flags, and no flags leave every setting at the stock run's.
+    #[test]
+    fn switch_off_passes_no_new_flags() {
+        use clap::Parser;
+        let extra = confluence_args(&[], false, "java", true).unwrap();
+        let stock = Args::try_parse_from(["arnis"]).unwrap();
+        assert_eq!(format!("{extra:?}"), format!("{stock:?}"));
+    }
+
+    #[test]
+    fn the_flags_reach_the_run_and_its_pieces() {
+        use clap::Parser;
+        let flags: Vec<String> = [
+            "--one-world-workers=2",
+            "--seed=7",
+            "--road-detail=clean",
+            "--no-buildings",
+            "--only-pieces=2,3",
+        ]
+        .map(String::from)
+        .to_vec();
+        let extra = confluence_args(&flags, true, "java", false).unwrap();
+        assert!(extra.units.coordinates() && !extra.buildings && extra.seed == Some(7));
+        // Pieces are a One World feature: elsewhere the job flags are dropped.
+        let solo = confluence_args(&flags, false, "java", true).unwrap();
+        assert!(!solo.units.coordinates() && solo.units.only_pieces.is_none());
+        // A piece asked with the window's settings parses back to them.
+        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
+        apply_confluence(&mut args, extra);
+        let argv = piece_argv(&args, Path::new("saves/World"), &flags);
+        let back =
+            Args::try_parse_from(std::iter::once(std::ffi::OsString::from("arnis")).chain(argv))
+                .unwrap();
+        assert_eq!((back.scale, back.winter, back.seed), (2.0, true, Some(7)));
+        assert_eq!(back.world_name.as_deref(), Some("World"));
+    }
 
     #[test]
     fn a_one_world_off_java_or_off_earth_is_refused() {

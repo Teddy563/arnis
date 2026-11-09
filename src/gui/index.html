@@ -18,7 +18,7 @@
   <script type="module" src="./js/language-selector.js" defer></script>
 </head>
 
-<body>
+<body class="meld-off">
   <!-- Icon sprite for the settings page and the dialogs, drawn in the same
        24px stroke style as the gear and map toolbar icons. Referenced with
        <svg class="icon"><use href="#i-..."></use></svg>; stroke and colour
@@ -1191,6 +1191,88 @@
               </header>
 
               <div class="setting-grid">
+                <div class="settings-row setting-tile is-wide">
+                  <label for="advanced-meld-features-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-flask"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="advanced_meld_features">Meld features</span>
+                        <span class="tooltip-icon" data-tooltip="Shows the Scale settings here and the extra settings in Generation, Terrain &amp; Nature, Map &amp; Input and World. Off hides them all and sends none of them. Experimental.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="advanced_meld_features_desc">Large-world and extra generation settings from the Meld fork. Off, Arnis runs as it does without them.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="advanced-meld-features-toggle" name="advanced-meld-features-toggle">
+                  </div>
+                </div>
+
+                <div class="meld-card meld-only" id="meld-scale-card">
+                  <h4 class="meld-card-title" data-localize="meld_scale_title">Scale</h4>
+                  <div class="setting-grid">
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-workers-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_workers">Pieces at once</span>
+                        <span class="tooltip-icon" data-tooltip="Cuts a One World selection into pieces of up to 4 x 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from the free RAM and cores. Starting the same area again resumes it. One World only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_workers_desc">Build a One World in pieces, several at a time.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="meld-workers-select" name="meld-workers-select" class="settings-select"><option value="" selected>Off</option><option value="auto">Auto</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-cpu-target-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-monitor"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_cpu_target">CPU share</span>
+                        <span class="tooltip-icon" data-tooltip="Percent of the cores to use, from 10 to 100. The default is 90. Ignored when Threads is set.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_cpu_target_desc">Share of the cores to generate on.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="number" id="meld-cpu-target-input" min="10" max="100" step="1" value="90">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-ram-budget-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-hard-drive"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_ram_budget">Memory budget</span>
+                        <span class="tooltip-icon" data-tooltip="Sizes parallel work to this much memory instead of the free RAM reading, so several runs can share a machine. Empty measures the free RAM.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_ram_budget_desc">Memory the run may assume it has, in MB.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-ram-budget-input" name="meld-ram-budget-input" class="meld-short" placeholder="Auto" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide">
+                  <label for="meld-threads-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_threads">Threads</span>
+                        <span class="tooltip-icon" data-tooltip="Overrides CPU share. Empty uses 90% of the cores. A job in pieces splits it between the pieces.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_threads_desc">Exact number of worker threads.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-threads-input" name="meld-threads-input" class="meld-short" placeholder="Auto" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                  </div>
+                </div>
+
                 <div class="settings-row setting-tile">
                   <label for="disable-height-limit-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg>

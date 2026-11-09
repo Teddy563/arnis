@@ -153,6 +153,11 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
 /// Builds the selection `args` was opened on, piece by piece. Each piece runs this
 /// command line again with its own bbox and lease.
 pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
+    run_with(args, world_dir, std::env::args_os().skip(1).collect())
+}
+
+/// `run` with the command line the pieces repeat; the window has none of its own to give.
+pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<(), String> {
     let ctx = args
         .one_world_run
         .as_ref()
@@ -219,7 +224,6 @@ pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
             sizing.workers, sizing.threads
         );
     }
-    let argv: Vec<OsString> = std::env::args_os().skip(1).collect();
     let lease_for = |i: usize| UnitLease {
         piece: i as u32,
         area_id: job.area_base + i as u32,

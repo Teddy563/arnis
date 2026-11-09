@@ -10,6 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
+import { initMeldFeatures, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1284,6 +1285,8 @@ function initSettings() {
       });
     });
   });
+
+  initMeldFeatures();
 
   // Blueprint greys out the traffic lights.
   document.getElementById("generation-mode-select").addEventListener("change", () => refreshGameplayRows());
@@ -3577,7 +3580,8 @@ async function startGeneration() {
         disasters: gameplayToggle('disasters-toggle'),
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : ""
+        oneWorldName: oneWorld ? oneWorldFolderName() : "",
+        flags: meldFlags({ oneWorld: oneWorld })
     });
 
     console.log("Generation process started.");
