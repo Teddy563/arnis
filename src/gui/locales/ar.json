@@ -433,6 +433,7 @@
   "run_worker": "العامل {n}",
   "run_retry_hint": "انقر لإعادة محاولة هذا الجزء",
   "run_halo": "إظهار التداخل",
+  "run_piece": "الجزء {n}",
   "meld_prepare_check": "تحقق",
   "meld_prepare_bake": "تنزيل ومعالجة",
   "meld_prepare_stop": "إيقاف",

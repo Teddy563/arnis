@@ -433,6 +433,7 @@
   "run_worker": "Proces {n}",
   "run_retry_hint": "Kliknij, aby ponowić tę część",
   "run_halo": "Pokaż zakładkę",
+  "run_piece": "Część {n}",
   "meld_prepare_check": "Sprawdź",
   "meld_prepare_bake": "Pobierz i przetwórz",
   "meld_prepare_stop": "Zatrzymaj",

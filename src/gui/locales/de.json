@@ -433,6 +433,7 @@
   "run_worker": "Worker {n}",
   "run_retry_hint": "Klicken, um diesen Teil zu wiederholen",
   "run_halo": "Überlappung anzeigen",
+  "run_piece": "Teil {n}",
   "meld_prepare_check": "Prüfen",
   "meld_prepare_bake": "Herunterladen & aufbereiten",
   "meld_prepare_stop": "Stopp",

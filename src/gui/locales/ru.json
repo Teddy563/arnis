@@ -433,6 +433,7 @@
   "run_worker": "Процесс {n}",
   "run_retry_hint": "Нажмите, чтобы повторить эту часть",
   "run_halo": "Показать перекрытие",
+  "run_piece": "Часть {n}",
   "meld_prepare_check": "Проверить",
   "meld_prepare_bake": "Скачать и обработать",
   "meld_prepare_stop": "Стоп",

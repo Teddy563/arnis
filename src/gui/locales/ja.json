@@ -433,6 +433,7 @@
   "run_worker": "ワーカー {n}",
   "run_retry_hint": "クリックしてこのパーツを再試行",
   "run_halo": "重なりを表示",
+  "run_piece": "パーツ {n}",
   "meld_prepare_check": "確認",
   "meld_prepare_bake": "ダウンロードと前処理",
   "meld_prepare_stop": "停止",

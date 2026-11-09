@@ -433,6 +433,7 @@
   "run_worker": "Arbetare {n}",
   "run_retry_hint": "Klicka för att försöka med den här delen igen",
   "run_halo": "Visa överlappning",
+  "run_piece": "Del {n}",
   "meld_prepare_check": "Kontrollera",
   "meld_prepare_bake": "Ladda ner och bearbeta",
   "meld_prepare_stop": "Stoppa",

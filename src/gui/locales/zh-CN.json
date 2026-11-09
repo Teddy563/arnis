@@ -433,6 +433,7 @@
   "run_worker": "工作进程 {n}",
   "run_retry_hint": "点击以重试此分块",
   "run_halo": "显示重叠区域",
+  "run_piece": "分块 {n}",
   "meld_prepare_check": "检查",
   "meld_prepare_bake": "下载并处理",
   "meld_prepare_stop": "停止",

@@ -433,6 +433,7 @@
   "run_worker": "{n}. munkás",
   "run_retry_hint": "Kattintson a rész újrapróbálásához",
   "run_halo": "Átfedés mutatása",
+  "run_piece": "{n}. rész",
   "meld_prepare_check": "Ellenőrzés",
   "meld_prepare_bake": "Letöltés és feldolgozás",
   "meld_prepare_stop": "Leállítás",

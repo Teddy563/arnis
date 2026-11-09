@@ -433,6 +433,7 @@
   "run_worker": "Proceso {n}",
   "run_retry_hint": "Haz clic para reintentar esta pieza",
   "run_halo": "Mostrar solapamiento",
+  "run_piece": "Pieza {n}",
   "meld_prepare_check": "Comprobar",
   "meld_prepare_bake": "Descargar y procesar",
   "meld_prepare_stop": "Detener",

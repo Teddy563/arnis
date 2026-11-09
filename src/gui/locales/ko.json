@@ -433,6 +433,7 @@
   "run_worker": "작업자 {n}",
   "run_retry_hint": "클릭하여 이 조각 다시 시도",
   "run_halo": "겹침 표시",
+  "run_piece": "조각 {n}",
   "meld_prepare_check": "확인",
   "meld_prepare_bake": "다운로드 및 준비",
   "meld_prepare_stop": "중지",

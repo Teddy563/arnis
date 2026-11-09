@@ -433,6 +433,7 @@
   "run_worker": "Työntekijä {n}",
   "run_retry_hint": "Napsauta yrittääksesi tätä osaa uudelleen",
   "run_halo": "Näytä limitys",
+  "run_piece": "Osa {n}",
   "meld_prepare_check": "Tarkista",
   "meld_prepare_bake": "Lataa ja käsittele",
   "meld_prepare_stop": "Pysäytä",

@@ -433,6 +433,7 @@
   "run_worker": "Worker {n}",
   "run_retry_hint": "Click to retry this piece",
   "run_halo": "Show overlap",
+  "run_piece": "Piece {n}",
   "meld_prepare_check": "Check",
   "meld_prepare_bake": "Download & Bake",
   "meld_prepare_stop": "Stop",

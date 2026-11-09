@@ -433,6 +433,7 @@
   "run_worker": "დამმუშავებელი {n}",
   "run_retry_hint": "დააწკაპუნეთ ამ ნაწილის ხელახლა საცდელად",
   "run_halo": "გადაფარვის ჩვენება",
+  "run_piece": "ნაწილი {n}",
   "meld_prepare_check": "შემოწმება",
   "meld_prepare_bake": "ჩამოტვირთვა და დამუშავება",
   "meld_prepare_stop": "შეჩერება",

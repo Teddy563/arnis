@@ -433,6 +433,7 @@
   "run_worker": "Darbinieks {n}",
   "run_retry_hint": "Noklikšķiniet, lai šo daļu mēģinātu vēlreiz",
   "run_halo": "Rādīt pārklāšanos",
+  "run_piece": "{n}. daļa",
   "meld_prepare_check": "Pārbaudīt",
   "meld_prepare_bake": "Lejupielādēt un apstrādāt",
   "meld_prepare_stop": "Apturēt",

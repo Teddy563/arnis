@@ -433,6 +433,7 @@
   "run_worker": "Processus {n}",
   "run_retry_hint": "Cliquez pour réessayer cette partie",
   "run_halo": "Afficher le chevauchement",
+  "run_piece": "Partie {n}",
   "meld_prepare_check": "Vérifier",
   "meld_prepare_bake": "Télécharger et préparer",
   "meld_prepare_stop": "Arrêter",

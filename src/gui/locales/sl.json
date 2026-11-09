@@ -433,6 +433,7 @@
   "run_worker": "Delavec {n}",
   "run_retry_hint": "Kliknite za ponoven poskus tega dela",
   "run_halo": "Pokaži prekrivanje",
+  "run_piece": "Del {n}",
   "meld_prepare_check": "Preveri",
   "meld_prepare_bake": "Prenesi in pripravi",
   "meld_prepare_stop": "Ustavi",

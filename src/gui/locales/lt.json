@@ -433,6 +433,7 @@
   "run_worker": "Vykdytojas {n}",
   "run_retry_hint": "Spustelėkite, kad bandytumėte šią dalį dar kartą",
   "run_halo": "Rodyti sutapimą",
+  "run_piece": "{n} dalis",
   "meld_prepare_check": "Tikrinti",
   "meld_prepare_bake": "Atsisiųsti ir paruošti",
   "meld_prepare_stop": "Sustabdyti",
