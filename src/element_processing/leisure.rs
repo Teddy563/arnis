@@ -3,6 +3,7 @@ use crate::block_definitions::*;
 use crate::bresenham::bresenham_line;
 use crate::deterministic_rng::element_rng;
 use crate::element_processing::bridges::BridgeSurfaceMap;
+use crate::element_processing::raceways;
 use crate::element_processing::surfaces::get_blocks_for_surface;
 use crate::element_processing::tree::Tree;
 use crate::floodfill_cache::{
@@ -12,6 +13,7 @@ use crate::floodfill_cache::{
 use crate::osm_parser::{ProcessedMemberRole, ProcessedRelation, ProcessedWay};
 use crate::world_editor::WorldEditor;
 use rand::Rng;
+use std::collections::HashMap;
 
 pub fn generate_leisure(
     editor: &mut WorldEditor,
@@ -65,8 +67,16 @@ fn leisure_area(
             "outdoor_seating" => SMOOTH_STONE, //Usually stone or stone bricks
             "water_park" | "slipway" => LIGHT_GRAY_CONCRETE, // Water park area, not the pool. Usually is concrete
             "ice_rink" => PACKED_ICE, // TODO: Ice for Ice Rink, needs building defined
+            "track" => raceways::track_area_block(&element.tags).unwrap_or(GRASS_BLOCK),
             _ => GRASS_BLOCK,
         };
+        if matches!(leisure_type.as_str(), "pitch" | "track") {
+            if let Some(block) =
+                crate::element_processing::sport_pitches::default_surface(&element.tags)
+            {
+                block_type = block;
+            }
+        }
         // Explicit surface=* overrides the category default. Leave
         // `block_type` untouched for unknown surface values so existing
         // behaviour is preserved.
@@ -117,6 +127,11 @@ fn leisure_area(
             previous_node = Some((node.x, node.z));
         }
 
+        // A paved ground the sealing mask leaves open, such as a stadium's concourse,
+        // would otherwise repave the grass of the pitches inside it.
+        let spares_nested_turf = block_type != GRASS_BLOCK
+            && !crate::floodfill_cache::SEALED_LEISURE.contains(&leisure_type.as_str());
+
         // Flood-fill the interior of the leisure area using cache
         if corner_count > 0 {
             // Use deterministic RNG seeded by element ID for consistent results across region boundaries
@@ -127,6 +142,9 @@ fn leisure_area(
                     continue;
                 }
                 if leisure_type == "schoolyard" && editor.nested_area_owns(x, z) {
+                    continue;
+                }
+                if spares_nested_turf && editor.surface_is_sealed(x, z) {
                     continue;
                 }
                 editor.set_block(block_type, x, 0, z, Some(&[GRASS_BLOCK]), None);
@@ -223,6 +241,15 @@ fn leisure_area(
     }
 }
 
+/// Leisure relations drawn as areas: parks, and track areas raced by motor sport.
+pub fn relation_is_area(tags: &HashMap<String, String>) -> bool {
+    match tags.get("leisure").map(String::as_str) {
+        Some("park") => true,
+        Some("track") => raceways::track_area_block(tags).is_some(),
+        _ => false,
+    }
+}
+
 pub fn generate_leisure_from_relation(
     editor: &mut WorldEditor,
     rel: &ProcessedRelation,
@@ -231,7 +258,7 @@ pub fn generate_leisure_from_relation(
     building_footprints: &BuildingFootprintBitmap,
     bridge_surface: &BridgeSurfaceMap,
 ) {
-    if rel.tags.get("leisure").map(String::as_str) == Some("park") {
+    if relation_is_area(&rel.tags) {
         // Process each outer member way individually using cached flood fill.
         // We intentionally do not combine all outer nodes into one mega-way,
         // because that creates a nonsensical polygon spanning the whole relation

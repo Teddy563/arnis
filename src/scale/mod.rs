@@ -116,7 +116,7 @@ impl Job {
                 }
                 // Before any piece starts: a job interrupted and run again, or another
                 // run, must not hand out these ids to something else.
-                crate::map_item::reserve_map_ids(
+                crate::map_item::set_map_counter(
                     world_dir,
                     map_base + pieces as i32 * MAP_IDS_PER_PIECE - 1,
                 )?;
@@ -741,16 +741,23 @@ mod tests {
 
     #[test]
     fn live_with_workers_is_refused() {
-        let argv = ["arnis", "--live", "--one-world", "--one-world-workers", "4"];
-        // `--live` is upstream's Live mode, which this branch does not have yet; until the
-        // rebase onto it adds the flag, clap itself refuses it by name.
-        match <Args as clap::Parser>::try_parse_from(argv) {
-            Err(e) => assert!(e.to_string().contains("--live"), "{e}"),
-            Ok(args) => {
-                let err = crate::args::validate_args(&args).unwrap_err();
-                assert!(err.contains("--live"), "{err}");
-            }
+        let parse = |argv: &[&str]| <Args as clap::Parser>::try_parse_from(argv).unwrap();
+        for workers in ["4", "auto"] {
+            let args = parse(&[
+                "arnis",
+                "--live",
+                "--one-world",
+                "--one-world-workers",
+                workers,
+            ]);
+            let err = crate::args::validate_args(&args).unwrap_err();
+            assert!(
+                err.contains("--live") && err.contains("--one-world-workers"),
+                "{err}"
+            );
         }
+        let one = parse(&["arnis", "--live", "--one-world", "--one-world-workers", "1"]);
+        assert!(!crate::args::validate_args(&one).is_err_and(|e| e.contains("--live")));
     }
 
     #[test]

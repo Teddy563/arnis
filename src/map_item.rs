@@ -88,8 +88,8 @@ pub fn leave_counter_to_coordinator() {
     COUNTER_IS_COORDINATORS.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Moves the counter to `last_id`, reserving ids a job's pieces will use.
-pub fn reserve_map_ids(world_path: &Path, last_id: i32) -> Result<(), String> {
+/// Sets the map id counter, so the next map a run or the game makes gets `last_id + 1`.
+pub(crate) fn set_map_counter(world_path: &Path, last_id: i32) -> Result<(), String> {
     MapStore::open(world_path)?.write_counter(last_id)
 }
 
@@ -652,7 +652,7 @@ mod tests {
         let world =
             std::path::PathBuf::from(crate::world_utils::create_new_world(tmp.path()).unwrap());
         let data = world.join("data");
-        reserve_map_ids(&world, FIRST_MAP_ID + 999).unwrap();
+        set_map_counter(&world, FIRST_MAP_ID + 999).unwrap();
         // Another run in between starts past the reservation.
         assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);
         // Done: the maps are below the reservation, so the counter stays where it is.
@@ -672,7 +672,7 @@ mod tests {
         let store = MapStore::open(&world).unwrap();
         let blank = build_map_dat(vec![0; 16], 0, false, 0, 0, store.data_version);
         // A map below the counter leaves it where it is.
-        reserve_map_ids(&world, FIRST_MAP_ID + 999).unwrap();
+        set_map_counter(&world, FIRST_MAP_ID + 999).unwrap();
         store.write_map(FIRST_MAP_ID + 70, &blank).unwrap();
         sync_map_counter(&world).unwrap();
         assert_eq!(next_map_id(&data), FIRST_MAP_ID + 1000);

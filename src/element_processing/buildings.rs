@@ -6067,7 +6067,15 @@ fn infer_building_height(
         return InferredHeight::HallBlocks(blocks);
     }
 
+    // An arena is one tall bowl of seats under a roof, a big one as tall as a stand.
+    let arena = matches!(building_type, "stadium" | "arena")
+        || (building_type == "yes" && tags.get("leisure").map(String::as_str) == Some("stadium"));
     let (is_hall, table): (bool, &[(i32, u32)]) = match building_type {
+        _ if arena && area_m2 >= 5000 => (true, &[(20, 40), (24, 40), (28, 20)]),
+        _ if arena => (true, &[(10, 50), (12, 50)]),
+        "sports_hall" | "sports_centre" | "gymnasium" | "riding_hall" => {
+            (true, &[(8, 40), (10, 40), (12, 20)])
+        }
         "bungalow" | "static_caravan" => (false, &[(1, 100)]),
         "house" | "detached" | "villa" | "farm" => (false, &[(1, 25), (2, 55), (3, 20)]),
         "semidetached_house" => (false, &[(2, 70), (3, 30)]),
@@ -9015,9 +9023,10 @@ fn roof_family_for_colour(rgb: (u8, u8, u8), rng: &mut impl Rng) -> Block {
     }
 }
 
-/// A roof in the wall's own tone merges with it into one lump: brick tile
-/// over a brick wall moves to the red clay shade (brick under red tile is the
-/// norm, the same block is not), zinc over a grey wall becomes slate.
+/// A roof in the wall's own tone merges with it into one lump. Brick tile over
+/// pink granite moves to the red clay shade, and zinc over a grey wall becomes
+/// slate. Red tile lays its slope in brick stairs just as brick tile does, so
+/// over a brick wall either turns to orange tile.
 fn roof_distinct_from_wall(roof: Block, wall: Block, region: MaterialRegion) -> Block {
     const BRICK_TONE: &[Block] = &[BRICK, POLISHED_GRANITE, GRANITE];
     const RED_TONE: &[Block] = &[RED_TERRACOTTA, MANGROVE_PLANKS];
@@ -9036,14 +9045,18 @@ fn roof_distinct_from_wall(roof: Block, wall: Block, region: MaterialRegion) -> 
     let warm_tone = [BRICK_TONE, RED_TONE, ORANGE_TONE]
         .into_iter()
         .find(|tone| tone.contains(&roof));
+    let brick_on_brick = wall == BRICK && get_stair_block_for_material(roof) == BRICK_STAIRS;
     let clash = roof == wall
+        || brick_on_brick
         || warm_tone.is_some_and(|tone| tone.contains(&wall))
         || (MID_GREY.contains(&roof) && MID_GREY.contains(&wall));
     if !clash {
         roof
     } else if warm_tone.is_some() && region != MaterialRegion::BritishIsles {
         // Still clay tile, in a neighbouring shade.
-        if warm_tone == Some(RED_TONE) {
+        if wall == BRICK {
+            TILE_ORANGE
+        } else if warm_tone == Some(RED_TONE) {
             TILE_BRICK
         } else {
             TILE_RED
@@ -21373,6 +21386,32 @@ mod style_tests {
             // Strays still reach blocks outside the sub-palette.
             assert!(counts.len() > 5, "district {district}: no strays");
         }
+    }
+
+    #[test]
+    fn brick_walls_get_no_roof_laid_in_brick() {
+        use MaterialRegion as R;
+        for region in [R::BrickNorth, R::Central, R::NorthAmerica, R::BritishIsles] {
+            for roof in [TILE_BRICK, TILE_RED, TILE_ORANGE, TILE_DARK, SLATE_DARK] {
+                let out = roof_distinct_from_wall(roof, BRICK, region);
+                assert_ne!(
+                    get_stair_block_for_material(out),
+                    BRICK_STAIRS,
+                    "{} over brick in {region:?}",
+                    roof.name()
+                );
+            }
+        }
+        // Red tile stays red over render, and brick tile over pink granite
+        // still moves to it.
+        assert_eq!(
+            roof_distinct_from_wall(TILE_RED, WHITE_CONCRETE, R::BrickNorth),
+            TILE_RED
+        );
+        assert_eq!(
+            roof_distinct_from_wall(TILE_BRICK, POLISHED_GRANITE, R::BrickNorth),
+            TILE_RED
+        );
     }
 
     #[test]

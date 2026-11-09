@@ -6,11 +6,14 @@ use crate::element_processing::bridge_styles::{
     decorate_bridge_above_deck, place_arch_below_deck, place_pier_bent, place_pillar,
     BridgePathSample, BridgeStyle,
 };
-use crate::element_processing::bridges::{is_bridge_way, BridgeStructureMap, BridgeSurfaceMap};
+use crate::element_processing::bridges::{
+    is_bridge_way, way_cells, BridgeStructureMap, BridgeSurfaceMap,
+};
 use crate::element_processing::connected_blocks::{
     connected_iron_bars, four_connected_line, place_connected, stair_steps,
 };
 use crate::element_processing::get_nearest_non_road_block;
+use crate::element_processing::raceways;
 use crate::element_processing::road_detail::RoadDetail;
 use crate::element_processing::road_markings::{self, CrossMark, CrossingPaint, RoadMarkingIndex};
 use crate::element_processing::surfaces::{
@@ -21,7 +24,10 @@ use crate::floodfill::flood_fill_area;
 use crate::floodfill_cache::{CoordinateBitmap, FloodFillCache, RoadMaskBitmap};
 use crate::osm_parser::{ProcessedElement, ProcessedNode, ProcessedWay};
 use crate::world_editor::WorldEditor;
+use fnv::FnvHashMap;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 /// Widest road half-width in blocks.
 const MAX_BLOCK_RANGE: usize = 8;
@@ -119,13 +125,17 @@ pub(crate) fn road_profile(
         })
         .collect();
     let half = ROAD_SMOOTHING.len() / 2;
+    // The weights sum to just under 1; unnormalised they pull a road a block towards Y 0
+    // a thousand blocks out, where One World terrain lies.
+    let total: f64 = ROAD_SMOOTHING.iter().sum();
     let smooth: Vec<f64> = (0..n)
         .map(|i| {
             ROAD_SMOOTHING
                 .iter()
                 .enumerate()
                 .map(|(k, w)| w * across[(i + k).saturating_sub(half).min(n - 1)])
-                .sum()
+                .sum::<f64>()
+                / total
         })
         .collect();
 
@@ -146,6 +156,146 @@ pub(crate) fn road_profile(
         }
     }
     level_profile(&smooth, &pins)
+}
+
+/// The profile an at-grade road is laid on. A tunnel portal keeps the ground at its mouth,
+/// which the bore starts from.
+fn at_grade_profile(
+    editor: &WorldEditor,
+    way: &ProcessedWay,
+    block_range: i32,
+    connectivity: &HighwayConnectivityMap,
+    tunnel_portals: &TunnelPortalMap,
+) -> Vec<i32> {
+    road_profile(editor, way, block_range, connectivity, |x, z| {
+        connectivity.is_shared(x, z).then(|| {
+            if tunnel_portals.is_open_end((x, z)) {
+                editor
+                    .terrain_level(x, z)
+                    .unwrap_or_else(|| editor.get_ground_level(x, z))
+            } else {
+                junction_level(editor, x, z)
+            }
+        })
+    })
+}
+
+/// The level each road is laid at, for what drives on it: a deck, a ramp or the way's own
+/// profile. Asking the column instead would lift a road passing under a bridge onto the deck.
+pub(crate) struct RoadSurfaces<'a> {
+    editor: &'a WorldEditor<'a>,
+    bridges: &'a BridgeStructureMap,
+    connectivity: &'a HighwayConnectivityMap,
+    tunnel_portals: &'a TunnelPortalMap,
+    scale: f64,
+    /// Centerline cells and their levels, by way.
+    ways: RefCell<FnvHashMap<u64, Rc<WaySurface>>>,
+}
+
+struct WaySurface {
+    cells: Vec<(i32, i32)>,
+    ys: Vec<i32>,
+    /// The cells by tile of `SURFACE_TILE` blocks, so a lookup reads only those nearby.
+    tiles: FnvHashMap<(i32, i32), Vec<u32>>,
+}
+
+/// Tile size of the way surface index: lanes keep well within a tile of their way.
+const SURFACE_TILE: i32 = 16;
+
+impl WaySurface {
+    fn new(cells: Vec<(i32, i32)>, ys: Vec<i32>) -> Self {
+        let mut tiles: FnvHashMap<(i32, i32), Vec<u32>> = FnvHashMap::default();
+        for (k, &(x, z)) in cells.iter().enumerate() {
+            tiles
+                .entry((x.div_euclid(SURFACE_TILE), z.div_euclid(SURFACE_TILE)))
+                .or_default()
+                .push(k as u32);
+        }
+        Self { cells, ys, tiles }
+    }
+
+    /// The index of the cell nearest (x, z): from the tiles around it, or else all of them.
+    fn nearest(&self, x: i32, z: i32) -> Option<usize> {
+        let d2 = |k: usize| {
+            let (cx, cz) = self.cells[k];
+            i64::from(cx - x).pow(2) + i64::from(cz - z).pow(2)
+        };
+        let (tx, tz) = (x.div_euclid(SURFACE_TILE), z.div_euclid(SURFACE_TILE));
+        let near = (-1..=1)
+            .flat_map(|dz| (-1..=1).map(move |dx| (tx + dx, tz + dz)))
+            .filter_map(|t| self.tiles.get(&t))
+            .flatten()
+            .map(|&k| k as usize)
+            .min_by_key(|&k| d2(k));
+        // Within a tile, nothing outside the ring can be nearer.
+        near.filter(|&k| d2(k) <= i64::from(SURFACE_TILE).pow(2))
+            .or_else(|| (0..self.cells.len()).min_by_key(|&k| d2(k)))
+    }
+}
+
+impl<'a> RoadSurfaces<'a> {
+    pub(crate) fn new(
+        editor: &'a WorldEditor<'a>,
+        bridges: &'a BridgeStructureMap,
+        connectivity: &'a HighwayConnectivityMap,
+        tunnel_portals: &'a TunnelPortalMap,
+        scale: f64,
+    ) -> Self {
+        Self {
+            editor,
+            bridges,
+            connectivity,
+            tunnel_portals,
+            scale,
+            ways: RefCell::default(),
+        }
+    }
+
+    /// The surface block's height of `way` at the centerline cell nearest (x, z).
+    pub(crate) fn y_at(&self, way: &ProcessedWay, x: i32, z: i32) -> i32 {
+        let surface = {
+            let mut ways = self.ways.borrow_mut();
+            Rc::clone(
+                ways.entry(way.id)
+                    .or_insert_with(|| Rc::new(self.surface_of(way))),
+            )
+        };
+        let nearest = surface.nearest(x, z).unwrap_or(0);
+        surface
+            .ys
+            .get(nearest)
+            .copied()
+            .unwrap_or_else(|| self.editor.get_ground_level(x, z))
+    }
+
+    fn surface_of(&self, way: &ProcessedWay) -> WaySurface {
+        let cells = way_cells(way);
+        let ys = if let Some(member) = self.bridges.lookup_member(way.id) {
+            (0..cells.len()).map(|t| member.drive_y_at(t)).collect()
+        } else if let Some(ramp) = self.bridges.lookup_ramp(way.id) {
+            (0..cells.len()).map(|t| ramp.y_at(t)).collect()
+        } else {
+            let half = way
+                .tags
+                .get("highway")
+                .map_or(1, |h| highway_block_range(h, &way.tags, self.scale));
+            let mut ys = at_grade_profile(
+                self.editor,
+                way,
+                half,
+                self.connectivity,
+                self.tunnel_portals,
+            );
+            // The road dips into a tunnel portal it leads to.
+            if let Some(approach) = self.tunnel_portals.approach(way.id) {
+                for (t, y) in ys.iter_mut().enumerate() {
+                    *y += tunnel_approach_offset(approach, t as i32).min(0);
+                }
+            }
+            ys
+        };
+        WaySurface::new(cells, ys)
+    }
 }
 
 /// Whole-block heights for a smoothed profile: the sequence paying least in squared
@@ -237,10 +387,10 @@ const ROAD_PROTECTED_SURFACES: &[Block] = &[
     RED_CONCRETE,
 ];
 
-/// What a red bicycle path must not overwrite: the road list without the
-/// asphalt mix, so the path shows where a road's width runs over it whichever
-/// of the two is built first. Lane stripes and zebras still win.
-const CYCLEWAY_PROTECTED_SURFACES: &[Block] = &[
+/// What a red bicycle path or race track paint must not overwrite: the road list
+/// without the asphalt mix, so they show where a road's width runs over them
+/// whichever of the two is built first. Lane stripes and zebras still win.
+const OVER_ASPHALT_PROTECTED_SURFACES: &[Block] = &[
     BLACK_CONCRETE,
     WHITE_CONCRETE,
     YELLOW_CONCRETE,
@@ -285,6 +435,7 @@ pub(crate) fn surface_palette(
         "path" => &[DIRT_PATH],
         // Sand trap for runaway vehicles.
         "escape" => &[SAND],
+        "raceway" => raceways::unsurfaced_palette(tags).unwrap_or(DEFAULT_ROAD_MIX),
         _ => DEFAULT_ROAD_MIX,
     }
 }
@@ -1648,7 +1799,12 @@ fn generate_highways_internal(
 
             // Handle areas like pedestrian plazas. Unified surface handling
             // via the shared surfaces module.
-            let surface_block: Block = get_blocks_for_surface_way(way, &[STONE])[0];
+            let fallback: &[Block] = if highway_type == "raceway" {
+                surface_palette(highway_type, &way.tags)
+            } else {
+                &[STONE]
+            };
+            let surface_block: Block = get_blocks_for_surface_way(way, fallback)[0];
 
             // Fill the area using flood fill cache
             let filled_area = flood_fill_cache.get_or_compute(way, args.timeout.as_ref());
@@ -1700,13 +1856,15 @@ fn generate_highways_internal(
             let block_types = surface_palette(highway_type, &way.tags);
             let surface_protect =
                 if highway_type == "cycleway" && cycleway_palette(&way.tags).is_some() {
-                    CYCLEWAY_PROTECTED_SURFACES
+                    OVER_ASPHALT_PROTECTED_SURFACES
                 } else {
                     ROAD_PROTECTED_SURFACES
                 };
 
             // Canonical width (shared with prescan/bridge consumers).
             let block_range = highway_block_range(highway_type, &way.tags, scale_factor);
+            let race_paint = (highway_type == "raceway").then(|| markings.raceway_paint());
+            let race_deck = raceways::deck(&way.tags);
 
             // A road over water on a small map reads as a 1-block causeway; leave water
             // cells to the carve. The road mask drops the same cells.
@@ -1845,18 +2003,13 @@ fn generate_highways_internal(
             let own_profile: Vec<i32> = if is_bridge_member || is_bridge_ramp {
                 Vec::new()
             } else {
-                // A tunnel portal keeps the ground at its mouth, which the bore starts from.
-                road_profile(editor, way, block_range, highway_connectivity, |x, z| {
-                    highway_connectivity.is_shared(x, z).then(|| {
-                        if tunnel_portals.is_open_end((x, z)) {
-                            editor
-                                .terrain_level(x, z)
-                                .unwrap_or_else(|| editor.get_ground_level(x, z))
-                        } else {
-                            junction_level(editor, x, z)
-                        }
-                    })
-                })
+                at_grade_profile(
+                    editor,
+                    way,
+                    block_range,
+                    highway_connectivity,
+                    tunnel_portals,
+                )
             };
             let road_ys: &[i32] = bridge_ramp.map_or(&own_profile, |ramp| ramp.ys());
             let road_y_at = |tds: usize, along: i32| {
@@ -2159,8 +2312,17 @@ fn generate_highways_internal(
                                     // defined in ROAD_PROTECTED_SURFACES — see
                                     // its doc comment for the overlap-handling
                                     // rationale.
-                                    let effective_block =
-                                        semirandom_surface(set_x, set_z, block_types);
+                                    // Track paint goes over asphalt whichever was laid first.
+                                    let race =
+                                        race_paint.and_then(|p| p.at(race_deck, set_x, set_z));
+                                    let effective_block = race.unwrap_or_else(|| {
+                                        semirandom_surface(set_x, set_z, block_types)
+                                    });
+                                    let protect = if race.is_some() {
+                                        OVER_ASPHALT_PROTECTED_SURFACES
+                                    } else {
+                                        surface_protect
+                                    };
                                     if use_absolute_y {
                                         editor.set_block_absolute(
                                             effective_block,
@@ -2168,7 +2330,7 @@ fn generate_highways_internal(
                                             cell_y,
                                             set_z,
                                             None,
-                                            Some(surface_protect),
+                                            Some(protect),
                                         );
                                     } else {
                                         editor.set_block(
@@ -2177,7 +2339,7 @@ fn generate_highways_internal(
                                             cell_y,
                                             set_z,
                                             None,
-                                            Some(surface_protect),
+                                            Some(protect),
                                         );
                                     }
                                 }
@@ -3186,7 +3348,7 @@ pub(crate) fn lane_marking_count(highway_type: &str, tags: &HashMap<String, Stri
         return 1;
     }
     let painted = tags.get("lane_markings").map(String::as_str);
-    if painted == Some("no") {
+    if painted == Some("no") || (highway_type == "raceway" && painted != Some("yes")) {
         return 1;
     }
     let lanes = tags
@@ -3366,6 +3528,7 @@ pub(crate) fn highway_block_range(
         "secondary_link" | "tertiary_link" => (1, true),
         "escape" => (1, false),
         "steps" => (1, false),
+        "raceway" => (raceways::default_half_width(tags), false),
         _ => (2, true),
     };
 
@@ -4072,6 +4235,93 @@ mod tests {
                 &RoadMarkingIndex::default(),
             );
         }
+    }
+
+    #[test]
+    fn a_raceway_is_circuit_wide_with_its_paint_on_the_surface() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(400.0, 100.0).unwrap();
+        let mut editor = test_editor(&xzbbox);
+        let mut way = way_along(1, (10, 50), (390, 50), &[]);
+        way.tags = [("highway", "raceway"), ("sport", "motor")]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let elements = [ProcessedElement::Way(way.clone())];
+        let markings =
+            RoadMarkingIndex::build(&elements, 1.0, crate::decals::region::SignRegion::Germanic);
+        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+        let outlines = crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&[]);
+        let structures =
+            BridgeStructureMap::build(&[], &editor, &HighwayConnectivityMap::new(), &outlines, 1.0);
+        let surface = BridgeSurfaceMap::build(&[], &structures, 1.0);
+        let empty = CoordinateBitmap::new_empty();
+        generate_highways(
+            &mut editor,
+            &elements[0],
+            &args,
+            &HighwayConnectivityMap::new(),
+            &FloodFillCache::new(),
+            &empty,
+            &structures,
+            &surface,
+            &TunnelInternalEndpoints::default(),
+            &TunnelPortalMap::default(),
+            &empty,
+            &mut Vec::new(),
+            &markings,
+        );
+        for z in [44, 56] {
+            assert!(
+                editor.check_for_block(200, 0, z, Some(&[WHITE_CONCRETE])),
+                "z={z}"
+            );
+        }
+        for z in 45..=55 {
+            assert!(
+                editor.check_for_block(200, 0, z, Some(DEFAULT_ROAD_MIX)),
+                "asphalt at z={z}"
+            );
+        }
+        assert!(!editor.check_for_block(200, 0, 43, Some(&[WHITE_CONCRETE])));
+    }
+
+    #[test]
+    fn raceway_paint_goes_over_a_road_laid_first() {
+        let xzbbox = XZBBox::rect_from_xz_lengths(400.0, 100.0).unwrap();
+        let mut editor = test_editor(&xzbbox);
+        let street = way_along(2, (150, 56), (250, 56), &[("highway", "residential")]);
+        build_ways(&mut editor, &[street]);
+        assert!(editor.check_for_block(200, 0, 56, Some(DEFAULT_ROAD_MIX)));
+        let mut way = way_along(1, (10, 50), (390, 50), &[]);
+        way.tags = [("highway", "raceway"), ("sport", "motor")]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let elements = [ProcessedElement::Way(way)];
+        let markings =
+            RoadMarkingIndex::build(&elements, 1.0, crate::decals::region::SignRegion::Germanic);
+        let args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter());
+        let outlines = crate::element_processing::bridge_styles::BridgeOutlineIndex::build(&[]);
+        let structures =
+            BridgeStructureMap::build(&[], &editor, &HighwayConnectivityMap::new(), &outlines, 1.0);
+        let surface = BridgeSurfaceMap::build(&[], &structures, 1.0);
+        let empty = CoordinateBitmap::new_empty();
+        generate_highways(
+            &mut editor,
+            &elements[0],
+            &args,
+            &HighwayConnectivityMap::new(),
+            &FloodFillCache::new(),
+            &empty,
+            &structures,
+            &surface,
+            &TunnelInternalEndpoints::default(),
+            &TunnelPortalMap::default(),
+            &empty,
+            &mut Vec::new(),
+            &markings,
+        );
+        assert!(editor.check_for_block(200, 0, 56, Some(&[WHITE_CONCRETE])));
     }
 
     /// Street lamp nodes at (id, x, z), tagged with `layer`.
@@ -6147,6 +6397,25 @@ mod tests {
             })
             .collect();
         assert_eq!(edge[0], edge[1]);
+    }
+
+    #[test]
+    fn a_road_far_below_y_zero_stays_on_the_ground() {
+        for level in [-1120.3f32, 2650.4] {
+            let ground = sloped_ground(200, 60, |_, _| level);
+            let xzbbox = XZBBox::rect_from_xz_lengths(199.0, 59.0).unwrap();
+            let editor = tunnel_editor(&xzbbox, ground);
+            let ProcessedElement::Way(road) =
+                line_way(1, &[(10, 30), (190, 30)], &[("highway", "residential")])
+            else {
+                unreachable!()
+            };
+            let ys = road_profile(&editor, &road, 2, &HighwayConnectivityMap::new(), |_, _| {
+                None
+            });
+            let want = level.round() as i32;
+            assert!(ys.iter().all(|&y| y == want), "{level}: {ys:?}");
+        }
     }
 
     #[test]

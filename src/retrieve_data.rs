@@ -431,6 +431,7 @@ pub fn fetch_data_from_overpass(
         nwr["3dmr"];
         nwr["shop"];
         nwr["office"];
+        node["raceway"];
         node["place"~"^(city|town|borough|suburb|village|quarter|neighbourhood|hamlet)$"];
         way[~"."~"."];
     )->.candidates;
