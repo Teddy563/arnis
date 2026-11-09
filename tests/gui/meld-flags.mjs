@@ -51,4 +51,14 @@ for (const ctx of contexts) {
 const ctx = contexts[1];
 document.getElementById('meld-seed-input').value = '7';
 assert.deepStrictEqual(meldFlags(ctx), ['--seed=7']);
+// A job in pieces: its defaults send nothing new; each control is its own flag.
+document.getElementById('meld-workers-select').value = '2';
+assert.deepStrictEqual(meldFlags(ctx), ['--one-world-workers=2', '--seed=7']);
+document.getElementById('meld-margin-input').value = '2';
+document.getElementById('meld-piece-order-select').value = 'west';
+document.getElementById('meld-skip-built-toggle').checked = true;
+document.getElementById('meld-stitch-map-toggle').checked = true;
+assert.deepStrictEqual(meldFlags(ctx), ['--one-world-workers=2', '--margin-regions=2', '--piece-order=west', '--skip-built', '--stitch-map', '--seed=7']);
+// Not without One World.
+assert.ok(!meldFlags({ ...ctx, oneWorld: false }).some((f) => f.includes('margin')));
 console.log('meld-flags: ok');

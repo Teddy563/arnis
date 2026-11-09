@@ -948,8 +948,13 @@ $(document).ready(function () {
     var sliderControl = null;
     // One World: the user hid the areas, and the world they were hidden for.
     var oneWorldOverlayHidden = false;
-    // Slider positions: a One World shows its areas opaque unless told otherwise.
-    var overlayOpacity = { world: 50, oneWorld: 100 };
+    // Slider positions; null is the layout's default: a One World's areas at 70 % on the
+    // map-first page, opaque in Classic (3.4.0).
+    var overlayOpacity = { world: 50, oneWorld: null };
+    // On the map-first page the world's preview images draw under the selection and the piece
+    // outlines (overlayPane is 400); Classic keeps them in overlayPane.
+    map.createPane('arnisPreview').style.zIndex = 350;
+    var previewPane = function () { return window.arnisMapFirst ? 'arnisPreview' : 'overlayPane'; };
     var oneWorldFittedPath = null;
 
     function setWorldOverlayOpacity(value) {
@@ -974,6 +979,7 @@ $(document).ready(function () {
         if (!data.areas) {
             var bounds = L.latLngBounds([data.min_lat, data.min_lon], [data.max_lat, data.max_lon]);
             return L.imageOverlay(data.image_base64, bounds, {
+                pane: previewPane(),
                 opacity: opacityValue,
                 interactive: false,
                 zIndex: 500
@@ -984,6 +990,7 @@ $(document).ready(function () {
             var b = L.latLngBounds([area.min_lat, area.min_lon], [area.max_lat, area.max_lon]);
             if (area.image_base64) {
                 group.addLayer(L.imageOverlay(area.image_base64, b, {
+                    pane: previewPane(),
                     opacity: opacityValue,
                     interactive: false,
                     zIndex: 500 + index
@@ -1139,7 +1146,8 @@ $(document).ready(function () {
         worldOverlayData = data;
         worldPreviewAvailable = true;
         var slider = document.getElementById('world-preview-opacity');
-        if (slider) slider.value = String(overlayOpacity[data.areas ? 'oneWorld' : 'world']);
+        var kept = overlayOpacity[data.areas ? 'oneWorld' : 'world'];
+        if (slider) slider.value = String(kept == null ? (window.arnisMapFirst ? 70 : 100) : kept);
         var btn = document.getElementById('world-preview-btn');
         if (btn) {
             btn.classList.remove('disabled');
@@ -1486,15 +1494,18 @@ $(document).ready(function () {
     var pieceLayer = L.layerGroup().addTo(map);
     var PIECE_COLORS = {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
-        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43'
+        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff'
     };
+    // How full each state's cup is: a running piece fills to its percent, a finished one to the top.
+    var PIECE_FULL = { done: 1, skipped: 1, failed: 1, stopped: 1 };
     // Colour is never the only sign of a state: an icon in the label, and the line's pattern.
     var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8' };
     var PIECE_DASH = { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5' };
     var lastPieces = [];
     var pieceHalo = false;
-    // Below this width on screen (px), a piece's number would not fit in it.
-    var PIECE_LABEL_MIN_PX = 44;
+    // Below this width on screen (px) a piece shows no number: zoomed out, thousands of numbers
+    // would only clutter the map.
+    var PIECE_LABEL_MIN_PX = 64;
 
     function pieceElapsed(p) {
         if (!p.since) return '';
@@ -1510,7 +1521,18 @@ $(document).ready(function () {
         };
         var box = document.createElement('div');
         var running = p.state === 'start' || p.state === 'retry';
-        box.appendChild(row(p.text.piece + ' \u00B7 ' + p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : '')));
+        // Line 1: the state's dot and word (and percent), the piece's name muted after it.
+        var head = row(p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : ''));
+        head.className = 'piece-tip-head';
+        var dot = document.createElement('i');
+        dot.className = 'piece-tip-dot';
+        dot.style.background = PIECE_COLORS[p.state] || '#8a8a8a';
+        var name = document.createElement('span');
+        name.textContent = p.text.piece;
+        head.prepend(dot);
+        head.appendChild(name);
+        box.appendChild(head);
+        if (p.text.size) box.appendChild(row(p.text.size));
         if (p.text.worker) box.appendChild(row(p.text.worker));
         if (p.since) box.appendChild(row(pieceElapsed(p)));
         if (p.text.error) box.appendChild(row(p.text.error));
@@ -1524,6 +1546,8 @@ $(document).ready(function () {
 
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
+        // While pieces build, the selection and its handles fade so the pieces read (bbox.css).
+        document.body.classList.toggle('pieces-building', pieces.some(function(p) { return p.state === 'start' || p.state === 'retry'; }));
         var seen = {};
         pieces.forEach(function(p) {
             seen[p.i] = true;
@@ -1542,18 +1566,38 @@ $(document).ready(function () {
                 item.label = L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false })
                     .setLatLng(item.rect.getBounds().getCenter()).addTo(pieceLayer);
             }
+            // A plan drawn again may give this number another place: a layer kept by number but
+            // left where it was drew an old plan's piece over the new one's.
+            if (!item.rect.getBounds().equals([[b[0], b[1]], [b[2], b[3]]])) {
+                item.rect.setBounds(L.latLngBounds([b[0], b[1]], [b[2], b[3]]));
+                item.label.setLatLng(item.rect.getBounds().getCenter());
+            }
             item.p = p;
+            // A plan's pieces are thin outlines, its ring (margin) fainter and dotted. A job's
+            // pieces are empty cups that fill from the bottom.
+            var planned = p.state === 'planned';
             item.rect.setStyle({
-                color: color, weight: p.state === 'failed' ? 3 : 2, fillColor: color,
-                fillOpacity: p.state === 'queued' ? 0.05 : 0.18, dashArray: PIECE_DASH[p.state] || null
+                color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
+                fillOpacity: planned ? (p.ring ? 0.03 : 0.08) : 0,
+                dashArray: planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
             });
+            var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
+            if (full > 0) {
+                var cup = [[b[0], b[1]], [b[0] + (b[2] - b[0]) * Math.min(1, full), b[3]]];
+                if (!item.fill) item.fill = L.rectangle(cup, { stroke: false, interactive: false, fillOpacity: 0.35 }).addTo(pieceLayer);
+                else item.fill.setBounds(cup);
+                item.fill.setStyle({ fillColor: color });
+            } else if (item.fill) {
+                pieceLayer.removeLayer(item.fill);
+                item.fill = null;
+            }
             var path = item.rect.getElement();
             if (path) {
                 path.classList.toggle('piece-running', running);
                 path.classList.toggle('piece-retryable', retryable);
             }
             item.rect.setTooltipContent(pieceTip(p));
-            item.label.setContent((PIECE_ICONS[p.state] ? PIECE_ICONS[p.state] + ' ' : '') + p.n +
+            item.label.setContent((PIECE_ICONS[p.state] ? '<span class="piece-icon-' + p.state + '">' + PIECE_ICONS[p.state] + '</span> ' : '') + p.n +
                 (running && p.pct != null ? ' ' + p.pct + '%' : ''));
             if (item.halo) { pieceLayer.removeLayer(item.halo); item.halo = null; }
             if (pieceHalo && p.halo) {
@@ -1565,7 +1609,7 @@ $(document).ready(function () {
         Object.keys(pieceLayers).forEach(function(i) {
             if (seen[i]) return;
             var item = pieceLayers[i];
-            [item.rect, item.label, item.halo].forEach(function(l) { if (l) pieceLayer.removeLayer(l); });
+            [item.rect, item.label, item.halo, item.fill].forEach(function(l) { if (l) pieceLayer.removeLayer(l); });
             delete pieceLayers[i];
         });
         updatePieceLabels();
@@ -1577,9 +1621,17 @@ $(document).ready(function () {
             var item = pieceLayers[i];
             var sw = map.latLngToContainerPoint(item.rect.getBounds().getSouthWest());
             var ne = map.latLngToContainerPoint(item.rect.getBounds().getNorthEast());
-            var small = Math.min(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y)) < PIECE_LABEL_MIN_PX;
+            var side = Math.min(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y));
             var el = item.label.getElement();
-            if (el) el.classList.toggle('piece-label-off', small);
+            if (!el) return;
+            el.classList.toggle('piece-label-off', side < PIECE_LABEL_MIN_PX);
+            // The number grows with the piece on screen.
+            var size = Math.max(14, Math.min(30, Math.round(side / 4))) + 'px';
+            // Re-centred only when the size changes: Leaflet centres by the label's width.
+            if (el.style.fontSize !== size) {
+                el.style.fontSize = size;
+                item.label.update();
+            }
         });
     }
     map.on('zoomend', updatePieceLabels);
@@ -1676,6 +1728,17 @@ $(document).ready(function () {
 
         if (event.data && event.data.type === 'livePlayers') {
             setLivePlayers(event.data.active, event.data.canTeleport, event.data.players);
+        }
+
+        // Meld features on: a country or region found by the search can be selected whole.
+        if (event.data && event.data.type === 'meldFeatures') {
+            var was = window.arnisMeldOn;
+            window.arnisMeldOn = Boolean(event.data.on);
+            window.arnisWorldScale = Number(event.data.scale) || 1;
+            // The map-first page's look (hover font, previews under the selection); Classic keeps 3.4.0's.
+            window.arnisMapFirst = Boolean(event.data.mapFirst);
+            document.body.classList.toggle('map-first', window.arnisMapFirst);
+            if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 
         // One World keeps rotation at 0.
@@ -2279,6 +2342,8 @@ $(document).ready(function () {
     */
     startBounds = new L.LatLngBounds([0.0, 0.0], [0.0, 0.0]);
     var bounds = new L.Rectangle(startBounds, {
+        // bbox.css fades it while pieces build.
+        className: 'bbox-selection',
         color: '#fecc44',
         opacity: 1.0,
         weight: 3,
@@ -2326,6 +2391,7 @@ $(document).ready(function () {
     function clearBboxHandles() {
         _bboxHandles.forEach(function (h) { map.removeLayer(h); });
         _bboxHandles = [];
+        sizeLabel = null;
     }
 
     function refreshBboxHandles() {
@@ -2354,6 +2420,7 @@ $(document).ready(function () {
             });
             marker.on('drag', function (ev) {
                 rect.setBounds(new L.LatLngBounds(fixedCorner, ev.target.getLatLng()));
+                liveSelection(rect);
             });
             marker.on('dragend', function () {
                 _syncFromRect(rect);
@@ -2383,6 +2450,7 @@ $(document).ready(function () {
                 [startB.getSouth() + dLat, startB.getWest() + dLng],
                 [startB.getNorth() + dLat, startB.getEast() + dLng]
             ));
+            liveSelection(rect);
         });
         mover.on('dragend', function () {
             _syncFromRect(rect);
@@ -2390,7 +2458,108 @@ $(document).ready(function () {
         });
         mover.addTo(map);
         _bboxHandles.push(mover);
+        if (window.arnisMeldOn) meldHandles(rect);
     }
+
+    // ---- Meld features: edge handles, move from inside, a size readout, a live plan ----
+
+    // Each edge's midpoint moves that edge alone.
+    var EDGES = [
+        { cls: 'ns', at: function (b) { return [b.getNorth(), b.getCenter().lng]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [p.lat, b.getEast()]]; } },
+        { cls: 'ns', at: function (b) { return [b.getSouth(), b.getCenter().lng]; }, set: function (b, p) { return [[p.lat, b.getWest()], [b.getNorth(), b.getEast()]]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getEast()]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [b.getNorth(), p.lng]]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getWest()]; }, set: function (b, p) { return [[b.getSouth(), p.lng], [b.getNorth(), b.getEast()]]; } }
+    ];
+    var sizeLabel = null;
+    var liveSync = 0;
+
+    function meldHandles(rect) {
+        var b = rect.getBounds();
+        EDGES.forEach(function (e) {
+            var icon = L.divIcon({ className: 'bbox-handle bbox-handle-' + e.cls, iconSize: [10, 10], iconAnchor: [5, 5] });
+            var marker = L.marker(e.at(b), { icon: icon, draggable: true, zIndexOffset: 2000 });
+            var start = null;
+            marker.on('dragstart', function () { start = rect.getBounds(); });
+            marker.on('drag', function (ev) {
+                rect.setBounds(L.latLngBounds(e.set(start, ev.target.getLatLng())));
+                liveSelection(rect);
+            });
+            marker.on('dragend', function () {
+                _syncFromRect(rect);
+                refreshBboxHandles();
+            });
+            marker.addTo(map);
+            _bboxHandles.push(marker);
+        });
+    }
+
+    // "3.2 × 2.1 km · about 42 regions" at the world scale the window last sent.
+    function sizeText(b) {
+        var mid = b.getCenter().lat;
+        var w = map.distance([mid, b.getWest()], [mid, b.getEast()]);
+        var h = map.distance([b.getSouth(), b.getWest()], [b.getNorth(), b.getWest()]);
+        var side = 512 / (window.arnisWorldScale || 1);
+        return mapText('map_selection_size', '{w} × {h} km · about {r} regions')
+            .replace('{w}', (w / 1000).toFixed(1)).replace('{h}', (h / 1000).toFixed(1))
+            .replace('{r}', Math.ceil(w / side) * Math.ceil(h / side));
+    }
+
+    // While a handle drags: the readout follows, and with Meld features the window gets the
+    // selection once a second (and at the end), so the planned pieces follow without a plan
+    // request on every move.
+    function liveSelection(rect) {
+        if (!window.arnisMeldOn) return;
+        var b = rect.getBounds();
+        // Shown while dragging only: at rest it would sit over the ring's piece numbers.
+        if (!sizeLabel) {
+            sizeLabel = L.tooltip({ permanent: true, direction: 'top', className: 'bbox-size', interactive: false, offset: [0, -6] });
+            sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).addTo(map);
+            _bboxHandles.push(sizeLabel);
+        }
+        sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b));
+        var now = Date.now();
+        if (now - liveSync < 1000) return;
+        liveSync = now;
+        _syncFromRect(rect);
+    }
+
+    // Meld features: a drag that starts inside the selection moves it, while all of it is on
+    // screen; zoomed into a big one, the drag pans the map.
+    var inside = null;
+    map.on('mousedown', function (ev) {
+        var rect = window.arnisMeldOn && _getBboxRect();
+        if (!rect || !rect.getBounds().contains(ev.latlng) || ev.originalEvent.button !== 0) return;
+        if (!map.getBounds().contains(rect.getBounds())) return;
+        if (drawControl && drawControl._toolbars && (drawControl._toolbars.draw || {})._activeMode) return;
+        inside = { from: ev.latlng, b: rect.getBounds(), rect: rect };
+        map.dragging.disable();
+    });
+    map.on('mousemove', function (ev) {
+        if (!inside) return;
+        // The button went up where the map did not see it (another frame, outside the window).
+        if (!(ev.originalEvent.buttons & 1)) return endMove();
+        var dLat = ev.latlng.lat - inside.from.lat;
+        var dLng = ev.latlng.lng - inside.from.lng;
+        var b = inside.b;
+        inside.rect.setBounds(L.latLngBounds([b.getSouth() + dLat, b.getWest() + dLng], [b.getNorth() + dLat, b.getEast() + dLng]));
+        if (!inside.moved) clearBboxHandles();
+        inside.moved = true;
+        liveSelection(inside.rect);
+    });
+    function endMove() {
+        if (!inside) return;
+        var moved = inside.moved;
+        var rect = inside.rect;
+        inside = null;
+        map.dragging.enable();
+        // A click (say on a failed piece, to retry it) moved nothing.
+        if (!moved) return;
+        _syncFromRect(rect);
+        refreshBboxHandles();
+    }
+    map.on('mouseup', endMove);
+    document.addEventListener('mouseup', endMove);
+    window.addEventListener('blur', endMove);
 
     // Show a brief toast notification on the map
     function showRotationToast(message) {
@@ -2454,6 +2623,8 @@ $(document).ready(function () {
         }
 
         drawnItems.addLayer(e.layer);
+        // bbox.css fades it while pieces build.
+        if (e.layer.getElement && e.layer.getElement()) e.layer.getElement().classList.add('bbox-selection');
 
         // Only update the bounds based on non-marker layers
         if (e.layerType !== 'marker') {

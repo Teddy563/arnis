@@ -146,6 +146,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_one_world_info,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
+            gui_plan_job,
             gui_log,
             gui_set_telemetry_consent,
             gui_live_info,
@@ -1450,6 +1451,34 @@ fn gui_get_one_world_overlays(world_path: String) -> Result<Option<OneWorldOverl
     }))
 }
 
+/// How a job in pieces would cut the selection, with its estimates: the line `--plan-units`
+/// prints, from the same plan the job runs. Reads the world, writes nothing.
+#[tauri::command(async)]
+fn gui_plan_job(
+    save_path: String,
+    world_name: String,
+    bbox_text: String,
+    world_scale: f64,
+    flags: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let mut args = confluence_args(&flags, true, "java", false)?;
+    if !args.units.coordinates() {
+        return Err("Only a job built in pieces has a plan.".to_string());
+    }
+    crate::args::validate_scale(world_scale)?;
+    args.scale = world_scale;
+    let size = args
+        .units
+        .unit_regions
+        .unwrap_or(crate::args::UnitSize::N(crate::scale::DEFAULT_UNIT_REGIONS));
+    crate::work_units::plan_line(
+        &one_world_dir(&save_path, &world_name),
+        &LLBBox::from_str(&bbox_text)?,
+        &args,
+        size,
+    )
+}
+
 /// Reveals a file or folder in the system file explorer.
 /// On Windows, opens files with the default application (e.g. .mcworld with Minecraft
 /// Bedrock), except OneDrive paths which are revealed in Explorer to avoid the shell's
@@ -1676,6 +1705,12 @@ impl Drop for BusySlot {
 const WINDOW_FLAGS: &[&str] = &[
     "one-world-workers",
     "only-pieces",
+    "unit-regions",
+    "snap-regions",
+    "margin-regions",
+    "piece-order",
+    "skip-built",
+    "stitch-map",
     "threads",
     "ram-budget-mb",
     "max-downloads",
@@ -3199,6 +3234,50 @@ mod tests {
         let y = ["--min-y=-64".to_string()];
         assert!(confluence_args(&y, true, "java", false).is_err());
         assert!(confluence_args(&y, false, "bedrock", true).is_err());
+    }
+
+    /// The window draws the plan the job would run, from the same flags, and writes nothing.
+    #[test]
+    fn the_window_plans_the_job_it_would_run() {
+        let dir = std::env::temp_dir().join(format!("arnis-plan-{}", std::process::id()));
+        let save = dir.display().to_string();
+        let bbox = "44.4450,26.0950,44.4480,26.1030";
+        let plan = |flags: &[&str]| {
+            let flags = flags.iter().map(|f| f.to_string()).collect();
+            gui_plan_job(save.clone(), "W".into(), bbox.into(), 1.0, flags)
+        };
+        assert!(plan(&[]).is_err(), "no pieces, no plan");
+        let bad = gui_plan_job(
+            save.clone(),
+            "W".into(),
+            bbox.into(),
+            f64::NAN,
+            vec!["--one-world-workers=2".into()],
+        );
+        assert!(bad.is_err(), "a scale that is not a number has no plan");
+        let p = plan(&[
+            "--one-world-workers=2",
+            "--unit-regions=1",
+            "--snap-regions=cover",
+        ])
+        .unwrap();
+        let units = p["units"].as_array().unwrap();
+        assert_eq!(units.len(), 4);
+        assert!(units.iter().all(|u| u["size"] == 1 && u["done"] == false));
+        assert_eq!(p["estimate"]["workers"], 2);
+        assert!(units.iter().all(|u| u["ring"] == false));
+        // A margin of one region: 4 pieces inside, a ring of 12 around them.
+        let p = plan(&[
+            "--one-world-workers=2",
+            "--unit-regions=1",
+            "--snap-regions=cover",
+            "--margin-regions=1",
+        ])
+        .unwrap();
+        let units = p["units"].as_array().unwrap();
+        assert_eq!(units.len(), 16);
+        assert_eq!(units.iter().filter(|u| u["ring"] == true).count(), 12);
+        assert!(!dir.exists());
     }
 
     /// The names the window may send exist, and nothing else gets through.

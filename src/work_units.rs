@@ -432,20 +432,34 @@ pub fn plan(
 }
 
 /// `--plan-units N`: prints the plan as one JSON line and touches nothing.
-/// A world that does not exist yet is planned in the frame its first run
-/// would give it (centred on the request).
 pub fn print_plan(
     world_dir: &std::path::Path,
     requested: &LLBBox,
     args: &crate::args::Args,
     size: UnitSize,
 ) -> Result<(), String> {
+    let plan = plan_line(world_dir, requested, args, size)?;
+    for w in plan["warnings"].as_array().into_iter().flatten() {
+        eprintln!("Warning: {}", w.as_str().unwrap_or_default());
+    }
+    println!("{plan}");
+    Ok(())
+}
+
+/// The plan line `--plan-units` prints, which the window draws. A world that does not exist
+/// yet is planned in the frame its first run would give it (centred on the request).
+pub fn plan_line(
+    world_dir: &std::path::Path,
+    requested: &LLBBox,
+    args: &crate::args::Args,
+    size: UnitSize,
+) -> Result<serde_json::Value, String> {
     let proj = crate::one_world::frame_for(world_dir, requested, args)?;
     let Plan {
         requested: asked,
         rect: world,
         units,
-        ..
+        name,
     } = plan(&proj, requested, args, size)?;
     let mut existing = 0;
     let workers = crate::scale::budget::sizing(
@@ -474,14 +488,18 @@ pub fn print_plan(
                 "chunks": u.chunks(),
                 "regions": u.regions,
                 "existing_chunks": have,
+                // Built by an earlier run of this same job, which a run now resumes.
+                "done": crate::scale::piece_done(world_dir, &name, u),
+                // Wholly outside the selection: a piece of the margin ring.
+                "ring": u.rect.max_x() < asked.min_x()
+                    || asked.max_x() < u.rect.min_x()
+                    || u.rect.max_z() < asked.min_z()
+                    || asked.max_z() < u.rect.min_z(),
                 "estimate": {"disk_mb": e.disk_mb, "ram_mb": e.ram_mb, "time_min": e.time_min},
             })
         })
         .collect();
-    for w in &warnings {
-        eprintln!("Warning: {w}");
-    }
-    let plan = serde_json::json!({
+    let mut plan = serde_json::json!({
         "v": 1,
         "type": "plan",
         "unit_regions": match size {
@@ -494,12 +512,10 @@ pub fn print_plan(
         "existing_chunks": existing,
         "estimate": job_estimate,
     });
-    let mut plan = plan;
     if !warnings.is_empty() {
         plan["warnings"] = serde_json::json!(warnings);
     }
-    println!("{plan}");
-    Ok(())
+    Ok(plan)
 }
 
 /// On-disk KB per chunk, [low, high]. A chunk takes at least one 4,096-byte sector. Measured:
@@ -791,6 +807,50 @@ mod tests {
         let p = plan(&proj, &req, &with(SnapRegions::Cover, 1), UnitSize::N(2)).unwrap();
         assert_eq!(r(&p.rect), [-2560, -2560, 2559, 2559]);
         assert_eq!(p.name, "-2560_-2560_2559_2559_n2");
+    }
+
+    /// Doc 21 A2: whatever the snap, margin and size, a plan tiles its rectangle; no two
+    /// pieces share land. (Overlap seen in the window was the overlay, not this.)
+    #[test]
+    fn every_plan_is_a_tiling() {
+        use crate::args::{SnapRegions, UnitArgs};
+        let (proj, req) = doc18();
+        let snaps = [
+            None,
+            Some(SnapRegions::Cover),
+            Some(SnapRegions::Fit),
+            Some(SnapRegions::Merge),
+        ];
+        for snap in snaps {
+            for margin in 0..3 {
+                let mut args = args_with(UnitArgs {
+                    snap_regions: snap,
+                    margin_regions: margin,
+                    ..Default::default()
+                });
+                args.ram_budget_mb = Some(4000);
+                for size in [
+                    UnitSize::N(1),
+                    UnitSize::N(2),
+                    UnitSize::N(4),
+                    UnitSize::Auto,
+                ] {
+                    let p = plan(&proj, &req, &args, size).unwrap();
+                    let area: u64 = p.units.iter().map(WorkUnit::chunks).sum();
+                    let [x0, z0, x1, z1] = r(&p.rect);
+                    let want = ((x1 - x0 + 1) / 16 * ((z1 - z0 + 1) / 16)) as u64;
+                    assert_eq!(area, want, "{snap:?} m{margin} {size}: gap or overlap");
+                    for (i, a) in p.units.iter().enumerate() {
+                        let [ax0, az0, ax1, az1] = r(&a.rect);
+                        for b in &p.units[i + 1..] {
+                            let [bx0, bz0, bx1, bz1] = r(&b.rect);
+                            let apart = ax1 < bx0 || bx1 < ax0 || az1 < bz0 || bz1 < az0;
+                            assert!(apart, "{snap:?} m{margin} {size}: overlap");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

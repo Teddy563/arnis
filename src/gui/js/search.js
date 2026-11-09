@@ -126,7 +126,7 @@ var citySearch = {
         }
         
         var html = '';
-        results.forEach(function(result) {
+        results.forEach(function(result, index) {
             var displayName = result.display_name;
             var nameParts = displayName.split(',');
             var mainName = nameParts[0];
@@ -135,10 +135,24 @@ var citySearch = {
             html += '<div class="search-result-item" data-lat="' + result.lat + '" data-lon="' + result.lon + '">';
             html += '<div class="search-result-name">' + self.escapeHtml(mainName) + '</div>';
             html += '<div class="search-result-details">' + self.escapeHtml(details) + '</div>';
+            // A country or region (Meld features): select all of it, not just look there.
+            if (window.arnisMeldOn && result.boundingbox && (result.class === 'boundary' || result.type === 'administrative')) {
+                html += '<button type="button" class="search-select-area" data-index="' + index + '"></button>';
+            }
             html += '</div>';
         });
         
         $results.html(html).show();
+        $results.find('.search-select-area').text(window.mapText('map_select_area', 'Select this area'));
+        $results.find('.search-select-area').on('click', function(e) {
+            e.stopPropagation();
+            // Nominatim's box is south, north, west, east.
+            var b = results[$(this).data('index')].boundingbox.map(Number);
+            map.fitBounds([[b[0], b[2]], [b[1], b[3]]]);
+            window.parent.postMessage({ type: 'selectArea', bounds: [b[0], b[2], b[1], b[3]] }, '*');
+            $('#city-search').val('');
+            self.hideResults();
+        });
         
         // Bind click events to results
         $('.search-result-item').on('click', function() {

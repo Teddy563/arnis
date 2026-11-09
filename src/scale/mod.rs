@@ -40,7 +40,7 @@ const TAIL_LINES: usize = 40;
 /// Further attempts at a piece that failed for a reason that may pass.
 const MAX_RETRIES: u32 = 2;
 /// Piece size when only `--one-world-workers` is given.
-const DEFAULT_UNIT_REGIONS: i32 = 4;
+pub const DEFAULT_UNIT_REGIONS: i32 = 4;
 
 /// Pause holds the queue: no piece starts, the running ones finish, and the job stays
 /// resumable. Stop ends the job and kills its running pieces; the finished ones are kept,
@@ -204,6 +204,13 @@ impl Job {
             .ok()?;
         serde_json::from_str(&text).ok()
     }
+}
+
+/// Whether the job folder `name` holds `u` as built, read as a resume reads it.
+pub fn piece_done(world_dir: &Path, name: &str, u: &WorkUnit) -> bool {
+    let dir = world_dir.join(one_world::JOBS_DIR).join(name);
+    dir.join(format!("done-{}.json", done_key(u))).exists()
+        || dir.join(format!("done-{}.json", u.index)).exists()
 }
 
 fn write(path: &Path, value: &Value) -> Result<(), String> {
