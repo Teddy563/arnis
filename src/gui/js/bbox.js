@@ -1517,7 +1517,17 @@ $(document).ready(function () {
         };
         var box = document.createElement('div');
         var running = p.state === 'start' || p.state === 'retry';
-        box.appendChild(row(p.text.piece + ' \u00B7 ' + p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : '')));
+        // Line 1: the state's dot and word (and percent), the piece's name muted after it.
+        var head = row(p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : ''));
+        head.className = 'piece-tip-head';
+        var dot = document.createElement('i');
+        dot.className = 'piece-tip-dot';
+        dot.style.background = PIECE_COLORS[p.state] || '#8a8a8a';
+        var name = document.createElement('span');
+        name.textContent = p.text.piece;
+        head.prepend(dot);
+        head.appendChild(name);
+        box.appendChild(head);
         if (p.text.size) box.appendChild(row(p.text.size));
         if (p.text.worker) box.appendChild(row(p.text.worker));
         if (p.since) box.appendChild(row(pieceElapsed(p)));

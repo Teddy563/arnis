@@ -572,24 +572,48 @@ body,
   }
 }
 
-/* A piece's hover card, dark like the main page's cards */
+/* The map's hovers in the window's UI font (the map page itself is monospace) */
+.leaflet-tooltip,
+.leaflet-draw-tooltip {
+  font-family: var(--map-font, "Segoe UI", Arial, sans-serif);
+}
+
+/* A piece's hover card, dark like the main page's cards: the state's dot and word, then its size */
 .leaflet-tooltip.piece-tip {
   max-width: 360px;
-  white-space: pre-wrap;
+  padding: 8px 12px;
   background: rgba(30, 30, 30, 0.94);
   border: 1px solid #4d4d4d;
-  border-radius: 6px;
+  border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  color: #f2f2f2;
+  color: #b8b8b8;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .leaflet-tooltip.piece-tip > div > div {
   white-space: nowrap;
 }
 
-.leaflet-tooltip.piece-tip > div > div:first-child {
-  color: #fecc44;
+.piece-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #f2f2f2;
+  font-size: 13px;
   font-weight: 600;
+}
+
+.piece-tip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.piece-tip-head span {
+  margin-left: 4px;
+  color: #8f8f8f;
+  font-weight: 400;
 }
 
 .leaflet-tooltip-top.piece-tip::before {
