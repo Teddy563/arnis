@@ -400,6 +400,8 @@ export function schedulePlan(fresh = false) {
       onPlan();
     }
     if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
+    // A finished job's pieces (and Retry) belong to its own plan, not to this one.
+    if (!running && pieces.size && keyOf() !== jobKey) resetPieces();
   }
   clearTimeout(planTimer);
   planTimer = setTimeout(updatePlan, 250);

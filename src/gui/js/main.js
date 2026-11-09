@@ -1344,7 +1344,8 @@ function initSettings() {
     // A retry was asked for on the map or with Retry: it starts without the hold.
     start: () => startGeneration(true),
     localize: (element, key) => localizeElement(window.localization, { element }, key),
-    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}`,
+    // The flags that cut the job into pieces are part of it: --only-pieces numbers its pieces.
+    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}|${meldFlags({ oneWorld: true, java: true, plan: true }).filter((f) => /^--(unit-regions|margin-regions|snap-regions|origin)=/.test(f))}`,
     map: () => getMapFrame()?.contentWindow,
   });
   document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
