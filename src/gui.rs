@@ -2760,7 +2760,10 @@ fn gui_start_generation(
             // Same as run_cli: the facade pipeline needs only the bbox, and its
             // downloads are the longest part of a run that uses it, so it starts
             // now and is collected just before the buildings.
-            generation_options.facades = crate::mapillary::FacadeJob::start(&args, bbox);
+            // Offline, as in run_cli, there is no street-level imagery to fetch.
+            if !crate::net::offline() {
+                generation_options.facades = crate::mapillary::FacadeJob::start(&args, bbox);
+            }
             let generation_options = generation_options;
 
             // Same as run_cli: fix the dimension span before the editor is touched.
