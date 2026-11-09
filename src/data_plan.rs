@@ -93,53 +93,6 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
         .and_then(|p| fs2::available_space(p).ok())
 }
 
-#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
-/// One place downloads or bakes are kept.
-#[derive(serde::Serialize, Debug, PartialEq)]
-pub struct Location {
-    /// `local_archive`, `bake_scratch`, `pbf_downloads`, `pbf_bakes` or `cache_root`.
-    pub kind: &'static str,
-    pub path: String,
-    pub exists: bool,
-    /// What it holds.
-    pub bytes: u64,
-    pub free_bytes: Option<u64>,
-    /// The window can move it (the Local Archive folder field).
-    pub changeable: bool,
-}
-
-#[allow(dead_code)] // Still unused: Storage view and parallel downloads are not in the window
-/// Where the OSM sources keep their downloads and bakes, under the cache
-/// root `root`, with the Local Archive in `archive`. The cache root's size is
-/// `cache_bytes`, every cache added up, as the window works it out.
-pub fn locations(root: &Path, archive: &Path, cache_bytes: u64) -> Vec<Location> {
-    use crate::elevation::cache::dir_size_bytes;
-    let at = |kind, path: PathBuf, bytes: Option<u64>, changeable| Location {
-        kind,
-        exists: path.is_dir(),
-        bytes: bytes.unwrap_or_else(|| dir_size_bytes(&path)),
-        free_bytes: free_bytes(&path),
-        path: path.display().to_string(),
-        changeable,
-    };
-    // arnis-tiles keeps its downloads and chunk stores in the folder's `work`.
-    let scratch = archive.join("work");
-    let scratch_bytes = dir_size_bytes(&scratch);
-    let pbf = root.join("arnis").join("osm-pbf");
-    vec![
-        at(
-            "local_archive",
-            archive.to_path_buf(),
-            Some(dir_size_bytes(archive).saturating_sub(scratch_bytes)),
-            true,
-        ),
-        at("bake_scratch", scratch, Some(scratch_bytes), false),
-        at("pbf_downloads", pbf.join("downloads"), None, false),
-        at("pbf_bakes", pbf.join("bakes"), None, false),
-        at("cache_root", root.to_path_buf(), Some(cache_bytes), false),
-    ]
-}
-
 /// Typical cached file per source, measured over a working cache (2026-10),
 /// for the estimate while none of the area is cached yet; afterwards the
 /// area's own files set it.
@@ -392,30 +345,5 @@ mod tests {
         assert_eq!(archive_peak_bytes(&[100, 100]), 140 + 175 + 140);
         assert_eq!(archive_peak_bytes(&[100, 100, 100]), 2 * 140 + 175 + 140);
         assert_eq!(archive_peak_bytes(&[]), 0);
-    }
-
-    #[test]
-    fn locations_name_each_folder_and_what_it_holds() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let archive = root.join("archive");
-        touch(&archive.join("x.pmtiles"), 300);
-        touch(&archive.join("work").join("pbf").join("x.osm.pbf"), 200);
-        touch(&root.join("arnis/osm-pbf/downloads/x-latest.osm.pbf"), 50);
-        let got = locations(root, &archive, 1234);
-        let at = |k: &str| got.iter().find(|l| l.kind == k).unwrap();
-        assert_eq!(
-            at("local_archive").bytes,
-            300,
-            "the scratch is counted apart"
-        );
-        assert!(at("local_archive").changeable && at("local_archive").exists);
-        assert_eq!(at("bake_scratch").bytes, 200);
-        assert_eq!(at("pbf_downloads").bytes, 50);
-        assert!(!at("pbf_bakes").exists && at("pbf_bakes").bytes == 0);
-        // A folder not made yet still names the disk it would be on.
-        assert!(at("pbf_bakes").free_bytes.is_some());
-        assert_eq!(at("cache_root").bytes, 1234);
-        assert!(got.iter().filter(|l| l.changeable).count() == 1);
     }
 }
