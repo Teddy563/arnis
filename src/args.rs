@@ -547,7 +547,7 @@ pub struct Args {
     /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
     /// The folders say what a file is; the size folder (small, medium, big,
     /// tall, giant) is optional and otherwise measured from the height. A file
-    /// that does not load is skipped with a warning. See --init-tree-pack-dir.
+    /// that does not load is skipped with a warning.
     #[arg(long, value_name = "FOLDER")]
     pub tree_pack_dir: Option<PathBuf>,
 
@@ -555,12 +555,6 @@ pub struct Args {
     /// replace a realm's built-in trees wherever the folder has any for it.
     #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
     pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
-
-    /// Create the empty --tree-pack-dir layout of every bundled pack (realm,
-    /// community, tree type and size folders, with README.txt files) in FOLDER
-    /// and exit.
-    #[arg(long, value_name = "FOLDER")]
-    pub init_tree_pack_dir: Option<PathBuf>,
 
     /// Write every bundled tree schematic into the --tree-pack-dir layout in
     /// FOLDER, to edit or adapt, and exit.
@@ -985,7 +979,6 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
             args.tree_pack_mode != Default::default(),
             "--tree-pack-mode",
         ),
-        (args.init_tree_pack_dir.is_some(), "--init-tree-pack-dir"),
         (args.export_tree_packs.is_some(), "--export-tree-packs"),
         (args.cave_style.is_some(), "--cave-style"),
         (args.cave_ores.is_some(), "--cave-ores"),

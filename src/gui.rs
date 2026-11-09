@@ -2460,7 +2460,6 @@ fn gui_start_generation(
                 map_item_only: false,
                 dh_lod_only: false,
                 climate_map: None,
-                init_tree_pack_dir: None,
                 export_tree_packs: None,
                 loot_table: None,
                 dump_loot_table: None,
