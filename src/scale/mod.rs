@@ -272,6 +272,18 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 piece_record(i, "skipped", json!({}));
                 lock(&results)[i] = Some(r);
             }
+            // `--skip-built`: every chunk is in the world already, from an earlier job.
+            None if wanted(i)
+                && args.units.skip_built
+                && one_world::existing_chunks(world_dir, &unit.rect) == unit.chunks() =>
+            {
+                println!(
+                    "  piece {}/{of}: every chunk already exists, skipped",
+                    i + 1
+                );
+                piece_record(i, "skipped", json!({}));
+                lock(&results)[i] = Some(PieceResult::default());
+            }
             None if wanted(i) => {
                 piece_record(i, "queued", json!({}));
                 queue.push_back(i);
@@ -672,7 +684,7 @@ const PER_PIECE: &[&str] = &[
 
 /// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
 /// refuses one given twice. They take no value, so the next argument is kept.
-const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first"];
+const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first", "--skip-built"];
 
 /// Only the piece the world spawns in gets the spawn point: the others do not contain it,
 /// and a run refuses a spawn outside its area.
@@ -975,6 +987,10 @@ mod tests {
             "--mapillary-token",
             "MLY|secret",
             "--mapillary-token=MLY|secret",
+            "--skip-built",
+            "--snap-regions",
+            "cover",
+            "--margin-regions=1",
             "--scale=1",
         ]
         .map(OsString::from);

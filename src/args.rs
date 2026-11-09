@@ -771,6 +771,11 @@ pub struct UnitArgs {
     #[arg(long, value_name = "K", default_value_t = 0,
           value_parser = clap::value_parser!(i32).range(0..=64))]
     pub margin_regions: i32,
+
+    /// Skip the pieces of a --one-world job whose every chunk is already in the world, say
+    /// from an earlier job over part of this one.
+    #[arg(long)]
+    pub skip_built: bool,
 }
 
 /// How `--snap-regions` fits a job to the region lattice.
@@ -898,6 +903,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (u.only_pieces.is_some(), "--only-pieces"),
         (u.snap_regions.is_some(), "--snap-regions"),
         (u.margin_regions != 0, "--margin-regions"),
+        (u.skip_built, "--skip-built"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1557,6 +1563,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
+    if args.units.skip_built && !args.units.coordinates() {
+        return Err(
+            "--skip-built only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
     let planned = args.units.coordinates() || args.units.plan_units.is_some();
     if (args.units.snap_regions.is_some() || args.units.margin_regions != 0) && !planned {
         return Err(
@@ -1969,6 +1980,15 @@ mod tests {
         assert!(p(&["--snap-regions", "square"]).is_err());
         assert!(p(&["--margin-regions", "-1"]).is_err());
         assert_eq!(p(&[]).unwrap().units.margin_regions, 0);
+        assert!(refused(&with(&["--skip-built"]), "--skip-built"));
+        assert!(!refused(
+            &with(&["--unit-regions", "2", "--skip-built"]),
+            "--skip-built"
+        ));
+        let live = p(&["--live", "--one-world", "--skip-built"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--skip-built"));
         let size = |v: &str| p(&["--unit-regions", v]).map(|a| a.units.unit_regions);
         assert_eq!(size("auto").unwrap(), Some(UnitSize::Auto));
         assert_eq!(size("4").unwrap(), Some(UnitSize::N(4)));
