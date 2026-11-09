@@ -326,26 +326,6 @@ fn remember_size(downloads: &Path, name: &str, bytes: u64) {
     }
 }
 
-/// The download size of the extract at `url`, from one HEAD request, kept
-/// for later plans. Never asked offline.
-#[allow(dead_code)] // Wave 2 calls this
-pub fn remote_size(url: &str) -> Result<u64> {
-    let name = download_name(url).ok_or_else(|| format!("not a .pbf url: {url}"))?;
-    crate::net::ensure_online("OpenStreetMap extract size")?;
-    let bytes = {
-        let _permit = crate::net::request_permit();
-        let resp = client()?
-            .head(url)
-            .send()
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| format!("{url}: {e}"))?;
-        // The header itself: a HEAD has no body, so content_length() is 0.
-        content_length_header(resp.headers()).ok_or_else(|| format!("{url}: no size given"))?
-    };
-    remember_size(&cache_root()?.join("downloads"), name, bytes);
-    Ok(bytes)
-}
-
 /// The Content-Length a response declares, when it names a size.
 fn content_length_header(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     headers
@@ -356,20 +336,6 @@ fn content_length_header(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .parse()
         .ok()
         .filter(|&n| n > 0)
-}
-
-/// Removes what a stopped download left half done (`*.part`).
-#[allow(dead_code)] // Wave 2 calls this
-pub fn remove_partial_downloads() {
-    let Ok(root) = cache_root() else { return };
-    let Ok(entries) = std::fs::read_dir(root.join("downloads")) else {
-        return;
-    };
-    for e in entries.flatten() {
-        if e.file_name().to_string_lossy().ends_with(".part") {
-            let _ = std::fs::remove_file(e.path());
-        }
-    }
 }
 
 fn client() -> Result<reqwest::blocking::Client> {
