@@ -2611,9 +2611,14 @@ fn gui_start_generation(
                         .and_then(|n| n.to_str())
                         .unwrap_or(crate::one_world::DEFAULT_WORLD_NAME),
                 );
-                if let Some(argv) = pieces_argv {
-                    // The coordinator places the spawn, as --spawn-lat/--spawn-lng.
+                if let Some(mut argv) = pieces_argv {
+                    // The coordinator places the spawn, as --spawn-lat/--spawn-lng, and
+                    // hands them on to the piece that holds it, as from the command line.
                     (args.spawn_lat, args.spawn_lng) = spawn_point.unzip();
+                    if let Some((lat, lng)) = spawn_point {
+                        argv.push(format!("--spawn-lat={lat}").into());
+                        argv.push(format!("--spawn-lng={lng}").into());
+                    }
                     emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
                     if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
                         eprintln!("{e}");
