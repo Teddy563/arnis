@@ -2499,7 +2499,8 @@ $(document).ready(function () {
     }
 
     // While a handle drags: the readout follows, and with Meld features the window gets the
-    // selection a few times a second, so the planned pieces (snapped when Snap is on) follow too.
+    // selection once a second (and at the end), so the planned pieces follow without a plan
+    // request on every move.
     function liveSelection(rect) {
         if (!window.arnisMeldOn) return;
         var b = rect.getBounds();
@@ -2511,16 +2512,18 @@ $(document).ready(function () {
         }
         sizeLabel.setLatLng([b.getNorth(), b.getCenter().lng]).setContent(sizeText(b));
         var now = Date.now();
-        if (now - liveSync < 300) return;
+        if (now - liveSync < 1000) return;
         liveSync = now;
         _syncFromRect(rect);
     }
 
-    // Meld features: a drag that starts inside the selection moves it (not the map).
+    // Meld features: a drag that starts inside the selection moves it, while all of it is on
+    // screen; zoomed into a big one, the drag pans the map.
     var inside = null;
     map.on('mousedown', function (ev) {
         var rect = window.arnisMeldOn && _getBboxRect();
         if (!rect || !rect.getBounds().contains(ev.latlng) || ev.originalEvent.button !== 0) return;
+        if (!map.getBounds().contains(rect.getBounds())) return;
         if (drawControl && drawControl._toolbars && (drawControl._toolbars.draw || {})._activeMode) return;
         inside = { from: ev.latlng, b: rect.getBounds(), rect: rect };
         map.dragging.disable();
