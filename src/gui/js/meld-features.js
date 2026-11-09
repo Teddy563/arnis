@@ -199,19 +199,15 @@ export function summary() {
   });
 }
 
-// When this run started: the ETA counts only what it built.
+// When this run's first piece record came, so after any dialog: the clock and the ETA count
+// only what it built. 0 until then.
 let runStart = 0;
-
-// The shown ETA in minutes, smoothed as 3.4.0's was: it falls gently and resists rising.
-let shownEta = null;
-const ETA_A_DOWN = 0.28;
-const ETA_A_UP = 0.1;
 
 // " · 3:12 · about 12 min left": time since this run started, then the rate of this run so far
 // (its finished pieces and the running ones' share) carried over what is left. No ETA until a
 // piece has finished.
 function eta() {
-  if (!running) return '';
+  if (!running || !runStart) return '';
   const ms = Date.now() - runStart;
   const s = Math.floor(ms / 1000);
   let out = ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -220,9 +216,8 @@ function eta() {
   const share = all.filter((p) => RUNNING.has(p.state)).reduce((sum, p) => sum + (p.pct || 0) / 100, 0);
   const left = all.filter((p) => p.state === 'queued' || RUNNING.has(p.state)).length - share;
   if (!built || left <= 0) return out;
-  const raw = (ms / (built + share)) * left / 60000;
-  shownEta = shownEta == null ? raw : shownEta + (raw <= shownEta ? ETA_A_DOWN : ETA_A_UP) * (raw - shownEta);
-  return out + ' · ' + t('run_eta', 'about {time} left', { time: minutes(shownEta) });
+  // minutes() rounds it, which keeps it steady enough; the progress bar has its own smoothed ETA.
+  return out + ' · ' + t('run_eta', 'about {time} left', { time: minutes((ms / (built + share)) * left / 60000) });
 }
 
 
@@ -286,6 +281,7 @@ const RETRYABLE = new Set(['failed', 'stopped', 'queued']);
 
 // A piece record from the backend. A retry keeps the pieces it does not rebuild.
 export function notePiece(piece) {
+  if (!runStart) runStart = Date.now();
   const was = pieces.get(piece.piece);
   // Progress records repeat the running state: the clock starts with the first.
   const since = RUNNING.has(piece.state) ? (was && RUNNING.has(was.state) ? was.since : Date.now()) : was?.since;
@@ -303,8 +299,7 @@ export function notePiece(piece) {
 // A new run starts clean; a retry keeps the pieces it does not rebuild. `bbox` is the selection
 // the run is for.
 export function clearPieces() {
-  runStart = Date.now();
-  shownEta = null;
+  runStart = 0;
   if (retryNext.length) return;
   jobKey = keyOf();
   forgetPieces();
