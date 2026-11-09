@@ -155,6 +155,7 @@ Upstream `main` (Live mode, vehicles, stations, race tracks, golf and stadiums) 
 
 ## Known limitations
 
+- **Live mode from the window ignores the Meld features panel.** The CLI refuses `--live` with any 3.5.0 flag; the window's Play Live button starts stock Live mode and does not pass the Meld settings.
 - **Local archive is experimental.** The arnis-tiles baker writes the older AOT1 format. A local archive of the Bucharest area held 8,865 elements where the public AOT2 archive has 16,462, so worlds from it are sparser. The reader is fine. An AOT2 baker in arnis-tiles is the follow-up. The GUI labels it "Local Archive (Experimental)".
 - **Live mode was verified only up to the EULA prompt.** The check stopped there because `--accept-eula` accepts Mojang's EULA on the user's behalf. A single Live tile was run by hand (see Verification).
 - **Live mode refuses the new flags.** Live tiles build with upstream's settings only, so `--live` refuses every 3.5 flag its tiles would drop and names each one. That covers the water, climate, scatter, tree, cave-style, road, building, prop, data-source, output, piece and machine flags. `--offline` is not supported in Live mode. `--seed`, `--cave-seed` and `--cave-datum-y` are allowed because they travel in the world's manifest.
