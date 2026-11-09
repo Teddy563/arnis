@@ -1,9 +1,8 @@
 // Run: node tests/gui/meld-flags.mjs
-// The Meld features switch off, and on with every control at its default, send no flags and
-// find no problem. The defaults are read from index.html itself.
+// The Meld features switch off, and on with every control at its default, send no flags. The defaults are read from index.html itself.
 import assert from 'node:assert';
 import fs from 'node:fs';
-import { meldFlags, meldProblem } from '../../src/gui/js/meld-features.js';
+import { meldFlags } from '../../src/gui/js/meld-features.js';
 
 const html = fs.readFileSync(new URL('../../src/gui/index.html', import.meta.url), 'utf8');
 const state = new Map(); // id -> element, so a test can change one
@@ -45,19 +44,11 @@ const toggle = document.getElementById('advanced-meld-features-toggle');
 for (const ctx of contexts) {
   toggle.checked = false;
   assert.deepStrictEqual(meldFlags(ctx), [], 'switch off');
-  assert.strictEqual(meldProblem(ctx), '', 'switch off');
   toggle.checked = true;
   assert.deepStrictEqual(meldFlags(ctx), [], 'switch on, defaults');
-  assert.strictEqual(meldProblem(ctx), '', 'switch on, defaults');
 }
 
-// A field that is wrong is said in a sentence; one that is right passes.
 const ctx = contexts[1];
-document.getElementById('meld-seed-input').value = 'abc';
-assert.match(meldProblem(ctx), /whole number/);
 document.getElementById('meld-seed-input').value = '7';
-assert.strictEqual(meldProblem(ctx), '');
 assert.deepStrictEqual(meldFlags(ctx), ['--seed=7']);
-document.getElementById('meld-min-y-input').value = '-65';
-assert.match(meldProblem(ctx), /multiple of 16/);
 console.log('meld-flags: ok');

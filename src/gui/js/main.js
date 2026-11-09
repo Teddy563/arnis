@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -4012,21 +4012,6 @@ async function startGeneration() {
     if (!selectedBBox || selectedBBox == "0.000000 0.000000 0.000000 0.000000") {
       const bboxSelectionInfo = document.getElementById('bbox-selection-info');
       setBboxSelectionInfo(bboxSelectionInfo, "select_location_first", "#fa7878");
-      return;
-    }
-
-    // The Meld features fields, said in a sentence here: the backend's error is cut short.
-    const meldBad = meldProblem({
-      oneWorld: isOneWorldEnabled(),
-      java: getEffectiveWorldFormat() === "java",
-      extendHeight: document.getElementById("disable-height-limit-toggle").checked && !isOneWorldEnabled() && getEffectiveWorldFormat() === "java",
-    });
-    if (meldBad) {
-      const info = document.getElementById('progress-info');
-      if (info) {
-        info.textContent = meldBad;
-        info.style.color = "#fa7878";
-      }
       return;
     }
 
