@@ -749,6 +749,8 @@ pub fn generate_ground_region(
                                             }
                                             _ => (FARMLAND, DIRT),
                                         },
+                                        // Ground reads the flag from args; roads and roofs read the
+                                        // process flag set from the same args (surfaces::patches).
                                         land_cover::LC_BUILT_UP if args.surface_patches => {
                                             built_up_patch(x, z)
                                         }

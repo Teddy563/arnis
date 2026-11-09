@@ -15,8 +15,8 @@ pub enum RoadDetail {
     /// Every highway and marking, as mapped
     #[default]
     Max,
-    /// Centre lines between opposing traffic and lane dividers on one-way roads at
-    /// least 6 blocks wide; no lines on service and pedestrian ways or roads under 4
+    /// Centre lines between opposing traffic and lane dividers on one-way roads
+    /// wider than 5 blocks; no lines on service and pedestrian ways or roads under 4
     /// blocks wide; 2-block zebra and give-way bars
     Clean,
     /// Clean markings with dashes and gaps of at least 4 blocks, and no footways
@@ -81,7 +81,8 @@ impl RoadDetail {
 
     /// Whether a lane line upstream paints stays. `max` keeps every one; the
     /// others keep the centre line(s) between opposing traffic and, on one-way
-    /// roads with two or more lanes at least 6 blocks wide, the lane dividers.
+    /// roads wider than 5 blocks, the lane dividers (`lane_lines` gives a road
+    /// under 2 lanes none).
     /// None on service and pedestrian ways, parking aisles or roads under 4
     /// blocks wide, where a stripe leaves no asphalt beside it.
     pub fn keeps_lane_line(
@@ -90,7 +91,7 @@ impl RoadDetail {
         tags: &HashMap<String, String>,
         road_width: i32,
         centre: bool,
-        oneway_multilane: bool,
+        oneway: bool,
     ) -> bool {
         if self == RoadDetail::Max {
             return true;
@@ -99,7 +100,7 @@ impl RoadDetail {
             || highway == "service"
             || is_pedestrian_grade(highway)
             || tags.get("service").map(String::as_str) == Some("parking_aisle");
-        (centre || (oneway_multilane && road_width >= 6)) && !unmarked
+        (centre || (oneway && road_width > 5)) && !unmarked
     }
 
     /// Dash and period of broken lane lines, from upstream's `(dash, period)` in
@@ -202,7 +203,11 @@ mod tests {
         let none = HashMap::new();
         for width in 1..=12 {
             for centre in [false, true] {
-                assert!(RoadDetail::Max.keeps_lane_line("service", &none, width, centre, false));
+                for oneway in [false, true] {
+                    assert!(
+                        RoadDetail::Max.keeps_lane_line("service", &none, width, centre, oneway)
+                    );
+                }
             }
         }
         for pattern in [(3, 9), (6, 18), (1, 3), (2, 5)] {

@@ -96,13 +96,15 @@ Differences from the fork: v3.4.0 sizes trees by height, so the size weights rew
 
 | Flag | What it does |
 |---|---|
-| `--road-detail max\|clean\|compact` | How much road marking and how many minor ways to build. `clean` removes lane dividers on two-way roads and on one-way roads under 6 blocks wide (one-way multi-lane roads keep theirs), every line on service and pedestrian ways, parking aisles and roads under 4 blocks wide, and paints zebra and give-way bars 2 blocks apart. `compact` is `clean` with dashes and gaps of at least 4 blocks, and also removes footways (sidewalks too, at every scale), paths, cycleways, steps, service roads, tracks and crossings with their paint. |
+| `--road-detail max\|clean\|compact` | How much road marking and how many minor ways to build. `clean` removes lane dividers on two-way roads and on one-way roads 5 blocks wide or less (wider one-way multi-lane roads keep theirs), every line on service and pedestrian ways, parking aisles and roads under 4 blocks wide, and paints zebra and give-way bars 2 blocks apart. `compact` is `clean` with dashes and gaps of at least 4 blocks, and also removes footways (sidewalks too, at every scale), paths, cycleways, steps, service roads, tracks and crossings with their paint. |
 | `--surface-patches` | Off by default. Lays the asphalt, concrete and paving mixes and built-up stone ground in patches a few blocks across instead of a per-block speckle, and gives pitched clay roofs (red and orange tile) a full block in their stairs' colour, so no single block stands out as a dot. Patches follow world coordinates, so One World pieces join without a seam. |
 | `--no-buildings` | Leave out buildings, parts, doors and Overture footprints. Roads, rail, water, land cover and terrain stay. |
 | `--props LIST` | Which 3D props to place: `all`, `none`, or a list (boat, car, crane, and so on). |
 | `--props-min-scale F` | Leave out every schematic prop below this world scale. |
 | `--loot-table FILE` | Chest loot table (JSON) for `--interior`. A bad file is reported and the built-in table is used. |
 | `--dump-loot-table FILE` | Write the built-in table to FILE and exit. |
+
+Resuming a job started with the 3.5.0 pre-release using `--road-detail clean` or `compact` now draws lane dividers on one-way roads in the new pieces, so in that job they can start or stop at piece edges.
 
 The built-in table rolls the same chests as v3.4.0 (a test pins all five themes). Left out: the fork's field texture and road-bearing module (v3.4.0's `--fields` replaces them), and the fork's on/off schematic switch (replaced by the prop list). `--props` does not govern external 3D models, which still follow `--no-3d`.
 
