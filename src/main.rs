@@ -1315,5 +1315,12 @@ fn main() {
         }
     }
 
-    run_cli();
+    // ponytail: debug frames exceed the 1 MB Windows main stack
+    let cli = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(run_cli)
+        .expect("failed to start the CLI thread");
+    if cli.join().is_err() {
+        std::process::exit(101);
+    }
 }
