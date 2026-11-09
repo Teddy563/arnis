@@ -557,7 +557,7 @@ label[for].setting-label {
   font-size: 10.5px;
   font-weight: 700;
   /* The ? carries its weight in the bowl, so box-centred it reads high. */
-  padding-top: 1px;
+  padding-top: 2px;
   box-sizing: border-box;
   cursor: help;
   transition: background-color 0.15s ease, color 0.15s ease;
