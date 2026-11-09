@@ -2807,6 +2807,11 @@ function displayBboxInfoText(bboxText) {
   // Map selection always takes priority - clear custom input and update selectedBBox
   selectedBBox = mapSelectedBBox;
   dropStalePieces();
+  // Meld features: a single run's preview belongs to that run's area; a new selection drops it
+  // (a One World keeps showing its own areas).
+  if (document.getElementById('advanced-meld-features-toggle').checked && currentWorldMapData && !lastRunOneWorld) {
+    notifyWorldChanged();
+  }
   customBBoxValid = false;
   bboxInputError = false;
 
