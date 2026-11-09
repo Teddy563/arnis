@@ -1881,11 +1881,8 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
     if let Some(on) = args.mapillary_facades {
         values.push(format!("--mapillary-facades={on}"));
     }
-    // ponytail: the token rides on the pieces' command lines, visible to this user's other
-    // processes; pass it in their environment if that matters.
-    if let Some(token) = &args.mapillary_token {
-        values.push(format!("--mapillary-token={token}"));
-    }
+    // The Mapillary token is not here: the coordinator hands it to each piece in its
+    // environment, where other processes cannot read it off the command line.
     out.extend(
         values
             .into_iter()
@@ -3366,6 +3363,12 @@ mod tests {
                 .unwrap();
         assert_eq!((back.scale, back.winter, back.seed), (2.0, true, Some(7)));
         assert_eq!(back.world_name.as_deref(), Some("World"));
+        // The token goes to the pieces in their environment, never on a command line.
+        args.mapillary_token = Some("MLY|secret".into());
+        let argv = piece_argv(&args, Path::new("saves/World"), &flags);
+        assert!(!argv
+            .iter()
+            .any(|a| a.to_string_lossy().contains("MLY|secret")));
     }
 
     #[test]

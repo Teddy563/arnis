@@ -251,6 +251,17 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             sizing.workers, sizing.threads
         );
     }
+    // `--mapillary-token` reads MAPILLARY_TOKEN, so a piece gets it without a command line.
+    let token: Vec<(&str, String)> = args
+        .mapillary_api_token()
+        .map(|t| ("MAPILLARY_TOKEN", t.to_string()))
+        .into_iter()
+        .collect();
+    let child_env: Vec<(&str, String)> = sizing
+        .child_env()
+        .into_iter()
+        .chain(token.iter().cloned())
+        .collect();
     let lease_for = |i: usize| UnitLease {
         piece: i as u32,
         area_id: job.area_base + i as u32,
@@ -294,7 +305,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
                 crate::progress::emit_gui_progress_update(pct, "");
             };
-            run_piece_until(&warm_argv, &[], &STOP, report).map_err(|f| {
+            run_piece_until(&warm_argv, &token, &STOP, report).map_err(|f| {
                 if STOP.load(Ordering::Acquire) {
                     STOPPED.to_string()
                 } else {
@@ -393,7 +404,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     piece_progress(i, state, slot, pct);
                 }
             };
-            match run_piece_until(&argv, &sizing.child_env(), &STOP, seen) {
+            match run_piece_until(&argv, &child_env, &STOP, seen) {
                 Ok(r) => break r,
                 // Killed by Stop: not a failure, and built again on resume.
                 Err(_) if STOP.load(Ordering::Acquire) => {
@@ -578,6 +589,8 @@ const PER_PIECE: &[&str] = &[
     "--max-downloads",
     "--one-world-unit",
     "--only-pieces",
+    // Handed over in the environment, out of sight of other processes.
+    "--mapillary-token",
 ];
 
 /// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
@@ -836,6 +849,9 @@ mod tests {
             "--no-update-check",
             "--only-pieces",
             "2,3",
+            "--mapillary-token",
+            "MLY|secret",
+            "--mapillary-token=MLY|secret",
             "--scale=1",
         ]
         .map(OsString::from);
