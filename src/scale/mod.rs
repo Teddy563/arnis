@@ -361,8 +361,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let cap = AtomicUsize::new(sizing.workers);
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
+    // Pieces that failed for good; the others keep building.
+    let failed: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
-    // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it.
+    // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it or it failed.
     let build = |i: usize, w: usize| -> Result<Option<PieceResult>, String> {
         let unit = &units[i];
         let lease = job.dir.join(format!("piece-{i}.lease.json"));
@@ -421,10 +423,17 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     eprintln!("Piece {} failed, retrying: {}", i + 1, f.message);
                     std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
                 }
-                Err(f) => {
+                // The head piece makes the world's extras, so the job cannot go on without it.
+                Err(f) if head == Some(i) => {
                     piece_record(i, "failed", json!({"worker": slot, "error": f.message}));
                     aborting.store(true, Ordering::Relaxed);
                     return Err(format!("piece {} of {of} failed: {}", i + 1, f.message));
+                }
+                Err(f) => {
+                    piece_record(i, "failed", json!({"worker": slot, "error": f.message}));
+                    eprintln!("Piece {} of {of} failed: {}", i + 1, f.message);
+                    lock(&failed).push(i);
+                    return Ok(None);
                 }
             }
         };
@@ -502,9 +511,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     println!("  pieces peak at {peak} MB: {allowed} at a time from now on");
                 }
             }
-            if built?.is_none() {
-                return Ok(());
-            }
+            built?;
         }
         Ok(())
     };
@@ -521,6 +528,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     });
     if let Some(e) = failure.into_inner().unwrap_or_else(|e| e.into_inner()) {
         return Err(format!("{e}\n{RESUME}"));
+    }
+    let failed = failed.into_inner().unwrap_or_else(|e| e.into_inner());
+    if !failed.is_empty() && !STOP.load(Ordering::Acquire) {
+        return Err(failed_summary(failed, of));
     }
     // Stopped before the last piece, or only some retried: kept for a resume.
     if finished.load(Ordering::Relaxed) < of {
@@ -542,6 +553,19 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let _ = std::fs::remove_dir_all(&job.dir);
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
     Ok(())
+}
+
+/// What a job that kept going past failed pieces ends with: which, and how to retry them.
+fn failed_summary(mut failed: Vec<usize>, of: usize) -> String {
+    failed.sort_unstable();
+    let numbers: Vec<String> = failed.iter().map(|i| (i + 1).to_string()).collect();
+    format!(
+        "{} of {of} pieces failed: {}. The others are built; retry the failed ones with \
+         --only-pieces {}, or run the same command again.",
+        failed.len(),
+        numbers.join(", "),
+        numbers.join(",")
+    )
 }
 
 /// `[min_x, min_z, max_x, max_z]`.
@@ -815,6 +839,15 @@ mod tests {
     }
 
     #[test]
+    fn a_job_with_failed_pieces_names_them_for_a_retry() {
+        let msg = failed_summary(vec![6, 2], 12);
+        assert!(msg.starts_with("2 of 12 pieces failed: 3, 7."), "{msg}");
+        assert!(msg.contains("--only-pieces 3,7,"), "{msg}");
+        let args = <Args as clap::Parser>::try_parse_from(["arnis", "--only-pieces", "3,7"]);
+        assert_eq!(args.unwrap().units.only_pieces, Some(vec![3, 7]));
+    }
+
+    #[test]
     fn the_job_percentage_follows_the_pieces_done() {
         // 2 of 16 done, two running at a half and a quarter.
         let mut d = vec![0.0; 16];
@@ -949,6 +982,16 @@ mod tests {
             "the killed piece must fail the job"
         );
         assert!(resumed.join("W/arnis_one_world/jobs").is_dir());
+        // The other three pieces kept building past the failed one.
+        let jobs = std::fs::read_dir(resumed.join("W/arnis_one_world/jobs")).unwrap();
+        let job_dir = jobs.flatten().next().unwrap().path();
+        let done = std::fs::read_dir(job_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("done-"))
+            .count();
+        assert_eq!(done, 3, "{}", String::from_utf8_lossy(&first.stderr));
+        assert!(String::from_utf8_lossy(&first.stderr).contains("--only-pieces 2"));
         assert!(arnis(&resumed, area, &job, &[]).status.success());
         let out = Command::new("python")
             .arg(&chunkdiff)
