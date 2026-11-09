@@ -57,6 +57,8 @@ pub struct Ground {
     snow_threshold_y: i32,
     /// Climate at the bbox center, driving arid/polar surface palettes and biomes.
     climate: crate::climate::Climate,
+    /// Set by `--climate-mode per-position`; `None` reads `climate` everywhere.
+    climate_field: Option<Arc<crate::climate_field::ClimateField>>,
     /// Earth unless this is a Moon/Mars world, which take their own surface palette.
     body: CelestialBody,
     ecoregions: Option<Arc<EcoMap>>,
@@ -76,6 +78,8 @@ pub struct GroundFrame {
     pub mercator: Option<WebMercatorProjection>,
     pub pad_blocks: usize,
     pub affine: AffinePolicy,
+    /// What the water options add to the land-cover estimate of the deepest carve.
+    pub carve_depth: crate::water_detail::CarveDepth,
 }
 
 impl GroundFrame {
@@ -85,6 +89,7 @@ impl GroundFrame {
             mercator: None,
             pad_blocks: 0,
             affine: AffinePolicy::Fit,
+            carve_depth: Default::default(),
         }
     }
 
@@ -110,12 +115,14 @@ impl GroundFrame {
                     Some(affine) => AffinePolicy::Fixed(affine),
                     None => AffinePolicy::FitWithHeadroom,
                 },
+                carve_depth: Default::default(),
             },
             None => Self {
                 world_dims: Some((world_w, world_h)),
                 mercator: Some(projection),
                 pad_blocks: 0,
                 affine: AffinePolicy::Fit,
+                carve_depth: Default::default(),
             },
         }
     }
@@ -296,6 +303,7 @@ impl Ground {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -354,6 +362,7 @@ impl Ground {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::classify(bbox),
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: frame.ecoregions(bbox, (world_w, world_h)),
             winter: false,
@@ -379,6 +388,7 @@ impl Ground {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -404,6 +414,7 @@ impl Ground {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -457,6 +468,7 @@ impl Ground {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -509,9 +521,13 @@ impl Ground {
             bench.mark("elev_landcover_fetch");
 
             // Raise the floor for the deepest water carve (elevation path only).
-            let max_depth = land_cover
-                .as_ref()
-                .map(|lc| crate::water_depth::estimate_max_carve_depth(&lc.grid, world_w, world_h));
+            let max_depth = land_cover.as_ref().map(|lc| {
+                frame
+                    .carve_depth
+                    .bound(crate::water_depth::estimate_max_carve_depth(
+                        &lc.grid, world_w, world_h,
+                    ))
+            });
             let band = |h: WorldHeight| {
                 let carve_floor = match max_depth {
                     Some(depth) => h.min_y + depth + 2,
@@ -597,6 +613,7 @@ impl Ground {
                         rotation_mask: None,
                         snow_threshold_y,
                         climate: crate::climate::Climate::classify(&requested_bbox),
+                        climate_field: None,
                         body,
                         ecoregions: body
                             .is_earth()
@@ -633,6 +650,7 @@ impl Ground {
                         rotation_mask: None,
                         snow_threshold_y: i32::MAX,
                         climate: crate::climate::Climate::classify(&requested_bbox),
+                        climate_field: None,
                         body,
                         ecoregions: body
                             .is_earth()
@@ -657,6 +675,38 @@ impl Ground {
     #[inline(always)]
     pub fn climate(&self) -> crate::climate::Climate {
         self.climate
+    }
+
+    /// Reads climate per position (`--climate-mode per-position`) instead of at
+    /// the origin. Earth only.
+    pub fn apply_climate_mode(
+        &mut self,
+        mode: crate::climate_field::ClimateMode,
+        frame: &GroundFrame,
+        bbox: &LLBBox,
+    ) {
+        if mode == crate::climate_field::ClimateMode::PerPosition && self.body.is_earth() {
+            let field = crate::climate_field::ClimateField::new(frame, bbox, self.world_dims());
+            self.climate_field = Some(Arc::new(field));
+        }
+    }
+
+    /// Climate under a ground coordinate when it is read per position.
+    #[inline]
+    pub fn local_climate(&self, coord: XZPoint) -> Option<crate::climate::Climate> {
+        Some(self.climate_field.as_ref()?.climate(coord))
+    }
+
+    /// Climate under a ground coordinate: the local one, or the origin's.
+    #[inline]
+    pub fn climate_at(&self, coord: XZPoint) -> crate::climate::Climate {
+        self.local_climate(coord).unwrap_or(self.climate)
+    }
+
+    /// Latitude under a ground coordinate when climate is read per position.
+    #[inline]
+    pub fn local_lat(&self, coord: XZPoint) -> Option<f64> {
+        Some(self.climate_field.as_ref()?.lat(coord))
     }
 
     /// Body this world is on; Earth keeps every existing behaviour.
@@ -1483,7 +1533,8 @@ pub fn generate_ground_data(
     // Cleared before the scaler publishes its own: in the GUI a previous run's terrain top
     // would misgrade this world's map preview.
     crate::world_editor::common::set_terrain_top_y(args.ground_level);
-    let frame = GroundFrame::from_args(args, &bbox);
+    let mut frame = GroundFrame::from_args(args, &bbox);
+    frame.carve_depth = args.water.carve_depth(args.scale);
     let auto = auto_height(args);
     let (height, taller) = height_choice(args);
     if args.terrain() {
@@ -1514,6 +1565,7 @@ pub fn generate_ground_data(
             extend_world_bounds(args, ground.base_level(), raised_for);
         }
         ground.set_winter(args.winter);
+        ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
         // The scaler may have sunk the base to reach the extended floor. The bedrock plane and
         // the out-of-bbox filler chunks both key off that base, so pin them to it now.
         let floor = area_floor_for(&ground, args);
@@ -1545,6 +1597,7 @@ pub fn generate_ground_data(
         extend_world_bounds(args, ground.base_level(), raised_for);
     }
     ground.set_winter(args.winter);
+    ground.apply_climate_mode(args.climate_mode, &frame, &bbox);
     crate::world_editor::set_base_chunk_y(ground.base_level());
     crate::world_editor::set_terrain_floor_y(ground.base_level());
     crate::world_editor::set_base_chunk_block(filler_block_for(args.body));
@@ -1906,6 +1959,7 @@ mod tests {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -2438,6 +2492,7 @@ pub(crate) mod test_support {
             rotation_mask: None,
             snow_threshold_y: i32::MAX,
             climate: crate::climate::Climate::Temperate,
+            climate_field: None,
             body: CelestialBody::Earth,
             ecoregions: None,
             winter: false,
@@ -2457,6 +2512,7 @@ mod frame_tests {
             mercator: Some(WebMercatorProjection::new(48.1372, 11.5755, 1.0)),
             pad_blocks: pad,
             affine: AffinePolicy::Fit,
+            carve_depth: Default::default(),
         }
     }
 
