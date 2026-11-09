@@ -2527,6 +2527,8 @@ $(document).ready(function () {
     });
     map.on('mousemove', function (ev) {
         if (!inside) return;
+        // The button went up where the map did not see it (another frame, outside the window).
+        if (!(ev.originalEvent.buttons & 1)) return endMove();
         var dLat = ev.latlng.lat - inside.from.lat;
         var dLng = ev.latlng.lng - inside.from.lng;
         var b = inside.b;
@@ -2535,7 +2537,7 @@ $(document).ready(function () {
         inside.moved = true;
         liveSelection(inside.rect);
     });
-    map.on('mouseup', function () {
+    function endMove() {
         if (!inside) return;
         var moved = inside.moved;
         var rect = inside.rect;
@@ -2545,7 +2547,10 @@ $(document).ready(function () {
         if (!moved) return;
         _syncFromRect(rect);
         refreshBboxHandles();
-    });
+    }
+    map.on('mouseup', endMove);
+    document.addEventListener('mouseup', endMove);
+    window.addEventListener('blur', endMove);
 
     // Show a brief toast notification on the map
     function showRotationToast(message) {
