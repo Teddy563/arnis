@@ -10,7 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -148,7 +148,7 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
   });
 
@@ -1296,6 +1296,7 @@ function initSettings() {
     invoke,
     post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
     start: () => startGeneration(),
+    localize: (element, key) => localizeElement(window.localization, { element }, key),
   });
   initDataPanel({
     invoke,
@@ -3442,6 +3443,21 @@ async function startGeneration() {
     if (!selectedBBox || selectedBBox == "0.000000 0.000000 0.000000 0.000000") {
       const bboxSelectionInfo = document.getElementById('bbox-selection-info');
       setBboxSelectionInfo(bboxSelectionInfo, "select_location_first", "#fa7878");
+      return;
+    }
+
+    // The Meld features fields, said in a sentence here: the backend's error is cut short.
+    const meldBad = meldProblem({
+      oneWorld: isOneWorldEnabled(),
+      java: getEffectiveWorldFormat() === "java",
+      extendHeight: document.getElementById("disable-height-limit-toggle").checked && !isOneWorldEnabled() && getEffectiveWorldFormat() === "java",
+    });
+    if (meldBad) {
+      const info = document.getElementById('progress-info');
+      if (info) {
+        info.textContent = meldBad;
+        info.style.color = "#fa7878";
+      }
       return;
     }
 

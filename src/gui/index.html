@@ -173,9 +173,9 @@
             </div>
             <!-- A job built in pieces: Pause, Stop and Retry. Hidden unless Meld features is on. -->
             <div id="run-controls" class="run-controls meld-only" hidden>
-              <button type="button" id="run-pause-button" class="run-button">Pause</button>
-              <button type="button" id="run-stop-button" class="run-button">Stop</button>
-              <button type="button" id="run-retry-button" class="run-button" hidden>Retry failed pieces</button>
+              <button type="button" id="run-pause-button" class="run-button" data-localize="run_pause">Pause</button>
+              <button type="button" id="run-stop-button" class="run-button" data-localize="run_stop">Stop</button>
+              <button type="button" id="run-retry-button" class="run-button" hidden data-localize="run_retry">Retry pieces</button>
             </div>
           </div>
         </div>
@@ -434,11 +434,11 @@
                         <span data-localize="meld_region_format">Region Format</span>
                         <span class="tooltip-icon" data-tooltip="Experimental. B_Linear writes Leaf 1.21.11+ and 26.x regions. Java only; not with One World, Voxy LOD or Distant Horizons LOD.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_region_format_desc">File format the Java regions are written in.</span>
+                      <span class="setting-desc" data-localize="meld_region_format_desc">File format for Java region files.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-region-format-group"><button type="button" class="segment active" data-default data-v="mca">Anvil (.mca)</button><button type="button" class="segment" data-v="blinear">B_Linear</button></div>
+                    <div class="segmented-control" id="meld-region-format-group"><button type="button" class="segment active" data-default data-v="mca" data-localize="meld_region_format_mca">Anvil (.mca)</button><button type="button" class="segment" data-v="blinear" data-localize="meld_region_format_blinear">B_Linear</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -468,7 +468,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-osm-source-group"><button type="button" class="segment active" data-default data-v="default">Default</button><button type="button" class="segment" data-v="archive">Local Archive (Experimental)</button><button type="button" class="segment" data-v="region">Region Download</button></div>
+                    <div class="segmented-control" id="meld-osm-source-group"><button type="button" class="segment active" data-default data-v="default" data-localize="meld_osm_source_default">Default</button><button type="button" class="segment" data-v="archive" data-localize="meld_osm_source_archive">Local Archive (Experimental)</button><button type="button" class="segment" data-v="region" data-localize="meld_osm_source_region">Region Download</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -483,7 +483,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-archive-folder-input" name="meld-archive-folder-input" placeholder="Default folder" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-archive-folder-input" name="meld-archive-folder-input" placeholder="Default folder" data-localize="placeholder_meld_archive_folder" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -498,7 +498,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-pbf-url-input" name="meld-pbf-url-input" placeholder="Chosen for you" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-pbf-url-input" name="meld-pbf-url-input" placeholder="Chosen for you" data-localize="placeholder_meld_pbf_url" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -513,7 +513,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-overpass-input" name="meld-overpass-input" placeholder="Arnis&#x27;s own" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-overpass-input" name="meld-overpass-input" placeholder="Arnis&#x27;s own" data-localize="placeholder_meld_overpass" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile meld-only">
@@ -543,9 +543,9 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <button type="button" id="meld-prepare-check" class="run-button">Check</button>
-                    <button type="button" id="meld-prepare-bake" class="run-button">Download &amp; Bake</button>
-                    <button type="button" id="meld-prepare-stop" class="run-button" hidden>Stop</button>
+                    <button type="button" id="meld-prepare-check" class="run-button" data-localize="meld_prepare_check">Check</button>
+                    <button type="button" id="meld-prepare-bake" class="run-button" data-localize="meld_prepare_bake">Download &amp; Bake</button>
+                    <button type="button" id="meld-prepare-stop" class="run-button" hidden data-localize="meld_prepare_stop">Stop</button>
                   </div>
                   <div id="meld-prepare-list" class="meld-data-out" hidden></div>
                 </div>
@@ -561,7 +561,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <button type="button" id="meld-plan-show" class="run-button">Show</button>
+                    <button type="button" id="meld-plan-show" class="run-button" data-localize="meld_plan_show">Show</button>
                   </div>
                   <div id="meld-plan-out" class="meld-data-out" hidden></div>
                 </div>
@@ -726,12 +726,12 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-seed-input" name="meld-seed-input" class="meld-short" placeholder="Default" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-seed-input" name="meld-seed-input" class="meld-short" placeholder="Default" data-localize="placeholder_meld_seed" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
                   <label for="meld-min-y-input" class="setting-label">
-                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg>
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-cave"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_min_y">Lowest Y</span>
@@ -741,7 +741,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-min-y-input" name="meld-min-y-input" class="meld-short" placeholder="-2032" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-min-y-input" name="meld-min-y-input" class="meld-short" placeholder="-2032" data-localize="placeholder_meld_min_y" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -756,7 +756,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-max-y-input" name="meld-max-y-input" class="meld-short" placeholder="2031" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-max-y-input" name="meld-max-y-input" class="meld-short" placeholder="2031" data-localize="placeholder_meld_max_y" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -765,13 +765,13 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_road_detail">Road Detail</span>
-                        <span class="tooltip-icon" data-tooltip="Max builds every marking and way as mapped. Clean keeps centre lines and 2-block crossing bars. Compact is clean with longer dashes and no footways, paths, service roads, tracks or crossings.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Max builds every marking and way as mapped. Clean keeps centre lines and 2-block crossing bars. Compact is Clean with longer dashes, and leaves out footways, paths, service roads, tracks and crossings.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_road_detail_desc">How many road markings and minor ways to build.</span>
+                      <span class="setting-desc" data-localize="meld_road_detail_desc">How many road markings and minor roads to build.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-road-detail-group"><button type="button" class="segment active" data-default data-v="max">Max</button><button type="button" class="segment" data-v="clean">Clean</button><button type="button" class="segment" data-v="compact">Compact</button></div>
+                    <div class="segmented-control" id="meld-road-detail-group"><button type="button" class="segment active" data-default data-v="max" data-localize="meld_road_detail_max">Max</button><button type="button" class="segment" data-v="clean" data-localize="meld_road_detail_clean">Clean</button><button type="button" class="segment" data-v="compact" data-localize="meld_road_detail_compact">Compact</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile meld-only">
@@ -794,14 +794,14 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-car"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_props">3D Props</span>
+                        <span data-localize="meld_props">Props Override</span>
                         <span class="tooltip-icon" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_props_desc">Which 3D props to place.</span>
+                      <span class="setting-desc" data-localize="meld_props_desc">Overrides which 3D props are placed.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-props-group"><button type="button" class="segment active" data-default data-v="auto">Auto</button><button type="button" class="segment" data-v="all">All</button><button type="button" class="segment" data-v="none">None</button></div>
+                    <div class="segmented-control" id="meld-props-group"><button type="button" class="segment active" data-default data-v="auto" data-localize="meld_props_auto">Auto</button><button type="button" class="segment" data-v="all" data-localize="meld_props_all">All</button><button type="button" class="segment" data-v="none" data-localize="meld_props_none">None</button></div>
                   </div>
                 </div>
               </div>
@@ -977,13 +977,13 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_tree_realm">Tree Realm</span>
-                        <span class="tooltip-icon" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the ecoregion mixes and keeps its palms.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the local ecoregion mixes and keeps its palms.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_realm_desc">Force one region&#x27;s trees instead of picking by location.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <select id="meld-tree-realm-select" name="meld-tree-realm-select" class="settings-select"><option value="auto" selected>Auto</option><option value="afr">Africa</option><option value="asn">Northern Asia</option><option value="aus">Australasia</option><option value="ena">Eastern North America</option><option value="eur">Europe</option><option value="fl">Florida &amp; Caribbean</option><option value="ind">India &amp; Southeast Asia</option><option value="sam">South America</option><option value="wna">Western North America</option><option value="vanilla-plus">Vanilla+</option></select>
+                    <select id="meld-tree-realm-select" name="meld-tree-realm-select" class="settings-select"><option value="auto" selected data-localize="meld_tree_realm_auto">Auto</option><option value="afr"None data-localize="meld_tree_realm_afr">Africa</option><option value="asn"None data-localize="meld_tree_realm_asn">Northern Asia</option><option value="aus"None data-localize="meld_tree_realm_aus">Australasia</option><option value="ena"None data-localize="meld_tree_realm_ena">Eastern North America</option><option value="eur"None data-localize="meld_tree_realm_eur">Europe</option><option value="fl"None data-localize="meld_tree_realm_fl">Florida &amp; Caribbean</option><option value="ind"None data-localize="meld_tree_realm_ind">India &amp; Southeast Asia</option><option value="sam"None data-localize="meld_tree_realm_sam">South America</option><option value="wna"None data-localize="meld_tree_realm_wna">Western North America</option><option value="vanilla-plus"None data-localize="meld_tree_realm_vanilla_plus">Vanilla+</option></select>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -991,14 +991,14 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-folder"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_tree_pack_dir">Own Tree Folder</span>
+                        <span data-localize="meld_tree_pack_dir">Custom Tree Folder</span>
                         <span class="tooltip-icon" data-tooltip="Laid out like the bundled packs: realm / community / tree type / size / any name.schem. A file that does not load is skipped with a warning. Experimental.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_pack_dir_desc">A folder of your own tree schematics.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-tree-pack-dir-input" name="meld-tree-pack-dir-input" placeholder="No folder" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-tree-pack-dir-input" name="meld-tree-pack-dir-input" placeholder="No folder" data-localize="placeholder_meld_tree_pack_dir" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1006,14 +1006,14 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_tree_pack_mode">Own Trees</span>
+                        <span data-localize="meld_tree_pack_mode">Custom Trees</span>
                         <span class="tooltip-icon" data-tooltip="Add mixes the folder&#x27;s trees in. Replace swaps a realm&#x27;s built-in trees wherever the folder has any. Needs a folder.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_tree_pack_mode_desc">Add to the built-in trees or replace them.</span>
+                      <span class="setting-desc" data-localize="meld_tree_pack_mode_desc">Add your trees to the built-in ones, or replace them.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-tree-pack-mode-group"><button type="button" class="segment active" data-default data-v="add">Add</button><button type="button" class="segment" data-v="replace">Replace</button></div>
+                    <div class="segmented-control" id="meld-tree-pack-mode-group"><button type="button" class="segment active" data-default data-v="add" data-localize="meld_tree_pack_mode_add">Add</button><button type="button" class="segment" data-v="replace" data-localize="meld_tree_pack_mode_replace">Replace</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1024,11 +1024,11 @@
                         <span data-localize="meld_cave_style">Cave Style</span>
                         <span class="tooltip-icon" data-tooltip="Vanilla keeps plain caves. More vanilla is about 30% themed, All mix about 77% and More mix about 89%. Needs Caves.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_cave_style_desc">How much of the underground the themed caves take.</span>
+                      <span class="setting-desc" data-localize="meld_cave_style_desc">How much of the underground gets themed caves.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <select id="meld-cave-style-select" name="meld-cave-style-select" class="settings-select"><option value="vanilla">Vanilla</option><option value="more-vanilla">More vanilla</option><option value="all-mix" selected>All mix</option><option value="more-mix">More mix</option></select>
+                    <select id="meld-cave-style-select" name="meld-cave-style-select" class="settings-select"><option value="vanilla"None data-localize="meld_cave_style_vanilla">Vanilla</option><option value="more-vanilla"None data-localize="meld_cave_style_more_vanilla">More vanilla</option><option value="all-mix" selected data-localize="meld_cave_style_all_mix">All mix</option><option value="more-mix"None data-localize="meld_cave_style_more_mix">More mix</option></select>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1043,7 +1043,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-cave-ores-group"><button type="button" class="segment active" data-default data-v="normal">Normal</button><button type="button" class="segment" data-v="more">More</button></div>
+                    <div class="segmented-control" id="meld-cave-ores-group"><button type="button" class="segment active" data-default data-v="normal" data-localize="meld_cave_ores_normal">Normal</button><button type="button" class="segment" data-v="more" data-localize="meld_cave_ores_more">More</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1058,7 +1058,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-river-bed-group"><button type="button" class="segment active" data-default data-v="off">Off</button><button type="button" class="segment" data-v="v1">Smooth</button></div>
+                    <div class="segmented-control" id="meld-river-bed-group"><button type="button" class="segment active" data-default data-v="off" data-localize="meld_river_bed_off">Off</button><button type="button" class="segment" data-v="v1" data-localize="meld_river_bed_v1">Smooth</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1067,13 +1067,13 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_water_detail">Water Detail</span>
-                        <span class="tooltip-icon" data-tooltip="Scaled rounds bed depths instead of flooring them and, on small maps, carves narrow bodies as bowls, narrows streams and lets water flow over roads not tagged as bridges.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Scaled rounds bed depths instead of flooring them. On small maps it also carves narrow bodies of water as bowls, narrows streams, and lets water run over roads that are not bridges.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_water_detail_desc">How water beds are rounded and narrowed.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-water-detail-group"><button type="button" class="segment active" data-default data-v="default">Default</button><button type="button" class="segment" data-v="scaled">Scaled</button></div>
+                    <div class="segmented-control" id="meld-water-detail-group"><button type="button" class="segment active" data-default data-v="default" data-localize="meld_water_detail_default">Default</button><button type="button" class="segment" data-v="scaled" data-localize="meld_water_detail_scaled">Scaled</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1084,11 +1084,11 @@
                         <span data-localize="meld_climate_mode">Climate</span>
                         <span class="tooltip-icon" data-tooltip="Origin reads it once, at the centre of the area. Per position reads it at every block, so a large world crosses climate zones. Experimental, not with rotation.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_climate_mode_desc">Where the climate behind surfaces and biomes is read.</span>
+                      <span class="setting-desc" data-localize="meld_climate_mode_desc">Where the climate for surfaces and biomes is sampled.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-climate-mode-group"><button type="button" class="segment active" data-default data-v="origin">Origin</button><button type="button" class="segment" data-v="per-position">Per position</button></div>
+                    <div class="segmented-control" id="meld-climate-mode-group"><button type="button" class="segment active" data-default data-v="origin" data-localize="meld_climate_mode_origin">Origin</button><button type="button" class="segment" data-v="per-position" data-localize="meld_climate_mode_per_position">Per position</button></div>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide meld-only">
@@ -1475,7 +1475,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-origin-input" name="meld-origin-input" placeholder="LAT,LON" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-origin-input" name="meld-origin-input" placeholder="LAT,LON" data-localize="placeholder_meld_origin" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile meld-only">
@@ -1642,9 +1642,9 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="advanced_meld_features">Meld features</span>
-                        <span class="tooltip-icon" data-tooltip="Shows the Scale settings here and the extra settings in Generation, Terrain &amp; Nature, Map &amp; Input and World. Off hides them all and sends none of them. Experimental.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Shows the Scale settings here and extra settings in Generation, Terrain &amp; Nature, Map &amp; Input and World. Turning it off hides them and sends none of them. Experimental.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="advanced_meld_features_desc">Large-world and extra generation settings from the Meld fork. Off, Arnis runs as it does without them.</span>
+                      <span class="setting-desc" data-localize="advanced_meld_features_desc">Extra settings for large worlds and finer control. Off, Arnis behaves as before.</span>
                     </span>
                   </label>
                   <div class="settings-control">
@@ -1660,14 +1660,14 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_workers">Pieces at once</span>
-                        <span class="tooltip-icon" data-tooltip="Cuts a One World selection into pieces of up to 4 x 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from the free RAM and cores. Starting the same area again resumes it. One World only.">?</span>
+                        <span data-localize="meld_workers">Parallel pieces</span>
+                        <span class="tooltip-icon" data-tooltip="Splits a One World selection into pieces of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_workers_desc">Build a One World in pieces, several at a time.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <select id="meld-workers-select" name="meld-workers-select" class="settings-select"><option value="" selected>Off</option><option value="auto">Auto</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select>
+                    <select id="meld-workers-select" name="meld-workers-select" class="settings-select"><option value="" selected data-localize="meld_workers_off">Off</option><option value="auto"None data-localize="meld_workers_auto">Auto</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select>
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">
@@ -1691,13 +1691,13 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_ram_budget">Memory budget</span>
-                        <span class="tooltip-icon" data-tooltip="Sizes parallel work to this much memory instead of the free RAM reading, so several runs can share a machine. Empty measures the free RAM.">?</span>
+                        <span class="tooltip-icon" data-tooltip="Sizes parallel work to this much memory instead of the free RAM measured, so several runs can share a machine. Empty measures free RAM.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_ram_budget_desc">Memory the run may assume it has, in MB.</span>
+                      <span class="setting-desc" data-localize="meld_ram_budget_desc">How much memory a run may use, in MB.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-ram-budget-input" name="meld-ram-budget-input" class="meld-short" placeholder="Auto" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-ram-budget-input" name="meld-ram-budget-input" class="meld-short" placeholder="Auto" data-localize="placeholder_meld_ram_budget" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                 <div class="settings-row setting-tile is-wide">
@@ -1712,7 +1712,7 @@
                     </span>
                   </label>
                   <div class="settings-control">
-                    <input type="text" id="meld-threads-input" name="meld-threads-input" class="meld-short" placeholder="Auto" autocomplete="off" spellcheck="false">
+                    <input type="text" id="meld-threads-input" name="meld-threads-input" class="meld-short" placeholder="Auto" data-localize="placeholder_meld_threads" autocomplete="off" spellcheck="false">
                   </div>
                 </div>
                   </div>

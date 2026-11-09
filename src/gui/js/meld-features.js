@@ -10,6 +10,14 @@ const choice = (id) => {
 let defaultArchive = '';
 const on = (id) => Boolean(el(id) && el(id).checked);
 
+// A string from the loaded language, `{name}` placeholders filled in; the English text is the
+// fallback while no language is loaded.
+const t = (key, fallback, vars = {}) => {
+  let s = (window.localization && window.localization[key]) || fallback;
+  for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+  return s;
+};
+
 export function initMeldFeatures() {
   const toggle = el('advanced-meld-features-toggle');
   if (!toggle) return;
@@ -25,6 +33,52 @@ export function initMeldFeatures() {
       });
     });
   });
+}
+
+// What is wrong with a field, in a short sentence, or ''. The backend parses the same values
+// with the CLI's own parser, but its message is cut to a few words in the status line.
+export function meldProblem({ oneWorld, java, extendHeight }) {
+  if (!on('advanced-meld-features-toggle')) return '';
+  const name = (id) => {
+    const row = el(id).closest('.settings-row');
+    const label = row && row.querySelector('.setting-heading > span');
+    return label ? label.textContent : id;
+  };
+  const whole = (id, min, max, rule) => {
+    const v = value(id);
+    if (v === '') return '';
+    if (!/^-?\d+$/.test(v)) return t('meld_err_whole', '{name} must be a whole number.', { name: name(id) });
+    const n = Number(v);
+    const vars = { name: name(id), min, max };
+    if (n < min || n > max) return t('meld_err_range', '{name} must be from {min} to {max}.', vars);
+    if (rule === 'floor' && n % 16 !== 0) return t('meld_err_multiple', '{name} must be a multiple of 16 from {min} to {max}.', vars);
+    if (rule === 'top' && ((n % 16) + 16) % 16 !== 15) return t('meld_err_section_end', '{name} must be one less than a multiple of 16, from {min} to {max}.', vars);
+    return '';
+  };
+  const share = (id) => {
+    const v = value(id);
+    return v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 1)
+      ? '' : t('meld_err_share', '{name} must be a number from 0 to 1.', { name: name(id) });
+  };
+  const problems = [
+    whole('meld-threads-input', 1, 4096),
+    whole('meld-ram-budget-input', 1, 100000000),
+    whole('meld-cpu-target-input', 10, 100),
+    whole('meld-seed-input', 0, Number.MAX_SAFE_INTEGER),
+    extendHeight ? whole('meld-min-y-input', -2032, -64, 'floor') : '',
+    extendHeight ? whole('meld-max-y-input', 319, 2031, 'top') : '',
+    share('meld-rock-density-input'),
+    share('meld-bush-density-input'),
+    whole('meld-blinear-level-input', 1, 22),
+  ];
+  const origin = value('meld-origin-input');
+  if (oneWorld && origin) {
+    const [lat, lon, ...rest] = origin.split(',').map((p) => Number(p.trim()));
+    if (rest.length || !(Math.abs(lat) <= 85) || !(Math.abs(lon) <= 180) || origin.split(',').length !== 2) {
+      problems.push(t('meld_err_origin', '{name} must be LAT,LON, such as 44.44,26.10.', { name: name('meld-origin-input') }));
+    }
+  }
+  return problems.find(Boolean) || '';
 }
 
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
@@ -104,32 +158,42 @@ let retryNext = [];
 let call = () => {};
 let postToMap = () => {};
 let restart = () => {};
+let localizer = () => {};
 
 const outlines = () =>
   [...pieces].map(([i, p]) => ({ i, state: p.state, bounds: p.bounds }));
 
-export function initRunControls({ invoke, post, start }) {
+export function initRunControls({ invoke, post, start, localize }) {
   call = invoke;
+  localizer = localize;
   postToMap = post;
   restart = start;
-  const pause = el('run-pause-button');
-  pause.addEventListener('click', async () => {
-    paused = !paused;
-    pause.textContent = paused ? 'Resume' : 'Pause';
+  el('run-pause-button').addEventListener('click', async () => {
+    setPaused(!paused);
     await call('gui_pause_generation', { paused });
   });
   el('run-stop-button').addEventListener('click', async () => {
     // A stopped queue must not stay held: the next run starts unpaused.
-    paused = false;
-    pause.textContent = 'Pause';
+    setPaused(false);
     await call('gui_stop_generation');
   });
   el('run-retry-button').addEventListener('click', () => {
-    retryNext = [...pieces].filter(([, p]) => p.state === 'failed' || p.state === 'stopped').map(([i]) => i + 1);
-    // Taken by the run's flags; whatever a refused start leaves is dropped.
+    retryNext = [...pieces].filter(([, p]) => RETRYABLE.has(p.state)).map(([i]) => i + 1);
+    // Taken by the run's flags (meldFlags); one a refused start leaves behind is dropped here.
     Promise.resolve(restart()).finally(() => { retryNext = []; });
   });
 }
+
+// Whether the queue is held, and what the button says: the two are one variable.
+function setPaused(next) {
+  paused = next;
+  const button = el('run-pause-button');
+  button.dataset.localize = paused ? 'run_resume' : 'run_pause';
+  localizer(button, button.dataset.localize);
+}
+
+// What Retry runs: pieces that failed, were stopped, or never got to start.
+const RETRYABLE = new Set(['failed', 'stopped', 'queued']);
 
 // A piece record from the backend. A retry keeps the pieces it does not rebuild.
 export function notePiece(piece) {
@@ -146,12 +210,15 @@ export function clearPieces() {
 // `running` is whether a generation is under way. Pause and Stop belong to a running job,
 // Retry to a finished one that left pieces behind.
 export function showRunControls(running) {
-  const unfinished = [...pieces.values()].some((p) => p.state === 'failed' || p.state === 'stopped');
+  const unfinished = [...pieces.values()].some((p) => RETRYABLE.has(p.state));
   el('run-controls').hidden = pieces.size === 0 || !(running || unfinished);
   el('run-pause-button').hidden = el('run-stop-button').hidden = !running;
   el('run-retry-button').hidden = running || !unfinished;
-  if (!running) paused = false;
-  el('run-pause-button').textContent = 'Pause';
+  // A run that ends while held must not leave the backend held for the next one.
+  if (!running && paused) {
+    setPaused(false);
+    call('gui_pause_generation', { paused: false });
+  }
 }
 
 // ---- Data panel: Prepare Countries and the Download Plan ----
@@ -176,6 +243,7 @@ function lines(box, rows) {
 
 // `area()` is the selected bbox; `plan()` the settings a run's plan depends on.
 export function initDataPanel({ invoke, area, plan }) {
+  const needArea = () => t('meld_select_area', 'Select an area on the map first.');
   const list = el('meld-prepare-list');
   const out = el('meld-plan-out');
   const folder = () => value('meld-archive-folder-input');
@@ -185,14 +253,14 @@ export function initDataPanel({ invoke, area, plan }) {
     .catch(() => {});
 
   el('meld-prepare-check').addEventListener('click', async () => {
-    if (!area()) return say(list, 'Select an area on the map first.');
-    say(list, 'Asking Geofabrik...');
+    if (!area()) return say(list, needArea());
+    say(list, t('meld_asking_geofabrik', 'Asking Geofabrik...'));
     try {
       const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder(), tilesPath: '' });
-      const rows = p.extracts.map((e) => [`${e.name}${e.baked ? ' (baked)' : ''}`, `${mb(e.bytes)} download, ${mb(e.archive_bytes)} archive`]);
-      rows.push(['Archive folder', p.folder]);
-      if (p.free_bytes != null) rows.push(['Free space / peak during the bake', `${mb(p.free_bytes)} / ${mb(p.peak_bytes)}`]);
-      if (p.uncovered_points) rows.push(['Not covered by any country (open sea)', `${p.uncovered_points} points`]);
+      const rows = p.extracts.map((e) => [e.baked ? t('meld_baked', '{name} (baked)', { name: e.name }) : e.name, t('meld_extract_sizes', '{download} download, {archive} archive', { download: mb(e.bytes), archive: mb(e.archive_bytes) })]);
+      rows.push([t('meld_archive_folder_line', 'Archive folder'), p.folder]);
+      if (p.free_bytes != null) rows.push([t('meld_free_peak', 'Free space / peak during the bake'), `${mb(p.free_bytes)} / ${mb(p.peak_bytes)}`]);
+      if (p.uncovered_points) rows.push([t('meld_uncovered', 'Not covered by any country (open sea)'), t('meld_points', '{n} points', { n: p.uncovered_points })]);
       lines(list, rows);
     } catch (e) {
       say(list, String(e));
@@ -201,14 +269,14 @@ export function initDataPanel({ invoke, area, plan }) {
 
   const stop = el('meld-prepare-stop');
   el('meld-prepare-bake').addEventListener('click', async () => {
-    if (!area()) return say(list, 'Select an area on the map first.');
+    if (!area()) return say(list, needArea());
     stop.hidden = false;
-    say(list, 'Baking: the progress is on the main bar.');
+    say(list, t('meld_baking', 'Baking: the progress is on the main bar.'));
     try {
       const done = await invoke('gui_bake_archive', {
         bboxText: area(), folder: folder(), tilesPath: '', flags: plan().flags,
       });
-      say(list, done ? 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.' : 'Stopped. Finished countries are kept.');
+      say(list, done ? t('meld_bake_done', 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.') : t('meld_bake_stopped', 'Stopped. Finished countries are kept.'));
     } catch (e) {
       say(list, String(e));
     }
@@ -217,12 +285,12 @@ export function initDataPanel({ invoke, area, plan }) {
   stop.addEventListener('click', () => invoke('gui_cancel_bake'));
 
   el('meld-plan-show').addEventListener('click', async () => {
-    if (!area()) return say(out, 'Select an area on the map first.');
+    if (!area()) return say(out, needArea());
     try {
       const p = await invoke('gui_data_plan', { bboxText: area(), ...plan() });
-      const rows = p.items.map((i) => [`${i.source}: ${i.cached} of ${i.total} cached`, i.missing_bytes != null ? `${mb(i.missing_bytes)} to download` : 'size unknown']);
-      if (p.free_bytes != null) rows.push(['Free space', mb(p.free_bytes)]);
-      lines(out, rows.length ? rows : [['Nothing to download.', '']]);
+      const rows = p.items.map((i) => [t('meld_cached', '{source}: {cached} of {total} cached', { source: i.source, cached: i.cached, total: i.total }), i.missing_bytes != null ? t('meld_to_download', '{size} to download', { size: mb(i.missing_bytes) }) : t('meld_size_unknown', 'size unknown')]);
+      if (p.free_bytes != null) rows.push([t('meld_free_space', 'Free space'), mb(p.free_bytes)]);
+      lines(out, rows.length ? rows : [[t('meld_nothing_to_download', 'Nothing to download.'), '']]);
     } catch (e) {
       say(out, String(e));
     }

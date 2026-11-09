@@ -192,7 +192,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             body.extend(extra);
         }
         crate::progress::emit_gui_piece(&body);
-        progress_json::record("piece", body);
+        // `queued` is for the window's map; the NDJSON stream keeps the states it had.
+        if state != "queued" {
+            progress_json::record("piece", body);
+        }
     };
     for unit in &units {
         let i = unit.index as usize;

@@ -1391,6 +1391,56 @@ impl Drop for BusySlot {
     }
 }
 
+/// The long flag names the window sends (`js/meld-features.js`). Anything else in `flags` is
+/// refused: the pieces repeat `flags` verbatim, so a flag the parent ignores would reach them.
+const WINDOW_FLAGS: &[&str] = &[
+    "one-world-workers",
+    "only-pieces",
+    "threads",
+    "cpu-target",
+    "ram-budget-mb",
+    "max-downloads",
+    "seed",
+    "min-y",
+    "max-y",
+    "road-detail",
+    "no-buildings",
+    "props",
+    "rocks",
+    "rock-density",
+    "bushes",
+    "bush-density",
+    "tree-realm",
+    "tree-pack-dir",
+    "tree-pack-mode",
+    "cave-style",
+    "cave-ores",
+    "river-bed",
+    "water-detail",
+    "climate-mode",
+    "origin",
+    "world-border",
+    "region-format",
+    "blinear-level",
+    "osm-pbf",
+    "osm-pbf-url",
+    "osm-tiles-url",
+    "overpass-url",
+    "offline",
+];
+
+/// `flags` as the window may send them: `--name` or `--name=value`, the name one of
+/// [`WINDOW_FLAGS`] (all of them `--capabilities` flags).
+fn check_window_flags(flags: &[String]) -> Result<(), String> {
+    for flag in flags {
+        let name = flag.strip_prefix("--").and_then(|f| f.split('=').next());
+        if !name.is_some_and(|n| WINDOW_FLAGS.contains(&n)) {
+            return Err(format!("{flag}: not a setting the window can pass."));
+        }
+    }
+    Ok(())
+}
+
 /// The "Meld features" settings, parsed by the CLI's own parser so the window accepts exactly
 /// what the flags accept, and checked the way `validate_args` checks them: the window never
 /// runs it. No flags is the stock run.
@@ -1401,6 +1451,7 @@ fn confluence_args(
     is_new_world: bool,
 ) -> Result<Args, String> {
     use clap::Parser;
+    check_window_flags(flags)?;
     let mut extra =
         Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
             .map_err(|e| {
@@ -1481,9 +1532,15 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
             .unwrap_or_default()
     }
     let mut out: Vec<std::ffi::OsString> = vec!["--one-world".into()];
+    // One token each: a world named like a flag must stay a value.
+    let joined = |flag: &str, value: &std::ffi::OsStr| {
+        let mut token = std::ffi::OsString::from(format!("{flag}="));
+        token.push(value);
+        token
+    };
     if let (Some(dir), Some(world)) = (world_path.parent(), world_path.file_name()) {
-        out.extend(["--output-dir".into(), dir.into(), "--world-name".into()]);
-        out.push(world.into());
+        out.push(joined("--output-dir", dir.as_os_str()));
+        out.push(joined("--world-name", world));
     }
     let mut values = vec![
         format!("--downloader={}", args.downloader),
@@ -1605,6 +1662,7 @@ fn gui_data_plan(
     flags: Vec<String>,
 ) -> Result<crate::data_plan::DataPlan, String> {
     use clap::Parser;
+    check_window_flags(&flags)?;
     let mut args =
         Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
             .map_err(|e| e.to_string())?;
@@ -2932,6 +2990,51 @@ mod tests {
         let y = ["--min-y=-64".to_string()];
         assert!(confluence_args(&y, true, "java", false).is_err());
         assert!(confluence_args(&y, false, "bedrock", true).is_err());
+    }
+
+    /// With no flags the settings copied onto a run change nothing in it.
+    #[test]
+    fn no_flags_leave_the_run_as_it_was() {
+        use clap::Parser;
+        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
+        let before = format!("{args:?}");
+        apply_confluence(
+            &mut args,
+            confluence_args(&[], false, "java", true).unwrap(),
+        );
+        assert_eq!(format!("{args:?}"), before);
+    }
+
+    /// The names the window may send exist, and nothing else gets through.
+    #[test]
+    fn only_the_windows_own_flags_are_accepted() {
+        let known: Vec<String> = serde_json::from_str(&crate::args::capabilities_json()).unwrap();
+        for name in WINDOW_FLAGS {
+            assert!(known.iter().any(|k| k == name), "--{name} is not a flag");
+        }
+        for bad in [
+            "--output-dir=x",
+            "--path",
+            "--spawn-lat=1",
+            "seed=1",
+            "--world-name=a",
+        ] {
+            assert!(check_window_flags(&[bad.to_string()]).is_err(), "{bad}");
+        }
+        assert!(check_window_flags(&["--seed=1".into(), "--offline".into()]).is_ok());
+    }
+
+    /// A world folder named like a flag stays a value on the pieces' command line.
+    #[test]
+    fn a_world_named_like_a_flag_stays_a_value() {
+        use clap::Parser;
+        let args = Args::try_parse_from(["arnis"]).unwrap();
+        let argv = piece_argv(&args, Path::new("saves/--seed=9"), &[]);
+        let back =
+            Args::try_parse_from(std::iter::once(std::ffi::OsString::from("arnis")).chain(argv))
+                .unwrap();
+        assert_eq!(back.world_name.as_deref(), Some("--seed=9"));
+        assert_eq!(back.seed, None);
     }
 
     #[test]
