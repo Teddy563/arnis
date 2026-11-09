@@ -80,6 +80,13 @@ assert.ok(!stopped, 'with nothing open Escape goes on to close the page');
 fire(segs[1], 'mouseenter');
 assert.equal(img.src, 'images/previews3d/road-detail-clean.webp');
 fire(segs[1], 'mouseleave');
+// switching the language replaces window.localization; the next hover reads the new text
+window.localization = { preview_rocks_on: 'Pietre: activat' };
+fire(swIcon, 'mouseenter');
+assert.equal(el.children[1].textContent, 'Pietre: activat');
+assert.equal(img.alt, 'Pietre: activat');
+fire(swIcon, 'mouseleave');
+
 fire(swIcon, 'mouseenter');
 img.onerror();
 assert.ok(!el.classList.contains('is-visible'), 'a missing picture hides it');
@@ -101,4 +108,14 @@ for (const n of names) {
   assert.ok(f.size > 1000 && f.size <= 30 * 1024, `${n}.webp is ${f.size} bytes`);
   for (const l of locales) assert.ok(JSON.parse(fs.readFileSync(`src/gui/locales/${l}`, 'utf8'))[captionKey(n)], `${l} lacks ${captionKey(n)}`);
 }
+// Romanian: every caption present, translated (no English words left) and with its diacritics
+const ro = JSON.parse(fs.readFileSync('src/gui/locales/ro.json', 'utf8'));
+const en = JSON.parse(fs.readFileSync('src/gui/locales/en-US.json', 'utf8'));
+for (const n of names) {
+  const k = captionKey(n);
+  assert.ok(typeof ro[k] === 'string' && ro[k].trim(), `ro.json lacks ${k}`);
+  assert.notEqual(ro[k], en[k], `${k} is not translated in ro.json`);
+  assert.ok(!/(on|off|default|density|cut|across|through|hill|river)/i.test(ro[k]), `English left in ro ${k}: ${ro[k]}`);
+}
+assert.ok(ro.preview_caves_on.includes('Peșteri') && ro.preview_river_bed_off.includes('râurilor'));
 console.log(`preview-popover: ok (${names.size} pictures, ${locales.length} locales)`);
