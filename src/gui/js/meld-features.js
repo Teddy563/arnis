@@ -301,15 +301,15 @@ export function initDataPanel({ invoke, area, plan }) {
   const out = el('meld-plan-out');
   const folder = () => value('meld-archive-folder-input');
   const say = (box, text) => lines(box, [[text, '']]);
-  invoke('gui_local_archive_info', { tilesPath: '' })
-    .then((info) => { defaultArchive = (info && info.default_folder) || ''; })
+  invoke('gui_default_archive_folder')
+    .then((dir) => { defaultArchive = dir || ''; })
     .catch(() => {});
 
   el('meld-prepare-check').addEventListener('click', async () => {
     if (!area()) return say(list, needArea());
     say(list, t('meld_asking_geofabrik', 'Asking Geofabrik...'));
     try {
-      const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder(), tilesPath: '' });
+      const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder() });
       const rows = p.extracts.map((e) => [e.baked ? t('meld_baked', '{name} (baked)', { name: e.name }) : e.name, t('meld_extract_sizes', '{download} download, {archive} archive', { download: mb(e.bytes), archive: mb(e.archive_bytes) })]);
       rows.push([t('meld_archive_folder_line', 'Archive folder'), p.folder]);
       if (p.free_bytes != null) rows.push([t('meld_free_peak', 'Free space / peak during the bake'), `${mb(p.free_bytes)} / ${mb(p.peak_bytes)}`]);
@@ -327,7 +327,7 @@ export function initDataPanel({ invoke, area, plan }) {
     say(list, t('meld_baking', 'Baking: the progress is on the main bar.'));
     try {
       const done = await invoke('gui_bake_archive', {
-        bboxText: area(), folder: folder(), tilesPath: '', flags: plan().flags,
+        bboxText: area(), folder: folder(), flags: plan().flags,
       });
       say(list, done ? t('meld_bake_done', 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.') : t('meld_bake_stopped', 'Stopped. Finished countries are kept.'));
     } catch (e) {

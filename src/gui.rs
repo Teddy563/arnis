@@ -122,7 +122,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_save_directory,
             gui_start_generation,
             gui_pause_generation,
-            gui_local_archive_info,
+            gui_default_archive_folder,
             gui_data_plan,
             gui_prepare_plan,
             gui_bake_archive,
@@ -1856,22 +1856,12 @@ fn cache_root() -> PathBuf {
     crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// The Local Archive folder an empty field means, and where arnis-tiles is
-/// (`None` when it is not installed).
-#[derive(serde::Serialize)]
-struct LocalArchiveInfo {
-    default_folder: String,
-    arnis_tiles: Option<String>,
-}
-
+/// The Local Archive folder an empty field means.
 #[tauri::command]
-fn gui_local_archive_info(tiles_path: String) -> LocalArchiveInfo {
-    LocalArchiveInfo {
-        default_folder: crate::arnis_tiles::default_folder(&cache_root())
-            .display()
-            .to_string(),
-        arnis_tiles: crate::arnis_tiles::locate(&tiles_path).map(|p| p.display().to_string()),
-    }
+fn gui_default_archive_folder() -> String {
+    crate::arnis_tiles::default_folder(&cache_root())
+        .display()
+        .to_string()
 }
 
 /// The archive folder a Local Archive field names; empty is the default.
@@ -1924,8 +1914,8 @@ fn arnis_tiles_state() -> PathBuf {
     cache_root().join("arnis").join("arnis-tiles")
 }
 
-fn arnis_tiles_exe(tiles_path: &str) -> Result<PathBuf, String> {
-    crate::arnis_tiles::locate(tiles_path).ok_or_else(|| {
+fn arnis_tiles_exe() -> Result<PathBuf, String> {
+    crate::arnis_tiles::locate().ok_or_else(|| {
         format!(
             "arnis-tiles not found; get it from {}",
             crate::arnis_tiles::HOME
@@ -1960,14 +1950,10 @@ struct PreparePlan {
 /// --dry-run`), each marked baked when the folder already holds its archive, with the sizes
 /// of what a bake downloads and leaves.
 #[tauri::command(async)]
-fn gui_prepare_plan(
-    bbox_text: String,
-    folder: String,
-    tiles_path: String,
-) -> Result<PreparePlan, String> {
+fn gui_prepare_plan(bbox_text: String, folder: String) -> Result<PreparePlan, String> {
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
-    let exe = arnis_tiles_exe(&tiles_path)?;
+    let exe = arnis_tiles_exe()?;
     let plan = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
     let archives = crate::osm_tiles::local_coverage(&folder, &bbox)
         .map(|c| c.archives)
@@ -2008,18 +1994,13 @@ static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// Download & Bake: `arnis-tiles prepare` for the selection into the folder, on the threads a
 /// generation would get (`flags`), with its progress on the main bar. `Ok(false)` when stopped.
 #[tauri::command(async)]
-fn gui_bake_archive(
-    bbox_text: String,
-    folder: String,
-    tiles_path: String,
-    flags: Vec<String>,
-) -> Result<bool, String> {
+fn gui_bake_archive(bbox_text: String, folder: String, flags: Vec<String>) -> Result<bool, String> {
     let args = confluence_args(&flags, false, "java", false)?;
     let cores = crate::transfer::cores();
     let threads = args.thread_count().unwrap_or(cores * 9 / 10).max(1);
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
-    let exe = arnis_tiles_exe(&tiles_path)?;
+    let exe = arnis_tiles_exe()?;
     let _slot = BusySlot::acquire(BUSY_BAKE)?;
     BAKE_CANCEL.store(false, std::sync::atomic::Ordering::Release);
     progress::reset_progress_floor();
