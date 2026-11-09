@@ -1490,6 +1490,8 @@ $(document).ready(function () {
         // Restored rectangles fire as "polygon"; the handler keys off instanceof.
         map.fire('draw:created', { layer: lyr, layerType: 'polygon' });
     }
+    // A place picked in the search (search.js) becomes the selection the same way.
+    window.arnisSelectBounds = applyBboxFromParent;
 
     var pieceLayer = L.layerGroup().addTo(map);
     var PIECE_COLORS = {
