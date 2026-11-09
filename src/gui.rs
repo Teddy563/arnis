@@ -1465,6 +1465,7 @@ fn gui_plan_job(
     if !args.units.coordinates() {
         return Err("Only a job built in pieces has a plan.".to_string());
     }
+    crate::args::validate_scale(world_scale)?;
     args.scale = world_scale;
     let size = args
         .units
@@ -3246,6 +3247,14 @@ mod tests {
             gui_plan_job(save.clone(), "W".into(), bbox.into(), 1.0, flags)
         };
         assert!(plan(&[]).is_err(), "no pieces, no plan");
+        let bad = gui_plan_job(
+            save.clone(),
+            "W".into(),
+            bbox.into(),
+            f64::NAN,
+            vec!["--one-world-workers=2".into()],
+        );
+        assert!(bad.is_err(), "a scale that is not a number has no plan");
         let p = plan(&[
             "--one-world-workers=2",
             "--unit-regions=1",

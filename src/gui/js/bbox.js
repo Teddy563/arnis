@@ -948,11 +948,13 @@ $(document).ready(function () {
     var sliderControl = null;
     // One World: the user hid the areas, and the world they were hidden for.
     var oneWorldOverlayHidden = false;
-    // Slider positions: a One World shows its areas opaque unless told otherwise.
-    var overlayOpacity = { world: 50, oneWorld: 70 };
-    // The world's preview images draw under the selection and the piece outlines (overlayPane
-    // is 400).
+    // Slider positions; null is the layout's default: a One World's areas at 70 % on the
+    // map-first page, opaque in Classic (3.4.0).
+    var overlayOpacity = { world: 50, oneWorld: null };
+    // On the map-first page the world's preview images draw under the selection and the piece
+    // outlines (overlayPane is 400); Classic keeps them in overlayPane.
     map.createPane('arnisPreview').style.zIndex = 350;
+    var previewPane = function () { return window.arnisMapFirst ? 'arnisPreview' : 'overlayPane'; };
     var oneWorldFittedPath = null;
 
     function setWorldOverlayOpacity(value) {
@@ -977,7 +979,7 @@ $(document).ready(function () {
         if (!data.areas) {
             var bounds = L.latLngBounds([data.min_lat, data.min_lon], [data.max_lat, data.max_lon]);
             return L.imageOverlay(data.image_base64, bounds, {
-                pane: 'arnisPreview',
+                pane: previewPane(),
                 opacity: opacityValue,
                 interactive: false,
                 zIndex: 500
@@ -988,7 +990,7 @@ $(document).ready(function () {
             var b = L.latLngBounds([area.min_lat, area.min_lon], [area.max_lat, area.max_lon]);
             if (area.image_base64) {
                 group.addLayer(L.imageOverlay(area.image_base64, b, {
-                    pane: 'arnisPreview',
+                    pane: previewPane(),
                     opacity: opacityValue,
                     interactive: false,
                     zIndex: 500 + index
@@ -1144,7 +1146,8 @@ $(document).ready(function () {
         worldOverlayData = data;
         worldPreviewAvailable = true;
         var slider = document.getElementById('world-preview-opacity');
-        if (slider) slider.value = String(overlayOpacity[data.areas ? 'oneWorld' : 'world']);
+        var kept = overlayOpacity[data.areas ? 'oneWorld' : 'world'];
+        if (slider) slider.value = String(kept == null ? (window.arnisMapFirst ? 70 : 100) : kept);
         var btn = document.getElementById('world-preview-btn');
         if (btn) {
             btn.classList.remove('disabled');
@@ -1732,6 +1735,9 @@ $(document).ready(function () {
             var was = window.arnisMeldOn;
             window.arnisMeldOn = Boolean(event.data.on);
             window.arnisWorldScale = Number(event.data.scale) || 1;
+            // The map-first page's look (hover font, previews under the selection); Classic keeps 3.4.0's.
+            window.arnisMapFirst = Boolean(event.data.mapFirst);
+            document.body.classList.toggle('map-first', window.arnisMapFirst);
             if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 

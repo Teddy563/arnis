@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -200,6 +200,8 @@ async function applyLocalization(localization) {
   window.localization = localization;
   renderOneWorldStatus();
   refreshStartButton();
+  // The plan block is built in the language it was drawn in.
+  schedulePlan(true);
   labelLiveViewDistances();
   fillLiveVersions();
   // liveStatus stays "stopped" after a session, which must not take over a normal run's line.
@@ -1374,7 +1376,7 @@ function initSettings() {
   // The map offers "Select this area" on a country or region, the edge handles and the size
   // readout only with Meld features on; the readout counts regions at the world scale.
   const meldToggle = document.getElementById('advanced-meld-features-toggle');
-  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale });
+  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, mapFirst: document.body.classList.contains('map-first') });
   document.addEventListener('change', pushMeldToMap);
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
@@ -1385,8 +1387,14 @@ function initSettings() {
     selectWithRing([pick(Math.min, 'min_lat'), pick(Math.min, 'min_lon'), pick(Math.max, 'max_lat'), pick(Math.max, 'max_lon')], true);
     askRunConfirm();
   });
-  document.getElementById('run-confirm-cancel').addEventListener('click', () => {
+  // Cancel (or Escape) closes the panel and gives the focus back to Start.
+  const cancelConfirm = () => {
     document.getElementById('run-confirm').hidden = true;
+    document.getElementById('start-button').focus();
+  };
+  document.getElementById('run-confirm-cancel').addEventListener('click', cancelConfirm);
+  document.getElementById('run-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cancelConfirm();
   });
   document.getElementById('run-confirm-docs').addEventListener('click', (e) => {
     e.preventDefault();
@@ -4109,10 +4117,14 @@ function askRunConfirm() {
 const HOLD_MS = 1500;
 function holdToConfirm(button, done) {
   let timer = 0;
-  const start = () => {
-    if (button.disabled || timer) return;
+  // Only the primary button holds; a button disabled or a panel hidden meanwhile starts nothing.
+  const start = (e) => {
+    if (button.disabled || timer || (e && e.button)) return;
     button.classList.add('is-holding');
-    timer = setTimeout(() => { stop(); done(); }, HOLD_MS);
+    timer = setTimeout(() => {
+      stop();
+      if (!button.disabled && !button.closest('[hidden]')) done();
+    }, HOLD_MS);
   };
   const stop = () => {
     clearTimeout(timer);

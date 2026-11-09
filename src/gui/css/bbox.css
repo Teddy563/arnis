@@ -584,9 +584,10 @@ body,
   }
 }
 
-/* The map's hovers in the window's UI font (the map page itself is monospace) */
-.leaflet-tooltip,
-.leaflet-draw-tooltip {
+/* The map-first page: the map's hovers in the window's UI font (the map page itself is
+   monospace; Classic keeps it) */
+.map-first .leaflet-tooltip,
+.map-first .leaflet-draw-tooltip {
   font-family: var(--map-font, "Segoe UI", Arial, sans-serif);
 }
 
