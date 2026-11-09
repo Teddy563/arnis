@@ -60,6 +60,20 @@ fn ring_area(nodes: &[ProcessedNode]) -> f64 {
     (twice_area / 2.0).abs()
 }
 
+/// Whether `--no-buildings` leaves this element out: building ways and relations, and the
+/// door and entrance nodes that open into them.
+fn is_building_element(element: &ProcessedElement) -> bool {
+    let tags = element.tags();
+    match element {
+        ProcessedElement::Node(_) => tags.contains_key("door") || tags.contains_key("entrance"),
+        _ => {
+            tags.contains_key("building")
+                || tags.contains_key("building:part")
+                || tags.get("type").map(String::as_str) == Some("building")
+        }
+    }
+}
+
 /// Footprint of a ground-filling way, or `None` if it does not reach a ground-fill handler.
 /// Mirrors the landuse/natural/leisure/place arms of `process_element`; keep both in sync.
 fn way_ground_fill_area(way: &ProcessedWay) -> Option<f64> {
@@ -472,7 +486,11 @@ fn process_element(
                         still_surfaces,
                     );
                 } else {
-                    waterways::generate_waterways(editor, way);
+                    waterways::generate_waterways(
+                        editor,
+                        way,
+                        args.water.water_detail.channel_width_cap(args.scale),
+                    );
                 }
             } else if way.tags.contains_key("railway") {
                 railways::generate_railways(
@@ -747,8 +765,19 @@ fn tile_processing_threads(pool_threads: usize, available_mb: u64, fillground: b
     pool_threads.min(usize::try_from(memory_bound).unwrap_or(usize::MAX))
 }
 
-/// Free RAM in MB.
+/// `--ram-budget-mb`: 0 means read the machine.
+static RAM_BUDGET_MB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn set_ram_budget_mb(mb: u64) {
+    RAM_BUDGET_MB.store(mb, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Free RAM in MB, or the `--ram-budget-mb` the caller promised.
 fn available_memory_mb() -> u64 {
+    let budget = RAM_BUDGET_MB.load(std::sync::atomic::Ordering::Relaxed);
+    if budget > 0 {
+        return budget;
+    }
     #[cfg(target_os = "macos")]
     if let Some(mb) = macos_available_memory_mb() {
         return mb;
@@ -803,7 +832,19 @@ pub fn generate_world_with_options(
     // first area of a One World.
     let one_world = args.one_world_run.as_ref();
     let extending = one_world.is_some_and(|run| run.extending);
+    // A piece of a job builds `PIECE_HALO_BLOCKS` past its own chunks, so what is rooted
+    // there reaches in as it does in a single run, and writes and previews only its own.
+    let own_rect = match one_world.and_then(|run| run.unit.as_ref()) {
+        Some(u) => XZBBox::rect_from_min_max(u.rect[0], u.rect[1], u.rect[2], u.rect[3])
+            .map_err(|e| format!("piece lease rect {:?} is invalid: {e}", u.rect))?,
+        None => xzbbox.clone(),
+    };
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
+
+    // Before anything reads a footprint, so the ground under them stays open.
+    if !args.buildings {
+        elements.retain(|e| !is_building_element(e));
+    }
 
     // Before anything reads a footprint: nothing is built on a runway.
     let dropped = highways::drop_buildings_on_aircraft_pavement(&mut elements, args.scale);
@@ -814,6 +855,13 @@ pub fn generate_world_with_options(
     waterfront::drop_paths_on_piers(&mut elements, args.scale, args.timeout.as_ref());
     // A peak's summit cross that is also mapped on its own stands once, as the mapped one.
     man_made::drop_doubled_summit_crosses(&mut elements, args.scale);
+
+    crate::element_processing::surfaces::set_patches(args.surface_patches);
+
+    // --road-detail compact leaves the minor ways out before anything sees them.
+    if args.road_detail != road_detail::RoadDetail::Max {
+        elements.retain(|element| !args.road_detail.drops_element(element));
+    }
 
     // Create editor with appropriate format
     let mut editor: WorldEditor = if options.format == WorldFormat::LuantiWorld {
@@ -848,12 +896,13 @@ pub fn generate_world_with_options(
     let void_world =
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
-    if void_world && !extending {
+    editor.set_blinear_level(args.blinear_level());
+    if (void_world || args.blinear_level().is_some()) && !extending {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
         crate::world_utils::remove_untouched_template_region(&output_path);
     }
-    editor.set_place_schematics(args.use_3d);
+    editor.set_props(args.props());
     editor.set_game_settings(args.gamemode, args.world_time, args.mob_spawning);
     editor.set_start_with_map(args.map_item);
     editor.set_size_options(crate::world_utils::WorldSizeOptions::of(args));
@@ -861,17 +910,23 @@ pub fn generate_world_with_options(
     editor.set_projection_info(&args.projection.to_string(), args.scale);
     if let Some(run) = one_world {
         editor.set_merge_into_existing(crate::world_utils::WorldLayout::of(&run.world_dir));
+        editor.set_write_bounds(own_rect.clone());
         // metadata.json describes the whole world, not this area alone.
         if let Ok(Some(manifest)) = crate::one_world::Manifest::load(&run.world_dir) {
+            // A piece describes its whole job, which the other pieces are still building.
+            let job = run.unit.as_ref().map_or(xzbbox.clone(), |u| {
+                XZBBox::rect_from_min_max(u.job[0], u.job[1], u.job[2], u.job[3])
+                    .unwrap_or_else(|_| xzbbox.clone())
+            });
             let union = match manifest.extent() {
                 Some(ext) => XZBBox::rect_from_min_max(
-                    ext.min_x().min(xzbbox.min_x()),
-                    ext.min_z().min(xzbbox.min_z()),
-                    ext.max_x().max(xzbbox.max_x()),
-                    ext.max_z().max(xzbbox.max_z()),
+                    ext.min_x().min(job.min_x()),
+                    ext.min_z().min(job.min_z()),
+                    ext.max_x().max(job.max_x()),
+                    ext.max_z().max(job.max_z()),
                 )
                 .unwrap_or_else(|_| xzbbox.clone()),
-                None => xzbbox.clone(),
+                None => job,
             };
             if let Ok(ll) = crate::projection::llbbox_for_rect(&manifest.projection(), &union) {
                 editor.set_metadata_extent(union, ll);
@@ -962,7 +1017,10 @@ pub fn generate_world_with_options(
     // generated into again after its last. The preview and branding maps come first.
     let wants_map_item = args.map_item && world_format == WorldFormat::JavaAnvil && !extending;
     let place_branding = world_format == WorldFormat::JavaAnvil && !extending;
-    let first_map_id = if world_format == WorldFormat::JavaAnvil {
+    let first_map_id = if let Some(unit) = one_world.and_then(|run| run.unit.as_ref()) {
+        // A piece of a job has its own range, as pieces build side by side.
+        unit.first_map_id
+    } else if world_format == WorldFormat::JavaAnvil {
         let layout = crate::world_utils::WorldLayout::of(&output_path);
         crate::map_item::next_map_id(&layout.maps_dir(&output_path))
     } else {
@@ -1008,14 +1066,14 @@ pub fn generate_world_with_options(
     let preview = (wants_png || wants_map_item || wants_local_maps).then(|| {
         Arc::new(if wants_png && one_world.is_some() {
             // Every area of a One World is sent to the map overlay at once.
-            PreviewAccumulator::new_capped(&xzbbox, 2048)
+            PreviewAccumulator::new_capped(&own_rect, 2048)
         } else if wants_png {
-            PreviewAccumulator::new(&xzbbox)
+            PreviewAccumulator::new(&own_rect)
         } else if wants_local_maps {
             // "You are here" boards crop this, so give them a little more resolution.
-            PreviewAccumulator::new_capped(&xzbbox, 1024)
+            PreviewAccumulator::new_capped(&own_rect, 1024)
         } else {
-            PreviewAccumulator::new_capped(&xzbbox, 512)
+            PreviewAccumulator::new_capped(&own_rect, 512)
         })
     });
     if let Some(p) = &preview {
@@ -1072,9 +1130,23 @@ pub fn generate_world_with_options(
 
     // Per-cell water depth field from the LC_WATER mask; empty without land cover.
     // Shared with the editors, so a bore under water keeps its cover under the carved bed.
-    let big_water_field = Arc::new(crate::water_depth::compute_big_water_field(
-        &ground, &xzbbox,
+    let mut big_water_field = crate::water_depth::compute_big_water_field(
+        &ground,
+        &xzbbox,
+        args.water.water_detail,
+        args.scale,
+    );
+    big_water_field.set_river_bed(crate::river_bed::compute_river_bed_field(
+        args.water.river_bed,
+        &elements,
+        &ground,
+        &big_water_field,
+        &xzbbox,
+        &clip_bbox,
+        args.scale,
+        args.water.water_detail.channel_width_cap(args.scale),
     ));
+    let big_water_field = Arc::new(big_water_field);
     // Resolved once here: a body spanning many tiles must not be measured per tile.
     let still_surfaces = water_areas::prescan_still_surfaces(&elements, &ground, &xzbbox);
 
@@ -1091,7 +1163,14 @@ pub fn generate_world_with_options(
         (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
         (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
     );
-    let road_markings = road_markings::RoadMarkingIndex::build(&elements, args.scale, sign_region);
+    let road_markings = road_markings::RoadMarkingIndex::build_with(
+        &elements,
+        args.scale,
+        sign_region,
+        args.road_detail.paints_crossings(),
+        // A One World piece sees only its clipped share of the signalised crossings.
+        one_world.is_none() || args.road_detail == road_detail::RoadDetail::Max,
+    );
     // What the world format runs is settled here, so the uses below need no format checks.
     let mut extras = crate::datapack::Extras::from_args(args).for_format(world_format);
 
@@ -1133,7 +1212,11 @@ pub fn generate_world_with_options(
     // generate_highways_internal, so the bitmap is a 1:1 match of what gets placed.
     // Amenity processors use this for O(1) nearest-road-block lookups.
     let road_mask = Arc::new(highways::collect_road_surface_coords(
-        &elements, &editor, &clip_bbox, args.scale,
+        &elements,
+        &editor,
+        &clip_bbox,
+        args.scale,
+        args.water.water_detail,
     ));
     let barrier_clearance =
         barriers::RoadClearance::build(&elements, &editor, args.scale, Arc::clone(&road_mask));
@@ -1480,7 +1563,11 @@ pub fn generate_world_with_options(
     // format-dependent block-entity schema (banners) only matches Java output.
     // Restrict the parallel tile path to Java; Bedrock/Luanti large worlds use
     // the sequential path (correct, just not tile-parallel).
-    let use_parallel_tiles = tiles.len() >= 3 && matches!(world_format, WorldFormat::JavaAnvil);
+    // A piece of a job takes the path the whole job would, or its blocks differ from a single run's.
+    let wants_tiles = one_world
+        .and_then(|run| run.unit.as_ref())
+        .map_or(tiles.len() >= 3, |unit| unit.tiled);
+    let use_parallel_tiles = wants_tiles && matches!(world_format, WorldFormat::JavaAnvil);
 
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.
@@ -1627,7 +1714,7 @@ pub fn generate_world_with_options(
             tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
             // Ground generation runs on tile editors, so they need the real scale.
             tile_editor.set_projection_info(&args.projection.to_string(), args.scale);
-            tile_editor.set_place_schematics(args.use_3d);
+            tile_editor.set_props(args.props());
             tile_editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
             if let Some(ref tp) = tree_pack {
                 tile_editor.set_tree_pack(Arc::clone(tp));
@@ -2429,7 +2516,7 @@ pub fn generate_world_with_options(
 
     if wants_map_item {
         if let Some(p) = preview.as_ref() {
-            match crate::map_item::write_map_item(&output_path, p, &xzbbox, first_map_id) {
+            match crate::map_item::write_map_item(&output_path, p, &own_rect, first_map_id) {
                 Ok(()) => println!("World map item added to the player inventory."),
                 Err(e) => eprintln!("Warning: Failed to create world map item: {e}"),
             }
@@ -2482,10 +2569,10 @@ pub fn generate_world_with_options(
             max_lat: llbbox.max().lat(),
             min_lon: llbbox.min().lng(),
             max_lon: llbbox.max().lng(),
-            min_mc_x: xzbbox.min_x(),
-            max_mc_x: xzbbox.max_x(),
-            min_mc_z: xzbbox.min_z(),
-            max_mc_z: xzbbox.max_z(),
+            min_mc_x: own_rect.min_x(),
+            max_mc_x: own_rect.max_x(),
+            min_mc_z: own_rect.min_z(),
+            max_mc_z: own_rect.max_z(),
         };
         let finalize = move || {
             // Skip if a newer generation already started.
@@ -2510,7 +2597,8 @@ pub fn generate_world_with_options(
     }
     bench.mark("map_preview");
 
-    if let Some(run) = one_world {
+    // A piece of a job is recorded by its coordinator, once it has seen the piece succeed.
+    if let Some(run) = one_world.filter(|run| run.unit.is_none()) {
         let png = run.preview_path();
         let preview_path = png.is_file().then_some(png.as_path());
         crate::one_world::record_area(
@@ -2544,6 +2632,15 @@ pub fn generate_world_with_options(
         ) {
             eprintln!("Warning: Failed to apply world settings: {e}");
         }
+    }
+
+    // After the area is recorded, so a One World's border holds all its areas. A piece leaves it
+    // to the coordinator.
+    if args.world_border
+        && world_format == WorldFormat::JavaAnvil
+        && one_world.is_none_or(|run| run.unit.is_none())
+    {
+        crate::one_world::apply_world_border(&output_path, &xzbbox);
     }
 
     if world_format == WorldFormat::JavaAnvil && extras.any() {
@@ -2875,6 +2972,37 @@ mod tests {
 
     fn ids(elements: &[ProcessedElement]) -> Vec<u64> {
         elements.iter().map(|e| e.id()).collect()
+    }
+
+    #[test]
+    fn no_buildings_keeps_roads_and_water() {
+        let node = |id, tags: &[(&str, &str)]| {
+            ProcessedElement::Node(ProcessedNode {
+                id,
+                tags: tags
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                x: 0,
+                z: 0,
+            })
+        };
+        let mut elements = vec![
+            way(1, 10, &[("building", "yes")]),
+            way(2, 10, &[("building:part", "yes")]),
+            relation(3, 10, &[("type", "building")]),
+            relation(4, 10, &[("type", "multipolygon"), ("building", "house")]),
+            node(5, &[("entrance", "main")]),
+            node(6, &[("door", "hinged")]),
+            way(7, 10, &[("highway", "residential")]),
+            way(8, 10, &[("railway", "rail")]),
+            way(9, 10, &[("natural", "water")]),
+            relation(10, 10, &[("type", "multipolygon"), ("landuse", "grass")]),
+            node(11, &[("amenity", "bench")]),
+            node(12, &[("natural", "tree")]),
+        ];
+        elements.retain(|e| !is_building_element(e));
+        assert_eq!(ids(&elements), vec![7, 8, 9, 10, 11, 12]);
     }
 
     #[test]
