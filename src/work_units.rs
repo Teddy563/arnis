@@ -6,6 +6,7 @@
 //! selections cut the same lines. Each piece's lat/lon bbox snaps back to
 //! exactly its rectangle, so a run given that bbox builds that piece.
 
+use crate::args::UnitSize;
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::coordinate_system::geographic::LLBBox;
 use crate::projection::{llbbox_for_rect, snap_bbox_to_chunks, WebMercatorProjection};
@@ -99,22 +100,32 @@ fn plan_cells(
     for (gz, z0, z1) in segments(world.min_z(), world.max_z(), side, merge) {
         for &(gx, x0, x1) in &segments(world.min_x(), world.max_x(), side, merge) {
             let rect = XZBBox::rect_from_min_max(x0, z0, x1, z1)?;
-            let regions = |a: i32, b: i32| {
-                (b.div_euclid(REGION_BLOCKS) - a.div_euclid(REGION_BLOCKS) + 1) as u64
-            };
-            units.push(WorkUnit {
-                index: 0,
-                gx,
-                gz,
-                size: n,
-                regions: regions(rect.min_x(), rect.max_x()) * regions(rect.min_z(), rect.max_z()),
-                bbox: llbbox_for_rect(proj, &rect)?,
-                rect,
-            });
+            units.push(unit(proj, rect, gx, gz, n)?);
         }
     }
     order_centre_out(world, &mut units);
     Ok(units)
+}
+
+/// The piece over `rect`, lattice cell `gx, gz` of `size` regions; numbered later.
+fn unit(
+    proj: &WebMercatorProjection,
+    rect: XZBBox,
+    gx: i32,
+    gz: i32,
+    size: i32,
+) -> Result<WorkUnit, String> {
+    let regions =
+        |a: i32, b: i32| (b.div_euclid(REGION_BLOCKS) - a.div_euclid(REGION_BLOCKS) + 1) as u64;
+    Ok(WorkUnit {
+        index: 0,
+        gx,
+        gz,
+        size,
+        regions: regions(rect.min_x(), rect.max_x()) * regions(rect.min_z(), rect.max_z()),
+        bbox: llbbox_for_rect(proj, &rect)?,
+        rect,
+    })
 }
 
 /// Numbers `units` from the centre of `world` out, in doubled block units to stay integral;
@@ -134,6 +145,62 @@ fn order_centre_out(world: &XZBBox, units: &mut [WorkUnit]) {
     }
 }
 
+/// Sizes `--unit-regions auto` mixes, largest first.
+const AUTO_SIZES: [i32; 3] = [8, 4, 2];
+
+/// `--unit-regions auto`: a quadtree on the `max`-region lattice anchored at block 0. A
+/// lattice cell wholly inside `world` is one piece; one that is not splits into four, down
+/// to `min`, where what is left is clipped as a fixed size is.
+fn auto_cells(
+    proj: &WebMercatorProjection,
+    world: &XZBBox,
+    max: i32,
+    min: i32,
+) -> Result<Vec<WorkUnit>, String> {
+    fn split(
+        proj: &WebMercatorProjection,
+        world: &XZBBox,
+        (gx, gz, s): (i32, i32, i32),
+        min: i32,
+        out: &mut Vec<WorkUnit>,
+    ) -> Result<(), String> {
+        let side = REGION_BLOCKS * s;
+        let cell = [
+            gx * side,
+            gz * side,
+            gx * side + side - 1,
+            gz * side + side - 1,
+        ];
+        let clipped = [
+            cell[0].max(world.min_x()),
+            cell[1].max(world.min_z()),
+            cell[2].min(world.max_x()),
+            cell[3].min(world.max_z()),
+        ];
+        if clipped[0] > clipped[2] || clipped[1] > clipped[3] {
+            return Ok(());
+        }
+        if clipped == cell || s <= min {
+            let rect = XZBBox::rect_from_min_max(clipped[0], clipped[1], clipped[2], clipped[3])?;
+            out.push(unit(proj, rect, gx, gz, s)?);
+            return Ok(());
+        }
+        for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            split(proj, world, (gx * 2 + dx, gz * 2 + dz, s / 2), min, out)?;
+        }
+        Ok(())
+    }
+    let side = REGION_BLOCKS * max;
+    let mut units = Vec::new();
+    for gz in world.min_z().div_euclid(side)..=world.max_z().div_euclid(side) {
+        for gx in world.min_x().div_euclid(side)..=world.max_x().div_euclid(side) {
+            split(proj, world, (gx, gz, max), min, &mut units)?;
+        }
+    }
+    order_centre_out(world, &mut units);
+    Ok(units)
+}
+
 /// A job's pieces and the block rectangle they tile, from the selection and the job flags.
 pub struct Plan {
     /// The selection snapped to chunks, as a run without the job flags would build it.
@@ -149,11 +216,17 @@ pub struct Plan {
 pub fn plan(
     proj: &WebMercatorProjection,
     selection: &LLBBox,
-    units: &crate::args::UnitArgs,
-    n: i32,
+    args: &crate::args::Args,
+    size: UnitSize,
 ) -> Result<Plan, String> {
     use crate::args::SnapRegions;
+    let units = &args.units;
     let (requested, _) = snap_bbox_to_chunks(proj, selection)?;
+    // Mixed sizes snap to the smallest, so every leaf of a covered job is whole.
+    let n = match size {
+        UnitSize::N(n) => n,
+        UnitSize::Auto => AUTO_SIZES[2],
+    };
     let side = REGION_BLOCKS * n;
     let axis = |lo: i32, hi: i32| match units.snap_regions {
         Some(SnapRegions::Cover) => (
@@ -178,9 +251,23 @@ pub fn plan(
     let (z0, z1) = axis(requested.min_z(), requested.max_z());
     let rect = XZBBox::rect_from_min_max(x0 - m, z0 - m, x1 + m, z1 + m)?;
     let merge = units.snap_regions == Some(SnapRegions::Merge);
-    let cut = plan_cells(proj, &rect, n, merge)?;
+    let cut = match size {
+        UnitSize::N(n) => plan_cells(proj, &rect, n, merge)?,
+        UnitSize::Auto => {
+            let max = crate::scale::budget::auto_max_regions(args);
+            // Larger leaves until the map ids go round.
+            let mut cut = Vec::new();
+            for min in AUTO_SIZES.into_iter().rev().filter(|&s| s <= max) {
+                cut = auto_cells(proj, &rect, max, min)?;
+                if cut.len() <= crate::scale::MAX_PIECES {
+                    break;
+                }
+            }
+            cut
+        }
+    };
     let mut name = format!(
-        "{}_{}_{}_{}_n{n}",
+        "{}_{}_{}_{}_n{size}",
         rect.min_x(),
         rect.min_z(),
         rect.max_x(),
@@ -205,7 +292,7 @@ pub fn print_plan(
     world_dir: &std::path::Path,
     requested: &LLBBox,
     args: &crate::args::Args,
-    n: i32,
+    size: UnitSize,
 ) -> Result<(), String> {
     let proj = crate::one_world::frame_for(world_dir, requested, args)?;
     let Plan {
@@ -213,7 +300,7 @@ pub fn print_plan(
         rect: world,
         units,
         ..
-    } = plan(&proj, requested, &args.units, n)?;
+    } = plan(&proj, requested, args, size)?;
     let mut existing = 0;
     let units: Vec<_> = units
         .iter()
@@ -236,7 +323,10 @@ pub fn print_plan(
     let plan = serde_json::json!({
         "v": 1,
         "type": "plan",
-        "unit_regions": n,
+        "unit_regions": match size {
+            UnitSize::N(n) => serde_json::json!(n),
+            UnitSize::Auto => serde_json::json!("auto"),
+        },
         "rect": [world.min_x(), world.min_z(), world.max_x(), world.max_z()],
         "requested": [asked.min_x(), asked.min_z(), asked.max_x(), asked.max_z()],
         "units": units,
@@ -298,6 +388,52 @@ mod tests {
         (WebMercatorProjection::new(44.435, 26.105, 1.0), req)
     }
 
+    fn args_with(units: crate::args::UnitArgs) -> crate::args::Args {
+        let mut args = <crate::args::Args as clap::Parser>::try_parse_from(["arnis"]).unwrap();
+        args.units = units;
+        args
+    }
+
+    #[test]
+    fn auto_sizes_fill_the_job_with_the_largest_whole_pieces() {
+        use crate::args::{SnapRegions, UnitArgs};
+        let (proj, req) = doc18();
+        let mut args = args_with(UnitArgs {
+            snap_regions: Some(SnapRegions::Cover),
+            ..Default::default()
+        });
+        // Room for two 8 x 8 pieces at scale 1 (1,616 MB each).
+        args.ram_budget_mb = Some(4000);
+        let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
+        // Covered to the 2-region lattice: 8 x 8 regions around block 0.
+        assert_eq!(r(&p.rect), [-2048, -2048, 2047, 2047]);
+        assert!(p.name.ends_with("_nauto"));
+        // The 8-lattice lines at x 0 and z 0 cut it into four whole 4 x 4 pieces.
+        assert_eq!(sizes(&p.units), [(2048, 2048); 4]);
+        assert!(p.units.iter().all(|u| u.size == 4));
+        // A wide job takes 8 x 8 pieces where they fit, smaller ones at its edges.
+        let wide = LLBBox::new(44.38, 26.00, 44.49, 26.21).unwrap();
+        let p = plan(&proj, &wide, &args, UnitSize::Auto).unwrap();
+        let has = |s| p.units.iter().any(|u| u.size == s);
+        assert!(has(8) && has(4) && has(2), "{:?}", sizes(&p.units));
+        for u in &p.units {
+            let [x0, z0, x1, z1] = r(&u.rect);
+            assert_eq!((x1 - x0 + 1, z1 - z0 + 1), (512 * u.size, 512 * u.size));
+        }
+        let area: u64 = p.units.iter().map(WorkUnit::chunks).sum();
+        let [x0, z0, x1, z1] = r(&p.rect);
+        assert_eq!(area, ((x1 - x0 + 1) / 16 * ((z1 - z0 + 1) / 16)) as u64);
+        // Less memory: no 8 x 8 pieces.
+        args.ram_budget_mb = Some(2000);
+        let p = plan(&proj, &wide, &args, UnitSize::Auto).unwrap();
+        assert!(p.units.iter().all(|u| u.size <= 4));
+        // Without snapping, edge leaves are clipped 2 x 2 cells.
+        args.units.snap_regions = None;
+        let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
+        assert!(p.units.iter().all(|u| u.chunks() <= 64 * 64));
+        assert_eq!(r(&p.rect), [-2000, -1120, 1999, 1119]);
+    }
+
     fn sizes(units: &[WorkUnit]) -> Vec<(i32, i32)> {
         let mut v: Vec<_> = units
             .iter()
@@ -313,7 +449,7 @@ mod tests {
     #[test]
     fn without_the_job_flags_the_plan_is_todays() {
         let (proj, req) = doc18();
-        let p = plan(&proj, &req, &Default::default(), 2).unwrap();
+        let p = plan(&proj, &req, &args_with(Default::default()), UnitSize::N(2)).unwrap();
         let world = snap_bbox_to_chunks(&proj, &req).unwrap().0;
         assert_eq!(r(&p.rect), r(&world));
         assert_eq!(r(&p.rect), [-2000, -1120, 1999, 1119]);
@@ -334,28 +470,30 @@ mod tests {
     fn snapped_jobs_are_whole_pieces() {
         use crate::args::{SnapRegions, UnitArgs};
         let (proj, req) = doc18();
-        let with = |snap, margin| UnitArgs {
-            snap_regions: Some(snap),
-            margin_regions: margin,
-            ..Default::default()
+        let with = |snap, margin| {
+            args_with(UnitArgs {
+                snap_regions: Some(snap),
+                margin_regions: margin,
+                ..Default::default()
+            })
         };
         // Cover: every piece is exactly n x n regions.
         for (n, z, pieces) in [(1, 1536, 48), (2, 2048, 16), (4, 2048, 4)] {
-            let p = plan(&proj, &req, &with(SnapRegions::Cover, 0), n).unwrap();
+            let p = plan(&proj, &req, &with(SnapRegions::Cover, 0), UnitSize::N(n)).unwrap();
             let side = 512 * n;
             assert!(sizes(&p.units).iter().all(|&s| s == (side, side)), "n={n}");
             assert_eq!(r(&p.rect), [-2048, -z, 2047, z - 1], "n={n}");
             assert_eq!(p.units.len(), pieces, "n={n}");
         }
         // Fit: whole pieces inside the selection.
-        let p = plan(&proj, &req, &with(SnapRegions::Fit, 0), 2).unwrap();
+        let p = plan(&proj, &req, &with(SnapRegions::Fit, 0), UnitSize::N(2)).unwrap();
         assert_eq!(r(&p.rect), [-1024, -1024, 1023, 1023]);
         assert_eq!(sizes(&p.units), [(1024, 1024); 4]);
         // Nothing whole fits: the piece under the centre.
-        let p = plan(&proj, &req, &with(SnapRegions::Fit, 0), 4).unwrap();
+        let p = plan(&proj, &req, &with(SnapRegions::Fit, 0), UnitSize::N(4)).unwrap();
         assert_eq!(r(&p.rect), [-2048, -2048, -1, -1]);
         // A margin of one region on every side.
-        let p = plan(&proj, &req, &with(SnapRegions::Cover, 1), 2).unwrap();
+        let p = plan(&proj, &req, &with(SnapRegions::Cover, 1), UnitSize::N(2)).unwrap();
         assert_eq!(r(&p.rect), [-2560, -2560, 2559, 2559]);
         assert_eq!(p.name, "-2560_-2560_2559_2559_n2");
     }
@@ -368,7 +506,7 @@ mod tests {
             snap_regions: Some(SnapRegions::Merge),
             ..Default::default()
         };
-        let p = plan(&proj, &req, &units, 2).unwrap();
+        let p = plan(&proj, &req, &args_with(units), UnitSize::N(2)).unwrap();
         assert_eq!(r(&p.rect), [-2000, -1120, 1999, 1119]);
         assert!(p.name.ends_with("_merge"));
         let mut want = [(1024, 1120); 4].to_vec();

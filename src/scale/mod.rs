@@ -13,7 +13,7 @@
 //! is the union of the pieces): the ids it reserved, one `done-<piece>.json` per finished
 //! piece and the piece leases. Running the same command again resumes it.
 
-use crate::args::Args;
+use crate::args::{Args, UnitSize};
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::one_world::{self, Manifest, PieceRef, RunContext, UnitLease};
 use crate::progress_json;
@@ -32,6 +32,8 @@ pub mod child;
 
 /// Map ids each piece may use. A piece needing more would run into the next one's range.
 const MAP_IDS_PER_PIECE: i32 = 1 << 16;
+/// Pieces one job's map ids have room for.
+pub const MAX_PIECES: usize = (i32::MAX / MAP_IDS_PER_PIECE) as usize;
 /// Lines of a failed piece's output shown with its error.
 const TAIL_LINES: usize = 40;
 /// Further attempts at a piece that failed for a reason that may pass.
@@ -156,11 +158,14 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         .as_ref()
         .ok_or("--unit-regions needs --one-world")?;
     let selection = args.bbox.ok_or("A job built in pieces needs a bbox.")?;
-    let n = args.units.unit_regions.unwrap_or(DEFAULT_UNIT_REGIONS);
+    let size = args
+        .units
+        .unit_regions
+        .unwrap_or(UnitSize::N(DEFAULT_UNIT_REGIONS));
     let manifest = Manifest::load(world_dir)?
         .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
     let proj = manifest.projection();
-    let plan = work_units::plan(&proj, &selection, &args.units, n)?;
+    let plan = work_units::plan(&proj, &selection, args, size)?;
     // A snapped job reaches past the selection, and its data must too.
     let bake_area = if corners(&plan.rect) == corners(&plan.requested) {
         selection
@@ -177,7 +182,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
     let job = Job::open(world_dir, plan.name, of)?;
 
-    println!("One World: building {of} piece(s) of up to {n}x{n} regions");
+    match size {
+        UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
+        UnitSize::Auto => println!("One World: building {of} piece(s) of 2x2 to 8x8 regions"),
+    }
     // The extract is read once, here; each piece then cuts its own area from the bake.
     if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
         crate::osm_pbf::bake_for_job(&src, bake_area)?;

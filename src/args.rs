@@ -736,12 +736,13 @@ fn parse_density(s: &str) -> Result<f64, String> {
 pub struct UnitArgs {
     /// Print how --one-world would cut --bbox into pieces of at most N x N regions (one JSON
     /// line on stdout) and exit without generating.
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
-    pub plan_units: Option<i32>,
+    #[arg(long, value_name = "auto|N", value_parser = parse_unit_size)]
+    pub plan_units: Option<UnitSize>,
 
-    /// Piece size of a --one-world job, at most N x N regions.
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
-    pub unit_regions: Option<i32>,
+    /// Piece size of a --one-world job, at most N x N regions. auto mixes 8 x 8, 4 x 4 and
+    /// 2 x 2 pieces, as large as fit the job, the memory and the map ids.
+    #[arg(long, value_name = "auto|N", value_parser = parse_unit_size)]
+    pub unit_regions: Option<UnitSize>,
 
     /// One piece of a job, run by the job's coordinator.
     #[arg(long, hide = true)]
@@ -788,6 +789,32 @@ impl UnitArgs {
     pub fn coordinates(&self) -> bool {
         (self.unit_regions.is_some() || self.one_world_workers.is_some())
             && self.one_world_unit.is_none()
+    }
+}
+
+/// Piece size of a job: N x N regions, or mixed sizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitSize {
+    Auto,
+    N(i32),
+}
+
+impl std::fmt::Display for UnitSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnitSize::Auto => f.write_str("auto"),
+            UnitSize::N(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+fn parse_unit_size(s: &str) -> Result<UnitSize, String> {
+    match s {
+        "auto" => Ok(UnitSize::Auto),
+        _ => match s.parse::<i32>() {
+            Ok(n @ 1..=64) => Ok(UnitSize::N(n)),
+            _ => Err(format!("{s}: expected auto or a size from 1 to 64")),
+        },
     }
 }
 
@@ -1942,6 +1969,12 @@ mod tests {
         assert!(p(&["--snap-regions", "square"]).is_err());
         assert!(p(&["--margin-regions", "-1"]).is_err());
         assert_eq!(p(&[]).unwrap().units.margin_regions, 0);
+        let size = |v: &str| p(&["--unit-regions", v]).map(|a| a.units.unit_regions);
+        assert_eq!(size("auto").unwrap(), Some(UnitSize::Auto));
+        assert_eq!(size("4").unwrap(), Some(UnitSize::N(4)));
+        assert!(size("0").is_err() && size("65").is_err() && size("big").is_err());
+        let plan = p(&["--plan-units", "auto"]).unwrap().units.plan_units;
+        assert_eq!(plan, Some(UnitSize::Auto));
     }
 
     #[test]
