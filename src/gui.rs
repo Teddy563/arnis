@@ -1782,6 +1782,12 @@ fn gui_start_generation(
                 props_min_scale: None,
                 loot_table: None,
                 dump_loot_table: None,
+                osm_pbf: None,
+                osm_pbf_url: None,
+                overpass_url: Vec::new(),
+                offline: false,
+                prewarm: false,
+                prewarm_first: false,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -2054,6 +2060,7 @@ fn gui_start_generation(
                     None,
                     &args.osm_tiles_url,
                     !args.no_tile_archive,
+                    crate::osm_pbf::Source::from_args(&args).as_ref(),
                 );
                 // The terrain thread waits on this before fitting its height range. Overture's
                 // building heights follow once it is in, for the thread to wait on only if

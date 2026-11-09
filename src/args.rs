@@ -624,6 +624,36 @@ pub struct Args {
     #[arg(long, value_name = "FILE")]
     pub dump_loot_table: Option<PathBuf>,
     // --- end confluence:build ---
+    // --- confluence:data ---
+    /// Read OpenStreetMap from an .osm.pbf file, or from `geofabrik` for the smallest Geofabrik region holding the area, instead of the tile archive.
+    #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
+    pub osm_pbf: Option<String>,
+
+    /// The extract to download for `--osm-pbf geofabrik`, instead of picking one.
+    #[arg(long, value_name = "URL", requires = "osm_pbf")]
+    pub osm_pbf_url: Option<String>,
+
+    /// Self-hosted Overpass instance(s) to ask in place of Arnis's own, tried in order; repeat the flag or separate with commas.
+    #[arg(
+        long,
+        env = "ARNIS_OVERPASS_URL",
+        value_name = "URL",
+        value_delimiter = ','
+    )]
+    pub overpass_url: Vec<String>,
+
+    /// Never use the network: read everything from the caches and stop with a list of what they lack.
+    #[arg(long, env = "ARNIS_OFFLINE", value_parser = FalseyValueParser::new())]
+    pub offline: bool,
+
+    /// Download and cache every input this command would read for --bbox, then exit without writing a world.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm: bool,
+
+    /// With --unit-regions, warm the caches for every piece, one at a time, before the pieces start building.
+    #[arg(long, conflicts_with = "offline")]
+    pub prewarm_first: bool,
+    // --- end confluence:data ---
 }
 
 /// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
@@ -1330,6 +1360,16 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     }
     crate::y_bounds::check(args)?;
     // --- end confluence:terrain ---
+    // --- confluence:data ---
+    if args.prewarm_first && !args.units.coordinates() {
+        return Err(
+            "--prewarm-first only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
+    if args.offline && args.mapillary_probe {
+        return Err("--mapillary-probe asks Mapillary, so it cannot run --offline.".to_string());
+    }
+    // --- end confluence:data ---
     // Moon/Mars scale is ours, and sits below MIN_SCALE by design.
     if args.body.is_earth() {
         validate_scale(args.scale)?;
@@ -1565,8 +1605,9 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() {
-        // The probe, the cave preview and the climate map write no world, so they need no output directory.
+    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() || args.prewarm {
+        // The probe, the cave preview, the climate map and a prewarm write no world, so they need
+        // no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
