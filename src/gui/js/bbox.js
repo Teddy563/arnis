@@ -2336,6 +2336,8 @@ $(document).ready(function () {
     */
     startBounds = new L.LatLngBounds([0.0, 0.0], [0.0, 0.0]);
     var bounds = new L.Rectangle(startBounds, {
+        // bbox.css fades it while pieces build.
+        className: 'bbox-selection',
         color: '#fecc44',
         opacity: 1.0,
         weight: 3,
