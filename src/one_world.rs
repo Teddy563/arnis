@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 
 pub const MANIFEST_FILE: &str = "arnis_one_world.json";
 pub const PREVIEW_DIR: &str = "arnis_one_world/previews";
+/// Where a job built in pieces keeps its state, one folder per job.
+pub const JOBS_DIR: &str = "arnis_one_world/jobs";
 pub const DEFAULT_WORLD_NAME: &str = "Arnis One World";
 /// 2: merges write into empty region files. Version 1 worlds still hold
 /// region template chunks outside their areas and are repaired once.
@@ -27,6 +29,27 @@ pub const MANIFEST_VERSION: u32 = 3;
 /// Geometry kept past the area edge, so an element straddling a seam is
 /// built whole on both sides.
 pub const CLIP_PAD_BLOCKS: i32 = 128;
+
+/// How far past its own chunks a piece of a job builds, writing only its own: what is
+/// rooted in a neighbour's ground (a tree, a building's far wall) reaches across the seam
+/// as it does in a single run.
+// ponytail: fixed reach; something wider than this still loses its far side at a seam.
+pub const PIECE_HALO_BLOCKS: i32 = 32;
+// Whole chunks, so the piece's own chunk snap gives its build rect back exactly.
+const _: () = assert!(PIECE_HALO_BLOCKS % 16 == 0);
+
+/// What a piece over `rect` builds: `rect` grown by `PIECE_HALO_BLOCKS`, but never past
+/// the job's `selection`, which a single run would not build either.
+pub fn piece_build_rect(rect: &XZBBox, selection: &XZBBox) -> XZBBox {
+    let h = PIECE_HALO_BLOCKS;
+    XZBBox::rect_from_min_max(
+        (rect.min_x() - h).max(selection.min_x()),
+        (rect.min_z() - h).max(selection.min_z()),
+        (rect.max_x() + h).min(selection.max_x()),
+        (rect.max_z() + h).min(selection.max_z()),
+    )
+    .unwrap_or_else(|_| rect.clone())
+}
 
 const MAX_ABS_LAT: f64 = 85.0;
 
@@ -60,6 +83,18 @@ pub struct GeneratedArea {
     pub max_lat: f64,
     pub max_lon: f64,
     pub preview: Option<String>,
+    /// Set when this area is one piece of a job built in pieces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub piece: Option<PieceRef>,
+}
+
+/// Which piece of which job built an area.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PieceRef {
+    /// The job, named by its block rectangle and piece size.
+    pub job: String,
+    /// Position in the job's plan (`WorkUnit::index`).
+    pub index: u32,
 }
 
 impl GeneratedArea {
@@ -87,9 +122,18 @@ pub struct Manifest {
     /// Already folded into `elevation`; kept so later areas are told which one applies.
     #[serde(default = "real_height", skip_serializing_if = "is_real_height")]
     pub height_multiplier: f64,
+    /// `--cave-seed` and `--cave-datum-y` of the first area, so every area's caves, ores and
+    /// deepslate line up at the borders. Absent when the first area gave none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cave_seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cave_datum_y: Option<i32>,
     /// Metre to Y mapping shared by every area. Set at creation; worlds from
     /// before version 3 take it from their first terrain area.
     pub elevation: Option<ElevationAffine>,
+    /// `--seed` of the first area; later areas and pieces build with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
     pub next_area_id: u32,
     pub areas: Vec<GeneratedArea>,
 }
@@ -118,6 +162,8 @@ impl Manifest {
             disable_height_limit: args.disable_height_limit,
             aws_only_elevation: args.aws_only_elevation,
             height_multiplier,
+            cave_seed: args.cave_seed,
+            cave_datum_y: args.cave_datum_y,
             // One section up, so water carved at the lowest level stays above the floor.
             elevation: args.terrain().then(|| {
                 let mut e = ElevationAffine::whole_earth(
@@ -132,6 +178,7 @@ impl Manifest {
                 }
                 e
             }),
+            seed: args.seed,
             next_area_id: 1,
             areas: Vec::new(),
         }
@@ -256,6 +303,30 @@ pub fn existing_chunks(world_dir: &Path, rect: &XZBBox) -> u64 {
     count
 }
 
+/// Block (0, 0) of a world created for `requested`: `--origin`, or the request's centre.
+fn new_origin(requested: &LLBBox, args: &Args) -> (f64, f64) {
+    args.origin.unwrap_or((
+        (requested.min().lat() + requested.max().lat()) / 2.0,
+        (requested.min().lng() + requested.max().lng()) / 2.0,
+    ))
+}
+
+/// The frame `requested` lands in: the world's own, or for a world that does
+/// not exist yet the one `prepare` would create. Reads only; takes no lock.
+pub fn frame_for(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &Args,
+) -> Result<WebMercatorProjection, String> {
+    Ok(match Manifest::load(world_dir)? {
+        Some(manifest) => manifest.projection(),
+        None => {
+            let (lat, lon) = new_origin(requested, args);
+            Manifest::new(args, lat, lon).projection()
+        }
+    })
+}
+
 /// The One World a run lands in, carried in `Args::one_world_run`.
 #[derive(Clone, Debug)]
 pub struct RunContext {
@@ -267,6 +338,28 @@ pub struct RunContext {
     /// Chunks of this area that already exist and are replaced.
     pub replaced_chunks: u64,
     pub area_id: u32,
+    /// Set when this run builds one piece of a job.
+    pub piece: Option<PieceRef>,
+    /// Set in a piece of a job, whose coordinator holds the world's lock and records the area.
+    pub unit: Option<UnitLease>,
+}
+
+/// What a job's coordinator tells one of its pieces, in the file `--one-world-unit` names.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UnitLease {
+    /// Position in the job's plan.
+    pub piece: u32,
+    pub area_id: u32,
+    /// False for the one piece that makes the world's map item and settings.
+    pub extending: bool,
+    /// The piece's own range of map ids, so pieces running together never share one.
+    pub first_map_id: i32,
+    /// The piece's own block rectangle: it builds past it and writes only inside.
+    pub rect: [i32; 4],
+    /// The job's whole block rectangle, which metadata.json describes.
+    pub job: [i32; 4],
+    /// Whether a single run of the whole job would build in parallel tiles.
+    pub tiled: bool,
 }
 
 impl RunContext {
@@ -304,6 +397,24 @@ fn compatibility_errors(manifest: &Manifest, args: &Args) -> Vec<String> {
             if manifest.terrain { "with" } else { "without" }
         ));
     }
+    if args
+        .cave_seed
+        .is_some_and(|s| manifest.cave_seed != Some(s))
+    {
+        errors.push(match manifest.cave_seed {
+            Some(s) => format!("--cave-seed does not match the world's {s}"),
+            None => "--cave-seed was not used when the world was created".to_string(),
+        });
+    }
+    if args
+        .cave_datum_y
+        .is_some_and(|y| manifest.cave_datum_y != Some(y))
+    {
+        errors.push(match manifest.cave_datum_y {
+            Some(y) => format!("--cave-datum-y does not match the world's {y}"),
+            None => "--cave-datum-y was not used when the world was created".to_string(),
+        });
+    }
     errors
 }
 
@@ -312,6 +423,16 @@ fn open_in_minecraft(world_dir: &Path) -> String {
         "The One World at {} is open in Minecraft. Leave the world (or close the game) and try again.",
         world_dir.display()
     )
+}
+
+/// A world's looks are a pure function of the seed, so it keeps its first area's: a later
+/// area or piece with another would not match its neighbours at the seam.
+fn keep_seed(manifest: &Manifest, args: &mut Args) {
+    if args.seed.is_some() && args.seed != manifest.seed {
+        let kept = manifest.seed.map_or("none".into(), |s| s.to_string());
+        println!("Note: One World keeps the seed it was created with ({kept}).");
+    }
+    args.seed = manifest.seed;
 }
 
 /// Opens or creates the One World at `world_dir`, locks it, and points `args`
@@ -363,17 +484,52 @@ pub fn prepare(world_dir: &Path, requested: &LLBBox, args: &mut Args) -> Result<
         crate::live::recover(world_dir)?;
     }
     let mut owned = false;
-    let resolved = resolve(world_dir, requested, args, lock, &mut owned);
-    if resolved.is_err() && fresh_dir {
-        // Everything in it is ours once the check under the lock passed.
-        // Before that only an empty folder is removed.
-        let _ = if owned {
-            std::fs::remove_dir_all(world_dir)
-        } else {
-            std::fs::remove_dir(world_dir)
-        };
+    match resolve(world_dir, requested, args, &mut owned) {
+        Ok((created, llbbox)) => Ok(Session {
+            created,
+            llbbox,
+            lock,
+        }),
+        Err(e) => {
+            drop(lock);
+            if fresh_dir {
+                // Everything in it is ours once the check under the lock passed.
+                // Before that only an empty folder is removed.
+                let _ = if owned {
+                    std::fs::remove_dir_all(world_dir)
+                } else {
+                    std::fs::remove_dir(world_dir)
+                };
+            }
+            Err(e)
+        }
     }
-    resolved
+}
+
+/// Opens the world for one piece of a job. The coordinator holds the world's lock and
+/// has created the world, so this takes no lock and creates nothing; the lease it
+/// reads decides the area id and whether the piece makes the world's extras.
+pub fn prepare_unit(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &mut Args,
+    lease: &Path,
+) -> Result<LLBBox, String> {
+    let lease: UnitLease = std::fs::read_to_string(lease)
+        .map_err(|e| format!("Failed to read {}: {e}", lease.display()))
+        .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))?;
+    if Manifest::load(world_dir)?.is_none() {
+        return Err(format!("{} is not a One World.", world_dir.display()));
+    }
+    crate::scale::child::fail_for_test(lease.piece as usize);
+    crate::map_item::leave_counter_to_coordinator();
+    let (_, llbbox) = resolve(world_dir, requested, args, &mut false)?;
+    if let Some(run) = args.one_world_run.as_mut() {
+        run.area_id = lease.area_id;
+        run.extending = lease.extending;
+        run.unit = Some(lease);
+    }
+    Ok(llbbox)
 }
 
 /// The part of `prepare` that runs under the world's lock.
@@ -382,9 +538,8 @@ fn resolve(
     world_dir: &Path,
     requested: &LLBBox,
     args: &mut Args,
-    lock: SessionLock,
     owned: &mut bool,
-) -> Result<Session, String> {
+) -> Result<(bool, LLBBox), String> {
     let (mut manifest, created) = match Manifest::load(world_dir)? {
         Some(manifest) => {
             if !world_dir.join("level.dat").is_file() {
@@ -419,6 +574,24 @@ fn resolve(
                 );
                 args.height_multiplier = manifest.height_multiplier;
             }
+            if let Some((lat, lon)) = args.origin {
+                if (stable(lat, 7), stable(lon, 7)) != (manifest.origin_lat, manifest.origin_lon) {
+                    println!(
+                        "Note: --origin {lat},{lon} is ignored; the One World keeps the origin it was created with ({},{}).",
+                        manifest.origin_lat, manifest.origin_lon
+                    );
+                }
+            }
+            if args.caves {
+                if let (None, Some(seed)) = (args.cave_seed, manifest.cave_seed) {
+                    println!("Note: One World keeps the cave seed it was created with ({seed}).");
+                }
+                if let (None, Some(y)) = (args.cave_datum_y, manifest.cave_datum_y) {
+                    println!("Note: One World keeps the cave floor it was created with (Y {y}).");
+                }
+            }
+            args.cave_seed = manifest.cave_seed;
+            args.cave_datum_y = manifest.cave_datum_y;
             (manifest, false)
         }
         None => {
@@ -448,13 +621,13 @@ fn resolve(
                 );
                 args.disable_height_limit = true;
             }
-            let origin_lat = (requested.min().lat() + requested.max().lat()) / 2.0;
-            let origin_lon = (requested.min().lng() + requested.max().lng()) / 2.0;
+            let (origin_lat, origin_lon) = new_origin(requested, args);
             (Manifest::new(args, origin_lat, origin_lon), true)
         }
     };
 
     args.scale = manifest.scale;
+    keep_seed(&manifest, args);
     let (xzbbox, llbbox) = snap_bbox_to_chunks(&manifest.projection(), requested)?;
 
     if created {
@@ -510,6 +683,8 @@ fn resolve(
         elevation: manifest.elevation,
         replaced_chunks: replaced,
         area_id,
+        piece: None,
+        unit: None,
     });
     args.projection = crate::projection::ProjectionKind::WebMercator;
     args.bbox = Some(llbbox);
@@ -585,11 +760,7 @@ fn resolve(
         );
     }
 
-    Ok(Session {
-        created,
-        llbbox,
-        lock,
-    })
+    Ok((created, llbbox))
 }
 
 /// Records a finished area and drops the ones it fully covers.
@@ -632,6 +803,7 @@ pub fn record_area(
         max_lat: llbbox.max().lat(),
         max_lon: llbbox.max().lng(),
         preview: preview_rel.clone(),
+        piece: run.piece.clone(),
     });
     manifest.next_area_id = manifest.next_area_id.max(run.area_id.saturating_add(1));
     manifest.save(&run.world_dir)?;
@@ -643,6 +815,27 @@ pub fn record_area(
         }
     }
     Ok(())
+}
+
+/// `--world-border`: the border around `rect`, the area just built, or for a
+/// One World around every area it holds. A failure is a warning: the world
+/// itself is written.
+pub fn apply_world_border(world_dir: &Path, rect: &XZBBox) {
+    let all = Manifest::load(world_dir)
+        .ok()
+        .flatten()
+        .and_then(|m| m.extent());
+    let rect = all.as_ref().unwrap_or(rect);
+    match crate::world_utils::set_world_border(world_dir, rect) {
+        Ok(()) => println!(
+            "World border set around {},{} to {},{}.",
+            rect.min_x(),
+            rect.min_z(),
+            rect.max_x(),
+            rect.max_z()
+        ),
+        Err(e) => eprintln!("Warning: Failed to set the world border: {e}"),
+    }
 }
 
 /// A new One World centred on `(origin_lat, origin_lon)` with no areas yet, for live mode,
@@ -730,6 +923,8 @@ pub fn record_live_tile(
         elevation: manifest.elevation,
         replaced_chunks: 0,
         area_id,
+        piece: None,
+        unit: None,
     };
     record_area(&run, llbbox, xzbbox, manifest.elevation, preview.as_deref())
 }
@@ -793,6 +988,43 @@ mod tests {
     fn record(args: &Args, s: &Session, elevation: Option<ElevationAffine>) {
         let run = args.one_world_run.clone().unwrap();
         record_area(&run, &s.llbbox, &rect(args, s), elevation, None).unwrap();
+    }
+
+    /// A manifest the stock v3.4.0 exe wrote still opens, and one carrying
+    /// piece records is still read by v3.4.0's own struct (unknown fields ignored).
+    #[test]
+    fn v340_manifest_still_opens() {
+        #[derive(Deserialize)]
+        struct V340Area {
+            id: u32,
+            min_x: i32,
+            max_z: i32,
+        }
+        #[derive(Deserialize)]
+        struct V340 {
+            version: u32,
+            next_area_id: u32,
+            areas: Vec<V340Area>,
+        }
+        let text = include_str!("../tests/fixtures/one_world_v340.json");
+        let mut m: Manifest = serde_json::from_str(text).unwrap();
+        m.validate().unwrap();
+        assert!(m.areas.iter().all(|a| a.piece.is_none()));
+        let plain = serde_json::to_string(&m).unwrap();
+        assert!(!plain.contains("piece"), "no piece key unless one is set");
+        m.areas[0].piece = Some(PieceRef {
+            job: "j".into(),
+            index: 3,
+        });
+        let old: V340 = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!((old.version, old.next_area_id), (m.version, m.next_area_id));
+        assert_eq!(
+            (old.areas[0].id, old.areas[0].min_x),
+            (m.areas[0].id, m.areas[0].min_x)
+        );
+        assert_eq!(old.areas[0].max_z, m.areas[0].max_z);
+        let back: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
     }
 
     #[test]
@@ -885,6 +1117,30 @@ mod tests {
     }
 
     #[test]
+    fn one_world_keeps_first_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let mut first = args_for(MUNICH, &["--seed", "7"]);
+        drop(prepare(&world, &req, &mut first).unwrap());
+        assert_eq!(first.seed, Some(7));
+        assert_eq!(Manifest::load(&world).unwrap().unwrap().seed, Some(7));
+        // A later area asks for another, or none, and gets the world's.
+        for later in [&["--seed", "9"][..], &[]] {
+            let mut args = args_for(MUNICH, later);
+            drop(prepare(&world, &req, &mut args).unwrap());
+            assert_eq!(args.seed, Some(7), "{later:?}");
+        }
+        // A world made without a seed stays without one.
+        let plain = dir.path().join("p");
+        let mut none = args_for(MUNICH, &[]);
+        drop(prepare(&plain, &req, &mut none).unwrap());
+        let mut asks = args_for(MUNICH, &["--seed", "9"]);
+        drop(prepare(&plain, &req, &mut asks).unwrap());
+        assert_eq!(asks.seed, None);
+    }
+
+    #[test]
     fn a_new_world_refuses_the_vanilla_height() {
         let dir = tempfile::tempdir().unwrap();
         let world = dir.path().join("w");
@@ -947,6 +1203,38 @@ mod tests {
         drop(prepare(&world, &req, &mut args).unwrap());
         assert_eq!(args.height_multiplier, 2.0);
         assert_eq!(args.one_world_run.unwrap().elevation, Some(e));
+    }
+
+    #[test]
+    fn one_world_keeps_first_cave_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let plain = dir.path().join("plain");
+        drop(prepare(&plain, &req, &mut args_for(MUNICH, &["--caves"])).unwrap());
+        let text = std::fs::read_to_string(Manifest::path_in(&plain)).unwrap();
+        assert!(
+            !text.contains("cave_seed") && !text.contains("cave_datum_y"),
+            "{text}"
+        );
+
+        let world = dir.path().join("w");
+        let first = ["--caves", "--cave-seed", "5", "--cave-datum-y", "-64"];
+        drop(prepare(&world, &req, &mut args_for(MUNICH, &first)).unwrap());
+        let manifest = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(
+            (manifest.cave_seed, manifest.cave_datum_y),
+            (Some(5), Some(-64))
+        );
+
+        // A later area without the flags takes the stored values.
+        let mut args = args_for(MUNICH, &["--caves"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        assert_eq!((args.cave_seed, args.cave_datum_y), (Some(5), Some(-64)));
+
+        // A different value is refused.
+        let mut args = args_for(MUNICH, &["--caves", "--cave-seed", "6"]);
+        let err = prepare(&world, &req, &mut args).err().unwrap();
+        assert!(err.contains("--cave-seed does not match"), "{err}");
     }
 
     #[test]
@@ -1161,5 +1449,138 @@ mod tests {
             .unwrap(),
         );
         assert!(Manifest::load(&world).unwrap().unwrap().extent().is_none());
+    }
+
+    #[test]
+    fn a_piece_builds_its_halo_but_never_past_the_selection() {
+        let selection = XZBBox::rect_from_min_max(-320, -176, 319, 175).unwrap();
+        let rect = XZBBox::rect_from_min_max(0, -176, 319, -1).unwrap();
+        let b = piece_build_rect(&rect, &selection);
+        let h = PIECE_HALO_BLOCKS;
+        // Grown towards its neighbours, held at the selection's own edges.
+        assert_eq!((b.min_x(), b.max_x()), (-h, 319));
+        assert_eq!((b.min_z(), b.max_z()), (-176, -1 + h));
+    }
+
+    /// `--world-border` reads back from level.dat: around the area of a plain world, around
+    /// every area of a One World.
+    #[test]
+    fn border_covers_all_areas() {
+        fn border(world: &Path) -> std::collections::HashMap<String, f64> {
+            let raw = std::fs::read(world.join("level.dat")).unwrap();
+            let mut bytes = Vec::new();
+            flate2::read::GzDecoder::new(raw.as_slice())
+                .read_to_end(&mut bytes)
+                .unwrap();
+            let fastnbt::Value::Compound(root) = fastnbt::from_bytes(&bytes).unwrap() else {
+                panic!("root");
+            };
+            let Some(fastnbt::Value::Compound(data)) = root.get("Data") else {
+                panic!("Data");
+            };
+            data.iter()
+                .filter_map(|(k, v)| match v {
+                    fastnbt::Value::Double(d) if k.starts_with("Border") => Some((k.clone(), *d)),
+                    _ => None,
+                })
+                .collect()
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let plain = crate::world_utils::create_new_world(dir.path()).unwrap();
+        let plain = Path::new(&plain);
+        apply_world_border(plain, &XZBBox::rect_from_min_max(-50, 10, 49, 49).unwrap());
+        let b = border(plain);
+        assert_eq!((b["BorderCenterX"], b["BorderCenterZ"]), (0.0, 30.0));
+        assert_eq!((b["BorderSize"], b["BorderSizeLerpTarget"]), (100.0, 100.0));
+
+        // A One World with two areas side by side: the union of both.
+        let world = dir.path().join("w");
+        let mut args = args_for(MUNICH, &[]);
+        let session = prepare(&world, &LLBBox::from_str(MUNICH).unwrap(), &mut args).unwrap();
+        let first = rect(&args, &session);
+        record(&args, &session, None);
+        drop(session);
+        let east = "48.130,11.585,48.145,11.610";
+        let mut args2 = args_for(east, &[]);
+        let session2 = prepare(&world, &LLBBox::from_str(east).unwrap(), &mut args2).unwrap();
+        let second = rect(&args2, &session2);
+        record(&args2, &session2, None);
+        drop(session2);
+        assert!(second.max_x() > first.max_x());
+        apply_world_border(&world, &second);
+        let (x0, z0) = (
+            first.min_x().min(second.min_x()),
+            first.min_z().min(second.min_z()),
+        );
+        let (x1, z1) = (
+            first.max_x().max(second.max_x()),
+            first.max_z().max(second.max_z()),
+        );
+        let b = border(&world);
+        assert_eq!(b["BorderCenterX"], f64::from(x0 + x1 + 1) / 2.0);
+        assert_eq!(b["BorderCenterZ"], f64::from(z0 + z1 + 1) / 2.0);
+        assert_eq!(b["BorderSize"], f64::from((x1 + 1 - x0).max(z1 + 1 - z0)));
+    }
+
+    /// `--origin` pins block (0, 0) of a new world; an existing world keeps its own.
+    #[test]
+    fn origin_pins_a_new_world_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let mut args = args_for(MUNICH, &["--origin", "48.1234567891,11.5432109876"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        let manifest = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(
+            (manifest.origin_lat, manifest.origin_lon),
+            (48.1234568, 11.543211)
+        );
+        let frame = manifest.projection();
+        assert_eq!(frame.x_for_lon(manifest.origin_lon), 0.0);
+        assert_eq!(frame.z_for_lat(manifest.origin_lat), 0.0);
+
+        let mut args = args_for(MUNICH, &["--origin", "-45,170"]);
+        drop(prepare(&world, &req, &mut args).unwrap());
+        let run = args.one_world_run.unwrap();
+        assert_eq!(
+            (run.origin_lat, run.origin_lon),
+            (manifest.origin_lat, manifest.origin_lon)
+        );
+    }
+
+    /// The same bbox under two origins is the same area in a shifted frame: equal size, every
+    /// corner translated by the same amount (the planner sees the shifted frame too); an origin
+    /// a whole number of chunks away moves the snapped area by exactly those chunks. This checks
+    /// the frame, not generated blocks: block content under `--origin` is only smoke-tested.
+    #[test]
+    fn origin_shifts_the_frame() {
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        let corners = |origin: &[&str]| {
+            let args = args_for(MUNICH, origin);
+            let proj = frame_for(Path::new("does-not-exist"), &req, &args).unwrap();
+            let (rect, _) = snap_bbox_to_chunks(&proj, &req).unwrap();
+            (rect.min_x(), rect.min_z(), rect.max_x(), rect.max_z())
+        };
+        let (a, b) = (corners(&[]), corners(&["--origin", "48.0,11.0"]));
+        assert_eq!((a.2 - a.0, a.3 - a.1), (b.2 - b.0, b.3 - b.1), "same size");
+        assert_ne!(a, b, "shifted");
+        assert_eq!(
+            (a.0 - b.0, a.1 - b.1),
+            (a.2 - b.2, a.3 - b.3),
+            "one translation"
+        );
+
+        // Origin B is block (48, 80) of frame A, so every block of B sits (48, 80) lower.
+        let frame_a = frame_for(Path::new("does-not-exist"), &req, &args_for(MUNICH, &[])).unwrap();
+        let origin = format!(
+            "{:.9},{:.9}",
+            frame_a.lat_for_z(80.0),
+            frame_a.lon_for_x(48.0)
+        );
+        let c = corners(&["--origin", &origin]);
+        assert_eq!(
+            (a.0 - c.0, a.1 - c.1, a.2 - c.2, a.3 - c.3),
+            (48, 80, 48, 80)
+        );
     }
 }
