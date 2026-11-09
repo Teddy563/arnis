@@ -673,6 +673,7 @@
   "plan_confirm_warn": "Ez az építés sokáig tart, és a végéig a processzor és a memória nagy részét használja. Hagyd későbbre a többi nehéz munkát, és ellenőrizd, hogy van-e elég szabad lemezterület.",
   "plan_confirm_docs": "Dokumentáció",
   "plan_confirm_hold": "Tartsd lenyomva az indításhoz",
+  "plan_confirm_overlap": "{n} darab átfed már megépített területet, és újra fog épülni.",
   "layout_about": "Főoldal elrendezése",
   "layout_about_map": "Térkép"
 }

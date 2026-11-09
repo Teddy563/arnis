@@ -673,6 +673,7 @@
   "plan_confirm_warn": "Ta generacja trwa długo i do końca używa większości procesora i pamięci. Odłóż inne ciężkie zadania na później i sprawdź, czy na dysku jest dość wolnego miejsca.",
   "plan_confirm_docs": "Przeczytaj dokumentację",
   "plan_confirm_hold": "Przytrzymaj, aby rozpocząć",
+  "plan_confirm_overlap": "Części nakładające się na już zbudowany teren: {n}. Zostaną zbudowane ponownie.",
   "layout_about": "Układ strony głównej",
   "layout_about_map": "Mapa"
 }

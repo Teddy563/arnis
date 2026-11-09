@@ -1355,7 +1355,12 @@ function initSettings() {
     changed: () => {
       refreshBboxSelectionInfo();
       refreshStartButton();
-      document.getElementById('run-confirm-hold').disabled = !planPieces();
+      const plan = planPieces();
+      document.getElementById('run-confirm-hold').disabled = !plan;
+      // The hold is the one question: it says what the replace dialog would have asked.
+      const overlap = document.getElementById('run-confirm-overlap');
+      overlap.hidden = !plan?.overlap;
+      overlap.textContent = plan?.overlap ? oneWorldText('plan_confirm_overlap', '{n} pieces overlap land already built and will be rebuilt.', { n: plan.overlap }) : '';
       if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
     },
     // A job in pieces of a One World with a selection, as the run decides it: Live, Bedrock,
@@ -3492,7 +3497,8 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun() {
+// `held`: the hold to start already said what gets rebuilt, so no second question.
+async function prepareOneWorldRun(held = false) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -3514,7 +3520,7 @@ async function prepareOneWorldRun() {
       oneWorldText('one_world_locked', 'open in Minecraft'), 'error');
     return false;
   }
-  if (!info.exists) return true;
+  if (!info.exists || held) return true;
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
@@ -4177,7 +4183,7 @@ async function startGeneration(confirmed = false) {
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
     // The overlap dialog leaves the page live, so the body, format or area may have changed under it.
-    if (oneWorld && (!(await prepareOneWorldRun()) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
+    if (oneWorld && (!(await prepareOneWorldRun(confirmed === true)) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;

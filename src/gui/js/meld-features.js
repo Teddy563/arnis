@@ -492,7 +492,10 @@ async function updatePlan() {
   const e = plan.estimate || {};
   const done = units.filter((u) => u.done).length;
   // `done`: how much of this job an earlier run built (main.js says "Resume (n of m)").
-  lastPlan = { n: units.length, w: e.workers, done };
+  // `overlap`: pieces on land the world already has, which the run builds again (Skip Built
+  // leaves those out, so then it is 0).
+  const overlap = on('meld-skip-built-toggle') ? 0 : units.filter((u) => u.existing_chunks > 0).length;
+  lastPlan = { n: units.length, w: e.workers, done, overlap };
   onPlan();
   planSizes.clear();
   units.forEach((u) => planSizes.set(u.index, u.size));
