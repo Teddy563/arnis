@@ -563,6 +563,48 @@ label[for].setting-label {
   color: var(--primary-accent);
 }
 
+/* Picture of what a setting does (preview-popover.js): large, centred in the window, no shadow. The
+   image box has a fixed 4:3 size, so nothing moves when the picture loads, and the popover ignores the
+   pointer so it never steals the hover from the control under it. */
+.preview-popover {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  box-sizing: border-box;
+  padding: 10px 10px 6px;
+  background-color: #2a2a2a;
+  border: 1px solid #fecc44;
+  border-radius: 6px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 30000;
+}
+
+.preview-popover.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.preview-popover img {
+  display: block;
+  width: min(720px, calc(100vw - 64px), calc((100vh - 110px) * 4 / 3));
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
+.preview-popover-caption {
+  margin-top: 6px;
+  color: #fecc44;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+
 /* Per-setting revert button, next to the setting name. Same 16px round box
    as the tooltip icon so they read as a pair. Hidden with visibility, not
    display, so the heading cannot shift while a slider is dragged. */
@@ -916,6 +958,18 @@ label[for].setting-label {
   gap: 10px;
 }
 
+.settings-about-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-basis: 100%;
+  font-size: 13.5px;
+}
+
+.settings-about-layout .settings-select {
+  width: 160px;
+}
+
 .settings-about-links {
   flex-basis: 100%;
   padding-top: 14px;
@@ -1004,4 +1058,95 @@ label[for].setting-label {
   .settings-page * {
     transition: none !important;
   }
+}
+
+/* Meld features: everything marked meld-only is hidden while the Advanced switch is off */
+body.meld-off .meld-only {
+  display: none !important;
+}
+
+.settings-page .meld-card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ui-tile-border);
+  border-radius: 12px;
+}
+
+.settings-page .meld-card-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.settings-page input.meld-short,
+.settings-page .meld-card input[type="number"] {
+  width: 120px;
+  text-align: center;
+}
+
+/* LAT,LON needs room for two signed decimals. */
+.settings-page input.meld-coords {
+  width: 170px;
+}
+
+.settings-page .meld-card .setting-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Data panel: Prepare Countries and Download Plan */
+.settings-page .meld-data-row {
+  flex-wrap: wrap;
+}
+
+.settings-page .meld-data-row .settings-control {
+  gap: 8px;
+}
+
+.settings-page .meld-data-row .run-button {
+  flex: none;
+  padding: 0 14px;
+}
+
+.settings-page .meld-data-out {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.settings-page .meld-data-out .meld-data-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Meld settings (and the switch that shows them) carry gold viewfinder corners: the tile's own
+   rounded border in gold, masked to four corner arcs that fade out along each edge. */
+.settings-page .setting-tile.meld-only,
+.settings-page .meld-card,
+.settings-page .setting-tile:has(#advanced-meld-features-toggle) {
+  position: relative;
+}
+
+.settings-page .setting-tile.meld-only::after,
+.settings-page .meld-card::after,
+.settings-page .setting-tile:has(#advanced-meld-features-toggle)::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--primary-accent);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.85;
+  mask:
+    radial-gradient(circle at 0 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
 }
