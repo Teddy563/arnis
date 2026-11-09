@@ -101,24 +101,19 @@ pub fn error(message: &str) {
     }
 }
 
-fn done_line(started: Instant) -> Option<String> {
+fn done_body(started: Instant) -> Value {
     let usage = process_usage();
-    line(
-        "done",
-        json!({
-            "wall_s": (started.elapsed().as_secs_f64() * 1000.0).round() / 1000.0,
-            "cpu_s": usage.map(|(cpu_s, _)| (cpu_s * 1000.0).round() / 1000.0),
-            "peak_rss_mb": usage.map(|(_, peak)| peak),
-            "chunks": CHUNKS_WRITTEN.load(Ordering::Relaxed),
-        }),
-    )
+    json!({
+        "wall_s": (started.elapsed().as_secs_f64() * 1000.0).round() / 1000.0,
+        "cpu_s": usage.map(|(cpu_s, _)| (cpu_s * 1000.0).round() / 1000.0),
+        "peak_rss_mb": usage.map(|(_, peak)| peak),
+        "chunks": CHUNKS_WRITTEN.load(Ordering::Relaxed),
+    })
 }
 
 /// The closing record of a successful run started at `started`.
 pub fn done(started: Instant) {
-    if let (true, Some(line)) = (enabled(), done_line(started)) {
-        println!("{line}");
-    }
+    record("done", done_body(started));
 }
 
 /// CPU seconds (user + kernel) and peak resident memory in MB of this
@@ -191,8 +186,8 @@ mod tests {
     }
 
     #[test]
-    fn done_line_has_contract_fields() {
-        let line = done_line(std::time::Instant::now()).unwrap();
+    fn done_record_has_contract_fields() {
+        let line = line("done", done_body(std::time::Instant::now())).unwrap();
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["type"], "done");
         assert_eq!(v["v"], 1);
