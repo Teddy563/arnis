@@ -1500,8 +1500,9 @@ $(document).ready(function () {
     var PIECE_DASH = { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5' };
     var lastPieces = [];
     var pieceHalo = false;
-    // Below this width on screen (px), a piece's number would not fit in it.
-    var PIECE_LABEL_MIN_PX = 28;
+    // Below this width on screen (px) a piece shows no number: zoomed out, thousands of numbers
+    // would only clutter the map.
+    var PIECE_LABEL_MIN_PX = 64;
 
     function pieceElapsed(p) {
         if (!p.since) return '';
@@ -1542,6 +1543,8 @@ $(document).ready(function () {
 
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
+        // While pieces build, the selection and its handles fade so the pieces read (bbox.css).
+        document.body.classList.toggle('pieces-building', pieces.some(function(p) { return p.state === 'start' || p.state === 'retry'; }));
         var seen = {};
         pieces.forEach(function(p) {
             seen[p.i] = true;
@@ -1620,7 +1623,7 @@ $(document).ready(function () {
             if (!el) return;
             el.classList.toggle('piece-label-off', side < PIECE_LABEL_MIN_PX);
             // The number grows with the piece on screen.
-            var size = Math.max(11, Math.min(26, Math.round(side / 5))) + 'px';
+            var size = Math.max(14, Math.min(30, Math.round(side / 4))) + 'px';
             // Re-centred only when the size changes: Leaflet centres by the label's width.
             if (el.style.fontSize !== size) {
                 el.style.fontSize = size;
@@ -2604,6 +2607,8 @@ $(document).ready(function () {
         }
 
         drawnItems.addLayer(e.layer);
+        // bbox.css fades it while pieces build.
+        if (e.layer.getElement && e.layer.getElement()) e.layer.getElement().classList.add('bbox-selection');
 
         // Only update the bounds based on non-marker layers
         if (e.layerType !== 'marker') {

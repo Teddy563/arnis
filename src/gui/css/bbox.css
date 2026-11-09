@@ -550,7 +550,7 @@ body,
   color: #fff;
   font-weight: 700;
   line-height: 1;
-  padding: 0;
+  padding: 0 4px;
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px #000;
   pointer-events: none;
 }
@@ -564,6 +564,18 @@ body,
 
 .leaflet-tooltip.piece-label.piece-label-off {
   display: none;
+}
+
+/* While pieces build, the selection, its handles and size fade: the pieces are what changes */
+.bbox-selection,
+.bbox-handle {
+  transition: opacity 0.3s;
+}
+
+.pieces-building .bbox-selection,
+.pieces-building .bbox-handle,
+.pieces-building .leaflet-tooltip.bbox-size {
+  opacity: 0.15;
 }
 
 @media (prefers-reduced-motion: reduce) {
