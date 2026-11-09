@@ -462,5 +462,21 @@
   "meld_err_multiple": "{name} muss ein Vielfaches von 16 zwischen {min} und {max} sein.",
   "meld_err_section_end": "{name} muss um eins kleiner als ein Vielfaches von 16 sein, zwischen {min} und {max}.",
   "meld_err_share": "{name} muss eine Zahl von 0 bis 1 sein.",
-  "meld_err_origin": "{name} muss LAT,LON sein, zum Beispiel 44.44,26.10."
+  "meld_err_origin": "{name} muss LAT,LON sein, zum Beispiel 44.44,26.10.",
+  "preview_rocks_on": "Felsen: an (Dichte 1; Standard 0.02)",
+  "preview_rocks_off": "Felsen: aus",
+  "preview_bushes_on": "Büsche: an (Dichte 1; Standard 0.05)",
+  "preview_river_bed_off": "Flussbett: aus (Schnitt durch den Fluss)",
+  "preview_river_bed_v1": "Flussbett: Glatt (Schnitt durch den Fluss)",
+  "preview_buildings_on": "Gebäude: an (Standard)",
+  "preview_buildings_off": "Gebäude: aus",
+  "preview_road_detail_max": "Straßendetails: Maximal",
+  "preview_road_detail_clean": "Straßendetails: Sauber",
+  "preview_road_detail_compact": "Straßendetails: Kompakt",
+  "preview_winter_on": "Winter: an",
+  "preview_post_apocalyptic_on": "Postapokalyptisch: an",
+  "preview_caves_on": "Höhlen: an (Schnitt durch einen Hügel)",
+  "preview_caves_off": "Höhlen: aus (Schnitt durch einen Hügel)",
+  "preview_legacy_trees_on": "Klassische Bäume: an",
+  "preview_legacy_trees_off": "Klassische Bäume: aus (Standard)"
 }

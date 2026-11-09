@@ -733,7 +733,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="winter">Winter</span>
-                        <span class="tooltip-icon" data-tooltip="Covers the ground, roofs and trees in snow, freezes rivers and lakes and makes every biome snowy, so it keeps snowing in game. Roads stay clear.">?</span>
+                        <span class="tooltip-icon" data-preview-on="winter-on" data-preview-off="buildings-on" data-tooltip="Covers the ground, roofs and trees in snow, freezes rivers and lakes and makes every biome snowy, so it keeps snowing in game. Roads stay clear.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="winter_desc">Snow on the ground, roofs and trees, frozen rivers and lakes.</span>
                     </span>
@@ -749,7 +749,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="post_apocalyptic">Post-Apocalyptic</span>
-                        <span class="tooltip-icon" data-tooltip="Turns the city into ruins: partly collapsed buildings, broken windows, cracked roads with grass, rubble, moss and vines, and every light off. Goes well with Zombie Outbreak.">?</span>
+                        <span class="tooltip-icon" data-preview-on="post-apocalyptic-on" data-preview-off="buildings-on" data-tooltip="Turns the city into ruins: partly collapsed buildings, broken windows, cracked roads with grass, rubble, moss and vines, and every light off. Goes well with Zombie Outbreak.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="post_apocalyptic_desc">Collapsed, overgrown buildings, cracked roads and no lights.</span>
                     </span>
@@ -809,7 +809,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_road_detail">Road Detail</span>
-                        <span class="tooltip-icon" data-tooltip="Max builds every marking and way as mapped. Clean removes lane dividers except on one-way roads wider than 5 blocks, every line on service and pedestrian ways and roads under 4 blocks wide, and paints crossing bars 2 blocks apart. Compact is Clean with longer dashes, and also removes footways and sidewalks (at every scale), paths, cycleways, steps, service roads, tracks and crossings.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="road-detail" data-tooltip="Max builds every marking and way as mapped. Clean removes lane dividers except on one-way roads wider than 5 blocks, every line on service and pedestrian ways and roads under 4 blocks wide, and paints crossing bars 2 blocks apart. Compact is Clean with longer dashes, and also removes footways and sidewalks (at every scale), paths, cycleways, steps, service roads, tracks and crossings.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_road_detail_desc">How many road markings and minor roads to build.</span>
                     </span>
@@ -839,7 +839,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_buildings">Buildings</span>
-                        <span class="tooltip-icon" data-tooltip="Off leaves out buildings, building parts, doors, entrances and Overture footprints. Roads, rail, water, land cover and terrain are built as usual.">?</span>
+                        <span class="tooltip-icon" data-preview-on="buildings-on" data-preview-off="buildings-off" data-tooltip="Off leaves out buildings, building parts, doors, entrances and Overture footprints. Roads, rail, water, land cover and terrain are built as usual.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_buildings_desc">Turn off to leave out every building.</span>
                     </span>
@@ -916,7 +916,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="caves">Caves</span>
-                        <span class="tooltip-icon" data-tooltip="Carves caves, underground rivers and cave biomes under hills and mountains. Turns on Fill Ground and takes longer.">?</span>
+                        <span class="tooltip-icon" data-preview-on="caves-on" data-preview-off="caves-off" data-tooltip="Carves caves, underground rivers and cave biomes under hills and mountains. Turns on Fill Ground and takes longer.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="caves_desc">Caves, underground rivers and cave biomes under hills.</span>
                     </span>
@@ -947,7 +947,10 @@
                   <label for="legacy-trees-toggle" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
                     <span class="setting-text">
-                      <span class="setting-heading"><span data-localize="legacy_trees">Legacy trees</span></span>
+                      <span class="setting-heading">
+                        <span data-localize="legacy_trees">Legacy trees</span>
+                        <span class="tooltip-icon" data-preview-on="legacy-trees-on" data-preview-off="legacy-trees-off" data-tooltip="Simple procedural trees instead of the bundled tree models. Quicker, blockier.">?</span>
+                      </span>
                       <span class="setting-desc" data-localize="legacy_trees_desc">Simple procedural trees instead of detailed models.</span>
                     </span>
                   </label>
@@ -1006,7 +1009,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_rocks">Rocks</span>
-                        <span class="tooltip-icon" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="rocks-on" data-preview-off="rocks-off" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_rocks_desc">Scatter small rocks over open land.</span>
                     </span>
@@ -1021,7 +1024,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_bushes">Bushes</span>
-                        <span class="tooltip-icon" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="bushes-on" data-preview-off="rocks-off" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_bushes_desc">Scatter small bushes over open land.</span>
                     </span>
@@ -1111,7 +1114,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_river_bed">River Bed</span>
-                        <span class="tooltip-icon" data-tooltip="Smooth gives rivers, canals and streams a U-shaped bed that deepens with their width. Lakes and the sea keep their bed.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="river-bed" data-tooltip="Smooth gives rivers, canals and streams a U-shaped bed that deepens with their width. Lakes and the sea keep their bed.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_river_bed_desc">Shape the bed of mapped rivers.</span>
                     </span>

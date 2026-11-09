@@ -462,5 +462,21 @@
   "meld_err_multiple": "{name} は {min} から {max} の間にある 16 の倍数である必要があります。",
   "meld_err_section_end": "{name} は {min} から {max} の間にある 16 の倍数より 1 小さい値である必要があります。",
   "meld_err_share": "{name} は 0 から 1 の間の数値である必要があります。",
-  "meld_err_origin": "{name} は LAT,LON の形式（例: 44.44,26.10）で指定してください。"
+  "meld_err_origin": "{name} は LAT,LON の形式（例: 44.44,26.10）で指定してください。",
+  "preview_rocks_on": "岩：オン (密度 1; 既定 0.02)",
+  "preview_rocks_off": "岩：オフ",
+  "preview_bushes_on": "低木：オン (密度 1; 既定 0.05)",
+  "preview_river_bed_off": "河床：オフ (川の断面)",
+  "preview_river_bed_v1": "河床：なめらか (川の断面)",
+  "preview_buildings_on": "建物：オン (既定)",
+  "preview_buildings_off": "建物：オフ",
+  "preview_road_detail_max": "道路の詳細：最大",
+  "preview_road_detail_clean": "道路の詳細：すっきり",
+  "preview_road_detail_compact": "道路の詳細：コンパクト",
+  "preview_winter_on": "冬：オン",
+  "preview_post_apocalyptic_on": "ポストアポカリプス：オン",
+  "preview_caves_on": "洞窟：オン (丘の断面)",
+  "preview_caves_off": "洞窟：オフ (丘の断面)",
+  "preview_legacy_trees_on": "従来の木：オン",
+  "preview_legacy_trees_off": "従来の木：オフ (既定)"
 }

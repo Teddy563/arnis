@@ -462,5 +462,21 @@
   "meld_err_multiple": "{name} должно быть кратно 16 и находиться в диапазоне от {min} до {max}.",
   "meld_err_section_end": "{name} должно быть на единицу меньше кратного 16, в диапазоне от {min} до {max}.",
   "meld_err_share": "{name} должно быть числом от 0 до 1.",
-  "meld_err_origin": "{name} должно быть в формате LAT,LON, например 44.44,26.10."
+  "meld_err_origin": "{name} должно быть в формате LAT,LON, например 44.44,26.10.",
+  "preview_rocks_on": "Камни: вкл. (плотность 1; по умолчанию 0.02)",
+  "preview_rocks_off": "Камни: выкл.",
+  "preview_bushes_on": "Кусты: вкл. (плотность 1; по умолчанию 0.05)",
+  "preview_river_bed_off": "Русло реки: выкл. (разрез реки)",
+  "preview_river_bed_v1": "Русло реки: Сглаженное (разрез реки)",
+  "preview_buildings_on": "Здания: вкл. (по умолчанию)",
+  "preview_buildings_off": "Здания: выкл.",
+  "preview_road_detail_max": "Детализация дорог: Максимум",
+  "preview_road_detail_clean": "Детализация дорог: Чистая",
+  "preview_road_detail_compact": "Детализация дорог: Компактная",
+  "preview_winter_on": "Зима: вкл.",
+  "preview_post_apocalyptic_on": "Постапокалипсис: вкл.",
+  "preview_caves_on": "Пещеры: вкл. (разрез холма)",
+  "preview_caves_off": "Пещеры: выкл. (разрез холма)",
+  "preview_legacy_trees_on": "Классические деревья: вкл.",
+  "preview_legacy_trees_off": "Классические деревья: выкл. (по умолчанию)"
 }

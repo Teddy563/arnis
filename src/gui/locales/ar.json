@@ -462,5 +462,21 @@
   "meld_err_multiple": "يجب أن يكون {name} مضاعفاً للعدد 16 بين {min} و{max}.",
   "meld_err_section_end": "يجب أن يكون {name} أقل بواحد من مضاعف للعدد 16، بين {min} و{max}.",
   "meld_err_share": "يجب أن يكون {name} رقماً بين 0 و1.",
-  "meld_err_origin": "يجب أن يكون {name} بالصيغة LAT,LON، مثل 44.44,26.10."
+  "meld_err_origin": "يجب أن يكون {name} بالصيغة LAT,LON، مثل 44.44,26.10.",
+  "preview_rocks_on": "الصخور: مفعّل (الكثافة 1; افتراضي 0.02)",
+  "preview_rocks_off": "الصخور: معطّل",
+  "preview_bushes_on": "الشجيرات: مفعّل (الكثافة 1; افتراضي 0.05)",
+  "preview_river_bed_off": "قاع النهر: معطّل (مقطع عرضي للنهر)",
+  "preview_river_bed_v1": "قاع النهر: ناعم (مقطع عرضي للنهر)",
+  "preview_buildings_on": "المباني: مفعّل (افتراضي)",
+  "preview_buildings_off": "المباني: معطّل",
+  "preview_road_detail_max": "تفاصيل الطرق: أقصى",
+  "preview_road_detail_clean": "تفاصيل الطرق: نظيف",
+  "preview_road_detail_compact": "تفاصيل الطرق: مضغوط",
+  "preview_winter_on": "شتاء: مفعّل",
+  "preview_post_apocalyptic_on": "ما بعد نهاية العالم: مفعّل",
+  "preview_caves_on": "الكهوف: مفعّل (مقطع عرضي لتل)",
+  "preview_caves_off": "الكهوف: معطّل (مقطع عرضي لتل)",
+  "preview_legacy_trees_on": "الأشجار الكلاسيكية: مفعّل",
+  "preview_legacy_trees_off": "الأشجار الكلاسيكية: معطّل (افتراضي)"
 }

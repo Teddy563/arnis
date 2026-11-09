@@ -462,5 +462,21 @@
   "meld_err_multiple": "{name} must be a multiple of 16 from {min} to {max}.",
   "meld_err_section_end": "{name} must be one less than a multiple of 16, from {min} to {max}.",
   "meld_err_share": "{name} must be a number from 0 to 1.",
-  "meld_err_origin": "{name} must be LAT,LON, such as 44.44,26.10."
+  "meld_err_origin": "{name} must be LAT,LON, such as 44.44,26.10.",
+  "preview_rocks_on": "Rocks: on (density 1; default 0.02)",
+  "preview_rocks_off": "Rocks: off",
+  "preview_bushes_on": "Bushes: on (density 1; default 0.05)",
+  "preview_river_bed_off": "River Bed: off (cut across the river)",
+  "preview_river_bed_v1": "River Bed: Smooth (cut across the river)",
+  "preview_buildings_on": "Buildings: on (default)",
+  "preview_buildings_off": "Buildings: off",
+  "preview_road_detail_max": "Road Detail: Max",
+  "preview_road_detail_clean": "Road Detail: Clean",
+  "preview_road_detail_compact": "Road Detail: Compact",
+  "preview_winter_on": "Winter: on",
+  "preview_post_apocalyptic_on": "Post-Apocalyptic: on",
+  "preview_caves_on": "Caves: on (cut through a hill)",
+  "preview_caves_off": "Caves: off (cut through a hill)",
+  "preview_legacy_trees_on": "Legacy Trees: on",
+  "preview_legacy_trees_off": "Legacy Trees: off (default)"
 }

@@ -462,5 +462,21 @@
   "meld_err_multiple": "{name}은(는) {min}에서 {max} 사이의 16의 배수여야 합니다.",
   "meld_err_section_end": "{name}은(는) {min}에서 {max} 사이의 16의 배수보다 1 작아야 합니다.",
   "meld_err_share": "{name}은(는) 0에서 1 사이의 숫자여야 합니다.",
-  "meld_err_origin": "{name}은(는) LAT,LON 형식이어야 합니다(예: 44.44,26.10)."
+  "meld_err_origin": "{name}은(는) LAT,LON 형식이어야 합니다(예: 44.44,26.10).",
+  "preview_rocks_on": "바위: 켜짐 (밀도 1; 기본값 0.02)",
+  "preview_rocks_off": "바위: 꺼짐",
+  "preview_bushes_on": "덤불: 켜짐 (밀도 1; 기본값 0.05)",
+  "preview_river_bed_off": "강바닥: 꺼짐 (강 단면)",
+  "preview_river_bed_v1": "강바닥: 부드럽게 (강 단면)",
+  "preview_buildings_on": "건물: 켜짐 (기본값)",
+  "preview_buildings_off": "건물: 꺼짐",
+  "preview_road_detail_max": "도로 상세도: 최대",
+  "preview_road_detail_clean": "도로 상세도: 깔끔하게",
+  "preview_road_detail_compact": "도로 상세도: 간결하게",
+  "preview_winter_on": "겨울: 켜짐",
+  "preview_post_apocalyptic_on": "포스트 아포칼립스: 켜짐",
+  "preview_caves_on": "동굴: 켜짐 (언덕 단면)",
+  "preview_caves_off": "동굴: 꺼짐 (언덕 단면)",
+  "preview_legacy_trees_on": "기존 나무: 켜짐",
+  "preview_legacy_trees_off": "기존 나무: 꺼짐 (기본값)"
 }
