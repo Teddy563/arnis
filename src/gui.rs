@@ -1868,6 +1868,7 @@ fn piece_argv(args: &Args, world_path: &Path, flags: &[String]) -> Vec<std::ffi:
         ("--zombie-outbreak", args.zombie_outbreak),
         ("--disasters", args.disasters),
         ("--moving-vehicles", args.moving_vehicles),
+        ("--pedestrians", args.pedestrians),
     ];
     values.extend(switches.iter().filter(|f| f.1).map(|f| f.0.to_string()));
     if let Some(t) = args.timeout {
@@ -2152,6 +2153,7 @@ fn gui_start_generation(
     zombie_outbreak: bool,
     disasters: bool,
     moving_vehicles: bool,
+    pedestrians: bool,
     body_gravity: bool,
     one_world: bool,
     one_world_name: String,
@@ -2483,6 +2485,7 @@ fn gui_start_generation(
                 zombie_outbreak,
                 disasters,
                 moving_vehicles,
+                pedestrians,
                 live: Default::default(),
                 progress: None,
                 no_update_check: false,
