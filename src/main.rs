@@ -259,6 +259,11 @@ fn run_cli() {
         println!("{}", args::capabilities_json());
         return;
     }
+    // Ahead of the early exits below, which would otherwise skip Live without a word.
+    if let Err(e) = args::refuse_live_extras(&args) {
+        eprintln!("{}: {}", "Error".red().bold(), e);
+        std::process::exit(1);
+    }
     let tree_dir = match (&args.init_tree_pack_dir, &args.export_tree_packs) {
         (Some(dir), _) => Some(trees::pack_dir::init(dir).map(|n| {
             format!(

@@ -798,6 +798,95 @@ impl Args {
     }
 }
 
+/// Live tiles build with upstream's settings only, so `--live` refuses every 3.5 flag that
+/// would be dropped on its tiles. `--seed`, `--cave-seed` and `--cave-datum-y` travel in the
+/// world's manifest; `--no-update-check` and `--no-cache-sweep` act on this process only.
+pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
+    if !args.live.live {
+        return Ok(());
+    }
+    let (u, w, sc) = (&args.units, &args.water, &args.scatter);
+    let used: Vec<&str> = [
+        (args.progress.is_some(), "--progress"),
+        (args.threads.is_some(), "--threads"),
+        (args.cpu_target.is_some(), "--cpu-target"),
+        (args.ram_budget_mb.is_some(), "--ram-budget-mb"),
+        (args.max_downloads.is_some(), "--max-downloads"),
+        (u.plan_units.is_some(), "--plan-units"),
+        (u.unit_regions.is_some(), "--unit-regions"),
+        (u.one_world_unit.is_some(), "--one-world-unit"),
+        (
+            !matches!(u.one_world_workers, None | Some(Workers::N(1))),
+            "--one-world-workers",
+        ),
+        (u.only_pieces.is_some(), "--only-pieces"),
+        (
+            args.region_format != crate::output_args::RegionFormat::Mca,
+            "--region-format",
+        ),
+        (args.blinear_level != 6, "--blinear-level"),
+        (args.origin.is_some(), "--origin"),
+        (args.world_border, "--world-border"),
+        (args.map_item_only, "--map-item-only"),
+        (args.dh_lod_only, "--dh-lod-only"),
+        (w.river_bed != Default::default(), "--river-bed"),
+        (w.water_detail != Default::default(), "--water-detail"),
+        (args.climate_mode != Default::default(), "--climate-mode"),
+        (args.climate_map.is_some(), "--climate-map"),
+        (args.min_y.is_some(), "--min-y"),
+        (args.max_y.is_some(), "--max-y"),
+        (sc.rocks, "--rocks"),
+        (
+            sc.rock_density != ScatterArgs::default().rock_density,
+            "--rock-density",
+        ),
+        (sc.bushes, "--bushes"),
+        (
+            sc.bush_density != ScatterArgs::default().bush_density,
+            "--bush-density",
+        ),
+        (args.tree_realm.is_some(), "--tree-realm"),
+        (args.tree_size_weights.is_some(), "--tree-size-weights"),
+        (args.tree_pack_dir.is_some(), "--tree-pack-dir"),
+        (
+            args.tree_pack_mode != Default::default(),
+            "--tree-pack-mode",
+        ),
+        (args.init_tree_pack_dir.is_some(), "--init-tree-pack-dir"),
+        (args.export_tree_packs.is_some(), "--export-tree-packs"),
+        (args.cave_style.is_some(), "--cave-style"),
+        (args.cave_ores.is_some(), "--cave-ores"),
+        (args.road_detail != RoadDetail::Max, "--road-detail"),
+        (!args.buildings, "--no-buildings"),
+        (args.props.is_some(), "--props"),
+        (args.props_min_scale.is_some(), "--props-min-scale"),
+        (args.loot_table.is_some(), "--loot-table"),
+        (args.dump_loot_table.is_some(), "--dump-loot-table"),
+        (args.osm_pbf.is_some(), "--osm-pbf"),
+        (args.osm_pbf_url.is_some(), "--osm-pbf-url"),
+        (!args.overpass_url.is_empty(), "--overpass-url"),
+        (args.offline, "--offline"),
+        (args.prewarm, "--prewarm"),
+        (args.prewarm_first, "--prewarm-first"),
+    ]
+    .into_iter()
+    .filter_map(|(on, name)| on.then_some(name))
+    .collect();
+    if used.is_empty() {
+        return Ok(());
+    }
+    let mut msg = format!(
+        "--live builds its tiles with the standard settings only, so it cannot take {}.",
+        used.join(", ")
+    );
+    if args.offline {
+        msg.push_str(
+            " --offline is not supported in Live mode: the tiles and the server download need the network.",
+        );
+    }
+    Err(msg)
+}
+
 /// The line `--capabilities` prints: a JSON array of every long flag.
 pub fn capabilities_json() -> String {
     use clap::CommandFactory;
@@ -1395,12 +1484,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
             "--only-pieces only applies to a job built in pieces (--unit-regions).".to_string(),
         );
     }
-    if args.live.live && !matches!(args.units.one_world_workers, None | Some(Workers::N(1))) {
-        return Err(
-            "--live builds the One World one tile at a time; leave out --one-world-workers."
-                .to_string(),
-        );
-    }
+    refuse_live_extras(args)?;
     // --- end confluence:core ---
     // --- confluence:output ---
     crate::output_args::validate(args)?;
@@ -2725,6 +2809,40 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn live_with_confluence_flags_is_refused() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--live", "--one-world"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        // Harmless or manifest-borne flags stay allowed.
+        let plain = parse(&["--seed", "7", "--cave-seed", "3", "--no-update-check"]);
+        assert!(refuse_live_extras(&plain).is_ok());
+        let err = refuse_live_extras(&parse(&[
+            "--river-bed",
+            "v1",
+            "--no-buildings",
+            "--threads",
+            "4",
+        ]))
+        .unwrap_err();
+        for name in ["--river-bed", "--no-buildings", "--threads"] {
+            assert!(err.contains(name), "{err}");
+        }
+        assert!(!err.contains("--offline"), "{err}");
+        let err = validate_args(&parse(&["--offline"])).unwrap_err();
+        assert!(
+            err.contains("--offline is not supported in Live mode"),
+            "{err}"
+        );
+        // Without --live nothing changes.
+        let off = Args::parse_from(["arnis", "--river-bed", "v1"]);
+        assert!(refuse_live_extras(&off).is_ok());
     }
 
     #[test]
