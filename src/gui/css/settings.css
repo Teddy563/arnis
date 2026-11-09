@@ -446,6 +446,9 @@ label[for].setting-label {
 /* Markup whitespace already spaces the tooltip; the injected revert button has none. */
 .setting-heading > .tooltip-icon {
   margin-left: 2px;
+  /* Centred on the box it sits a pixel below the label's capitals. */
+  position: relative;
+  top: -1px;
 }
 
 .setting-heading > .setting-revert {
@@ -553,6 +556,9 @@ label[for].setting-label {
   color: var(--ui-muted, #c0c0c0);
   font-size: 10.5px;
   font-weight: 700;
+  /* The ? carries its weight in the bowl, so box-centred it reads high. */
+  padding-top: 1px;
+  box-sizing: border-box;
   cursor: help;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -1111,4 +1117,34 @@ body.meld-off .meld-only {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+/* Meld settings (and the switch that shows them) carry gold viewfinder corners: the tile's own
+   rounded border in gold, masked to four corner arcs that fade out along each edge. */
+.settings-page .setting-tile.meld-only,
+.settings-page .meld-card,
+.settings-page .setting-tile:has(#advanced-meld-features-toggle) {
+  position: relative;
+}
+
+.settings-page .setting-tile.meld-only::after,
+.settings-page .meld-card::after,
+.settings-page .setting-tile:has(#advanced-meld-features-toggle)::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--primary-accent);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.85;
+  -webkit-mask:
+    radial-gradient(circle at 0 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
+  mask:
+    radial-gradient(circle at 0 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
+    radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
+    radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
 }
