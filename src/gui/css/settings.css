@@ -446,9 +446,6 @@ label[for].setting-label {
 /* Markup whitespace already spaces the tooltip; the injected revert button has none. */
 .setting-heading > .tooltip-icon {
   margin-left: 2px;
-  /* Centred on the box it sits a pixel below the label's capitals. */
-  position: relative;
-  top: -1px;
 }
 
 .setting-heading > .setting-revert {
@@ -556,9 +553,6 @@ label[for].setting-label {
   color: var(--ui-muted, #c0c0c0);
   font-size: 10.5px;
   font-weight: 700;
-  /* The ? carries its weight in the bowl, so box-centred it reads high. */
-  padding-top: 2px;
-  box-sizing: border-box;
   cursor: help;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
