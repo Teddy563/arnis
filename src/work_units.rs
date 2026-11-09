@@ -170,9 +170,12 @@ impl Mask {
             ));
         }
         // FNV-1a: stable across builds, unlike the std hasher.
-        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-            (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
-        });
+        let hash = {
+            use std::hash::Hasher;
+            let mut h = fnv::FnvHasher::default();
+            h.write(text.as_bytes());
+            h.finish()
+        };
         Ok(Self { rings, hash })
     }
 
