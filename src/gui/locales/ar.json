@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "عدد علامات الطرق والطرق الفرعية التي تُبنى.",
   "meld_buildings": "المباني",
   "meld_buildings_desc": "أوقفه لاستبعاد جميع المباني.",
+  "meld_surface_patches": "بقع السطح",
+  "meld_surface_patches_desc": "ضع كتل الطريق والرصف في بقع بدلاً من نقاط منفردة.",
   "meld_props": "تجاوز الـ Props",
   "meld_props_desc": "يحدد الـ Props ثلاثية الأبعاد التي تُوضع.",
   "meld_rocks": "الصخور",

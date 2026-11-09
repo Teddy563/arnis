@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Hur många vägmarkeringar och mindre vägar som ska byggas.",
   "meld_buildings": "Byggnader",
   "meld_buildings_desc": "Stäng av för att utelämna alla byggnader.",
+  "meld_surface_patches": "Ytfläckar",
+  "meld_surface_patches_desc": "Lägg väg- och stenläggningsblock i fläckar i stället för enstaka prickar.",
   "meld_props": "Props-åsidosättning",
   "meld_props_desc": "Styr vilka 3D-props som placeras.",
   "meld_rocks": "Stenar",

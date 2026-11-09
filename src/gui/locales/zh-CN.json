@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "生成多少道路标线和次要道路。",
   "meld_buildings": "建筑",
   "meld_buildings_desc": "关闭后将省略所有建筑。",
+  "meld_surface_patches": "路面成片",
+  "meld_surface_patches_desc": "道路和铺装方块成片铺设，而不是零散的单点。",
   "meld_props": "Props 覆盖",
   "meld_props_desc": "指定放置哪些 3D Props。",
   "meld_rocks": "岩石",

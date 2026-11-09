@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Cik ceļu marķējumu un sīku ceļu veidot.",
   "meld_buildings": "Ēkas",
   "meld_buildings_desc": "Izslēdziet, lai izlaistu visas ēkas.",
+  "meld_surface_patches": "Virsmas plankumi",
+  "meld_surface_patches_desc": "Ceļa un bruģa blokus likt plankumos, nevis atsevišķos punktos.",
   "meld_props": "Props pārrakstīšana",
   "meld_props_desc": "Nosaka, kuri 3D props tiek novietoti.",
   "meld_rocks": "Akmeņi",

@@ -97,6 +97,7 @@ Differences from the fork: v3.4.0 sizes trees by height, so the size weights rew
 | Flag | What it does |
 |---|---|
 | `--road-detail max\|clean\|compact` | How much road marking and how many minor ways to build. `clean` removes lane dividers on two-way roads and on one-way roads under 6 blocks wide (one-way multi-lane roads keep theirs), every line on service and pedestrian ways, parking aisles and roads under 4 blocks wide, and paints zebra and give-way bars 2 blocks apart. `compact` is `clean` with dashes and gaps of at least 4 blocks, and also removes footways (sidewalks too, at every scale), paths, cycleways, steps, service roads, tracks and crossings with their paint. |
+| `--surface-patches` | Off by default. Lays the asphalt, concrete and paving mixes and built-up stone ground in patches a few blocks across instead of a per-block speckle, and gives pitched clay roofs (red and orange tile) a full block in their stairs' colour, so no single block stands out as a dot. Patches follow world coordinates, so One World pieces join without a seam. |
 | `--no-buildings` | Leave out buildings, parts, doors and Overture footprints. Roads, rail, water, land cover and terrain stay. |
 | `--props LIST` | Which 3D props to place: `all`, `none`, or a list (boat, car, crane, and so on). |
 | `--props-min-scale F` | Leave out every schematic prop below this world scale. |

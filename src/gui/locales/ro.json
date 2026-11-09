@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Câte marcaje rutiere și drumuri secundare se construiesc.",
   "meld_buildings": "Clădiri",
   "meld_buildings_desc": "Dezactivează pentru a omite toate clădirile.",
+  "meld_surface_patches": "Petice de suprafață",
+  "meld_surface_patches_desc": "Pune blocurile de drum și pavaj în petice, nu în puncte izolate.",
   "meld_props": "Suprascrie obiectele",
   "meld_props_desc": "Suprascrie care obiecte 3D sunt plasate.",
   "meld_rocks": "Pietre",

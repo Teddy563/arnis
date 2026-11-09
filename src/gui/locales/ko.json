@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "도로 표시선과 작은 도로를 얼마나 만들지 정합니다.",
   "meld_buildings": "건물",
   "meld_buildings_desc": "끄면 모든 건물을 생략합니다.",
+  "meld_surface_patches": "표면 패치",
+  "meld_surface_patches_desc": "도로와 포장 블록을 낱개 점이 아닌 덩어리로 배치합니다.",
   "meld_props": "프롭 재정의",
   "meld_props_desc": "배치할 3D 프롭을 지정합니다.",
   "meld_rocks": "바위",

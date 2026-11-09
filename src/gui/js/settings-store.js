@@ -88,6 +88,7 @@ const SETTINGS = [
   { id: 'meld-max-y-input', kind: 'text', store: OWN },
   { id: 'meld-road-detail-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
   { id: 'meld-buildings-toggle', kind: 'checkbox', store: OWN },
+  { id: 'meld-surface-patches-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-props-group', kind: 'segmented', store: OWN, valueAttr: 'data-v' },
   { id: 'meld-rocks-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-bushes-toggle', kind: 'checkbox', store: OWN },

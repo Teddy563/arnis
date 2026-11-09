@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Ile oznaczeń drogowych i mniejszych dróg budować.",
   "meld_buildings": "Budynki",
   "meld_buildings_desc": "Wyłącz, aby pominąć wszystkie budynki.",
+  "meld_surface_patches": "Łaty nawierzchni",
+  "meld_surface_patches_desc": "Układa bloki jezdni i bruku w łatach zamiast pojedynczych kropek.",
   "meld_props": "Nadpisanie propów",
   "meld_props_desc": "Określa, które propy 3D są umieszczane.",
   "meld_rocks": "Skały",

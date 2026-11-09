@@ -105,6 +105,7 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
     add('--max-y', value('meld-max-y-input'));
   }
   if (choice('meld-road-detail-group') !== 'max') add('--road-detail', choice('meld-road-detail-group'));
+  if (on('meld-surface-patches-toggle')) f.push('--surface-patches');
   if (!on('meld-buildings-toggle')) f.push('--no-buildings');
   if (choice('meld-props-group') !== 'auto') add('--props', choice('meld-props-group'));
 

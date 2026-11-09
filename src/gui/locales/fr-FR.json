@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Nombre de marquages routiers et de petites routes à construire.",
   "meld_buildings": "Bâtiments",
   "meld_buildings_desc": "Désactiver pour exclure tous les bâtiments.",
+  "meld_surface_patches": "Plaques de surface",
+  "meld_surface_patches_desc": "Pose les blocs de chaussée et de pavage par plaques, pas en points isolés.",
   "meld_props": "Remplacement des props",
   "meld_props_desc": "Définit quels props 3D sont placés.",
   "meld_rocks": "Rochers",

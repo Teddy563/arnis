@@ -606,6 +606,12 @@ pub struct Args {
     #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
     pub road_detail: RoadDetail,
 
+    /// Lay asphalt, concrete and paving mixes and built-up stone ground in patches a few
+    /// blocks across instead of a per-block speckle, and give pitched clay roofs a full
+    /// block in their stairs' colour, so no single block stands out as a dot.
+    #[arg(long)]
+    pub surface_patches: bool,
+
     /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
     /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
     #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
@@ -888,6 +894,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (args.cave_style.is_some(), "--cave-style"),
         (args.cave_ores.is_some(), "--cave-ores"),
         (args.road_detail != RoadDetail::Max, "--road-detail"),
+        (args.surface_patches, "--surface-patches"),
         (!args.buildings, "--no-buildings"),
         (args.props.is_some(), "--props"),
         (args.props_min_scale.is_some(), "--props-min-scale"),
@@ -2883,11 +2890,17 @@ mod tests {
             "--river-bed",
             "v1",
             "--no-buildings",
+            "--surface-patches",
             "--threads",
             "4",
         ]))
         .unwrap_err();
-        for name in ["--river-bed", "--no-buildings", "--threads"] {
+        for name in [
+            "--river-bed",
+            "--no-buildings",
+            "--surface-patches",
+            "--threads",
+        ] {
             assert!(err.contains(name), "{err}");
         }
         assert!(!err.contains("--offline"), "{err}");

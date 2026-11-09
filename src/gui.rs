@@ -1684,6 +1684,7 @@ const WINDOW_FLAGS: &[&str] = &[
     "min-y",
     "max-y",
     "road-detail",
+    "surface-patches",
     "no-buildings",
     "props",
     "rocks",
@@ -1790,6 +1791,7 @@ fn apply_confluence(args: &mut Args, extra: Args) {
     args.tree_pack_dir = extra.tree_pack_dir;
     args.tree_pack_mode = extra.tree_pack_mode;
     args.road_detail = extra.road_detail;
+    args.surface_patches = extra.surface_patches;
     args.buildings = extra.buildings;
     args.props = extra.props;
     args.props_min_scale = extra.props_min_scale;
@@ -2548,6 +2550,7 @@ fn gui_start_generation(
                 init_tree_pack_dir: None,
                 export_tree_packs: None,
                 road_detail: Default::default(),
+                surface_patches: false,
                 buildings: true,
                 props: None,
                 props_min_scale: None,

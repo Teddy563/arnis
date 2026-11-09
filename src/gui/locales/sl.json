@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Koliko cestnih oznak in manjših cest gradi.",
   "meld_buildings": "Stavbe",
   "meld_buildings_desc": "Izklopite, da izpustite vse stavbe.",
+  "meld_surface_patches": "Zaplate površine",
+  "meld_surface_patches_desc": "Bloke cestišča in tlakovcev polaga v zaplatah, ne kot posamezne pike.",
   "meld_props": "Preglasitev rekvizitov",
   "meld_props_desc": "Določa, kateri 3D rekviziti se postavijo.",
   "meld_rocks": "Skale",

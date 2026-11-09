@@ -8453,6 +8453,16 @@ const COPPER_ROOF: Block = WAXED_OXIDIZED_COPPER;
 const METAL_GREEN: Block = DARK_PRISMARINE;
 const METAL_RED: Block = RED_NETHER_BRICKS;
 
+/// For `--surface-patches`: the full block in the colour of a family's stairs and
+/// slabs, so a ridge or hip block left showing does not read as a dot.
+fn full_block_like_its_stairs(roof: Block) -> Block {
+    match roof {
+        TILE_RED | ORANGE_TERRACOTTA => BRICK,
+        TILE_ORANGE => GRANITE,
+        _ => roof,
+    }
+}
+
 /// The clay tile families, which `roof:material=tile` and warm `roof:colour`
 /// values choose among.
 const TILE_FAMILIES: [Block; 5] = [TILE_RED, TILE_BRICK, TILE_DARK, TILE_BROWN, TILE_ORANGE];
@@ -17859,6 +17869,9 @@ fn generate_roof(
     } else if let Some(override_block) = roof_block_override {
         config.roof_block = override_block;
     }
+    if roof_type != RoofType::Flat && crate::element_processing::surfaces::patches() {
+        config.roof_block = full_block_like_its_stairs(config.roof_block);
+    }
 
     config.add_dormers = add_dormers;
     config.trim = trim;
@@ -22211,6 +22224,27 @@ mod style_tests {
         ] {
             assert_eq!(roof_slab_for_stair(stairs), Some(slab), "{}", stairs.name());
         }
+    }
+
+    #[test]
+    fn surface_patches_roof_full_block_shares_its_stairs() {
+        for family in TILE_FAMILIES
+            .iter()
+            .chain(&[ORANGE_TERRACOTTA, SLATE, ZINC])
+        {
+            let full = full_block_like_its_stairs(*family);
+            assert_eq!(
+                get_stair_block_for_material(full),
+                get_stair_block_for_material(*family),
+                "{family:?}"
+            );
+            assert_eq!(
+                roof_slab_for_stair(get_stair_block_for_material(full)),
+                roof_slab_for_stair(get_stair_block_for_material(*family))
+            );
+        }
+        assert_eq!(full_block_like_its_stairs(TILE_RED), BRICK);
+        assert_eq!(full_block_like_its_stairs(TILE_ORANGE), GRANITE);
     }
 
     #[test]

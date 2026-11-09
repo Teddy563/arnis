@@ -324,6 +324,8 @@
   "meld_road_detail_desc": "Wie viele Straßenmarkierungen und kleinere Straßen gebaut werden.",
   "meld_buildings": "Gebäude",
   "meld_buildings_desc": "Ausschalten, um alle Gebäude wegzulassen.",
+  "meld_surface_patches": "Flächenflecken",
+  "meld_surface_patches_desc": "Straßen- und Pflasterblöcke in Flecken statt als einzelne Punkte legen.",
   "meld_props": "Props-Überschreibung",
   "meld_props_desc": "Legt fest, welche 3D-Props platziert werden.",
   "meld_rocks": "Felsen",
