@@ -583,7 +583,11 @@ body,
   color: #f2f2f2;
 }
 
-.leaflet-tooltip.piece-tip > div:first-child {
+.leaflet-tooltip.piece-tip > div > div {
+  white-space: nowrap;
+}
+
+.leaflet-tooltip.piece-tip > div > div:first-child {
   color: #fecc44;
   font-weight: 600;
 }
