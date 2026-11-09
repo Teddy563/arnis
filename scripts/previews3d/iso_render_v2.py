@@ -20,7 +20,7 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 REPO = Path(os.environ.get("ARNIS_REPO", Path(__file__).resolve().parents[2]))
-W, H = 480, 360
+W, H = 720, 540
 VERT = 1.2
 WATER = (59, 86, 165)
 STEPS = ["shade", "ao", "noise", "water", "glass"]  # edges and shadow are opt-in, see header
@@ -412,10 +412,10 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
 
 
 
-def save(img, path, budget_kb=30):
+def save(img, path, budget_kb=60):
     """WebP q80, stepping the quality down until the file is within budget_kb."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    for q in (80, 74, 68, 62):
+    for q in (80, 74, 68, 62, 56, 50):
         img.save(path, "WEBP", quality=q, method=6)
         if path.stat().st_size / 1024 <= budget_kb:
             break
