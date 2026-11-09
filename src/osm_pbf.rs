@@ -698,10 +698,10 @@ fn geofabrik_feature<'a>(
         })
 }
 
-type Ring = Vec<(f64, f64)>;
+pub(crate) type Ring = Vec<(f64, f64)>;
 
 /// A GeoJSON (Multi)Polygon as a flat ring list; even-odd needs no outer/hole bookkeeping.
-fn rings(geom: &serde_json::Value) -> Vec<Ring> {
+pub(crate) fn rings(geom: &serde_json::Value) -> Vec<Ring> {
     let ring = |r: &serde_json::Value| -> Ring {
         r.as_array()
             .into_iter()
@@ -725,7 +725,7 @@ fn rings(geom: &serde_json::Value) -> Vec<Ring> {
         .collect()
 }
 
-fn in_rings(x: f64, y: f64, rings: &[Ring]) -> bool {
+pub(crate) fn in_rings(x: f64, y: f64, rings: &[Ring]) -> bool {
     let mut inside = false;
     for ring in rings {
         let mut j = ring.len() - 1;

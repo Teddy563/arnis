@@ -10,14 +10,15 @@
 //! manifest by the coordinator alone, as an area that names its job and position.
 //!
 //! A job keeps its state in `arnis_one_world/jobs/<x0>_<z0>_<x1>_<z1>_n<N>/` (the rectangle
-//! is the union of the pieces): the ids it reserved, one `done-<piece>.json` per finished
-//! piece and the piece leases. Running the same command again resumes it.
+//! is the union of the pieces): the ids it reserved and each piece's share of them, one
+//! `done-r<rx>_<rz>_s<n>.json` per finished piece (a 3.5.0 job's `done-<index>.json` is
+//! read too) and the piece leases. Running the same command again resumes it.
 
-use crate::args::Args;
+use crate::args::{Args, UnitSize};
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::one_world::{self, Manifest, PieceRef, RunContext, UnitLease};
 use crate::progress_json;
-use crate::work_units::{plan_units, WorkUnit};
+use crate::work_units::{self, WorkUnit};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -32,6 +33,8 @@ pub mod child;
 
 /// Map ids each piece may use. A piece needing more would run into the next one's range.
 const MAP_IDS_PER_PIECE: i32 = 1 << 16;
+/// Pieces one job's map ids have room for.
+pub const MAX_PIECES: usize = (i32::MAX / MAP_IDS_PER_PIECE) as usize;
 /// Lines of a failed piece's output shown with its error.
 const TAIL_LINES: usize = 40;
 /// Further attempts at a piece that failed for a reason that may pass.
@@ -75,17 +78,23 @@ struct Job {
     dir: PathBuf,
     area_base: u32,
     map_base: i32,
+    /// Each piece's share of the reserved ids, by region key. A 3.5.0 job has none: its
+    /// pieces' shares follow their plan index.
+    slots: serde_json::Map<String, Value>,
+}
+
+/// A finished piece's file names its regions and size, so it stays its own whatever order
+/// the pieces build in: `done-r<rx>_<rz>_s<n>.json`.
+fn done_key(u: &WorkUnit) -> String {
+    format!(
+        "r{}",
+        u.region_key().replacen(',', "_", 1).replacen(',', "_s", 1)
+    )
 }
 
 impl Job {
-    fn open(world_dir: &Path, rect: &XZBBox, n: i32, pieces: usize) -> Result<Self, String> {
-        let name = format!(
-            "{}_{}_{}_{}_n{n}",
-            rect.min_x(),
-            rect.min_z(),
-            rect.max_x(),
-            rect.max_z()
-        );
+    fn open(world_dir: &Path, name: String, units: &[WorkUnit]) -> Result<Self, String> {
+        let pieces = units.len();
         let dir = world_dir.join(one_world::JOBS_DIR).join(&name);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
@@ -93,11 +102,26 @@ impl Job {
         let kept = std::fs::read_to_string(&state)
             .ok()
             .and_then(|t| serde_json::from_str::<Value>(&t).ok());
-        let (area_base, map_base) = match kept
+        let (area_base, map_base, slots) = match kept
             .as_ref()
-            .map(|v| (v["area_base"].as_u64(), v["map_base"].as_i64()))
+            .map(|v| (v["area_base"].as_u64(), v["map_base"].as_i64(), &v["slots"]))
         {
-            Some((Some(a), Some(m))) => (a as u32, m as i32),
+            Some((Some(a), Some(m), slots)) => {
+                let slots = slots.as_object().cloned().unwrap_or_default();
+                // Shares are by region key; a 3.5.0 job has none and uses the plan index.
+                if let Some(u) = (!slots.is_empty())
+                    .then(|| units.iter().find(|u| !slots.contains_key(&done_key(u))))
+                    .flatten()
+                {
+                    return Err(format!(
+                        "{} was planned with other pieces (none at region {}); delete it or run \
+                         the command that started it.",
+                        dir.display(),
+                        u.region_key()
+                    ));
+                }
+                (a as u32, m as i32, slots)
+            }
             _ => {
                 // Reserved once, so a run in between cannot take a piece's ids.
                 let _guard = lock(&MANIFEST);
@@ -120,11 +144,15 @@ impl Job {
                     world_dir,
                     map_base + pieces as i32 * MAP_IDS_PER_PIECE - 1,
                 )?;
+                let slots: serde_json::Map<String, Value> = units
+                    .iter()
+                    .map(|u| (done_key(u), json!(u.index)))
+                    .collect();
                 write(
                     &state,
-                    &json!({ "area_base": area_base, "map_base": map_base }),
+                    &json!({ "area_base": area_base, "map_base": map_base, "slots": slots }),
                 )?;
-                (area_base, map_base)
+                (area_base, map_base, slots)
             }
         };
         Ok(Self {
@@ -132,15 +160,48 @@ impl Job {
             dir,
             area_base,
             map_base,
+            slots,
         })
     }
 
-    fn done_path(&self, piece: usize) -> PathBuf {
-        self.dir.join(format!("done-{piece}.json"))
+    /// The piece's share of the job's area and map ids.
+    fn slot(&self, u: &WorkUnit) -> u32 {
+        self.slots
+            .get(&done_key(u))
+            .and_then(Value::as_u64)
+            .map_or(u.index, |s| s as u32)
     }
 
-    fn finished(&self, piece: usize) -> Option<PieceResult> {
-        let text = std::fs::read_to_string(self.done_path(piece)).ok()?;
+    fn area_id(&self, u: &WorkUnit) -> u32 {
+        self.area_base + self.slot(u)
+    }
+
+    fn first_map_id(&self, u: &WorkUnit) -> i32 {
+        self.map_base + self.slot(u) as i32 * MAP_IDS_PER_PIECE
+    }
+
+    fn lease_path(&self, piece: usize) -> PathBuf {
+        self.dir.join(format!("piece-{piece}.lease.json"))
+    }
+
+    /// `--skip-built`: every chunk of the piece is in the world already, from an earlier
+    /// job. Never a piece this job started, whose chunks may be half written.
+    fn built_before(&self, world_dir: &Path, u: &WorkUnit) -> bool {
+        !self.lease_path(u.index as usize).exists()
+            && one_world::existing_chunks(world_dir, &u.rect) == u.chunks()
+    }
+
+    fn done_path(&self, u: &WorkUnit) -> PathBuf {
+        self.dir.join(format!("done-{}.json", done_key(u)))
+    }
+
+    /// What the piece reported, if it is built: under its region key, or under its plan
+    /// index in a job folder from 3.5.0.
+    fn finished(&self, u: &WorkUnit) -> Option<PieceResult> {
+        let old = self.dir.join(format!("done-{}.json", u.index));
+        let text = std::fs::read_to_string(self.done_path(u))
+            .or_else(|_| std::fs::read_to_string(old))
+            .ok()?;
         serde_json::from_str(&text).ok()
     }
 }
@@ -163,12 +224,21 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         .as_ref()
         .ok_or("--unit-regions needs --one-world")?;
     let selection = args.bbox.ok_or("A job built in pieces needs a bbox.")?;
-    let n = args.units.unit_regions.unwrap_or(DEFAULT_UNIT_REGIONS);
+    let size = args
+        .units
+        .unit_regions
+        .unwrap_or(UnitSize::N(DEFAULT_UNIT_REGIONS));
     let manifest = Manifest::load(world_dir)?
         .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
     let proj = manifest.projection();
-    let (rect, _) = crate::projection::snap_bbox_to_chunks(&proj, &selection)?;
-    let units = plan_units(&proj, &rect, n)?;
+    let plan = work_units::plan(&proj, &selection, args, size)?;
+    // A snapped job reaches past the selection, and its data must too.
+    let bake_area = if corners(&plan.rect) == corners(&plan.requested) {
+        selection
+    } else {
+        crate::projection::llbbox_for_rect(&proj, &plan.rect)?
+    };
+    let (rect, units) = (plan.rect, plan.units);
     let of = units.len();
     // `--only-pieces`: these are built, the job's other missing pieces wait.
     let only = args.units.only_pieces.as_deref();
@@ -176,12 +246,25 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         return Err(format!("--only-pieces {bad}: this job has {of} pieces."));
     }
     let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
-    let job = Job::open(world_dir, &rect, n, of)?;
+    let order = work_units::build_order(&units, args.units.piece_order.as_ref())?;
+    // Snapping or a mask can leave the requested spawn outside every piece.
+    if let Some((x, z)) = user_spawn_xz(args, &selection)
+        .filter(|&(x, z)| !units.iter().any(|u| contains(&u.rect, x, z)))
+    {
+        eprintln!(
+            "Warning: the spawn point (--spawn-lat/--spawn-lng, block {x}, {z}) is in no piece \
+             of this job and is ignored."
+        );
+    }
+    let job = Job::open(world_dir, plan.name, &units)?;
 
-    println!("One World: building {of} piece(s) of up to {n}x{n} regions");
+    match size {
+        UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
+        UnitSize::Auto => println!("One World: building {of} piece(s) of 2x2 to 8x8 regions"),
+    }
     // The extract is read once, here; each piece then cuts its own area from the bake.
     if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
-        crate::osm_pbf::bake_for_job(&src, selection)?;
+        crate::osm_pbf::bake_for_job(&src, bake_area)?;
     }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
@@ -213,13 +296,22 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             "bounds": bounds(&units[i]), "worker": worker, "pct": pct.round(),
         }));
     };
-    for unit in &units {
-        let i = unit.index as usize;
-        match job.finished(i) {
+    for i in order {
+        let unit = &units[i];
+        match job.finished(unit) {
             Some(r) => {
                 println!("  piece {}/{of}: already built", i + 1);
                 piece_record(i, "skipped", json!({}));
                 lock(&results)[i] = Some(r);
+            }
+            // `--skip-built`: every chunk is in the world already, from an earlier job.
+            None if wanted(i) && args.units.skip_built && job.built_before(world_dir, unit) => {
+                println!(
+                    "  piece {}/{of}: every chunk already exists, skipped",
+                    i + 1
+                );
+                piece_record(i, "skipped", json!({}));
+                lock(&results)[i] = Some(PieceResult::default());
             }
             None if wanted(i) => {
                 piece_record(i, "queued", json!({}));
@@ -230,11 +322,13 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     }
 
     // A fresh world gets its map item, settings and spawn from the first area built, so
-    // one piece goes first and alone: the one holding the requested spawn, else the first.
+    // one piece goes first and alone: the one holding the requested spawn, else the one
+    // nearest the centre, whatever `--piece-order` says.
     let head = (!ctx.extending && !queue.is_empty())
         .then(|| {
             user_spawn_xz(args, &selection)
                 .and_then(|(x, z)| queue.iter().position(|&i| contains(&units[i].rect, x, z)))
+                .or_else(|| (0..queue.len()).min_by_key(|&p| queue[p]))
                 .unwrap_or(0)
         })
         .and_then(|at| queue.remove(at));
@@ -251,11 +345,22 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             sizing.workers, sizing.threads
         );
     }
+    // `--mapillary-token` reads MAPILLARY_TOKEN, so a piece gets it without a command line.
+    let token: Vec<(&str, String)> = args
+        .mapillary_api_token()
+        .map(|t| ("MAPILLARY_TOKEN", t.to_string()))
+        .into_iter()
+        .collect();
+    let child_env: Vec<(&str, String)> = sizing
+        .child_env()
+        .into_iter()
+        .chain(token.iter().cloned())
+        .collect();
     let lease_for = |i: usize| UnitLease {
         piece: i as u32,
-        area_id: job.area_base + i as u32,
+        area_id: job.area_id(&units[i]),
         extending: head != Some(i),
-        first_map_id: job.map_base + i as i32 * MAP_IDS_PER_PIECE,
+        first_map_id: job.first_map_id(&units[i]),
         rect: corners(&units[i].rect),
         job: corners(&rect),
         tiled: crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3,
@@ -265,13 +370,19 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // workers then read the caches instead of all fetching at once. `--prewarm` stops after it.
     if args.prewarm || args.prewarm_first {
         let warm: Vec<usize> = (0..of)
-            .filter(|&i| wanted(i) && job.finished(i).is_none())
+            .filter(|&i| wanted(i) && job.finished(&units[i]).is_none())
+            .collect();
+        // A lease already there marks a piece an earlier run started; `--prewarm` must keep it.
+        let fresh: Vec<usize> = warm
+            .iter()
+            .copied()
+            .filter(|&i| !job.lease_path(i).exists())
             .collect();
         for (k, &i) in warm.iter().enumerate() {
             if STOP.load(Ordering::Acquire) {
                 return Err(STOPPED.to_string());
             }
-            let lease = job.dir.join(format!("piece-{i}.lease.json"));
+            let lease = job.lease_path(i);
             write(
                 &lease,
                 &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
@@ -294,7 +405,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
                 crate::progress::emit_gui_progress_update(pct, "");
             };
-            run_piece_until(&warm_argv, &[], &STOP, report).map_err(|f| {
+            run_piece_until(&warm_argv, &token, &STOP, report).map_err(|f| {
                 if STOP.load(Ordering::Acquire) {
                     STOPPED.to_string()
                 } else {
@@ -304,8 +415,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         }
         if args.prewarm {
             // Only the leases it wrote: a job already under way keeps its resume records.
-            for &i in &warm {
-                let _ = std::fs::remove_file(job.dir.join(format!("piece-{i}.lease.json")));
+            for &i in &fresh {
+                let _ = std::fs::remove_file(job.lease_path(i));
             }
             let _ = std::fs::remove_dir(&job.dir);
             let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
@@ -348,13 +459,19 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
     let running = Mutex::new(0usize);
     let cap = AtomicUsize::new(sizing.workers);
+    // `--stitch-map`: the head piece draws the map item from itself alone; once all are built
+    // it is redrawn from every piece's preview (a One World area always writes one).
+    let stitch_map =
+        args.units.stitch_map && args.map_item && !args.bedrock && !args.luanti && of > 1;
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
+    // Pieces that failed for good; the others keep building.
+    let failed: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
-    // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it.
+    // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it or it failed.
     let build = |i: usize, w: usize| -> Result<Option<PieceResult>, String> {
         let unit = &units[i];
-        let lease = job.dir.join(format!("piece-{i}.lease.json"));
+        let lease = job.lease_path(i);
         write(
             &lease,
             &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
@@ -393,7 +510,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     piece_progress(i, state, slot, pct);
                 }
             };
-            match run_piece_until(&argv, &sizing.child_env(), &STOP, seen) {
+            match run_piece_until(&argv, &child_env, &STOP, seen) {
                 Ok(r) => break r,
                 // Killed by Stop: not a failure, and built again on resume.
                 Err(_) if STOP.load(Ordering::Acquire) => {
@@ -410,17 +527,24 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     eprintln!("Piece {} failed, retrying: {}", i + 1, f.message);
                     std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
                 }
-                Err(f) => {
+                // The head piece makes the world's extras, so the job cannot go on without it.
+                Err(f) if head == Some(i) => {
                     piece_record(i, "failed", json!({"worker": slot, "error": f.message}));
                     aborting.store(true, Ordering::Relaxed);
                     return Err(format!("piece {} of {of} failed: {}", i + 1, f.message));
+                }
+                Err(f) => {
+                    piece_record(i, "failed", json!({"worker": slot, "error": f.message}));
+                    eprintln!("Piece {} of {of} failed: {}", i + 1, f.message);
+                    lock(&failed).push(i);
+                    return Ok(None);
                 }
             }
         };
         // Recorded here, not by the piece, so the manifest has one writer.
         {
             let _guard = lock(&MANIFEST);
-            let area_id = job.area_base + i as u32;
+            let area_id = job.area_id(unit);
             let run = RunContext {
                 area_id,
                 piece: Some(PieceRef {
@@ -439,7 +563,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             )
             .map_err(|e| format!("The area was written but could not be recorded: {e}"))?;
         }
-        write(&job.done_path(i), &json!(r))?;
+        write(&job.done_path(unit), &json!(r))?;
         crate::keep_one_world();
         let pieces_done = finished.fetch_add(1, Ordering::Relaxed) + 1;
         piece_record(
@@ -491,9 +615,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     println!("  pieces peak at {peak} MB: {allowed} at a time from now on");
                 }
             }
-            if built?.is_none() {
-                return Ok(());
-            }
+            built?;
         }
         Ok(())
     };
@@ -511,6 +633,10 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     if let Some(e) = failure.into_inner().unwrap_or_else(|e| e.into_inner()) {
         return Err(format!("{e}\n{RESUME}"));
     }
+    let failed = failed.into_inner().unwrap_or_else(|e| e.into_inner());
+    if !failed.is_empty() && !STOP.load(Ordering::Acquire) {
+        return Err(failed_summary(failed, of));
+    }
     // Stopped before the last piece, or only some retried: kept for a resume.
     if finished.load(Ordering::Relaxed) < of {
         let partial = only.is_some() && !STOP.load(Ordering::Acquire);
@@ -520,6 +646,13 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // The pieces' map ids were their own; the counter now covers all of them.
     if let Err(e) = crate::map_item::sync_map_counter(world_dir) {
         eprintln!("Warning: Failed to update the map id counter: {e}");
+    }
+    if stitch_map {
+        match crate::map_item::repaint_job_map(world_dir) {
+            Ok(Some(id)) => println!("World map item (map #{id}) redrawn over every piece."),
+            Ok(None) => {}
+            Err(e) => eprintln!("Warning: Failed to redraw the map item over every piece: {e}"),
+        }
     }
     if let Err(e) = crate::world_utils::touch_last_played(world_dir) {
         eprintln!("Warning: Failed to update LastPlayed: {e}");
@@ -531,6 +664,19 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let _ = std::fs::remove_dir_all(&job.dir);
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
     Ok(())
+}
+
+/// What a job that kept going past failed pieces ends with: which, and how to retry them.
+fn failed_summary(mut failed: Vec<usize>, of: usize) -> String {
+    failed.sort_unstable();
+    let numbers: Vec<String> = failed.iter().map(|i| (i + 1).to_string()).collect();
+    format!(
+        "{} of {of} pieces failed: {}. The others are built; retry the failed ones with \
+         --only-pieces {}, or run the same command again.",
+        failed.len(),
+        numbers.join(", "),
+        numbers.join(",")
+    )
 }
 
 /// `[min_x, min_z, max_x, max_z]`.
@@ -567,6 +713,8 @@ fn user_spawn_xz(
 
 /// Options the coordinator decides per piece, so the user's are dropped.
 const PER_PIECE: &[&str] = &[
+    "--piece-order",
+    "--plan-mask",
     "--bbox",
     "--unit-regions",
     "--one-world-workers",
@@ -578,11 +726,20 @@ const PER_PIECE: &[&str] = &[
     "--max-downloads",
     "--one-world-unit",
     "--only-pieces",
+    "--snap-regions",
+    "--margin-regions",
+    // Handed over in the environment, out of sight of other processes.
+    "--mapillary-token",
 ];
 
 /// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
 /// refuses one given twice. They take no value, so the next argument is kept.
-const PER_PIECE_SWITCHES: &[&str] = &["--prewarm", "--prewarm-first"];
+const PER_PIECE_SWITCHES: &[&str] = &[
+    "--prewarm",
+    "--prewarm-first",
+    "--skip-built",
+    "--stitch-map",
+];
 
 /// Only the piece the world spawns in gets the spawn point: the others do not contain it,
 /// and a run refuses a spawn outside its area.
@@ -802,6 +959,75 @@ mod tests {
     }
 
     #[test]
+    fn a_job_with_failed_pieces_names_them_for_a_retry() {
+        let msg = failed_summary(vec![6, 2], 12);
+        assert!(msg.starts_with("2 of 12 pieces failed: 3, 7."), "{msg}");
+        assert!(msg.contains("--only-pieces 3,7,"), "{msg}");
+        let args = <Args as clap::Parser>::try_parse_from(["arnis", "--only-pieces", "3,7"]);
+        assert_eq!(args.unwrap().units.only_pieces, Some(vec![3, 7]));
+    }
+
+    /// A job folder from 3.5.0 (`done-<index>.json`, no slots) resumes, and a new one keys
+    /// its pieces by region.
+    #[test]
+    fn job_folders_resume_by_region_key_and_by_35_index() {
+        let proj = crate::projection::WebMercatorProjection::new(44.4465, 26.099, 1.0);
+        let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
+        let (world, _) = crate::projection::snap_bbox_to_chunks(&proj, &req).unwrap();
+        let units = work_units::plan_units(&proj, &world, 1).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(one_world::JOBS_DIR).join("j");
+        std::fs::create_dir_all(&dir).unwrap();
+        // 3.5.0: ids by plan index, piece 0 done.
+        std::fs::write(dir.join("job.json"), r#"{"area_base":5,"map_base":100}"#).unwrap();
+        std::fs::write(dir.join("done-0.json"), r#"{"chunks":7}"#).unwrap();
+        let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert_eq!(job.finished(&units[0]).map(|r| r.chunks), Some(7));
+        assert!(job.finished(&units[1]).is_none());
+        assert_eq!(job.area_id(&units[2]), 7);
+        assert_eq!(job.first_map_id(&units[2]), 100 + 2 * MAP_IDS_PER_PIECE);
+        // New pieces finish under their region key.
+        let key = units[1].region_key();
+        let (rx, rest) = key.split_once(',').unwrap();
+        let (rz, s) = rest.split_once(',').unwrap();
+        let want = dir.join(format!("done-r{rx}_{rz}_s{s}.json"));
+        assert_eq!(job.done_path(&units[1]), want);
+        std::fs::write(&want, r#"{"chunks":9}"#).unwrap();
+        assert_eq!(job.finished(&units[1]).map(|r| r.chunks), Some(9));
+        // `--skip-built`: a piece whose every chunk exists is skipped, unless this job
+        // started it. Region (-1, -1) is unit 0's here, every chunk header set.
+        let world = tmp.path();
+        std::fs::create_dir_all(world.join("region")).unwrap();
+        let u = units
+            .iter()
+            .find(|u| u.rect.min_x() >= -512 && u.rect.max_x() < 0 && u.rect.max_z() < 0)
+            .unwrap();
+        assert!(!job.built_before(world, u));
+        std::fs::write(world.join("region/r.-1.-1.mca"), vec![1u8; 4096]).unwrap();
+        assert!(job.built_before(world, u));
+        std::fs::write(job.lease_path(u.index as usize), "{}").unwrap();
+        assert!(!job.built_before(world, u));
+        // Slots kept in job.json win over the index.
+        let mut slots: serde_json::Map<String, Value> = units
+            .iter()
+            .map(|u| (done_key(u), json!(u.index)))
+            .collect();
+        slots.insert(done_key(&units[2]), json!(11));
+        let state = json!({"area_base": 5, "map_base": 100, "slots": slots});
+        std::fs::write(dir.join("job.json"), state.to_string()).unwrap();
+        let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert_eq!(job.area_id(&units[2]), 16);
+        assert_eq!(job.first_map_id(&units[2]), 100 + 11 * MAP_IDS_PER_PIECE);
+        assert_eq!(job.area_id(&units[3]), 8);
+        // Slots kept but one of this plan's pieces missing: another plan, refused.
+        slots.remove(&done_key(&units[3]));
+        let state = json!({"area_base": 5, "map_base": 100, "slots": slots});
+        std::fs::write(dir.join("job.json"), state.to_string()).unwrap();
+        let err = Job::open(tmp.path(), "j".into(), &units).err().unwrap();
+        assert!(err.contains("planned with other pieces"), "{err}");
+    }
+
+    #[test]
     fn the_job_percentage_follows_the_pieces_done() {
         // 2 of 16 done, two running at a half and a quarter.
         let mut d = vec![0.0; 16];
@@ -819,7 +1045,7 @@ mod tests {
         let proj = crate::projection::WebMercatorProjection::new(44.4465, 26.099, 1.0);
         let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
         let (world, _) = crate::projection::snap_bbox_to_chunks(&proj, &req).unwrap();
-        let units = plan_units(&proj, &world, 1).unwrap();
+        let units = work_units::plan_units(&proj, &world, 1).unwrap();
         let argv = [
             "--one-world",
             "--bbox",
@@ -836,6 +1062,14 @@ mod tests {
             "--no-update-check",
             "--only-pieces",
             "2,3",
+            "--mapillary-token",
+            "MLY|secret",
+            "--mapillary-token=MLY|secret",
+            "--skip-built",
+            "--stitch-map",
+            "--snap-regions",
+            "cover",
+            "--margin-regions=1",
             "--scale=1",
         ]
         .map(OsString::from);
@@ -933,6 +1167,16 @@ mod tests {
             "the killed piece must fail the job"
         );
         assert!(resumed.join("W/arnis_one_world/jobs").is_dir());
+        // The other three pieces kept building past the failed one.
+        let jobs = std::fs::read_dir(resumed.join("W/arnis_one_world/jobs")).unwrap();
+        let job_dir = jobs.flatten().next().unwrap().path();
+        let done = std::fs::read_dir(job_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("done-"))
+            .count();
+        assert_eq!(done, 3, "{}", String::from_utf8_lossy(&first.stderr));
+        assert!(String::from_utf8_lossy(&first.stderr).contains("--only-pieces 2"));
         assert!(arnis(&resumed, area, &job, &[]).status.success());
         let out = Command::new("python")
             .arg(&chunkdiff)

@@ -458,15 +458,38 @@ pub fn sync_map_counter(world_path: &Path) -> Result<(), String> {
 /// map in the player's first hotbar slot (the one the spawn frame shows too),
 /// or adds a new one there. Returns the map id.
 pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
-    let manifest = crate::one_world::Manifest::load(world_path)?.ok_or_else(|| {
-        format!(
+    if crate::one_world::Manifest::load(world_path)?.is_none() {
+        return Err(format!(
             "{} is not a One World; a single run's map item already shows all of it.",
             world_path.display()
-        )
-    })?;
-    let ext = manifest.extent().ok_or("the One World has no areas yet")?;
+        ));
+    }
     let _lock = crate::world_utils::SessionLock::acquire(world_path)
         .map_err(|_| "the world is open in Minecraft or being generated".to_string())?;
+    redraw(world_path, true).map(|id| id.unwrap_or_default())
+}
+
+/// What a finished job in pieces does with the map item its head piece drew from that
+/// piece alone: repaints it over every area. `None` when the world has no locked map in
+/// the first hotbar slot to repaint. The caller holds the world's lock.
+pub fn repaint_job_map(world_path: &Path) -> Result<Option<i32>, String> {
+    redraw(world_path, false)
+}
+
+/// `redraw_one_world_map` under a lock already held; adds the map only when `add`.
+fn redraw(world_path: &Path, add: bool) -> Result<Option<i32>, String> {
+    let manifest = crate::one_world::Manifest::load(world_path)?
+        .ok_or_else(|| format!("{} is not a One World.", world_path.display()))?;
+    let ext = manifest.extent().ok_or("the One World has no areas yet")?;
+    let store = MapStore::open(world_path)?;
+    let existing = hotbar_map_id(world_path).filter(|&id| {
+        matches!(read_gzip_nbt(&store.map_path(id)),
+            Ok(Value::Compound(root)) if matches!(root.get("data"),
+                Some(Value::Compound(d)) if d.get("locked") == Some(&Value::Byte(1))))
+    });
+    if existing.is_none() && !add {
+        return Ok(None);
+    }
     let w = ext.max_x() - ext.min_x() + 1;
     let h = ext.max_z() - ext.min_z() + 1;
     let (bpp, scale, tracking) = map_geometry(w.max(h));
@@ -513,12 +536,6 @@ pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
         return Err("no area of this One World has a preview to draw from".to_string());
     }
 
-    let store = MapStore::open(world_path)?;
-    let existing = hotbar_map_id(world_path).filter(|&id| {
-        matches!(read_gzip_nbt(&store.map_path(id)),
-            Ok(Value::Compound(root)) if matches!(root.get("data"),
-                Some(Value::Compound(d)) if d.get("locked") == Some(&Value::Byte(1))))
-    });
     let map_id = existing.unwrap_or_else(|| store.next_id());
     let map_dat = build_map_dat(
         colors,
@@ -533,7 +550,7 @@ pub fn redraw_one_world_map(world_path: &Path) -> Result<i32, String> {
         sync_map_counter(world_path)?;
         insert_into_inventory(world_path, map_id)?;
     }
-    Ok(map_id)
+    Ok(Some(map_id))
 }
 
 /// The id of the filled map in the player's first hotbar slot, where
@@ -1113,7 +1130,11 @@ mod tests {
             };
             c.to_vec()
         };
+        // A job only repaints a map its head piece made; it never adds one.
+        assert_eq!(repaint_job_map(&world).unwrap(), None);
+        assert_eq!(hotbar_map_id(&world), None);
         let id = redraw_one_world_map(&world).unwrap();
+        assert_eq!(repaint_job_map(&world).unwrap(), Some(id));
         // 256x256 blocks at 2 blocks per pixel: the left half red, the right half blue.
         let c = colors(id);
         assert_eq!(c[64 * 128 + 10], nearest_map_color(200, 0, 0) as i8);

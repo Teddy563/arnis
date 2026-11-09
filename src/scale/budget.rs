@@ -32,6 +32,22 @@ pub fn estimate_piece_mb(regions: u64, scale: f64) -> u64 {
     400 + per_region * regions
 }
 
+/// Largest side, in regions, that `--unit-regions auto` gives a piece: 8, 4 or 2, the largest
+/// of which two pieces fit in `--ram-budget-mb`, else in the machine's memory less the
+/// reserve. Total memory rather than free, so a resumed job cuts the same pieces.
+pub fn auto_max_regions(args: &Args) -> i32 {
+    let budget = args.ram_budget_mb.unwrap_or_else(|| {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+        let total = sys.total_memory() / (1024 * 1024);
+        total.saturating_sub(reserve_mb(total))
+    });
+    [8, 4]
+        .into_iter()
+        .find(|&s| estimate_piece_mb(s * s, args.scale) * MIN_WORKERS as u64 <= budget)
+        .map_or(2, |s| s as i32)
+}
+
 /// Memory kept free for the system and everything else running.
 fn reserve_mb(total_mb: u64) -> u64 {
     (total_mb / 10).max(2048)
@@ -203,6 +219,22 @@ mod tests {
         ];
         cmd.extend_from_slice(extra);
         <Args as clap::Parser>::parse_from(cmd)
+    }
+
+    #[test]
+    fn auto_pieces_are_as_large_as_two_fit_the_memory() {
+        // Two 8 x 8 pieces at scale 1 need 2 x 1,616 MB, two 4 x 4 2 x 704 MB.
+        for (mb, side) in [
+            (4000, 8),
+            (3232, 8),
+            (3231, 4),
+            (1408, 4),
+            (1407, 2),
+            (10, 2),
+        ] {
+            let args = parse(&["--ram-budget-mb", &mb.to_string()]);
+            assert_eq!(auto_max_regions(&args), side, "{mb} MB");
+        }
     }
 
     #[test]

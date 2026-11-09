@@ -746,12 +746,13 @@ fn parse_density(s: &str) -> Result<f64, String> {
 pub struct UnitArgs {
     /// Print how --one-world would cut --bbox into pieces of at most N x N regions (one JSON
     /// line on stdout) and exit without generating.
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
-    pub plan_units: Option<i32>,
+    #[arg(long, value_name = "auto|N", value_parser = parse_unit_size)]
+    pub plan_units: Option<UnitSize>,
 
-    /// Piece size of a --one-world job, at most N x N regions.
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..=64))]
-    pub unit_regions: Option<i32>,
+    /// Piece size of a --one-world job, at most N x N regions. auto mixes 8 x 8, 4 x 4 and
+    /// 2 x 2 pieces, as large as fit the job, the memory and the map ids.
+    #[arg(long, value_name = "auto|N", value_parser = parse_unit_size)]
+    pub unit_regions: Option<UnitSize>,
 
     /// One piece of a job, run by the job's coordinator.
     #[arg(long, hide = true)]
@@ -769,6 +770,80 @@ pub struct UnitArgs {
     #[arg(long, value_name = "N,N...", value_delimiter = ',',
           value_parser = clap::value_parser!(u32).range(1..))]
     pub only_pieces: Option<Vec<u32>>,
+
+    /// Snap a --one-world job to whole pieces on the world's region lattice: cover grows it,
+    /// fit shrinks it; merge keeps its edges but folds an edge strip thinner than a quarter
+    /// region into its neighbour.
+    #[arg(long, value_enum, value_name = "cover|fit|merge")]
+    pub snap_regions: Option<SnapRegions>,
+
+    /// Regions added on every side of a --one-world job, after any --snap-regions.
+    #[arg(long, value_name = "K", default_value_t = 0,
+          value_parser = clap::value_parser!(i32).range(0..=64))]
+    pub margin_regions: i32,
+
+    /// Skip the pieces of a --one-world job whose every chunk is already in the world, say
+    /// from an earlier job over part of this one.
+    #[arg(long)]
+    pub skip_built: bool,
+
+    /// Order a --one-world job builds its pieces in: from the centre out (the default), from
+    /// one side, or the listed piece numbers first and the rest from the centre out.
+    #[arg(long, value_name = "centre|west|east|north|south|N,N...", value_parser = parse_piece_order)]
+    pub piece_order: Option<PieceOrder>,
+
+    /// Keep only the pieces of a --one-world job that touch this polygon, a GeoJSON
+    /// (Multi)Polygon, Feature or FeatureCollection, or an Osmosis .poly file.
+    #[arg(long, value_name = "FILE")]
+    pub plan_mask: Option<PathBuf>,
+
+    /// Once every piece of a --one-world job is built, redraw the world's map item over all
+    /// of them; without it the map shows the first piece only.
+    #[arg(long)]
+    pub stitch_map: bool,
+}
+
+/// `--piece-order`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PieceOrder {
+    Centre,
+    West,
+    East,
+    North,
+    South,
+    /// Piece numbers, from 1.
+    List(Vec<u32>),
+}
+
+fn parse_piece_order(s: &str) -> Result<PieceOrder, String> {
+    Ok(match s {
+        "centre" | "center" => PieceOrder::Centre,
+        "west" => PieceOrder::West,
+        "east" => PieceOrder::East,
+        "north" => PieceOrder::North,
+        "south" => PieceOrder::South,
+        _ => PieceOrder::List(
+            s.split(',')
+                .map(|n| match n.trim().parse::<u32>() {
+                    Ok(n @ 1..) => Ok(n),
+                    _ => Err(format!(
+                        "{s}: expected centre, west, east, north, south or piece numbers like 3,1,2"
+                    )),
+                })
+                .collect::<Result<_, _>>()?,
+        ),
+    })
+}
+
+/// How `--snap-regions` fits a job to the region lattice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum SnapRegions {
+    /// Grow to whole pieces.
+    Cover,
+    /// Shrink to whole pieces; at least the one under the centre.
+    Fit,
+    /// Keep the edges, merge thin edge strips into their neighbours.
+    Merge,
 }
 
 impl UnitArgs {
@@ -776,6 +851,32 @@ impl UnitArgs {
     pub fn coordinates(&self) -> bool {
         (self.unit_regions.is_some() || self.one_world_workers.is_some())
             && self.one_world_unit.is_none()
+    }
+}
+
+/// Piece size of a job: N x N regions, or mixed sizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitSize {
+    Auto,
+    N(i32),
+}
+
+impl std::fmt::Display for UnitSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnitSize::Auto => f.write_str("auto"),
+            UnitSize::N(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+fn parse_unit_size(s: &str) -> Result<UnitSize, String> {
+    match s {
+        "auto" => Ok(UnitSize::Auto),
+        _ => match s.parse::<i32>() {
+            Ok(n @ 1..=64) => Ok(UnitSize::N(n)),
+            _ => Err(format!("{s}: expected auto or a size from 1 to 64")),
+        },
     }
 }
 
@@ -857,6 +958,12 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
             "--one-world-workers",
         ),
         (u.only_pieces.is_some(), "--only-pieces"),
+        (u.snap_regions.is_some(), "--snap-regions"),
+        (u.margin_regions != 0, "--margin-regions"),
+        (u.skip_built, "--skip-built"),
+        (u.piece_order.is_some(), "--piece-order"),
+        (u.plan_mask.is_some(), "--plan-mask"),
+        (u.stitch_map, "--stitch-map"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1517,6 +1624,28 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
+    if (args.units.skip_built || args.units.piece_order.is_some() || args.units.stitch_map)
+        && !args.units.coordinates()
+    {
+        return Err(
+            "--skip-built, --piece-order and --stitch-map only apply to a job built in pieces (--unit-regions)."
+                .to_string(),
+        );
+    }
+    if args.units.stitch_map && !args.map_item {
+        return Err("--stitch-map redraws the map item, so it needs --map-item.".to_string());
+    }
+    let planned = args.units.coordinates() || args.units.plan_units.is_some();
+    if (args.units.snap_regions.is_some()
+        || args.units.margin_regions != 0
+        || args.units.plan_mask.is_some())
+        && !planned
+    {
+        return Err(
+            "--snap-regions, --margin-regions and --plan-mask only apply to a job built in pieces (--unit-regions or --plan-units)."
+                .to_string(),
+        );
+    }
     if args.units.only_pieces.is_some() && !args.units.coordinates() {
         return Err(
             "--only-pieces only applies to a job built in pieces (--unit-regions).".to_string(),
@@ -1882,6 +2011,81 @@ mod tests {
             }
         }
         assert!(flags.contains(&"threads") && flags.contains(&"capabilities"));
+    }
+
+    #[test]
+    fn piece_fitting_flags_need_a_job_and_no_live() {
+        let p = |x: &[&str]| Args::try_parse_from(["arnis"].iter().chain(x));
+        let refused = |x: &[&str], flag: &str| {
+            let err = validate_args(&p(x).unwrap()).err().unwrap_or_default();
+            err.contains(flag)
+        };
+        let job = ["--one-world", "--bbox", "44.44,26.09,44.45,26.10"];
+        let with = |extra: &[&'static str]| [&job[..], extra].concat();
+        assert!(refused(
+            &with(&["--snap-regions", "cover"]),
+            "--snap-regions"
+        ));
+        assert!(refused(
+            &with(&["--margin-regions", "2"]),
+            "--margin-regions"
+        ));
+        for ok in [
+            with(&[
+                "--unit-regions",
+                "2",
+                "--snap-regions",
+                "fit",
+                "--margin-regions",
+                "1",
+            ]),
+            with(&["--plan-units", "2", "--snap-regions", "merge"]),
+        ] {
+            assert!(!refused(&ok, "--snap-regions"), "{ok:?}");
+        }
+        for flags in [["--snap-regions", "cover"], ["--margin-regions", "1"]] {
+            let live = p(&[&["--live", "--one-world"], &flags[..]].concat()).unwrap();
+            let err = refuse_live_extras(&live).unwrap_err();
+            assert!(err.contains(flags[0]), "{err}");
+        }
+        assert!(p(&["--snap-regions", "square"]).is_err());
+        assert!(p(&["--margin-regions", "-1"]).is_err());
+        assert_eq!(p(&[]).unwrap().units.margin_regions, 0);
+        assert!(refused(&with(&["--skip-built"]), "--skip-built"));
+        assert!(!refused(
+            &with(&["--unit-regions", "2", "--skip-built"]),
+            "--skip-built"
+        ));
+        let order = |v: &str| p(&["--piece-order", v]).map(|a| a.units.piece_order);
+        assert_eq!(order("west").unwrap(), Some(PieceOrder::West));
+        assert_eq!(order("center").unwrap(), Some(PieceOrder::Centre));
+        assert_eq!(order("3,1").unwrap(), Some(PieceOrder::List(vec![3, 1])));
+        assert!(order("0,1").is_err() && order("up").is_err());
+        assert!(refused(&with(&["--piece-order", "west"]), "--piece-order"));
+        assert!(refused(&with(&["--plan-mask", "m.geojson"]), "--plan-mask"));
+        assert!(refused(&with(&["--stitch-map"]), "--stitch-map"));
+        assert!(!refused(
+            &with(&["--unit-regions", "1", "--stitch-map"]),
+            "--stitch-map"
+        ));
+        let live = p(&["--live", "--one-world", "--stitch-map"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--stitch-map"));
+        let live = p(&["--live", "--one-world", "--plan-mask", "m.geojson"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--plan-mask"));
+        let live = p(&["--live", "--one-world", "--skip-built"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--skip-built"));
+        let size = |v: &str| p(&["--unit-regions", v]).map(|a| a.units.unit_regions);
+        assert_eq!(size("auto").unwrap(), Some(UnitSize::Auto));
+        assert_eq!(size("4").unwrap(), Some(UnitSize::N(4)));
+        assert!(size("0").is_err() && size("65").is_err() && size("big").is_err());
+        let plan = p(&["--plan-units", "auto"]).unwrap().units.plan_units;
+        assert_eq!(plan, Some(UnitSize::Auto));
     }
 
     #[test]
