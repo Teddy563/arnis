@@ -506,7 +506,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             s.spawn(move || {
                 if let Err(e) = work(w) {
                     aborting.store(true, Ordering::Relaxed);
-                    lock(&failure).get_or_insert(e);
+                    lock(failure).get_or_insert(e);
                 }
             });
         }
