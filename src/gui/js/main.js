@@ -1358,10 +1358,11 @@ function initSettings() {
       document.getElementById('run-confirm-hold').disabled = !planPieces();
       if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
     },
-    // A job in pieces of a One World with a selection; Live mode builds no pieces.
+    // A job in pieces of a One World with a selection, as the run decides it: Live, Bedrock,
+    // the Moon and Mars build no pieces.
     request: () => {
       const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
-      if (!bbox || oneWorldMode() !== 'on' || !savePath || !document.getElementById('meld-workers-select').value) return null;
+      if (!bbox || !isOneWorldEnabled() || isLiveMode() || !savePath || !document.getElementById('meld-workers-select').value) return null;
       return { savePath, worldName: oneWorldFolderName(), bboxText: bbox, worldScale: readGenerationSettings(true).worldScale };
     },
   });
