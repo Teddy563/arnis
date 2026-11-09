@@ -24,11 +24,13 @@ export function initMeldFeatures() {
   // The map-first page (styles.css, body.map-first) with Meld features on, the 3.4.0-style one
   // off when Main Page Layout is Auto; Map first is the default for everyone.
   const layout = el('layout-select');
+  const about = el('layout-about-select');
   const apply = () => {
     const mode = layout ? layout.value : 'map';
     document.body.classList.toggle('meld-off', !toggle.checked);
     const mapFirst = mode === 'map' || (mode === 'auto' && toggle.checked);
     document.body.classList.toggle('map-first', mapFirst);
+    if (about) about.value = mapFirst ? 'map' : 'classic';
     const dock = el('preview3d-mini');
     if (dock) {
       let w = 0;
@@ -40,6 +42,13 @@ export function initMeldFeatures() {
   };
   toggle.addEventListener('change', apply);
   if (layout) layout.addEventListener('change', apply);
+  // Settings > About sets the same setting (and so its storage).
+  if (about && layout) {
+    about.addEventListener('change', () => {
+      layout.value = about.value;
+      layout.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
   apply();
 
   // The docked 3D preview keeps the width it was dragged to (map-first page only: the classic

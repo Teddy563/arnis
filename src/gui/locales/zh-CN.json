@@ -636,5 +636,7 @@
   "plan_time_tip": "时间（估计，缓存已下载）",
   "plan_confirm_warn": "此次生成耗时较长，在结束前会占用大部分 CPU 和内存。请暂缓其他繁重任务，并确认磁盘有足够的可用空间。",
   "plan_confirm_docs": "阅读文档",
-  "plan_confirm_hold": "长按开始"
+  "plan_confirm_hold": "长按开始",
+  "layout_about": "主页面布局",
+  "layout_about_map": "地图"
 }

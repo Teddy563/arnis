@@ -636,5 +636,7 @@
   "plan_time_tip": "時間（推定、キャッシュ取得済み）",
   "plan_confirm_warn": "この生成は長時間かかり、終わるまで CPU とメモリの大部分を使います。ほかの重い作業は後にして、ディスクの空き容量が十分か確認してください。",
   "plan_confirm_docs": "ドキュメントを読む",
-  "plan_confirm_hold": "長押しで開始"
+  "plan_confirm_hold": "長押しで開始",
+  "layout_about": "メイン画面のレイアウト",
+  "layout_about_map": "地図"
 }

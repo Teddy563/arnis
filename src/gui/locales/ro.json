@@ -636,5 +636,7 @@
   "plan_time_tip": "Timp (estimare, cu cache-ul deja descărcat)",
   "plan_confirm_warn": "Construcția durează mult și folosește aproape tot procesorul și memoria până se termină. Lasă alte lucruri grele pentru mai târziu și verifică dacă ai destul spațiu liber pe disc.",
   "plan_confirm_docs": "Citește documentația",
-  "plan_confirm_hold": "Ține apăsat ca să pornești"
+  "plan_confirm_hold": "Ține apăsat ca să pornești",
+  "layout_about": "Aspectul paginii principale",
+  "layout_about_map": "Hartă"
 }

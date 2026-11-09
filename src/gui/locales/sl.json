@@ -636,5 +636,7 @@
   "plan_time_tip": "Čas (ocena, s pripravljenim predpomnilnikom)",
   "plan_confirm_warn": "Ta gradnja traja dolgo in do konca porablja večino procesorja in pomnilnika. Drugo zahtevno delo odložite in preverite, ali je na disku dovolj prostora.",
   "plan_confirm_docs": "Preberi dokumentacijo",
-  "plan_confirm_hold": "Pridržite za začetek"
+  "plan_confirm_hold": "Pridržite za začetek",
+  "layout_about": "Postavitev glavne strani",
+  "layout_about_map": "Zemljevid"
 }

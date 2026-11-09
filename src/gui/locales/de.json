@@ -636,5 +636,7 @@
   "plan_time_tip": "Zeit (Schätzung, Cache bereits gefüllt)",
   "plan_confirm_warn": "Dieser Bau dauert lange und nutzt bis zum Ende den Großteil von CPU und Arbeitsspeicher. Verschiebe andere rechenintensive Arbeit und prüfe, ob genug Speicherplatz frei ist.",
   "plan_confirm_docs": "Dokumentation lesen",
-  "plan_confirm_hold": "Zum Starten gedrückt halten"
+  "plan_confirm_hold": "Zum Starten gedrückt halten",
+  "layout_about": "Layout der Startseite",
+  "layout_about_map": "Karte"
 }

@@ -636,5 +636,7 @@
   "plan_time_tip": "Tiempo (estimación, con caché ya descargada)",
   "plan_confirm_warn": "Esta generación tarda mucho y usa casi toda la CPU y la memoria hasta que termina. Deja otros trabajos pesados para después y comprueba que haya suficiente espacio libre en el disco.",
   "plan_confirm_docs": "Leer la documentación",
-  "plan_confirm_hold": "Mantén pulsado para empezar"
+  "plan_confirm_hold": "Mantén pulsado para empezar",
+  "layout_about": "Diseño de la página principal",
+  "layout_about_map": "Mapa"
 }

@@ -636,5 +636,7 @@
   "plan_time_tip": "Laikas (įvertis, su paruošta talpykla)",
   "plan_confirm_warn": "Šis kūrimas užtrunka ilgai ir iki pabaigos naudoja didžiąją dalį procesoriaus ir atminties. Kitus sunkius darbus atidėkite ir patikrinkite, ar diske pakanka laisvos vietos.",
   "plan_confirm_docs": "Skaityti dokumentaciją",
-  "plan_confirm_hold": "Laikykite nuspaudę, kad pradėtumėte"
+  "plan_confirm_hold": "Laikykite nuspaudę, kad pradėtumėte",
+  "layout_about": "Pagrindinio puslapio išdėstymas",
+  "layout_about_map": "Žemėlapis"
 }

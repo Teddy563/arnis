@@ -964,6 +964,18 @@ label[for].setting-label {
   gap: 10px;
 }
 
+.settings-about-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-basis: 100%;
+  font-size: 13.5px;
+}
+
+.settings-about-layout .settings-select {
+  width: 160px;
+}
+
 .settings-about-links {
   flex-basis: 100%;
   padding-top: 14px;

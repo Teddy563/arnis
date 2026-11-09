@@ -636,5 +636,7 @@
   "plan_time_tip": "Durée (estimation, cache déjà rempli)",
   "plan_confirm_warn": "Cette génération dure longtemps et utilise la plus grande partie du processeur et de la mémoire jusqu'à la fin. Remettez les autres tâches lourdes à plus tard et vérifiez qu'il reste assez d'espace disque.",
   "plan_confirm_docs": "Lire la documentation",
-  "plan_confirm_hold": "Maintenir pour démarrer"
+  "plan_confirm_hold": "Maintenir pour démarrer",
+  "layout_about": "Disposition de la page principale",
+  "layout_about_map": "Carte"
 }

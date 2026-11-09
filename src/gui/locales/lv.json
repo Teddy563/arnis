@@ -636,5 +636,7 @@
   "plan_time_tip": "Laiks (aplēse, ar gatavu kešatmiņu)",
   "plan_confirm_warn": "Šī būvēšana ilgst ilgi un līdz beigām izmanto lielāko daļu procesora un atmiņas. Atliec citus smagus darbus un pārbaudi, vai diskā pietiek brīvas vietas.",
   "plan_confirm_docs": "Lasīt dokumentāciju",
-  "plan_confirm_hold": "Turi nospiestu, lai sāktu"
+  "plan_confirm_hold": "Turi nospiestu, lai sāktu",
+  "layout_about": "Galvenās lapas izkārtojums",
+  "layout_about_map": "Karte"
 }
