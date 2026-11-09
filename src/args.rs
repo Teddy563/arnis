@@ -1621,6 +1621,9 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
+    if args.units.stitch_map && !args.map_item {
+        return Err("--stitch-map redraws the map item, so it needs --map-item.".to_string());
+    }
     let planned = args.units.coordinates() || args.units.plan_units.is_some();
     if (args.units.snap_regions.is_some()
         || args.units.margin_regions != 0

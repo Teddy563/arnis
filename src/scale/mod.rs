@@ -253,7 +253,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     {
         eprintln!(
             "Warning: the spawn point (--spawn-lat/--spawn-lng, block {x}, {z}) is in no piece \
-             of this job; the world spawns in its first piece instead."
+             of this job and is ignored."
         );
     }
     let job = Job::open(world_dir, plan.name, &units)?;
@@ -372,6 +372,12 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         let warm: Vec<usize> = (0..of)
             .filter(|&i| wanted(i) && job.finished(&units[i]).is_none())
             .collect();
+        // A lease already there marks a piece an earlier run started; `--prewarm` must keep it.
+        let fresh: Vec<usize> = warm
+            .iter()
+            .copied()
+            .filter(|&i| !job.lease_path(i).exists())
+            .collect();
         for (k, &i) in warm.iter().enumerate() {
             if STOP.load(Ordering::Acquire) {
                 return Err(STOPPED.to_string());
@@ -409,7 +415,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         }
         if args.prewarm {
             // Only the leases it wrote: a job already under way keeps its resume records.
-            for &i in &warm {
+            for &i in &fresh {
                 let _ = std::fs::remove_file(job.lease_path(i));
             }
             let _ = std::fs::remove_dir(&job.dir);
