@@ -117,7 +117,7 @@ By default the window looks the same as stock.
 
 ![Switch on, Scale card](../images/3.5.0/gui-advanced-scale.png)
 
-**Run controls.** A large area can run in pieces. Each piece is outlined on the map and shows its state. Pause and Resume hold the queue, Stop ends the job, and Retry pieces rebuilds the ones that failed or never started, using `--only-pieces`.
+**Run controls.** A large area can run in pieces. Each piece is outlined on the map and shows its state. Pause and Resume hold the queue, Stop ends the job, and Retry pieces rebuilds the ones that failed or never started, using `--only-pieces`. Each outline shows the piece number, a state icon and its percent; hovering shows the worker, elapsed time and the first line of any error. A line under the controls counts done, running and failed pieces. Clicking a failed or stopped piece retries only that piece. A retry is refused if the area or world changed since the job started.
 
 ![Run controls](../images/3.5.0/gui-run-controls.png)
 
