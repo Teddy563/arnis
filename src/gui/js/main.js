@@ -9,7 +9,9 @@ import {
   cancelSettingsResetConfirm,
   flushSettingsStore,
 } from './settings-store.js';
+import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -17,7 +19,8 @@ if (window.__TAURI__) {
 } else {
   function dummyFunc() { }
   window.__TAURI__ = { event: { listen: dummyFunc } };
-  invoke = dummyFunc;
+  // A plain browser preview: callers chain .then on invoke.
+  invoke = async () => undefined;
 }
 
 const DEFAULT_LOCALE_PATH = `./locales/en.json`;
@@ -25,11 +28,20 @@ const DEFAULT_LOCALE_PATH = `./locales/en.json`;
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
 let currentBboxSelectionColor = "#ffffff";
+let currentBboxSelectionVars = null;
+
+// "{n}"-style values of the current bbox line (area_pieces_info), kept for language changes.
+function fillBboxSelectionVars(element) {
+  for (const k in (currentBboxSelectionVars || {})) {
+    element.textContent = element.textContent.split('{' + k + '}').join(currentBboxSelectionVars[k]);
+  }
+}
 
 // Helper function to set bbox selection info text and track it for language changes
-async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color) {
+async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color, vars) {
   currentBboxSelectionKey = localizationKey;
   currentBboxSelectionColor = color;
+  currentBboxSelectionVars = vars || null;
   
   // Ensure localization is available
   let localization = window.localization;
@@ -38,7 +50,10 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   }
   
   localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
+  // The map-first card says the pieces in its plan block; this line would repeat them.
+  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info');
 }
 
 // Initialize elements and start the demo progress
@@ -68,11 +83,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   initClearCacheButton();
   initPrecomputeFacadesButton();
   initTooltips();
+  initPreviews();
   handleBboxInput();
   const localization = await getLocalization();
   await applyLocalization(localization);
   updateFormatToggleUI(selectedWorldFormat);
-  initFooter();
   initEasterEggs();
   checkForUpdates();
 });
@@ -128,6 +143,9 @@ async function localizeElement(json, elementObject, localizedStringKey) {
 async function applyLocalization(localization) {
   const localizationElements = {
     "#start-button > span[data-localize='start_generation']": "start_generation",
+    // Meld features: the size warning's way out and the One World's Expand.
+    "#bbox-features-cta": "meld_use_pieces",
+    "#plan-expand-button": "plan_expand",
     "#world-name-label[data-placeholder]": "no_world_generated_yet",
     "input[id='world-name-input']": "placeholder_world_name",
     // DEPRECATED: Ground level localization removed
@@ -148,8 +166,23 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize], #run-confirm [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
+  });
+
+  // Attributes: tooltips (English stays in data-tooltip as the fallback) and
+  // title / aria-label, anywhere on the page.
+  const loc = (key, fallback) => localization[key] ?? fallback;
+  document.querySelectorAll("[data-tooltip-key]").forEach((el) => {
+    const text = loc(el.dataset.tooltipKey, el.dataset.tooltip);
+    el.dataset.tooltip = text;
+    el.setAttribute("aria-label", text);
+  });
+  document.querySelectorAll("[data-localize-title]").forEach((el) => {
+    el.title = loc(el.dataset.localizeTitle, el.title);
+  });
+  document.querySelectorAll("[data-localize-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", loc(el.dataset.localizeAriaLabel, el.getAttribute("aria-label")));
   });
 
   // settings-store.js creates these buttons and owns their text.
@@ -159,6 +192,7 @@ async function applyLocalization(localization) {
   const bboxSelectionInfo = document.getElementById("bbox-selection-info");
   if (bboxSelectionInfo && currentBboxSelectionKey) {
     localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    fillBboxSelectionVars(bboxSelectionInfo);
     bboxSelectionInfo.style.color = currentBboxSelectionColor;
   }
 
@@ -166,6 +200,8 @@ async function applyLocalization(localization) {
   window.localization = localization;
   renderOneWorldStatus();
   refreshStartButton();
+  // The plan block is built in the language it was drawn in.
+  schedulePlan(true);
   labelLiveViewDistances();
   fillLiveVersions();
   // liveStatus stays "stopped" after a session, which must not take over a normal run's line.
@@ -186,6 +222,9 @@ async function applyLocalization(localization) {
   // The line above has just written the idle label over a button that may be
   // saying Cancel, so put the running state back.
   refreshPrecomputeButton();
+  // The pass wrote the footer's raw template ("{year}", "{version}") back; every
+  // pass fills it in, whoever started it.
+  initFooter();
 }
 
 // Function to initialize the footer with the current year and version
@@ -214,6 +253,8 @@ async function initFooter() {
       .replace("{year}", currentYear)
       .replace("{version}", version);
 
+    // The map-first page shows the version under the logo on hover.
+    document.getElementById("arnis-logo")?.closest("a")?.setAttribute("data-version", `v${version}`);
     // The About section of the settings page repeats the same line.
     const aboutVersion = document.getElementById("about-version");
     if (aboutVersion) aboutVersion.textContent = footerElement.textContent;
@@ -785,6 +826,11 @@ function registerMessageEvent() {
       displayBboxInfoText(bboxText);
     }
 
+    // "Select this area" on a search result: the area and a ring of regions around it.
+    if (event.data && event.data.type === 'selectArea' && event.source === getMapFrame()?.contentWindow) {
+      selectWithRing(event.data.bounds);
+    }
+
     // World toggled on the map toolbar
     if (event.data && event.data.type === 'bodyChanged') {
       setCelestialBody(event.data.body);
@@ -1061,6 +1107,11 @@ function setupProgressListener() {
   const progressDetail = document.getElementById("progress-detail");
 
   window.__TAURI__.event.listen("progress-update", (event) => {
+    if (event.payload.piece) {
+      notePiece(event.payload.piece);
+      showRunControls(!generationButtonEnabled);
+      return;
+    }
     const { progress, message, streaming } = event.payload;
 
     if (progress != -1) {
@@ -1098,6 +1149,16 @@ function setupProgressListener() {
         // has something new to say.
         window.arnisPreview3D?.refreshFacades();
         noteGenerationDone();
+      } else if (message.startsWith("Stopped.") || message.startsWith("The retried pieces are built")) {
+        // A job in pieces ends here when stopped or when only some pieces were asked for.
+        progressInfo.style.color = "#ececec";
+        setGenerationButtonEnabled(true);
+        window.arnisPreview3D?.setGenerationRunning(false);
+        resetEta();
+        if (lastRunOneWorld) {
+          oneWorldOverlayKey = null;
+          refreshOneWorldState();
+        }
       } else {
         progressInfo.style.color = "#ececec";
       }
@@ -1279,14 +1340,95 @@ function initSettings() {
   refreshHeightDisplay();
 
   // Segmented controls whose click only moves the active segment
-  ["gamemode-group", "world-type-group", "mob-spawning-group", "signage-group"].forEach((id) => {
-    const group = document.getElementById(id);
+  document.querySelectorAll('#gamemode-group, #world-type-group, #mob-spawning-group, #signage-group, .segmented-control[id^="meld-"]').forEach((group) => {
     group.querySelectorAll(".segment").forEach((btn) => {
       btn.addEventListener("click", () => {
         group.querySelectorAll(".segment").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
       });
     });
+  });
+
+  initMeldFeatures();
+  initRunControls({
+    invoke,
+    post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
+    // A retry was asked for on the map or with Retry: it starts without the hold.
+    start: () => startGeneration(true),
+    localize: (element, key) => localizeElement(window.localization, { element }, key),
+    // The flags that cut the job into pieces are part of it: --only-pieces numbers its pieces.
+    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}|${meldFlags({ oneWorld: true, java: true, plan: true }).filter((f) => /^--(unit-regions|margin-regions|snap-regions|origin)=/.test(f))}`,
+    map: () => getMapFrame()?.contentWindow,
+  });
+  document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
+  initJobPlan({
+    // A new plan, or none: the line under the buttons says how the selection is built, and
+    // the hold to start waits for the plan it starts.
+    changed: () => {
+      refreshBboxSelectionInfo();
+      refreshStartButton();
+      const plan = planPieces();
+      document.getElementById('run-confirm-hold').disabled = !plan;
+      // The hold is the one question: it says what the replace dialog would have asked.
+      const overlap = document.getElementById('run-confirm-overlap');
+      overlap.hidden = !plan?.overlap;
+      overlap.textContent = plan?.overlap ? oneWorldText('plan_confirm_overlap', '{n} pieces overlap land already built and will be rebuilt.', { n: plan.overlap }) : '';
+      if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
+    },
+    // A job in pieces of a One World with a selection, as the run decides it: Live, Bedrock,
+    // the Moon and Mars build no pieces.
+    request: () => {
+      const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
+      if (!bbox || !isOneWorldEnabled() || isLiveMode() || !savePath || !document.getElementById('meld-workers-select').value) return null;
+      return { savePath, worldName: oneWorldFolderName(), bboxText: bbox, worldScale: readGenerationSettings(true).worldScale };
+    },
+  });
+  // The map offers "Select this area" on a country or region, the edge handles and the size
+  // readout only with Meld features on; the readout counts regions at the world scale.
+  const meldToggle = document.getElementById('advanced-meld-features-toggle');
+  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, mapFirst: document.body.classList.contains('map-first') });
+  document.addEventListener('change', pushMeldToMap);
+  getMapFrame()?.addEventListener('load', pushMeldToMap);
+  pushMeldToMap();
+  // A One World's built land, and a ring of regions around it to build next.
+  document.getElementById('plan-expand-button').addEventListener('click', () => {
+    if (!builtAreas.length) return;
+    const pick = (f, key) => f(...builtAreas.map((a) => a[key]));
+    selectWithRing([pick(Math.min, 'min_lat'), pick(Math.min, 'min_lon'), pick(Math.max, 'max_lat'), pick(Math.max, 'max_lon')], true);
+    askRunConfirm();
+  });
+  // Cancel (or Escape) closes the panel and gives the focus back to Start.
+  const cancelConfirm = () => {
+    document.getElementById('run-confirm').hidden = true;
+    document.getElementById('start-button').focus();
+  };
+  document.getElementById('run-confirm-cancel').addEventListener('click', cancelConfirm);
+  document.getElementById('run-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cancelConfirm();
+  });
+  document.getElementById('run-confirm-docs').addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal(e.currentTarget.href);
+  });
+  holdToConfirm(document.getElementById('run-confirm-hold'), () => {
+    document.getElementById('run-confirm').hidden = true;
+    startGeneration(true);
+  });
+  initDataPanel({
+    invoke,
+    area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
+    plan: () => {
+      const mode = document.getElementById("generation-mode-select").value;
+      return {
+        worldScale: parseFloat(document.getElementById("scale-value-slider").value),
+        terrainEnabled: mode === "geo-terrain" || mode === "terrain-only",
+        skipOsmObjects: mode === "terrain-only",
+        canopyHeightEnabled: document.getElementById("canopy-height-toggle").checked,
+        overtureEnabled: document.getElementById("overture-toggle").checked,
+        awsOnlyElevation: document.getElementById("aws-only-elevation-toggle").checked,
+        flags: meldFlags({ oneWorld: false, java: true, caves: false, extendHeight: false, lods: false }),
+      };
+    },
   });
 
   // Blueprint greys out the traffic lights.
@@ -2485,6 +2627,7 @@ function handleBboxInput() {
       customBBoxValid = false;
       bboxInputError = false;
       selectedBBox = mapSelectedBBox;
+      dropStalePieces();
       
       // Clear the info text only if no map selection exists
       if (!mapSelectedBBox) {
@@ -2539,6 +2682,7 @@ function handleBboxInput() {
         customBBoxValid = true;
         bboxInputError = false;
         selectedBBox = bboxText.replace(/,/g, ' '); // Convert to space format for consistency
+        dropStalePieces();
         setBboxSelectionInfo(bboxSelectionInfo, "custom_selection_confirmed", "#7bd864");
 
         // Reset rotation when bbox changes via manual input
@@ -2634,15 +2778,42 @@ let bboxInputError = false;  // The coordinate field holds input that did not va
 function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   const t = AREA_THRESHOLDS[selectedCelestialBody] || AREA_THRESHOLDS.earth;
   selectedSize *= earthScaleFactor();
-  if (selectedSize > t.extreme) {
+  // Meld features: built in pieces, the size is no longer a worry; say how instead.
+  const pieces = planPieces();
+  let warned = false;
+  if (pieces) {
+    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+  } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
+    warned = true;
   } else if (selectedSize > t.large) {
     setBboxSelectionInfo(bboxSelectionElement, "area_too_large", "#fa7878");
+    warned = true;
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
+    warned = true;
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  // The warning's way out (Meld features off or no pieces yet): build it in pieces.
+  document.getElementById("bbox-features-cta").hidden = !(warned && selectedCelestialBody === "earth");
+}
+
+// Turns on Meld features, One World and parallel pieces, and shows the Scale card.
+function useMeldPieces() {
+  window.openSettings();
+  const meld = document.getElementById("advanced-meld-features-toggle");
+  if (!meld.checked) {
+    meld.checked = true;
+    meld.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (oneWorldMode() !== "on") document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+  const workers = document.getElementById("meld-workers-select");
+  if (!workers.value) {
+    workers.value = "auto";
+    workers.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  workers.scrollIntoView({ block: "center" });
 }
 
 // Blocks, and so memory, grow with the square of the scale; Moon and Mars use a fixed one.
@@ -2683,6 +2854,12 @@ function displayBboxInfoText(bboxText) {
 
   // Map selection always takes priority - clear custom input and update selectedBBox
   selectedBBox = mapSelectedBBox;
+  dropStalePieces();
+  // Meld features: a single run's preview belongs to that run's area; a new selection drops it
+  // (a One World keeps showing its own areas).
+  if (document.getElementById('advanced-meld-features-toggle').checked && currentWorldMapData && !lastRunOneWorld) {
+    notifyWorldChanged();
+  }
   customBBoxValid = false;
   bboxInputError = false;
 
@@ -2820,7 +2997,9 @@ function refreshWorldNameEditUI() {
   const editButton = document.getElementById('world-name-edit-button');
   if (editButton) {
     editButton.style.display = canEditCustomWorldName() ? '' : 'none';
-    const title = isOneWorldEnabled() ? 'Choose the One World to extend or create' : 'Name the next world';
+    const title = isOneWorldEnabled()
+      ? oneWorldText('world_name_edit_one_world', 'Choose the One World to extend or create')
+      : oneWorldText('world_name_edit_title', 'Name the next world');
     editButton.title = title;
     editButton.setAttribute('aria-label', title);
   }
@@ -3052,12 +3231,6 @@ function setOneWorldName(name) {
   else localStorage.removeItem(ONE_WORLD_NAME_KEY);
 }
 
-function oneWorldText(key, fallback, vars) {
-  let text = (window.localization && window.localization[key]) || fallback;
-  for (const k in (vars || {})) text = text.split('{' + k + '}').join(vars[k]);
-  return text;
-}
-
 function setOneWorldStatus(text, tone) {
   const el = document.getElementById('one-world-status');
   if (!el) return;
@@ -3216,7 +3389,15 @@ function releaseOneWorldPins() {
   postToMap({ type: 'setRotationLocked', locked: false });
 }
 
+// The areas of the One World on the map, which "Expand" rings.
+let builtAreas = [];
+function setBuiltAreas(areas) {
+  builtAreas = areas;
+  document.getElementById('plan-expand-button').hidden = !areas.length;
+}
+
 function clearOneWorldOverlays() {
+  setBuiltAreas([]);
   if (oneWorldOverlayKey === null) return;
   oneWorldOverlayKey = null;
   postToMap({ type: 'oneWorldOverlays', areas: [] });
@@ -3285,6 +3466,7 @@ async function refreshOneWorldState() {
     const overlays = await invoke('gui_get_one_world_overlays', { worldPath: info.world_path });
     if (seq !== oneWorldRefreshSeq) return;
     oneWorldOverlayKey = key;
+    setBuiltAreas((overlays && overlays.areas) || []);
     postToMap({
       type: 'oneWorldOverlays',
       world_path: info.world_path,
@@ -3334,7 +3516,8 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun() {
+// `held`: the hold to start already said what gets rebuilt, so no second question.
+async function prepareOneWorldRun(held = false) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -3356,7 +3539,7 @@ async function prepareOneWorldRun() {
       oneWorldText('one_world_locked', 'open in Minecraft'), 'error');
     return false;
   }
-  if (!info.exists) return true;
+  if (!info.exists || held) return true;
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
@@ -3470,6 +3653,9 @@ function refreshStartButton() {
   if (!label) return;
   let key = 'start_generation';
   let fallback = 'Start Generation';
+  let vars;
+  // A job in pieces an earlier run built part of says how much.
+  const plan = planPieces();
   const stopping = liveActive() && liveStatus.phase === 'stopping';
   if (stopping) {
     key = 'live_stopping_button';
@@ -3480,9 +3666,13 @@ function refreshStartButton() {
   } else if (isLiveMode()) {
     key = 'live_play';
     fallback = 'Play Live';
+  } else if (plan && plan.done && plan.done < plan.n) {
+    key = 'plan_resume';
+    fallback = 'Resume ({n} of {m})';
+    vars = { n: plan.done, m: plan.n };
   }
   label.dataset.localize = key;
-  label.textContent = oneWorldText(key, fallback);
+  label.textContent = oneWorldText(key, fallback, vars);
   const wrap = button.closest('.start-button-wrap');
   if (wrap) {
     wrap.classList.toggle('is-live', liveActive() && !stopping);
@@ -3849,6 +4039,8 @@ let generationButtonEnabled = true;
 // rename, is in flight - see canEditCustomWorldName()).
 function setGenerationButtonEnabled(enabled) {
   generationButtonEnabled = enabled;
+  if (!enabled) document.getElementById('run-confirm').hidden = true;
+  showRunControls(!enabled);
   refreshWorldNameEditUI();
   // The two jobs exclude each other in the backend, so the other one greys out.
   refreshPrecomputeButton();
@@ -3922,7 +4114,51 @@ function readGenerationSettings(oneWorld) {
   };
 }
 
-async function startGeneration() {
+// A job in pieces runs for long and takes most of the machine: Start (and Expand) first show
+// its plan and the warnings, and only a held button starts it.
+function askRunConfirm() {
+  const box = document.getElementById('run-confirm');
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+  document.getElementById('run-confirm-hold').focus();
+}
+
+// Calls `done` once the button has been held for HOLD_MS (pointer, or Space/Enter); letting go
+// earlier cancels. The fill is CSS (.run-hold.is-holding), timed to the same HOLD_MS.
+const HOLD_MS = 1500;
+function holdToConfirm(button, done) {
+  let timer = 0;
+  // Only the primary button holds; a button disabled or a panel hidden meanwhile starts nothing.
+  const start = (e) => {
+    if (button.disabled || timer || (e && e.button)) return;
+    button.classList.add('is-holding');
+    timer = setTimeout(() => {
+      stop();
+      if (!button.disabled && !button.closest('[hidden]')) done();
+    }, HOLD_MS);
+  };
+  const stop = () => {
+    clearTimeout(timer);
+    timer = 0;
+    button.classList.remove('is-holding');
+  };
+  const isKey = (e) => e.key === ' ' || e.key === 'Enter';
+  button.addEventListener('pointerdown', start);
+  ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach((type) => button.addEventListener(type, stop));
+  button.addEventListener('keydown', (e) => {
+    if (!isKey(e)) return;
+    e.preventDefault();
+    if (!e.repeat) start();
+  });
+  button.addEventListener('keyup', (e) => {
+    if (!isKey(e)) return;
+    e.preventDefault();
+    stop();
+  });
+}
+
+// `confirmed`: the hold (or a retry) already said yes to a job in pieces.
+async function startGeneration(confirmed = false) {
   // In Live the button starts and stops the session instead.
   if (liveActive()) {
     stopLive();
@@ -3946,6 +4182,10 @@ async function startGeneration() {
     }
     return;
   }
+  if (confirmed !== true && isPiecesJob()) {
+    askRunConfirm();
+    return;
+  }
   // Claim the guard before the first await. gui_create_world and gui_start_generation are
   // both awaited round-trips, so leaving the claim until after them lets a second click
   // through and starts a parallel run against the same process-global world floor.
@@ -3961,11 +4201,12 @@ async function startGeneration() {
 
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
+    clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
     // The overlap dialog leaves the page live, so the body, format or area may have changed under it.
-    if (oneWorld && (!(await prepareOneWorldRun()) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
+    if (oneWorld && (!(await prepareOneWorldRun(confirmed === true)) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
@@ -4042,7 +4283,14 @@ async function startGeneration() {
         disasters: gameplayToggle('disasters-toggle'),
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
-        oneWorldName: oneWorld ? oneWorldFolderName() : ""
+        oneWorldName: oneWorld ? oneWorldFolderName() : "",
+        flags: meldFlags({
+          oneWorld: oneWorld,
+          java: getEffectiveWorldFormat() === "java",
+          caves: settings.cavesEnabled,
+          extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
+          lods: settings.voxyLodEnabled || settings.dhLodEnabled
+        })
     });
 
     console.log("Generation process started.");
@@ -4102,6 +4350,7 @@ async function showWorldPreviewButton() {
  */
 function notifyWorldChanged() {
   currentWorldMapData = null;
+  resetPieces();
   const mapFrame = document.querySelector('.map-container');
   if (mapFrame && mapFrame.contentWindow) {
     mapFrame.contentWindow.postMessage({
