@@ -428,17 +428,12 @@ pub struct Args {
 
     /// Worker threads for generation. Defaults to 90% of the cores, or to RAYON_NUM_THREADS
     /// when that is set; this flag wins over both.
-    #[arg(long, value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "cpu_target")]
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=4096))]
     pub threads: Option<u32>,
-
-    /// Share of the cores to generate on, in percent (10-100). The same as --threads, worked
-    /// out from the core count; the default is 90.
-    #[arg(long, value_parser = clap::value_parser!(u32).range(10..=100))]
-    pub cpu_target: Option<u32>,
 
     /// Memory this run may assume it has, in MB, in place of the free-RAM reading when sizing
     /// its parallel work, so several processes can split one machine.
-    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..=100_000_000))]
     pub ram_budget_mb: Option<u64>,
 
     /// Downloads this process keeps in flight at once (default 16).
@@ -552,7 +547,7 @@ pub struct Args {
     /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
     /// The folders say what a file is; the size folder (small, medium, big,
     /// tall, giant) is optional and otherwise measured from the height. A file
-    /// that does not load is skipped with a warning. See --init-tree-pack-dir.
+    /// that does not load is skipped with a warning.
     #[arg(long, value_name = "FOLDER")]
     pub tree_pack_dir: Option<PathBuf>,
 
@@ -560,12 +555,6 @@ pub struct Args {
     /// replace a realm's built-in trees wherever the folder has any for it.
     #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
     pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
-
-    /// Create the empty --tree-pack-dir layout of every bundled pack (realm,
-    /// community, tree type and size folders, with README.txt files) in FOLDER
-    /// and exit.
-    #[arg(long, value_name = "FOLDER")]
-    pub init_tree_pack_dir: Option<PathBuf>,
 
     /// Write every bundled tree schematic into the --tree-pack-dir layout in
     /// FOLDER, to edit or adapt, and exit.
@@ -898,14 +887,9 @@ fn parse_workers(s: &str) -> Result<Workers, String> {
 }
 
 impl Args {
-    /// The thread count asked for with --threads or --cpu-target, if either. A percentage
-    /// rounds down like the 90% default, so `--cpu-target 90` equals no flag at all.
+    /// The thread count asked for with --threads, if any.
     pub fn thread_count(&self) -> Option<usize> {
-        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-        self.threads.map(|n| n as usize).or_else(|| {
-            self.cpu_target
-                .map(|pct| (cores * pct as usize / 100).max(1))
-        })
+        self.threads.map(|n| n as usize)
     }
 }
 
@@ -947,7 +931,6 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
     let used: Vec<&str> = [
         (args.progress.is_some(), "--progress"),
         (args.threads.is_some(), "--threads"),
-        (args.cpu_target.is_some(), "--cpu-target"),
         (args.ram_budget_mb.is_some(), "--ram-budget-mb"),
         (args.max_downloads.is_some(), "--max-downloads"),
         (u.plan_units.is_some(), "--plan-units"),
@@ -996,7 +979,6 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
             args.tree_pack_mode != Default::default(),
             "--tree-pack-mode",
         ),
-        (args.init_tree_pack_dir.is_some(), "--init-tree-pack-dir"),
         (args.export_tree_packs.is_some(), "--export-tree-packs"),
         (args.cave_style.is_some(), "--cave-style"),
         (args.cave_ores.is_some(), "--cave-ores"),
@@ -2089,21 +2071,11 @@ mod tests {
     }
 
     #[test]
-    fn threads_conflicts_cpu_target() {
+    fn threads_must_be_positive() {
         let p = |x: &[&str]| Args::try_parse_from(["arnis"].iter().chain(x));
-        assert!(p(&["--threads", "4", "--cpu-target", "50"]).is_err());
-        assert!(p(&["--cpu-target", "9"]).is_err());
-        assert!(p(&["--cpu-target", "10"]).is_ok());
-        assert!(p(&["--cpu-target", "100"]).is_ok());
-        assert!(p(&["--cpu-target", "101"]).is_err());
         assert!(p(&["--threads", "0"]).is_err());
         assert_eq!(p(&["--threads", "4"]).unwrap().thread_count(), Some(4));
         assert_eq!(p(&[]).unwrap().thread_count(), None);
-        let cores = std::thread::available_parallelism().unwrap().get();
-        assert_eq!(
-            p(&["--cpu-target", "90"]).unwrap().thread_count(),
-            Some((cores * 9 / 10).max(1))
-        );
     }
 
     #[test]

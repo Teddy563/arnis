@@ -12,9 +12,9 @@ const on = (id) => Boolean(el(id) && el(id).checked);
 
 // A string from the loaded language, `{name}` placeholders filled in; the English text is the
 // fallback while no language is loaded.
-const t = (key, fallback, vars = {}) => {
+export const t = (key, fallback, vars = {}) => {
   let s = (window.localization && window.localization[key]) || fallback;
-  for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+  for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(v);
   return s;
 };
 
@@ -60,62 +60,6 @@ export function initMeldFeatures() {
       try { localStorage.setItem('arnis-preview-dock-width', String(dock.offsetWidth)); } catch (_) { /* not kept */ }
     }).observe(dock);
   }
-
-  // A click only moves the active segment; settings-store.js clicks too, to restore.
-  document.querySelectorAll('.segmented-control[id^="meld-"]').forEach((group) => {
-    group.querySelectorAll('.segment').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        group.querySelectorAll('.segment').forEach((b) => b.classList.toggle('active', b === btn));
-      });
-    });
-  });
-}
-
-// What is wrong with a field, in a short sentence, or ''. The backend parses the same values
-// with the CLI's own parser, but its message is cut to a few words in the status line.
-export function meldProblem({ oneWorld, java, extendHeight }) {
-  if (!on('advanced-meld-features-toggle')) return '';
-  const name = (id) => {
-    const row = el(id).closest('.settings-row');
-    const label = row && row.querySelector('.setting-heading > span');
-    return label ? label.textContent : id;
-  };
-  const whole = (id, min, max, rule) => {
-    const v = value(id);
-    if (v === '') return '';
-    if (!/^-?\d+$/.test(v)) return t('meld_err_whole', '{name} must be a whole number.', { name: name(id) });
-    const n = Number(v);
-    const vars = { name: name(id), min, max };
-    if (n < min || n > max) return t('meld_err_range', '{name} must be from {min} to {max}.', vars);
-    if (rule === 'floor' && n % 16 !== 0) return t('meld_err_multiple', '{name} must be a multiple of 16 from {min} to {max}.', vars);
-    if (rule === 'top' && ((n % 16) + 16) % 16 !== 15) return t('meld_err_section_end', '{name} must be one less than a multiple of 16, from {min} to {max}.', vars);
-    return '';
-  };
-  const share = (id) => {
-    const v = value(id);
-    return v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 1)
-      ? '' : t('meld_err_share', '{name} must be a number from 0 to 1.', { name: name(id) });
-  };
-  const problems = [
-    whole('meld-threads-input', 1, 4096),
-    whole('meld-ram-budget-input', 1, 100000000),
-    whole('meld-cpu-target-input', 10, 100),
-    whole('meld-margin-input', 0, 4),
-    whole('meld-seed-input', 0, Number.MAX_SAFE_INTEGER),
-    extendHeight ? whole('meld-min-y-input', -2032, -64, 'floor') : '',
-    extendHeight ? whole('meld-max-y-input', 319, 2031, 'top') : '',
-    share('meld-rock-density-input'),
-    share('meld-bush-density-input'),
-    whole('meld-blinear-level-input', 1, 22),
-  ];
-  const origin = value('meld-origin-input');
-  if (oneWorld && origin) {
-    const [lat, lon, ...rest] = origin.split(',').map((p) => Number(p.trim()));
-    if (rest.length || !(Math.abs(lat) <= 85) || !(Math.abs(lon) <= 180) || origin.split(',').length !== 2) {
-      problems.push(t('meld_err_origin', '{name} must be LAT,LON, such as 44.44,26.10.', { name: name('meld-origin-input') }));
-    }
-  }
-  return problems.find(Boolean) || '';
 }
 
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
@@ -142,9 +86,7 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
     if (on('meld-skip-built-toggle')) f.push('--skip-built');
     if (on('meld-stitch-map-toggle')) f.push('--stitch-map');
   }
-  const threads = value('meld-threads-input');
-  if (threads) add('--threads', threads);
-  else if (value('meld-cpu-target-input') !== '90') add('--cpu-target', value('meld-cpu-target-input'));
+  add('--threads', value('meld-threads-input'));
   add('--ram-budget-mb', value('meld-ram-budget-input'));
 
   // Generation
@@ -622,15 +564,15 @@ export function initDataPanel({ invoke, area, plan }) {
   const out = el('meld-plan-out');
   const folder = () => value('meld-archive-folder-input');
   const say = (box, text) => lines(box, [[text, '']]);
-  invoke('gui_local_archive_info', { tilesPath: '' })
-    .then((info) => { defaultArchive = (info && info.default_folder) || ''; })
+  invoke('gui_default_archive_folder')
+    .then((dir) => { defaultArchive = dir || ''; })
     .catch(() => {});
 
   el('meld-prepare-check').addEventListener('click', async () => {
     if (!area()) return say(list, needArea());
     say(list, t('meld_asking_geofabrik', 'Asking Geofabrik...'));
     try {
-      const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder(), tilesPath: '' });
+      const p = await invoke('gui_prepare_plan', { bboxText: area(), folder: folder() });
       const rows = p.extracts.map((e) => [e.baked ? t('meld_baked', '{name} (baked)', { name: e.name }) : e.name, t('meld_extract_sizes', '{download} download, {archive} archive', { download: mb(e.bytes), archive: mb(e.archive_bytes) })]);
       rows.push([t('meld_archive_folder_line', 'Archive folder'), p.folder]);
       if (p.free_bytes != null) rows.push([t('meld_free_peak', 'Free space / peak during the bake'), `${mb(p.free_bytes)} / ${mb(p.peak_bytes)}`]);
@@ -648,7 +590,7 @@ export function initDataPanel({ invoke, area, plan }) {
     say(list, t('meld_baking', 'Baking: the progress is on the main bar.'));
     try {
       const done = await invoke('gui_bake_archive', {
-        bboxText: area(), folder: folder(), tilesPath: '', flags: plan().flags,
+        bboxText: area(), folder: folder(), flags: plan().flags,
       });
       say(list, done ? t('meld_bake_done', 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.') : t('meld_bake_stopped', 'Stopped. Finished countries are kept.'));
     } catch (e) {

@@ -23,27 +23,15 @@ const EXE: &str = if cfg!(windows) {
 };
 
 /// The arnis-tiles executable: next to this one (where the bundle puts the
-/// sidecar), then on PATH, then `setting` (a file, or a folder holding it).
-pub fn locate(setting: &str) -> Option<PathBuf> {
+/// sidecar), then on PATH.
+pub fn locate() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf));
-    locate_in(
-        exe_dir.as_deref(),
-        std::env::var_os("PATH").as_deref(),
-        setting,
-    )
+    locate_in(exe_dir.as_deref(), std::env::var_os("PATH").as_deref())
 }
 
-fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>, setting: &str) -> Option<PathBuf> {
-    let setting = PathBuf::from(setting.trim());
-    let set = (!setting.as_os_str().is_empty()).then(|| {
-        if setting.is_dir() {
-            setting.join(EXE)
-        } else {
-            setting
-        }
-    });
+fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>) -> Option<PathBuf> {
     exe_dir
         .map(|d| d.join(EXE))
         .into_iter()
@@ -52,7 +40,6 @@ fn locate_in(exe_dir: Option<&Path>, path: Option<&OsStr>, setting: &str) -> Opt
                 .flat_map(std::env::split_paths)
                 .map(|d| d.join(EXE)),
         )
-        .chain(set)
         .find(|p| p.is_file())
 }
 
@@ -90,12 +77,6 @@ pub fn parse_prepare(stdout: &str) -> Option<Prepare> {
         .find_map(|l| serde_json::from_str(l).ok())
 }
 
-/// `--bbox` as arnis-tiles takes it: min_lat,min_lon,max_lat,max_lon.
-fn bbox_arg(bbox: &crate::coordinate_system::geographic::LLBBox) -> String {
-    let (lo, hi) = (bbox.min(), bbox.max());
-    format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng())
-}
-
 /// `exe` with its index cache and scratch kept under `state`, never in the
 /// working directory.
 fn command(exe: &Path, state: &Path, out: &Path) -> Result<Command, String> {
@@ -120,7 +101,7 @@ pub fn dry_run(
     bbox: &crate::coordinate_system::geographic::LLBBox,
 ) -> Result<Prepare, String> {
     let mut cmd = command(exe, state, &state.join("out"))?;
-    cmd.args(["prepare", "--dry-run", "--bbox", &bbox_arg(bbox)]);
+    cmd.args(["prepare", "--dry-run", "--bbox", &bbox.arg()]);
     let out = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -437,7 +418,7 @@ pub fn bake(
     let published = Published::take(folder);
     let since = std::time::SystemTime::now();
     let mut cmd = command(exe, state, folder)?;
-    cmd.args(["prepare", "--bbox", &bbox_arg(bbox), "--threads"])
+    cmd.args(["prepare", "--bbox", &bbox.arg(), "--threads"])
         .arg(threads.max(1).to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -572,26 +553,22 @@ mod tests {
     }
 
     #[test]
-    fn lookup_goes_next_to_the_exe_then_path_then_the_setting() {
+    fn lookup_goes_next_to_the_exe_then_path() {
         let root = tempfile::tempdir().unwrap();
         let dir = |n: &str| {
             let d = root.path().join(n);
             std::fs::create_dir_all(&d).unwrap();
             d
         };
-        let (exe_dir, on_path, set) = (dir("exe"), dir("path"), dir("set"));
+        let (exe_dir, on_path) = (dir("exe"), dir("path"));
         let path = std::env::join_paths([dir("empty"), on_path.clone()]).unwrap();
-        let find = |s: &str| locate_in(Some(&exe_dir), Some(&path), s);
+        let find = || locate_in(Some(&exe_dir), Some(&path));
 
-        assert_eq!(find(""), None);
-        std::fs::write(set.join(EXE), b"").unwrap();
-        // The setting takes a file or the folder holding it.
-        assert_eq!(find(set.join(EXE).to_str().unwrap()), Some(set.join(EXE)));
-        assert_eq!(find(set.to_str().unwrap()), Some(set.join(EXE)));
+        assert_eq!(find(), None);
         std::fs::write(on_path.join(EXE), b"").unwrap();
-        assert_eq!(find(set.to_str().unwrap()), Some(on_path.join(EXE)));
+        assert_eq!(find(), Some(on_path.join(EXE)));
         std::fs::write(exe_dir.join(EXE), b"").unwrap();
-        assert_eq!(find(set.to_str().unwrap()), Some(exe_dir.join(EXE)));
+        assert_eq!(find(), Some(exe_dir.join(EXE)));
     }
 
     #[test]

@@ -1163,7 +1163,7 @@ fn relation_rings(
     closed
 }
 
-/// Builds the global Rayon pool with exactly `threads` workers (`--threads`, `--cpu-target`);
+/// Builds the global Rayon pool with exactly `threads` workers (`--threads`);
 /// unlike the fraction form, this wins over RAYON_NUM_THREADS.
 pub fn configure_rayon_threads(threads: usize) {
     let _ = rayon::ThreadPoolBuilder::new()

@@ -1,66 +1,53 @@
 // The picture that appears when the info icon of a setting, or one of its choice buttons, is
 // hovered or focused: an isometric block diorama of what the setting does (src/gui/images/previews3d,
-// made by scripts/previews3d). Only settings whose icon carries data-preview-on/-off (a switch) or
-// data-preview-seg (a segmented control, one picture per button value) get one.
+// made by scripts/previews3d), large and centred. Only settings that carry data-preview-on/-off (a
+// switch), data-preview-seg (a segmented control, one picture per button value) or data-preview-sel (a
+// select, one per option) get one.
 
 const BASE = 'images/previews3d/';
-const WIDTH = 240; // the picture's CSS width; the popover adds its padding
-const POPOVER_W = WIDTH + 24;
-const GAP = 8; // px between the popover and the row
-const MARGIN = 8; // px between the popover and the viewport edge
+const W = 720, H = 540; // the pictures' pixel size; the page shows them as large as the window allows (settings.css)
 
-// File name (no extension) for the icon's setting in its current state, or for `button`, a choice
-// button the pointer is on. Null when the setting has no picture for that state.
-export function previewName(icon, button) {
-  const row = icon.closest('.settings-row');
+// File name (no extension) for a setting in its current state, or for `button`, a choice button the
+// pointer is on. `el` is the setting's ? icon or its row and carries data-preview-on/-off (a switch),
+// data-preview-num + data-preview-steps (a slider or number box, nearest step), data-preview-seg (+ optional data-preview-key: the dataset key that holds a button's value, default
+// "v") or data-preview-sel (a <select>). Null when the setting has no picture for that state.
+export function previewName(el, button) {
+  const row = el.closest('.settings-row');
   if (!row) return null;
-  if (icon.dataset.previewSeg) {
+  if (el.dataset.previewSeg) {
     const b = button || row.querySelector('.segment.active');
-    return b && b.dataset.v ? `${icon.dataset.previewSeg}-${b.dataset.v}` : null;
+    const v = b && b.dataset.nopreview === undefined && b.dataset[el.dataset.previewKey || 'v'];
+    return v ? `${el.dataset.previewSeg}-${v}` : null;
+  }
+  if (el.dataset.previewSel) {
+    const sel = row.querySelector('select');
+    return sel && sel.value ? `${el.dataset.previewSel}-${sel.value}` : null;
+  }
+  if (el.dataset.previewNum) {
+    // A slider or number box: the picture of the nearest of data-preview-steps ("0.5,1,2"), by size.
+    const input = row.querySelector('input[type=range], input[type=number]');
+    const v = input && Math.abs(parseFloat(input.value));
+    if (!(v >= 0)) return null;
+    const steps = el.dataset.previewSteps.split(',');
+    const best = steps.reduce((a, c) => (Math.abs(c - v) < Math.abs(a - v) ? c : a));
+    return `${el.dataset.previewNum}-${best}`;
   }
   const sw = row.querySelector('input.switch');
-  return (sw && sw.checked ? icon.dataset.previewOn : icon.dataset.previewOff) || null;
+  return (sw && sw.checked ? el.dataset.previewOn : el.dataset.previewOff) || null;
 }
 
 export const captionKey = (name) => `preview_${name.replace(/[^a-z0-9]+/gi, '_')}`;
 
-// Top-left corner for a popover of size `pop` next to `row`, all in viewport px. Beside the row on the
-// side of the window with more room, so it never covers the row's own control; above or below it when
-// the row spans the window.
-export function place(row, pop, vw, vh) {
-  const clampY = (y) => Math.max(MARGIN, Math.min(y, vh - pop.h - MARGIN));
-  const right = row.right + GAP;
-  const left = row.left - GAP - pop.w;
-  const fitsRight = right + pop.w <= vw - MARGIN;
-  const fitsLeft = left >= MARGIN;
-  const middle = clampY(row.top + (row.bottom - row.top) / 2 - pop.h / 2);
-  const rowFirst = (row.left + row.right) / 2 < vw / 2 ? [fitsRight && right, fitsLeft && left] : [fitsLeft && left, fitsRight && right];
-  const x = rowFirst.find((v) => v !== false);
-  if (x !== undefined) return { left: x, top: middle };
-  // Full-width row: below it, else above it. In a window too short for either, on the side with more room.
-  const x0 = Math.max(MARGIN, Math.min(row.left, vw - pop.w - MARGIN));
-  const below = row.bottom + GAP;
-  const above = row.top - GAP - pop.h;
-  if (below + pop.h <= vh - MARGIN) return { left: x0, top: below };
-  if (above >= MARGIN) return { left: x0, top: above };
-  return { left: x0, top: vh - row.bottom > row.top ? clampY(below) : clampY(above) };
-}
-
-let started = false;
-
 export function initPreviews() {
-  if (started) return; // the popover is created once, whoever calls this
-  started = true;
   const pop = document.createElement('div');
   pop.className = 'preview-popover';
   pop.id = 'preview-popover';
   pop.setAttribute('role', 'tooltip');
   pop.setAttribute('aria-hidden', 'true');
   const img = document.createElement('img');
-  img.loading = 'lazy';
   img.decoding = 'async';
-  img.width = WIDTH;
-  img.height = (WIDTH * 3) / 4;
+  img.width = W;
+  img.height = H;
   const caption = document.createElement('div');
   caption.className = 'preview-popover-caption';
   pop.appendChild(img);
@@ -99,28 +86,30 @@ export function initPreviews() {
     img.alt = '';
     img.src = `${BASE}${name}.webp`;
     caption.textContent = text;
-    const row = icon.closest('.settings-row').getBoundingClientRect();
-    const h = pop.getBoundingClientRect().height || (WIDTH * 3) / 4 + 52;
-    const at = place(row, { w: POPOVER_W, h }, window.innerWidth, window.innerHeight);
-    pop.style.left = `${at.left}px`;
-    pop.style.top = `${at.top}px`;
     open = true;
   };
 
-  document.querySelectorAll('.tooltip-icon[data-preview-on], .tooltip-icon[data-preview-seg]').forEach((icon) => {
-    for (const ev of ['mouseenter', 'focus']) icon.addEventListener(ev, () => show(icon, null));
-    for (const ev of ['mouseleave', 'blur']) icon.addEventListener(ev, hide);
+  // Every control of the setting shows it: the ? icon, the switch, the select, each choice button.
+  const on = (n, f) => {
+    for (const ev of ['mouseenter', 'focus']) n.addEventListener(ev, f);
+    for (const ev of ['mouseleave', 'blur']) n.addEventListener(ev, hide);
+  };
+  document.querySelectorAll('[data-preview-on], [data-preview-seg], [data-preview-sel], [data-preview-num]').forEach((icon) => {
     const row = icon.closest('.settings-row');
+    if (icon !== row) on(icon, () => show(icon, null));
     const sw = row.querySelector('input.switch');
-    if (sw) {
-      sw.addEventListener('focus', () => show(icon, null));
-      sw.addEventListener('blur', hide);
+    if (sw) on(sw, () => show(icon, null));
+    const sel = row.querySelector('select');
+    if (sel && icon.dataset.previewSel) {
+      on(sel, () => show(icon, null));
+      sel.addEventListener('change', () => open && show(icon, null));
     }
-    if (!icon.dataset.previewSeg) return;
-    row.querySelectorAll('.segment').forEach((b) => {
-      for (const ev of ['mouseenter', 'focus']) b.addEventListener(ev, () => show(icon, b));
-      for (const ev of ['mouseleave', 'blur']) b.addEventListener(ev, hide);
-    });
+    const num = row.querySelector('input[type=range], input[type=number]');
+    if (num && icon.dataset.previewNum) {
+      on(num, () => show(icon, null));
+      num.addEventListener('input', () => open && show(icon, null));
+    }
+    if (icon.dataset.previewSeg) row.querySelectorAll('.segment').forEach((b) => on(b, () => show(icon, b)));
   });
 
   // Capture phase: this runs before the document handler that closes the settings page, so Escape

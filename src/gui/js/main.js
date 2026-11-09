@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, isPiecesJob, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1328,8 +1328,7 @@ function initSettings() {
   refreshHeightDisplay();
 
   // Segmented controls whose click only moves the active segment
-  ["gamemode-group", "world-type-group", "mob-spawning-group", "signage-group"].forEach((id) => {
-    const group = document.getElementById(id);
+  document.querySelectorAll('#gamemode-group, #world-type-group, #mob-spawning-group, #signage-group, .segmented-control[id^="meld-"]').forEach((group) => {
     group.querySelectorAll(".segment").forEach((btn) => {
       btn.addEventListener("click", () => {
         group.querySelectorAll(".segment").forEach((b) => b.classList.remove("active"));
@@ -2971,10 +2970,9 @@ function refreshWorldNameEditUI() {
   const editButton = document.getElementById('world-name-edit-button');
   if (editButton) {
     editButton.style.display = canEditCustomWorldName() ? '' : 'none';
-    const loc = window.localization || {};
     const title = isOneWorldEnabled()
-      ? (loc.world_name_edit_one_world || 'Choose the One World to extend or create')
-      : (loc.world_name_edit_title || 'Name the next world');
+      ? oneWorldText('world_name_edit_one_world', 'Choose the One World to extend or create')
+      : oneWorldText('world_name_edit_title', 'Name the next world');
     editButton.title = title;
     editButton.setAttribute('aria-label', title);
   }
@@ -3204,12 +3202,6 @@ function setOneWorldName(name) {
   oneWorldName = name;
   if (name) localStorage.setItem(ONE_WORLD_NAME_KEY, name);
   else localStorage.removeItem(ONE_WORLD_NAME_KEY);
-}
-
-function oneWorldText(key, fallback, vars) {
-  let text = (window.localization && window.localization[key]) || fallback;
-  for (const k in (vars || {})) text = text.split('{' + k + '}').join(vars[k]);
-  return text;
 }
 
 function setOneWorldStatus(text, tone) {
@@ -4165,21 +4157,6 @@ async function startGeneration(confirmed = false) {
     if (!selectedBBox || selectedBBox == "0.000000 0.000000 0.000000 0.000000") {
       const bboxSelectionInfo = document.getElementById('bbox-selection-info');
       setBboxSelectionInfo(bboxSelectionInfo, "select_location_first", "#fa7878");
-      return;
-    }
-
-    // The Meld features fields, said in a sentence here: the backend's error is cut short.
-    const meldBad = meldProblem({
-      oneWorld: isOneWorldEnabled(),
-      java: getEffectiveWorldFormat() === "java",
-      extendHeight: document.getElementById("disable-height-limit-toggle").checked && !isOneWorldEnabled() && getEffectiveWorldFormat() === "java",
-    });
-    if (meldBad) {
-      const info = document.getElementById('progress-info');
-      if (info) {
-        info.textContent = meldBad;
-        info.style.color = "#fa7878";
-      }
       return;
     }
 

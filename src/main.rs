@@ -264,21 +264,10 @@ fn run_cli() {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
     }
-    let tree_dir = match (&args.init_tree_pack_dir, &args.export_tree_packs) {
-        (Some(dir), _) => Some(trees::pack_dir::init(dir).map(|n| {
-            format!(
-                "Tree pack folders created in {} ({n} tree types).",
-                dir.display()
-            )
-        })),
-        (_, Some(dir)) => Some(
-            trees::pack_dir::export(dir)
-                .map(|n| format!("{n} tree schematics exported to {}.", dir.display())),
-        ),
-        _ => None,
-    };
-    if let Some(result) = tree_dir {
-        match result {
+    if let Some(dir) = &args.export_tree_packs {
+        match trees::pack_dir::export(dir)
+            .map(|n| format!("{n} tree schematics exported to {}.", dir.display()))
+        {
             Ok(line) => println!("{line}"),
             Err(e) => {
                 eprintln!("{} {e}", "Error:".red().bold());
@@ -638,19 +627,7 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
     if args.one_world {
-        let base_dir = args.path.clone().unwrap_or_else(|| {
-            eprintln!(
-                "{} --one-world needs --output-dir (the saves folder).",
-                "Error:".red().bold()
-            );
-            std::process::exit(1);
-        });
-        let name = args
-            .world_name
-            .as_deref()
-            .and_then(world_utils::world_folder_name)
-            .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
-        let world_dir = base_dir.join(name);
+        let world_dir = one_world_dir(&args);
         if let Some(n) = args.units.plan_units {
             let planned = work_units::print_plan(&world_dir, &effective_bbox, &args, n);
             std::process::exit(planned.map_or_else(

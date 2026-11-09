@@ -45,13 +45,6 @@ impl WorkUnit {
             self.size
         )
     }
-
-    /// `min_lat,min_lng,max_lat,max_lng` at full f64 precision, so a child
-    /// parses back the very bbox that snaps to `rect`.
-    pub fn bbox_arg(&self) -> String {
-        let (lo, hi) = (self.bbox.min(), self.bbox.max());
-        format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng())
-    }
 }
 
 /// Cuts `world` (already snapped to chunks) into pieces of at most `n` x `n`
@@ -177,9 +170,12 @@ impl Mask {
             ));
         }
         // FNV-1a: stable across builds, unlike the std hasher.
-        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-            (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
-        });
+        let hash = {
+            use std::hash::Hasher;
+            let mut h = fnv::FnvHasher::default();
+            h.write(text.as_bytes());
+            h.finish()
+        };
         Ok(Self { rings, hash })
     }
 
@@ -488,7 +484,7 @@ pub fn plan_line(
                 "size": u.size,
                 "region_key": u.region_key(),
                 "rect": [u.rect.min_x(), u.rect.min_z(), u.rect.max_x(), u.rect.max_z()],
-                "bbox": u.bbox_arg(),
+                "bbox": u.bbox.arg(),
                 "chunks": u.chunks(),
                 "regions": u.regions,
                 "existing_chunks": have,
@@ -1001,7 +997,7 @@ mod tests {
     fn a_piece_bbox_snaps_back_to_its_rect() {
         let (proj, world) = bucharest();
         for u in plan_units(&proj, &world, 1).unwrap() {
-            let parsed = LLBBox::from_str(&u.bbox_arg()).unwrap();
+            let parsed = LLBBox::from_str(&u.bbox.arg()).unwrap();
             assert_eq!(parsed, u.bbox);
             assert_eq!(
                 r(&snap_bbox_to_chunks(&proj, &parsed).unwrap().0),

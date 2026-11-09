@@ -2,7 +2,7 @@
 
 For each {name, bbox, flags, crop} in previews3d.json (next to this file) builds the tiny world with the
 Arnis binary into a temp dir (worlds with the same bbox and flags are built once) and renders
-<out>/<name>.webp, 480x360. Needs nbtlib, numpy, Pillow. Default out: src/gui/images/previews3d.
+<out>/<name>.webp, 720x540. Needs nbtlib, numpy, Pillow. Default out: src/gui/images/previews3d.
 The exe fetches live OSM and elevation data, so a regenerated picture can differ a little from the committed
 one (new map edits); regenerate only the pictures whose setting changed (name prefix).
 """
@@ -49,7 +49,7 @@ def main():
                 built[key] = next(w.rglob("region")).parent
             c = dict(e["crop"])
             img, _ = r.render(built[key], slab=c.get("slab"), vert=c.get("vert", r.VERT), box=c.get("box"),
-                              fx=frozenset(r.STEPS), ss=2, floor=c.get("floor"), cut=c.get("cut", False), depth=c.get("depth", 3))
+                              ss=2, floor=c.get("floor"), cut=c.get("cut", False), depth=c.get("depth", 3))
             kb = r.save(img, out / f"{e['name']}.webp")
             total += kb
             print(f"  {e['name']}.webp {kb:.1f} KB", flush=True)

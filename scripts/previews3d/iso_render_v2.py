@@ -2,9 +2,8 @@
 
 Reads Arnis region files, crops a block window and draws a 2:1 isometric diorama:
 per-face light, ambient occlusion, deterministic tone noise, depth-graded water,
-translucent glass. Edge lines and the baked drop shadow are off by default (the
-GUI popover has a CSS drop-shadow, and they cost ~15 KB per image). Colours come
-from the Arnis map palette parsed out of src/map_renderer.rs.
+translucent glass. No edge lines or baked drop shadow (the GUI popover has a CSS
+drop-shadow). Colours come from the Arnis map palette parsed out of src/map_renderer.rs.
 
 Crop keys (see previews3d.json): slab=[z centre frac, z width, x frac lo, x frac hi],
 box=[x0, x1, z0, z1] absolute, vert=vertical exaggeration, floor=N clamps the diorama
@@ -17,13 +16,12 @@ from pathlib import Path
 
 import nbtlib
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 REPO = Path(os.environ.get("ARNIS_REPO", Path(__file__).resolve().parents[2]))
-W, H = 480, 360
+W, H = 720, 540
 VERT = 1.2
 WATER = (59, 86, 165)
-STEPS = ["shade", "ao", "noise", "water", "glass"]  # edges and shadow are opt-in, see header
 
 
 def palette():
@@ -202,10 +200,9 @@ def amp(name):
 
 
 
-def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, floor=None, cut=False, depth=3):
+def render(world, slab=None, vert=VERT, box=None, ss=2, floor=None, cut=False, depth=3):
     t0 = time.time()
-    margin = 0.93 if "shadow" in fx else 0.96
-    cols, names, k, prof, zl = load(world, slab=slab, box=box, margin=margin, cut=cut)
+    cols, names, k, prof, zl = load(world, slab=slab, box=box, cut=cut)
     t1 = time.time()
     keys = list(cols)
     ground = {key: (cols[key][0][0][1] if cols[key][0] else -64) for key in keys}
@@ -220,11 +217,11 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
         Ytop.append((x + z) / 2 - (top + 1) * vert)
         Ybot.append((x + z + 2 * k) / 2 - base * vert)
     xmin, xmax, ymin, ymax = min(X), max(X), min(Ytop), max(Ybot)
-    s = min(W * margin / (xmax - xmin), H * margin / (ymax - ymin))
+    s = min(W * 0.96 / (xmax - xmin), H * 0.96 / (ymax - ymin))
     S = s * ss
     cw, ch = W * ss, H * ss
     ox = cw / 2 - (xmin + xmax) / 2 * S
-    oy = ch / 2 - (ymin + ymax) / 2 * S - (H * 0.012 * ss if "shadow" in fx else 0)
+    oy = ch / 2 - (ymin + ymax) / 2 * S
     if cut:  # framed on the whole window; the +z side (bottom-left on screen) is now removed and leaves the background
         mid = int(np.median(list(ground.values())))  # one height for every column, so the cut is a clean plane
         for q in keys:
@@ -239,15 +236,12 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
                 del cols[q], ground[q]
         keys = list(cols)
     # Cells per face edge: about one per 4 output px of a block's width, 1..3.
-    n = max(1, min(3, round(2 * s * k / 4))) if ("noise" in fx or "ao" in fx) else 1
+    n = max(1, min(3, round(2 * s * k / 4)))
 
     img = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img, "RGBA")
 
-    if "shade" in fx:
-        L_TOP, L_LEFT, L_RIGHT = (1.0, 1.0, 1.0), (0.86, 0.84, 0.79), (0.58, 0.61, 0.67)
-    else:
-        L_TOP, L_LEFT, L_RIGHT = (1.0, 1.0, 1.0), (0.80,) * 3, (0.62,) * 3
+    L_TOP, L_LEFT, L_RIGHT = (1.0, 1.0, 1.0), (0.86, 0.84, 0.79), (0.58, 0.61, 0.67)
 
     def P(x, z, h):
         return ((x - z) * S + ox, (x + z) * S / 2 - h * S * vert + oy)
@@ -261,15 +255,13 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
         return c is not None and any(b <= y <= t for b, t, _, _ in c[0])
 
     def tone(name, face, x, y, z, i, j):
-        if "noise" not in fx:
-            return 1.0
         r = hash01(name_hash(name), x, y, z, face, i, j)
         return 1.0 + amp(name) * (-1 if r < 0.3 else 1 if r > 0.75 else 0)  # 3 tones
 
     def top_face(x, z, hh, name, c, a=255):
         """Top face of the block whose top is at hh, n x n cells with noise + AO."""
         ao = {}
-        if "ao" in fx and a == 255:
+        if a == 255:
             for dx in (-1, 0, 1):
                 for dz in (-1, 0, 1):
                     if (dx or dz) and occ(x + dx * k, z + dz * k, hh):
@@ -290,7 +282,7 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
         """One block row (y..y+1) of the +z (side 0, left) or +x (side 1, right) face."""
         light = L_LEFT if side == 0 else L_RIGHT
         depth = top_y - y
-        g = fdepth(depth) if fdepth else (max(0.78, 1 - 0.022 * depth) if "shade" in fx else 1.0)
+        g = fdepth(depth) if fdepth else max(0.78, 1 - 0.022 * depth)
         nv = n if a == 255 else 1
         for i in range(nv):
             for r in range(nv):
@@ -303,34 +295,11 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
                     q = [P(x + k, z + ua, ya), P(x + k, z + ub, ya), P(x + k, z + ub, yb), P(x + k, z + ua, yb)]
                 draw.polygon(q, fill=col(c, light, f, a))
 
-    def edges(x, z, hh, c):
-        """Dark line on a top face's front edges where the ground drops (light back edges cost ~+8 KB WebP for little)."""
-        w = max(1, round(ss * 0.6))
-        dark = col(c, (0.55,) * 3, 1, 150)
-        if not occ(x, z + k, hh - 1):
-            draw.line([P(x, z + k, hh), P(x + k, z + k, hh)], fill=dark, width=w)
-        if not occ(x + k, z, hh - 1):
-            draw.line([P(x + k, z, hh), P(x + k, z + k, hh)], fill=dark, width=w)
-
-    def v1_box(x, z, lo, hi, top_c, side_c, a=255, sides=(True, True)):
-        if hi <= lo:
-            return
-        sa = a if a == 255 else min(a, 90)
-        if sides[0]:
-            draw.polygon([P(x, z + k, hi), P(x + k, z + k, hi), P(x + k, z + k, lo), P(x, z + k, lo)],
-                         fill=col(side_c, L_LEFT, 1, sa))
-        if sides[1]:
-            draw.polygon([P(x + k, z, hi), P(x + k, z + k, hi), P(x + k, z + k, lo), P(x + k, z, lo)],
-                         fill=col(side_c, L_RIGHT, 1, sa))
-        if top_c is not None:
-            draw.polygon([P(x, z, hi), P(x + k, z, hi), P(x + k, z + k, hi), P(x, z + k, hi)], fill=top_c + (a,))
-
-    cells = n > 1 or "shade" in fx or "edges" in fx  # per-block drawing path
     nb = 0
     for (x, z) in sorted(keys, key=lambda q: (q[0] + q[1], q[0])):
         runs, wt, wb, gl = cols[(x, z)]
         front = [ground.get((x + k, z)), ground.get((x, z + k))]
-        items = [(r[0], 0, r) for r in runs] + ([(g[0], 1, g) for g in gl] if "glass" in fx else [])
+        items = [(r[0], 0, r) for r in runs] + [(g[0], 1, g) for g in gl]
         if cut and ((x, z + k) not in cols if cut == "diag" else z == zl):  # air between runs (caves) shows on the cut face as dark openings
             for (_, t0, _, _), (b1, _, _, _) in zip(runs, runs[1:]):
                 if b1 > t0 + 1:
@@ -354,31 +323,21 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
                 h = max(h, base + 1)  # a pit below the floor (see floor=) gets its bottom at the floor
             ct, cu = colour(names[top]), colour(names[under])
             nb += 1
-            if not cells:
-                v1_box(x, z, b, h - 1, None, cu)
-                v1_box(x, z, h - 1, h, ct, ct)
-            else:
-                lo = max(b, base)
-                for y in range(lo, h):
-                    nm, c = (names[top], ct) if y == h - 1 else (names[under], cu)
-                    if (x, z) in prof and 0 <= y - prof[(x, z)][0] < len(prof[(x, z)][1]):
-                        nm = names[prof[(x, z)][1][y - prof[(x, z)][0]]]
-                        c = colour(nm)
-                    for side in (0, 1):
-                        nx, nz = (x, z + k) if side == 0 else (x + k, z)
-                        if occ(nx, nz, y):
-                            continue  # hidden behind the neighbour's solid block
-                        side_cells(x, z, y, h - 1, nm, c, side)
-                top_face(x, z, h, names[top], ct)
-                if "edges" in fx:
-                    edges(x, z, h, ct)
+            lo = max(b, base)
+            for y in range(lo, h):
+                nm, c = (names[top], ct) if y == h - 1 else (names[under], cu)
+                if (x, z) in prof and 0 <= y - prof[(x, z)][0] < len(prof[(x, z)][1]):
+                    nm = names[prof[(x, z)][1][y - prof[(x, z)][0]]]
+                    c = colour(nm)
+                for side in (0, 1):
+                    nx, nz = (x, z + k) if side == 0 else (x + k, z)
+                    if occ(nx, nz, y):
+                        continue  # hidden behind the neighbour's solid block
+                    side_cells(x, z, y, h - 1, nm, c, side)
+            top_face(x, z, h, names[top], ct)
             if first and wt is not None and wt >= t:
                 depth = wt - t
                 wet = (cols.get((x, z + k), (None, None))[1] is None, cols.get((x + k, z), (None, None))[1] is None)
-                if "water" not in fx:
-                    a = min(225, 70 + 22 * depth)
-                    v1_box(x, z, h, wt + 1, WATER, WATER, a, wet)
-                    continue
                 # Depth-graded: colour slides shallow -> deep, alpha rises; cut faces
                 # get darker toward the bed so the profile reads.
                 d = min(1.0, depth / 10)
@@ -390,20 +349,10 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
                             c2 = tuple(int(sh * (1 - dd) + dp * dd) for sh, dp in zip((92, 150, 205), (25, 45, 110)))
                             side_cells(x, z, y, wt, "minecraft:water", c2, side, a=int(90 + 90 * dd), fdepth=lambda _: 1.0)
                 a = int(110 + 120 * d)
-                f = 1.0 + 0.05 * (hash01(x, z, 7) - 0.5) if "noise" in fx else 1.0
+                f = 1.0 + 0.05 * (hash01(x, z, 7) - 0.5)
                 draw.polygon([P(x, z, wt + 1), P(x + k, z, wt + 1), P(x + k, z + k, wt + 1), P(x, z + k, wt + 1)],
                              fill=col(wc, L_TOP, f, a))
 
-    if "shadow" in fx:
-        alpha = img.getchannel("A")
-        sh = alpha.point(lambda v: 255 if v > 8 else 0)
-        line = ImageChops.subtract(sh.filter(ImageFilter.MaxFilter(2 * ss + 1)), sh).point(lambda v: v * 90 // 255)
-        drop = Image.new("L", (cw, ch), 0)
-        drop.paste(sh, (0, int(10 * ss)))
-        drop = drop.filter(ImageFilter.GaussianBlur(9 * ss)).point(lambda v: v * 95 // 255)
-        under = Image.new("RGBA", (cw, ch), (20, 22, 30, 0))
-        under.putalpha(ImageChops.lighter(drop, line))
-        img = Image.alpha_composite(under, img)
     out = img.resize((W, H), Image.Resampling.LANCZOS) if ss > 1 else img
     t2 = time.time()
     print(f"  {len(cols)} columns (step {k}, cells {n}), {nb} runs, s={s:.2f}; read {t1 - t0:.1f} s, "
@@ -412,10 +361,10 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
 
 
 
-def save(img, path, budget_kb=30):
+def save(img, path, budget_kb=60):
     """WebP q80, stepping the quality down until the file is within budget_kb."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    for q in (80, 74, 68, 62):
+    for q in (80, 74, 68, 62, 56, 50):
         img.save(path, "WEBP", quality=q, method=6)
         if path.stat().st_size / 1024 <= budget_kb:
             break

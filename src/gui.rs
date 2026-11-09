@@ -122,7 +122,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_pick_save_directory,
             gui_start_generation,
             gui_pause_generation,
-            gui_local_archive_info,
+            gui_default_archive_folder,
             gui_data_plan,
             gui_prepare_plan,
             gui_bake_archive,
@@ -1711,7 +1711,6 @@ const WINDOW_FLAGS: &[&str] = &[
     "skip-built",
     "stitch-map",
     "threads",
-    "cpu-target",
     "ram-budget-mb",
     "max-downloads",
     "seed",
@@ -1793,47 +1792,6 @@ fn confluence_args(
     crate::y_bounds::check(&extra)?;
     crate::output_args::validate(&extra)?;
     Ok(extra)
-}
-
-/// Copies the parsed "Meld features" settings onto the run's `Args`.
-fn apply_confluence(args: &mut Args, extra: Args) {
-    args.threads = extra.threads;
-    args.cpu_target = extra.cpu_target;
-    args.ram_budget_mb = extra.ram_budget_mb;
-    args.max_downloads = extra.max_downloads;
-    args.units = extra.units;
-    args.region_format = extra.region_format;
-    args.blinear_level = extra.blinear_level;
-    args.origin = extra.origin;
-    args.world_border = extra.world_border;
-    args.water = extra.water;
-    args.climate_mode = extra.climate_mode;
-    args.min_y = extra.min_y;
-    args.max_y = extra.max_y;
-    if extra.disable_height_limit {
-        args.disable_height_limit = true;
-        args.vanilla_height = false;
-    }
-    args.seed = extra.seed;
-    args.scatter = extra.scatter;
-    args.cave_style = extra.cave_style;
-    args.cave_ores = extra.cave_ores;
-    args.cave_seed = extra.cave_seed;
-    args.cave_datum_y = extra.cave_datum_y;
-    args.tree_realm = extra.tree_realm;
-    args.tree_size_weights = extra.tree_size_weights;
-    args.tree_pack_dir = extra.tree_pack_dir;
-    args.tree_pack_mode = extra.tree_pack_mode;
-    args.road_detail = extra.road_detail;
-    args.surface_patches = extra.surface_patches;
-    args.buildings = extra.buildings;
-    args.props = extra.props;
-    args.props_min_scale = extra.props_min_scale;
-    args.osm_pbf = extra.osm_pbf;
-    args.osm_pbf_url = extra.osm_pbf_url;
-    args.osm_tiles_url = extra.osm_tiles_url;
-    args.overpass_url = extra.overpass_url;
-    args.offline = extra.offline;
 }
 
 /// The command line a job's pieces repeat. A piece is a run of this executable, and the window
@@ -1932,22 +1890,12 @@ fn cache_root() -> PathBuf {
     crate::elevation::cache::user_cache_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// The Local Archive folder an empty field means, and where arnis-tiles is
-/// (`None` when it is not installed).
-#[derive(serde::Serialize)]
-struct LocalArchiveInfo {
-    default_folder: String,
-    arnis_tiles: Option<String>,
-}
-
+/// The Local Archive folder an empty field means.
 #[tauri::command]
-fn gui_local_archive_info(tiles_path: String) -> LocalArchiveInfo {
-    LocalArchiveInfo {
-        default_folder: crate::arnis_tiles::default_folder(&cache_root())
-            .display()
-            .to_string(),
-        arnis_tiles: crate::arnis_tiles::locate(&tiles_path).map(|p| p.display().to_string()),
-    }
+fn gui_default_archive_folder() -> String {
+    crate::arnis_tiles::default_folder(&cache_root())
+        .display()
+        .to_string()
 }
 
 /// The archive folder a Local Archive field names; empty is the default.
@@ -1974,11 +1922,7 @@ fn gui_data_plan(
     aws_only_elevation: bool,
     flags: Vec<String>,
 ) -> Result<crate::data_plan::DataPlan, String> {
-    use clap::Parser;
-    check_window_flags(&flags)?;
-    let mut args =
-        Args::try_parse_from(std::iter::once("arnis").chain(flags.iter().map(String::as_str)))
-            .map_err(|e| e.to_string())?;
+    let mut args = confluence_args(&flags, false, "java", false)?;
     crate::args::validate_scale(world_scale)?;
     args.scale = world_scale;
     args.mode = if skip_osm_objects {
@@ -2000,8 +1944,8 @@ fn arnis_tiles_state() -> PathBuf {
     cache_root().join("arnis").join("arnis-tiles")
 }
 
-fn arnis_tiles_exe(tiles_path: &str) -> Result<PathBuf, String> {
-    crate::arnis_tiles::locate(tiles_path).ok_or_else(|| {
+fn arnis_tiles_exe() -> Result<PathBuf, String> {
+    crate::arnis_tiles::locate().ok_or_else(|| {
         format!(
             "arnis-tiles not found; get it from {}",
             crate::arnis_tiles::HOME
@@ -2036,14 +1980,10 @@ struct PreparePlan {
 /// --dry-run`), each marked baked when the folder already holds its archive, with the sizes
 /// of what a bake downloads and leaves.
 #[tauri::command(async)]
-fn gui_prepare_plan(
-    bbox_text: String,
-    folder: String,
-    tiles_path: String,
-) -> Result<PreparePlan, String> {
+fn gui_prepare_plan(bbox_text: String, folder: String) -> Result<PreparePlan, String> {
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
-    let exe = arnis_tiles_exe(&tiles_path)?;
+    let exe = arnis_tiles_exe()?;
     let plan = crate::arnis_tiles::dry_run(&exe, &arnis_tiles_state(), &bbox)?;
     let archives = crate::osm_tiles::local_coverage(&folder, &bbox)
         .map(|c| c.archives)
@@ -2084,18 +2024,13 @@ static BAKE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// Download & Bake: `arnis-tiles prepare` for the selection into the folder, on the threads a
 /// generation would get (`flags`), with its progress on the main bar. `Ok(false)` when stopped.
 #[tauri::command(async)]
-fn gui_bake_archive(
-    bbox_text: String,
-    folder: String,
-    tiles_path: String,
-    flags: Vec<String>,
-) -> Result<bool, String> {
+fn gui_bake_archive(bbox_text: String, folder: String, flags: Vec<String>) -> Result<bool, String> {
     let args = confluence_args(&flags, false, "java", false)?;
     let cores = crate::transfer::cores();
     let threads = args.thread_count().unwrap_or(cores * 9 / 10).max(1);
     let bbox = LLBBox::from_str(&bbox_text)?;
     let folder = archive_folder(&folder)?;
-    let exe = arnis_tiles_exe(&tiles_path)?;
+    let exe = arnis_tiles_exe()?;
     let _slot = BusySlot::acquire(BUSY_BAKE)?;
     BAKE_CANCEL.store(false, std::sync::atomic::Ordering::Release);
     progress::reset_progress_floor();
@@ -2435,6 +2370,7 @@ fn gui_start_generation(
 
             // Create an Args instance with the chosen bounding box
             // Note: path is used for Java-specific features like spawn point update
+            let tall_forced = extra.disable_height_limit;
             let mut args: Args = Args {
                 bbox: Some(bbox),
                 file: None,
@@ -2480,7 +2416,6 @@ fn gui_start_generation(
                 // Parquet reader drops entirely - but both differences are far
                 // below a block, so the choice is not worth a GUI setting.
                 overture_source: crate::args::OvertureSource::Auto,
-                osm_tiles_url: crate::osm_tiles::DEFAULT_OSM_TILES_URL.to_string(),
                 no_tile_archive: false,
                 use_3d: use_3d_enabled,
                 debug: false,
@@ -2549,52 +2484,23 @@ fn gui_start_generation(
                 moving_vehicles,
                 live: Default::default(),
                 progress: None,
-                threads: None,
-                cpu_target: None,
-                ram_budget_mb: None,
-                max_downloads: None,
                 no_update_check: false,
                 no_cache_sweep: false,
                 capabilities: false,
-                units: crate::args::UnitArgs::default(),
-                region_format: crate::output_args::RegionFormat::Mca,
-                blinear_level: 6,
-                origin: None,
-                world_border: false,
                 map_item_only: false,
                 dh_lod_only: false,
-                water: crate::args::WaterArgs::default(),
-                climate_mode: crate::climate_field::ClimateMode::Origin,
                 climate_map: None,
-                min_y: None,
-                max_y: None,
-                seed: None,
-                scatter: crate::args::ScatterArgs::default(),
-                cave_style: None,
-                cave_ores: None,
-                cave_seed: None,
-                cave_datum_y: None,
-                tree_realm: None,
-                tree_size_weights: None,
-                tree_pack_dir: None,
-                tree_pack_mode: Default::default(),
-                init_tree_pack_dir: None,
                 export_tree_packs: None,
-                road_detail: Default::default(),
-                surface_patches: false,
-                buildings: true,
-                props: None,
-                props_min_scale: None,
                 loot_table: None,
                 dump_loot_table: None,
-                osm_pbf: None,
-                osm_pbf_url: None,
-                overpass_url: Vec::new(),
-                offline: false,
                 prewarm: false,
                 prewarm_first: false,
+                ..extra
             };
-            apply_confluence(&mut args, extra);
+            if tall_forced {
+                args.disable_height_limit = true;
+                args.vanilla_height = false;
+            }
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
             crate::args::apply_body_defaults(&mut args);
@@ -3329,19 +3235,6 @@ mod tests {
         assert!(confluence_args(&y, false, "bedrock", true).is_err());
     }
 
-    /// With no flags the settings copied onto a run change nothing in it.
-    #[test]
-    fn no_flags_leave_the_run_as_it_was() {
-        use clap::Parser;
-        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
-        let before = format!("{args:?}");
-        apply_confluence(
-            &mut args,
-            confluence_args(&[], false, "java", true).unwrap(),
-        );
-        assert_eq!(format!("{args:?}"), before);
-    }
-
     /// The window draws the plan the job would run, from the same flags, and writes nothing.
     #[test]
     fn the_window_plans_the_job_it_would_run() {
@@ -3428,8 +3321,11 @@ mod tests {
         let solo = confluence_args(&flags, false, "java", true).unwrap();
         assert!(!solo.units.coordinates() && solo.units.only_pieces.is_none());
         // A piece asked with the window's settings parses back to them.
-        let mut args = Args::try_parse_from(["arnis", "--scale=2", "--winter"]).unwrap();
-        apply_confluence(&mut args, extra);
+        let mut args = Args {
+            scale: 2.0,
+            winter: true,
+            ..extra
+        };
         let argv = piece_argv(&args, Path::new("saves/World"), &flags);
         let back =
             Args::try_parse_from(std::iter::once(std::ffi::OsString::from("arnis")).chain(argv))

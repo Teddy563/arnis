@@ -446,9 +446,6 @@ label[for].setting-label {
 /* Markup whitespace already spaces the tooltip; the injected revert button has none. */
 .setting-heading > .tooltip-icon {
   margin-left: 2px;
-  /* Centred on the box it sits a pixel below the label's capitals. */
-  position: relative;
-  top: -1px;
 }
 
 .setting-heading > .setting-revert {
@@ -556,9 +553,6 @@ label[for].setting-label {
   color: var(--ui-muted, #c0c0c0);
   font-size: 10.5px;
   font-weight: 700;
-  /* The ? carries its weight in the bowl, so box-centred it reads high. */
-  padding-top: 1px;
-  box-sizing: border-box;
   cursor: help;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -569,24 +563,25 @@ label[for].setting-label {
   color: var(--primary-accent);
 }
 
-/* Picture of what a setting does (preview-popover.js). Same box as .global-tooltip; the image has
-   no baked shadow, so the drop shadow is CSS. Fixed size, so nothing moves when the image loads. */
+/* Picture of what a setting does (preview-popover.js): large, centred in the window, no shadow. The
+   image box has a fixed 4:3 size, so nothing moves when the picture loads, and the popover ignores the
+   pointer so it never steals the hover from the control under it. */
 .preview-popover {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 264px;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   box-sizing: border-box;
-  padding: 12px 12px 8px;
+  padding: 10px 10px 6px;
   background-color: #2a2a2a;
   border: 1px solid #fecc44;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: opacity 0.15s ease, visibility 0.15s ease;
   z-index: 30000;
-  pointer-events: none;
 }
 
 .preview-popover.is-visible {
@@ -596,16 +591,15 @@ label[for].setting-label {
 
 .preview-popover img {
   display: block;
-  width: 240px;
-  height: 180px;
-  filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.55));
+  width: min(720px, calc(100vw - 64px), calc((100vh - 110px) * 4 / 3));
+  height: auto;
+  aspect-ratio: 4 / 3;
 }
 
 .preview-popover-caption {
-  min-height: 2.7em;
   margin-top: 6px;
   color: #fecc44;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
   text-align: center;
   overflow-wrap: break-word;
@@ -1096,6 +1090,11 @@ body.meld-off .meld-only {
   text-align: center;
 }
 
+/* LAT,LON needs room for two signed decimals. */
+.settings-page input.meld-coords {
+  width: 170px;
+}
+
 .settings-page .meld-card .setting-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1119,10 +1118,6 @@ body.meld-off .meld-only {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--ui-muted);
-}
-
-.settings-page .meld-data-out[hidden] {
-  display: none;
 }
 
 .settings-page .meld-data-out .meld-data-line {
@@ -1149,11 +1144,6 @@ body.meld-off .meld-only {
   border-radius: inherit;
   pointer-events: none;
   opacity: 0.85;
-  -webkit-mask:
-    radial-gradient(circle at 0 0, #000 9px, transparent 22px),
-    radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
-    radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
-    radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
   mask:
     radial-gradient(circle at 0 0, #000 9px, transparent 22px),
     radial-gradient(circle at 100% 0, #000 9px, transparent 22px),
