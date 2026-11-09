@@ -1256,10 +1256,11 @@ body.map-first .preview3d-mini > * {
   direction: ltr;
 }
 
-/* The footer: one small line bottom-left over the map */
+/* The footer: one small line bottom centre over the map */
 body.map-first .footer {
   position: absolute;
-  left: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 12px;
   z-index: 5;
   margin: 0;
