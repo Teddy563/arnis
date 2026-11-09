@@ -638,19 +638,7 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
     // One World: snaps the bbox to the world's chunk grid and holds its lock.
     let mut one_world_paths: Option<PathBuf> = None;
     if args.one_world {
-        let base_dir = args.path.clone().unwrap_or_else(|| {
-            eprintln!(
-                "{} --one-world needs --output-dir (the saves folder).",
-                "Error:".red().bold()
-            );
-            std::process::exit(1);
-        });
-        let name = args
-            .world_name
-            .as_deref()
-            .and_then(world_utils::world_folder_name)
-            .unwrap_or_else(|| one_world::DEFAULT_WORLD_NAME.to_string());
-        let world_dir = base_dir.join(name);
+        let world_dir = one_world_dir(&args);
         if let Some(n) = args.units.plan_units {
             let planned = work_units::print_plan(&world_dir, &effective_bbox, &args, n);
             std::process::exit(planned.map_or_else(
