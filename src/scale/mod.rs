@@ -180,6 +180,17 @@ impl Job {
         self.map_base + self.slot(u) as i32 * MAP_IDS_PER_PIECE
     }
 
+    fn lease_path(&self, piece: usize) -> PathBuf {
+        self.dir.join(format!("piece-{piece}.lease.json"))
+    }
+
+    /// `--skip-built`: every chunk of the piece is in the world already, from an earlier
+    /// job. Never a piece this job started, whose chunks may be half written.
+    fn built_before(&self, world_dir: &Path, u: &WorkUnit) -> bool {
+        !self.lease_path(u.index as usize).exists()
+            && one_world::existing_chunks(world_dir, &u.rect) == u.chunks()
+    }
+
     fn done_path(&self, u: &WorkUnit) -> PathBuf {
         self.dir.join(format!("done-{}.json", done_key(u)))
     }
@@ -284,10 +295,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 lock(&results)[i] = Some(r);
             }
             // `--skip-built`: every chunk is in the world already, from an earlier job.
-            None if wanted(i)
-                && args.units.skip_built
-                && one_world::existing_chunks(world_dir, &unit.rect) == unit.chunks() =>
-            {
+            None if wanted(i) && args.units.skip_built && job.built_before(world_dir, unit) => {
                 println!(
                     "  piece {}/{of}: every chunk already exists, skipped",
                     i + 1
@@ -358,7 +366,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             if STOP.load(Ordering::Acquire) {
                 return Err(STOPPED.to_string());
             }
-            let lease = job.dir.join(format!("piece-{i}.lease.json"));
+            let lease = job.lease_path(i);
             write(
                 &lease,
                 &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
@@ -392,7 +400,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         if args.prewarm {
             // Only the leases it wrote: a job already under way keeps its resume records.
             for &i in &warm {
-                let _ = std::fs::remove_file(job.dir.join(format!("piece-{i}.lease.json")));
+                let _ = std::fs::remove_file(job.lease_path(i));
             }
             let _ = std::fs::remove_dir(&job.dir);
             let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
@@ -447,7 +455,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it or it failed.
     let build = |i: usize, w: usize| -> Result<Option<PieceResult>, String> {
         let unit = &units[i];
-        let lease = job.dir.join(format!("piece-{i}.lease.json"));
+        let lease = job.lease_path(i);
         write(
             &lease,
             &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
@@ -970,6 +978,19 @@ mod tests {
         assert_eq!(job.done_path(&units[1]), want);
         std::fs::write(&want, r#"{"chunks":9}"#).unwrap();
         assert_eq!(job.finished(&units[1]).map(|r| r.chunks), Some(9));
+        // `--skip-built`: a piece whose every chunk exists is skipped, unless this job
+        // started it. Region (-1, -1) is unit 0's here, every chunk header set.
+        let world = tmp.path();
+        std::fs::create_dir_all(world.join("region")).unwrap();
+        let u = units
+            .iter()
+            .find(|u| u.rect.min_x() >= -512 && u.rect.max_x() < 0 && u.rect.max_z() < 0)
+            .unwrap();
+        assert!(!job.built_before(world, u));
+        std::fs::write(world.join("region/r.-1.-1.mca"), vec![1u8; 4096]).unwrap();
+        assert!(job.built_before(world, u));
+        std::fs::write(job.lease_path(u.index as usize), "{}").unwrap();
+        assert!(!job.built_before(world, u));
         // Slots kept in job.json win over the index.
         let mut slots: serde_json::Map<String, Value> = units
             .iter()
