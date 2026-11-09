@@ -172,6 +172,7 @@ Upstream `main` (Live mode, vehicles, stations, race tracks, golf and stadiums) 
 - **Piece-versus-single residual.** A job in pieces still differs from one run by about 639 blocks on the parity area: facade colour picks that depend on an area-wide input (about 535 blocks), sea lanterns (87) and decal map ids.
 - **Seam residual.** 998 blocks (leaves, grass, facade colour) remain across an area edge. A One World started with 3.4.0 and extended by 3.5.0 keeps its seam at the old edge, because the manifest version is unchanged.
 - **Map item of a job in pieces** shows the first piece only, as before. With `--stitch-map` it is redrawn over every piece once all are built. A job stopped or with failed pieces keeps the first piece's map until it finishes; `--map-item-only` redraws it at any time.
+- **Job folders do not go back.** A job stopped under this build saves its finished pieces under region names (`done-r<rx>_<rz>_s<n>.json`). An older 3.5.0 build reads only `done-<number>.json`, so if it resumes that job it builds the finished pieces again.
 - **Map id reservation** is never released, so each finished job uses pieces x 65,536 ids (room for about 32,000 pieces).
 - **Water flags raise the ground floor** by a block or more where a map has water. A river that land cover does not mark as water gets no bed.
 - **Climate.** `--climate-mode per-position` refuses `--rotation`, and natural and building colours still read the origin climate.
