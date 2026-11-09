@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, isPiecesJob, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -52,6 +52,8 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
   fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
+  // The map-first card says the pieces in its plan block; this line would repeat them.
+  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info');
 }
 
 // Initialize elements and start the demo progress
@@ -164,7 +166,7 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize], #run-confirm [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
   });
 
@@ -1340,15 +1342,21 @@ function initSettings() {
   initRunControls({
     invoke,
     post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
-    start: () => startGeneration(),
+    // A retry was asked for on the map or with Retry: it starts without the hold.
+    start: () => startGeneration(true),
     localize: (element, key) => localizeElement(window.localization, { element }, key),
     key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}`,
     map: () => getMapFrame()?.contentWindow,
   });
   document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
   initJobPlan({
-    // A new plan, or none: the line under the buttons says how the selection is built.
-    changed: refreshBboxSelectionInfo,
+    // A new plan, or none: the line under the buttons says how the selection is built, and
+    // the hold to start waits for the plan it starts.
+    changed: () => {
+      refreshBboxSelectionInfo();
+      document.getElementById('run-confirm-hold').disabled = !planPieces();
+      if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
+    },
     // A job in pieces of a One World with a selection; Live mode builds no pieces.
     request: () => {
       const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
@@ -1368,6 +1376,18 @@ function initSettings() {
     if (!builtAreas.length) return;
     const pick = (f, key) => f(...builtAreas.map((a) => a[key]));
     selectWithRing([pick(Math.min, 'min_lat'), pick(Math.min, 'min_lon'), pick(Math.max, 'max_lat'), pick(Math.max, 'max_lon')], true);
+    askRunConfirm();
+  });
+  document.getElementById('run-confirm-cancel').addEventListener('click', () => {
+    document.getElementById('run-confirm').hidden = true;
+  });
+  document.getElementById('run-confirm-docs').addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal(e.currentTarget.href);
+  });
+  holdToConfirm(document.getElementById('run-confirm-hold'), () => {
+    document.getElementById('run-confirm').hidden = true;
+    startGeneration(true);
   });
   initDataPanel({
     invoke,
@@ -3992,6 +4012,7 @@ let generationButtonEnabled = true;
 // rename, is in flight - see canEditCustomWorldName()).
 function setGenerationButtonEnabled(enabled) {
   generationButtonEnabled = enabled;
+  if (!enabled) document.getElementById('run-confirm').hidden = true;
   showRunControls(!enabled);
   refreshWorldNameEditUI();
   // The two jobs exclude each other in the backend, so the other one greys out.
@@ -4066,7 +4087,47 @@ function readGenerationSettings(oneWorld) {
   };
 }
 
-async function startGeneration() {
+// A job in pieces runs for long and takes most of the machine: Start (and Expand) first show
+// its plan and the warnings, and only a held button starts it.
+function askRunConfirm() {
+  const box = document.getElementById('run-confirm');
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+  document.getElementById('run-confirm-hold').focus();
+}
+
+// Calls `done` once the button has been held for HOLD_MS (pointer, or Space/Enter); letting go
+// earlier cancels. The fill is CSS (.run-hold.is-holding), timed to the same HOLD_MS.
+const HOLD_MS = 1500;
+function holdToConfirm(button, done) {
+  let timer = 0;
+  const start = () => {
+    if (button.disabled || timer) return;
+    button.classList.add('is-holding');
+    timer = setTimeout(() => { stop(); done(); }, HOLD_MS);
+  };
+  const stop = () => {
+    clearTimeout(timer);
+    timer = 0;
+    button.classList.remove('is-holding');
+  };
+  const isKey = (e) => e.key === ' ' || e.key === 'Enter';
+  button.addEventListener('pointerdown', start);
+  ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach((type) => button.addEventListener(type, stop));
+  button.addEventListener('keydown', (e) => {
+    if (!isKey(e)) return;
+    e.preventDefault();
+    if (!e.repeat) start();
+  });
+  button.addEventListener('keyup', (e) => {
+    if (!isKey(e)) return;
+    e.preventDefault();
+    stop();
+  });
+}
+
+// `confirmed`: the hold (or a retry) already said yes to a job in pieces.
+async function startGeneration(confirmed = false) {
   // In Live the button starts and stops the session instead.
   if (liveActive()) {
     stopLive();
@@ -4088,6 +4149,10 @@ async function startGeneration() {
       info.textContent = "Waiting for the Mapillary precompute. Cancel it in Settings, or let it finish.";
       info.style.color = "#fecc44";
     }
+    return;
+  }
+  if (confirmed !== true && isPiecesJob()) {
+    askRunConfirm();
     return;
   }
   // Claim the guard before the first await. gui_create_world and gui_start_generation are

@@ -418,6 +418,8 @@ const MAX_DRAWN = 3000;
 // The last plan drawn, { n pieces, w workers }, while it is the current one; null otherwise.
 let lastPlan = null;
 export const planPieces = () => lastPlan;
+// Whether Start would run a job in pieces (it asks first: main.js, the hold to confirm).
+export const isPiecesJob = () => Boolean(planWanted().req);
 let onPlan = () => {};
 
 export function initJobPlan({ request, changed = () => {} }) {
@@ -467,7 +469,13 @@ export function selectWithRing(bounds, skipBuilt = false) {
 }
 
 const gb = (mbs) => (mbs >= 1048576 ? `${(mbs / 1048576).toFixed(1)} TB` : mbs >= 1024 ? `${(mbs / 1024).toFixed(1)} GB` : `${Math.round(mbs)} MB`);
-const range = ([lo, hi], unit) => (unit(lo) === unit(hi) ? unit(lo) : `${unit(lo)}–${unit(hi)}`);
+// "327–388 MB": a unit both ends share is said once.
+const range = ([lo, hi], unit) => {
+  const [a, b] = [unit(lo), unit(hi)];
+  if (a === b) return a;
+  const u = a.match(/^[\d.,]+( \S+)$/);
+  return u && b.endsWith(u[1]) ? `${a.slice(0, -u[1].length)}–${b}` : `${a}–${b}`;
+};
 // Rounded so a time never claims more than it knows (as 3.4.0's formatEstimateTime): 5 s
 // steps, then minutes, then 10 minutes.
 const minutes = (m) => {
@@ -481,13 +489,14 @@ const minutes = (m) => {
 const planSizes = new Map();
 const sizeText = (i) => (planSizes.has(i) ? t('plan_piece_size', '{n} × {m} regions', { n: planSizes.get(i), m: planSizes.get(i) }) : '');
 
-// The plan's lines, a warning, and the legend of what the map shows: the selection, the
+const div = (className, textContent) => Object.assign(document.createElement('div'), { className, textContent });
+
+// The plan's blocks, a warning, and the legend of what the map shows: the selection, the
 // pieces to build and, with a margin, the ring around it.
 function showPlan(rows, warn = '', ring = false) {
   const box = el('job-plan');
   if (!box) return;
-  const div = (className, textContent) => Object.assign(document.createElement('div'), { className, textContent });
-  box.replaceChildren(...rows.map((text) => div('', text)));
+  box.replaceChildren(...rows);
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
@@ -530,7 +539,7 @@ async function updatePlan() {
     plan = await call('gui_plan_job', { ...req, flags });
   } catch (e) {
     if (seq !== planSeq) return;
-    showPlan([String(e)]);
+    showPlan([div('', String(e))]);
     startLabel(0);
     return;
   }
@@ -546,12 +555,22 @@ async function updatePlan() {
   const regions = (list) => list.reduce((n, u) => n + u.regions, 0);
   const ring = regions(units.filter((u) => u.ring));
   const totals = { pieces: units.length, regions: regions(units), ring };
-  // Two lines: what is built, then what it costs.
+  // "30 pieces", a muted line of what else it is, then what it costs: disk, RAM, time.
+  const stats = div('plan-stats', '');
+  for (const [kind, key, tip, text] of [
+    ['disk', 'plan_disk_tip', 'Disk space', range(e.disk_mb, gb)],
+    ['ram', 'plan_ram_tip', 'Memory per worker', t('plan_ram_worker', '{ram}/worker', { ram: range(e.ram_mb, gb) })],
+    ['time', 'plan_time_tip', 'Time (estimate, warm caches)', range(e.time_min, minutes)],
+  ]) stats.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
   showPlan([
-    ring ? t('plan_totals_ring', '{pieces} pieces · {regions} regions · ring {ring}', totals) : t('plan_totals', '{pieces} pieces · {regions} regions', totals),
-    t('plan_disk', 'Disk {disk} · RAM {ram} per worker', { disk: range(e.disk_mb, gb), ram: range(e.ram_mb, gb) })
-      + ' · ' + t('plan_time', 'Time {time} with {workers} workers (estimate, warm caches)', { time: range(e.time_min, minutes), workers: e.workers }),
-    ...(units.length > MAX_DRAWN ? [t('plan_too_many', 'Too many pieces to draw on the map.')] : []),
+    div('plan-big', t('plan_pieces', '{n} pieces', { n: totals.pieces })),
+    div('plan-sub', [
+      t('plan_regions', '{n} regions', { n: totals.regions }),
+      ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
+      t('plan_workers', '{n} workers', { n: e.workers }),
+    ].join(' · ')),
+    stats,
+    ...(units.length > MAX_DRAWN ? [div('', t('plan_too_many', 'Too many pieces to draw on the map.'))] : []),
   ], e.free_disk_mb != null && e.disk_mb[1] > e.free_disk_mb ? t('plan_low_disk', 'Only {free} free on this disk.', { free: gb(e.free_disk_mb) }) : '',
   units.some((u) => u.ring));
   // A job's own outlines (running, or left to retry) stay until they go stale.
