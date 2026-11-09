@@ -145,6 +145,92 @@ fn order_centre_out(world: &XZBBox, units: &mut [WorkUnit]) {
     }
 }
 
+/// `--plan-mask`: the polygon a job keeps its pieces in.
+pub struct Mask {
+    rings: Vec<crate::osm_pbf::Ring>,
+    /// Of the file, so two masks over one rectangle keep apart job folders.
+    hash: u64,
+}
+
+impl Mask {
+    /// A GeoJSON (Multi)Polygon, Feature or FeatureCollection, or an Osmosis `.poly` file.
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("--plan-mask {}: {e}", path.display()))?;
+        let rings = match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(v) => match v["type"].as_str() {
+                Some("FeatureCollection") => v["features"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|f| crate::osm_pbf::rings(&f["geometry"]))
+                    .collect(),
+                Some("Feature") => crate::osm_pbf::rings(&v["geometry"]),
+                _ => crate::osm_pbf::rings(&v),
+            },
+            Err(_) => poly_rings(&text),
+        };
+        if rings.is_empty() {
+            return Err(format!(
+                "--plan-mask {}: no polygon found (GeoJSON or .poly).",
+                path.display()
+            ));
+        }
+        // FNV-1a: stable across builds, unlike the std hasher.
+        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
+        });
+        Ok(Self { rings, hash })
+    }
+
+    /// Points spread over `b`, corners included, as (lon, lat).
+    // ponytail: a 5 x 5 sample plus the polygon's own vertices; a sliver of polygon crossing
+    // a piece between samples without a vertex inside is missed. Edge intersection if needed.
+    fn samples(b: &LLBBox) -> impl Iterator<Item = (f64, f64)> + '_ {
+        (0..25).map(move |k| {
+            let (i, j) = (f64::from(k / 5) / 4.0, f64::from(k % 5) / 4.0);
+            (
+                b.min().lng() + (b.max().lng() - b.min().lng()) * j,
+                b.min().lat() + (b.max().lat() - b.min().lat()) * i,
+            )
+        })
+    }
+
+    fn vertex_inside(&self, b: &LLBBox) -> bool {
+        self.rings.iter().flatten().any(|&(lon, lat)| {
+            lon > b.min().lng() && lon < b.max().lng() && lat > b.min().lat() && lat < b.max().lat()
+        })
+    }
+
+    /// Whether any of `b` is in the polygon.
+    pub fn touches(&self, b: &LLBBox) -> bool {
+        Self::samples(b).any(|(x, y)| crate::osm_pbf::in_rings(x, y, &self.rings))
+            || self.vertex_inside(b)
+    }
+
+    /// Whether all of `b` is in the polygon.
+    fn covers(&self, b: &LLBBox) -> bool {
+        Self::samples(b).all(|(x, y)| crate::osm_pbf::in_rings(x, y, &self.rings))
+            && !self.vertex_inside(b)
+    }
+}
+
+/// Rings of an Osmosis `.poly` file: a name line, then sections of `lon lat` lines each
+/// closed by `END` (a `!` section is a hole, which even-odd handles alike), then `END`.
+fn poly_rings(text: &str) -> Vec<crate::osm_pbf::Ring> {
+    let mut rings = Vec::new();
+    let mut ring = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace().map(str::parse::<f64>);
+        match (parts.next(), parts.next()) {
+            (Some(Ok(lon)), Some(Ok(lat))) => ring.push((lon, lat)),
+            _ if line.trim() == "END" && ring.len() > 2 => rings.push(std::mem::take(&mut ring)),
+            _ => ring.clear(),
+        }
+    }
+    rings
+}
+
 /// Sizes `--unit-regions auto` mixes, largest first.
 const AUTO_SIZES: [i32; 3] = [8, 4, 2];
 
@@ -156,12 +242,14 @@ fn auto_cells(
     world: &XZBBox,
     max: i32,
     min: i32,
+    mask: Option<&Mask>,
 ) -> Result<Vec<WorkUnit>, String> {
     fn split(
         proj: &WebMercatorProjection,
         world: &XZBBox,
         (gx, gz, s): (i32, i32, i32),
         min: i32,
+        mask: Option<&Mask>,
         out: &mut Vec<WorkUnit>,
     ) -> Result<(), String> {
         let side = REGION_BLOCKS * s;
@@ -180,13 +268,25 @@ fn auto_cells(
         if clipped[0] > clipped[2] || clipped[1] > clipped[3] {
             return Ok(());
         }
-        if clipped == cell || s <= min {
-            let rect = XZBBox::rect_from_min_max(clipped[0], clipped[1], clipped[2], clipped[3])?;
-            out.push(unit(proj, rect, gx, gz, s)?);
+        let rect = XZBBox::rect_from_min_max(clipped[0], clipped[1], clipped[2], clipped[3])?;
+        // A cell the mask misses is dropped; one it only partly holds splits.
+        let piece = unit(proj, rect, gx, gz, s)?;
+        if mask.is_some_and(|m| !m.touches(&piece.bbox)) {
+            return Ok(());
+        }
+        if (clipped == cell && mask.is_none_or(|m| m.covers(&piece.bbox))) || s <= min {
+            out.push(piece);
             return Ok(());
         }
         for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-            split(proj, world, (gx * 2 + dx, gz * 2 + dz, s / 2), min, out)?;
+            split(
+                proj,
+                world,
+                (gx * 2 + dx, gz * 2 + dz, s / 2),
+                min,
+                mask,
+                out,
+            )?;
         }
         Ok(())
     }
@@ -194,7 +294,7 @@ fn auto_cells(
     let mut units = Vec::new();
     for gz in world.min_z().div_euclid(side)..=world.max_z().div_euclid(side) {
         for gx in world.min_x().div_euclid(side)..=world.max_x().div_euclid(side) {
-            split(proj, world, (gx, gz, max), min, &mut units)?;
+            split(proj, world, (gx, gz, max), min, mask, &mut units)?;
         }
     }
     order_centre_out(world, &mut units);
@@ -286,14 +386,15 @@ pub fn plan(
     let (z0, z1) = axis(requested.min_z(), requested.max_z());
     let rect = XZBBox::rect_from_min_max(x0 - m, z0 - m, x1 + m, z1 + m)?;
     let merge = units.snap_regions == Some(SnapRegions::Merge);
-    let cut = match size {
+    let mask = units.plan_mask.as_deref().map(Mask::load).transpose()?;
+    let mut cut = match size {
         UnitSize::N(n) => plan_cells(proj, &rect, n, merge)?,
         UnitSize::Auto => {
             let max = crate::scale::budget::auto_max_regions(args);
             // Larger leaves until the map ids go round.
             let mut cut = Vec::new();
             for min in AUTO_SIZES.into_iter().rev().filter(|&s| s <= max) {
-                cut = auto_cells(proj, &rect, max, min)?;
+                cut = auto_cells(proj, &rect, max, min, mask.as_ref())?;
                 if cut.len() <= crate::scale::MAX_PIECES {
                     break;
                 }
@@ -311,6 +412,14 @@ pub fn plan(
     // Merged edges cut other pieces than a plain job over the same rectangle.
     if merge {
         name.push_str("_merge");
+    }
+    if let Some(mask) = &mask {
+        cut.retain(|u| mask.touches(&u.bbox));
+        if cut.is_empty() {
+            return Err("--plan-mask: the polygon holds no piece of this job.".to_string());
+        }
+        order_centre_out(&rect, &mut cut);
+        name.push_str(&format!("_m{:016x}", mask.hash));
     }
     Ok(Plan {
         requested,
@@ -563,6 +672,73 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_mask_keeps_the_pieces_it_touches() {
+        use crate::args::{SnapRegions, UnitArgs};
+        let (proj, req) = doc18();
+        let tmp = tempfile::tempdir().unwrap();
+        // The west half of the request, as GeoJSON and as .poly.
+        let ring = [
+            [26.07, 44.42],
+            [26.104, 44.42],
+            [26.104, 44.45],
+            [26.07, 44.45],
+            [26.07, 44.42],
+        ];
+        let geojson = tmp.path().join("west.geojson");
+        let feature = serde_json::json!({"type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [ring]}});
+        std::fs::write(&geojson, feature.to_string()).unwrap();
+        let poly = tmp.path().join("west.poly");
+        let lines: Vec<String> = ring
+            .iter()
+            .map(|p| format!("  {} {}", p[0], p[1]))
+            .collect();
+        std::fs::write(&poly, format!("west\n1\n{}\nEND\nEND\n", lines.join("\n"))).unwrap();
+        let masked = |mask: &std::path::Path, size| {
+            let args = args_with(UnitArgs {
+                plan_mask: Some(mask.to_path_buf()),
+                snap_regions: Some(SnapRegions::Cover),
+                ..Default::default()
+            });
+            plan(&proj, &req, &args, size)
+        };
+        let all = plan(
+            &proj,
+            &req,
+            &args_with(UnitArgs {
+                snap_regions: Some(SnapRegions::Cover),
+                ..Default::default()
+            }),
+            UnitSize::N(1),
+        )
+        .unwrap();
+        let west = masked(&geojson, UnitSize::N(1)).unwrap();
+        // x -2048..2047 in 512-block columns: the polygon ends just west of x 0.
+        assert_eq!(west.units.len() * 2, all.units.len());
+        assert!(west.units.iter().all(|u| u.rect.max_x() < 0));
+        assert!(west.name.contains("_m"));
+        assert!(west
+            .units
+            .iter()
+            .enumerate()
+            .all(|(i, u)| u.index as usize == i));
+        let from_poly = masked(&poly, UnitSize::N(1)).unwrap();
+        let rects = |p: &Plan| p.units.iter().map(|u| r(&u.rect)).collect::<Vec<_>>();
+        assert_eq!(rects(&from_poly), rects(&west));
+        // Mixed sizes split what the mask only partly holds.
+        let auto = masked(&geojson, UnitSize::Auto).unwrap();
+        assert!(auto.units.iter().all(|u| u.rect.max_x() < 0));
+        // A polygon elsewhere holds nothing.
+        let far = tmp.path().join("far.geojson");
+        let far_ring = serde_json::json!({"type": "Polygon",
+            "coordinates": [[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]]});
+        std::fs::write(&far, far_ring.to_string()).unwrap();
+        assert!(masked(&far, UnitSize::N(1)).is_err());
+        std::fs::write(&far, "not a polygon").unwrap();
+        assert!(masked(&far, UnitSize::N(1)).is_err());
     }
 
     #[test]

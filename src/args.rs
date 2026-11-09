@@ -781,6 +781,11 @@ pub struct UnitArgs {
     /// one side, or the listed piece numbers first and the rest from the centre out.
     #[arg(long, value_name = "centre|west|east|north|south|N,N...", value_parser = parse_piece_order)]
     pub piece_order: Option<PieceOrder>,
+
+    /// Keep only the pieces of a --one-world job that touch this polygon, a GeoJSON
+    /// (Multi)Polygon, Feature or FeatureCollection, or an Osmosis .poly file.
+    #[arg(long, value_name = "FILE")]
+    pub plan_mask: Option<PathBuf>,
 }
 
 /// `--piece-order`.
@@ -942,6 +947,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (u.margin_regions != 0, "--margin-regions"),
         (u.skip_built, "--skip-built"),
         (u.piece_order.is_some(), "--piece-order"),
+        (u.plan_mask.is_some(), "--plan-mask"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1608,9 +1614,13 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     let planned = args.units.coordinates() || args.units.plan_units.is_some();
-    if (args.units.snap_regions.is_some() || args.units.margin_regions != 0) && !planned {
+    if (args.units.snap_regions.is_some()
+        || args.units.margin_regions != 0
+        || args.units.plan_mask.is_some())
+        && !planned
+    {
         return Err(
-            "--snap-regions and --margin-regions only apply to a job built in pieces (--unit-regions or --plan-units)."
+            "--snap-regions, --margin-regions and --plan-mask only apply to a job built in pieces (--unit-regions or --plan-units)."
                 .to_string(),
         );
     }
@@ -2030,6 +2040,11 @@ mod tests {
         assert_eq!(order("3,1").unwrap(), Some(PieceOrder::List(vec![3, 1])));
         assert!(order("0,1").is_err() && order("up").is_err());
         assert!(refused(&with(&["--piece-order", "west"]), "--piece-order"));
+        assert!(refused(&with(&["--plan-mask", "m.geojson"]), "--plan-mask"));
+        let live = p(&["--live", "--one-world", "--plan-mask", "m.geojson"]).unwrap();
+        assert!(refuse_live_extras(&live)
+            .unwrap_err()
+            .contains("--plan-mask"));
         let live = p(&["--live", "--one-world", "--skip-built"]).unwrap();
         assert!(refuse_live_extras(&live)
             .unwrap_err()

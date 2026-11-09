@@ -681,6 +681,7 @@ fn user_spawn_xz(
 /// Options the coordinator decides per piece, so the user's are dropped.
 const PER_PIECE: &[&str] = &[
     "--piece-order",
+    "--plan-mask",
     "--bbox",
     "--unit-regions",
     "--one-world-workers",
