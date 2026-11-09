@@ -264,8 +264,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             "bounds": bounds(&units[i]), "worker": worker, "pct": pct.round(),
         }));
     };
-    for unit in &units {
-        let i = unit.index as usize;
+    for i in work_units::build_order(&units, args.units.piece_order.as_ref())? {
+        let unit = &units[i];
         match job.finished(unit) {
             Some(r) => {
                 println!("  piece {}/{of}: already built", i + 1);
@@ -293,11 +293,13 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     }
 
     // A fresh world gets its map item, settings and spawn from the first area built, so
-    // one piece goes first and alone: the one holding the requested spawn, else the first.
+    // one piece goes first and alone: the one holding the requested spawn, else the one
+    // nearest the centre, whatever `--piece-order` says.
     let head = (!ctx.extending && !queue.is_empty())
         .then(|| {
             user_spawn_xz(args, &selection)
                 .and_then(|(x, z)| queue.iter().position(|&i| contains(&units[i].rect, x, z)))
+                .or_else(|| (0..queue.len()).min_by_key(|&p| queue[p]))
                 .unwrap_or(0)
         })
         .and_then(|at| queue.remove(at));
@@ -665,6 +667,7 @@ fn user_spawn_xz(
 
 /// Options the coordinator decides per piece, so the user's are dropped.
 const PER_PIECE: &[&str] = &[
+    "--piece-order",
     "--bbox",
     "--unit-regions",
     "--one-world-workers",

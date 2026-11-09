@@ -201,6 +201,41 @@ fn auto_cells(
     Ok(units)
 }
 
+/// The plan indices of `units` (numbered `0..len`) in the order `--piece-order` builds them.
+pub fn build_order(
+    units: &[WorkUnit],
+    order: Option<&crate::args::PieceOrder>,
+) -> Result<Vec<usize>, String> {
+    use crate::args::PieceOrder;
+    let mut ids: Vec<usize> = (0..units.len()).collect();
+    let r = |i: usize| &units[i].rect;
+    match order {
+        None | Some(PieceOrder::Centre) => {}
+        Some(PieceOrder::West) => ids.sort_by_key(|&i| (r(i).min_x(), i)),
+        Some(PieceOrder::East) => ids.sort_by_key(|&i| (-r(i).max_x(), i)),
+        Some(PieceOrder::North) => ids.sort_by_key(|&i| (r(i).min_z(), i)),
+        Some(PieceOrder::South) => ids.sort_by_key(|&i| (-r(i).max_z(), i)),
+        Some(PieceOrder::List(first)) => {
+            if let Some(bad) = first.iter().find(|&&n| n as usize > units.len()) {
+                return Err(format!(
+                    "--piece-order {bad}: this job has {} pieces.",
+                    units.len()
+                ));
+            }
+            let mut listed: Vec<usize> = Vec::new();
+            for &n in first {
+                if !listed.contains(&(n as usize - 1)) {
+                    listed.push(n as usize - 1);
+                }
+            }
+            ids.retain(|i| !listed.contains(i));
+            listed.extend(ids);
+            ids = listed;
+        }
+    }
+    Ok(ids)
+}
+
 /// A job's pieces and the block rectangle they tile, from the selection and the job flags.
 pub struct Plan {
     /// The selection snapped to chunks, as a run without the job flags would build it.
@@ -528,6 +563,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn pieces_build_in_the_order_asked() {
+        use crate::args::PieceOrder;
+        let (proj, world) = bucharest();
+        let units = plan_units(&proj, &world, 1).unwrap();
+        let n = units.len();
+        let all = |o: Option<&PieceOrder>| build_order(&units, o).unwrap();
+        assert_eq!(all(None), (0..n).collect::<Vec<_>>());
+        assert_eq!(all(Some(&PieceOrder::Centre)), all(None));
+        for (o, key) in [
+            (
+                PieceOrder::West,
+                (|u: &WorkUnit| u.rect.min_x()) as fn(&WorkUnit) -> i32,
+            ),
+            (PieceOrder::East, |u| -u.rect.max_x()),
+            (PieceOrder::North, |u| u.rect.min_z()),
+            (PieceOrder::South, |u| -u.rect.max_z()),
+        ] {
+            let got = all(Some(&o));
+            assert_eq!(got.len(), n);
+            assert!(
+                got.windows(2)
+                    .all(|w| key(&units[w[0]]) <= key(&units[w[1]])),
+                "{o:?}"
+            );
+        }
+        let got = all(Some(&PieceOrder::List(vec![3, 1, 3])));
+        assert_eq!(&got[..3], &[2, 0, 1]);
+        assert_eq!(got.len(), n);
+        assert!(build_order(&units, Some(&PieceOrder::List(vec![n as u32 + 1]))).is_err());
     }
 
     #[test]

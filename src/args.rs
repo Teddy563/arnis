@@ -776,6 +776,43 @@ pub struct UnitArgs {
     /// from an earlier job over part of this one.
     #[arg(long)]
     pub skip_built: bool,
+
+    /// Order a --one-world job builds its pieces in: from the centre out (the default), from
+    /// one side, or the listed piece numbers first and the rest from the centre out.
+    #[arg(long, value_name = "centre|west|east|north|south|N,N...", value_parser = parse_piece_order)]
+    pub piece_order: Option<PieceOrder>,
+}
+
+/// `--piece-order`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PieceOrder {
+    Centre,
+    West,
+    East,
+    North,
+    South,
+    /// Piece numbers, from 1.
+    List(Vec<u32>),
+}
+
+fn parse_piece_order(s: &str) -> Result<PieceOrder, String> {
+    Ok(match s {
+        "centre" | "center" => PieceOrder::Centre,
+        "west" => PieceOrder::West,
+        "east" => PieceOrder::East,
+        "north" => PieceOrder::North,
+        "south" => PieceOrder::South,
+        _ => PieceOrder::List(
+            s.split(',')
+                .map(|n| match n.trim().parse::<u32>() {
+                    Ok(n @ 1..) => Ok(n),
+                    _ => Err(format!(
+                        "{s}: expected centre, west, east, north, south or piece numbers like 3,1,2"
+                    )),
+                })
+                .collect::<Result<_, _>>()?,
+        ),
+    })
 }
 
 /// How `--snap-regions` fits a job to the region lattice.
@@ -904,6 +941,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (u.snap_regions.is_some(), "--snap-regions"),
         (u.margin_regions != 0, "--margin-regions"),
         (u.skip_built, "--skip-built"),
+        (u.piece_order.is_some(), "--piece-order"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1563,9 +1601,10 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
-    if args.units.skip_built && !args.units.coordinates() {
+    if (args.units.skip_built || args.units.piece_order.is_some()) && !args.units.coordinates() {
         return Err(
-            "--skip-built only applies to a job built in pieces (--unit-regions).".to_string(),
+            "--skip-built and --piece-order only apply to a job built in pieces (--unit-regions)."
+                .to_string(),
         );
     }
     let planned = args.units.coordinates() || args.units.plan_units.is_some();
@@ -1985,6 +2024,12 @@ mod tests {
             &with(&["--unit-regions", "2", "--skip-built"]),
             "--skip-built"
         ));
+        let order = |v: &str| p(&["--piece-order", v]).map(|a| a.units.piece_order);
+        assert_eq!(order("west").unwrap(), Some(PieceOrder::West));
+        assert_eq!(order("center").unwrap(), Some(PieceOrder::Centre));
+        assert_eq!(order("3,1").unwrap(), Some(PieceOrder::List(vec![3, 1])));
+        assert!(order("0,1").is_err() && order("up").is_err());
+        assert!(refused(&with(&["--piece-order", "west"]), "--piece-order"));
         let live = p(&["--live", "--one-world", "--skip-built"]).unwrap();
         assert!(refuse_live_extras(&live)
             .unwrap_err()
