@@ -4117,9 +4117,9 @@ async function startGeneration() {
         flags: meldFlags({
           oneWorld: oneWorld,
           java: getEffectiveWorldFormat() === "java",
-          caves: caves,
-          extendHeight: disable_height_limit && !oneWorld && getEffectiveWorldFormat() === "java",
-          lods: voxy_lod || dh_lod
+          caves: settings.cavesEnabled,
+          extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
+          lods: settings.voxyLodEnabled || settings.dhLodEnabled
         })
     });
 
