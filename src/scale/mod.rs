@@ -424,6 +424,9 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
     let running = Mutex::new(0usize);
     let cap = AtomicUsize::new(sizing.workers);
+    // The head piece draws the map item from itself alone; once all are built it is redrawn
+    // from every piece's preview, which each piece then writes.
+    let stitch_map = args.map_item && !args.bedrock && !args.luanti && of > 1;
     let failure: Mutex<Option<String>> = Mutex::new(None);
     let aborting = AtomicBool::new(false);
     // Pieces that failed for good; the others keep building.
@@ -442,12 +445,15 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
         let (lo, hi) = (bbox.min(), bbox.max());
         let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
-        let argv = sizing.child_args(child_args(
+        let mut argv = sizing.child_args(child_args(
             argv.iter().cloned(),
             &bbox,
             &lease,
             spawn_piece == Some(i),
         ));
+        if stitch_map && !args.map_preview {
+            argv.push("--map-preview".into());
+        }
         let mut attempt = 0;
         let r = loop {
             println!(
@@ -607,6 +613,13 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // The pieces' map ids were their own; the counter now covers all of them.
     if let Err(e) = crate::map_item::sync_map_counter(world_dir) {
         eprintln!("Warning: Failed to update the map id counter: {e}");
+    }
+    if stitch_map {
+        match crate::map_item::repaint_job_map(world_dir) {
+            Ok(Some(id)) => println!("World map item (map #{id}) redrawn over every piece."),
+            Ok(None) => {}
+            Err(e) => eprintln!("Warning: Failed to redraw the map item over every piece: {e}"),
+        }
     }
     if let Err(e) = crate::world_utils::touch_last_played(world_dir) {
         eprintln!("Warning: Failed to update LastPlayed: {e}");
