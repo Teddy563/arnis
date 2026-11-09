@@ -14,9 +14,9 @@ _**Want mobile generation or larger map sizes?** [MapSmith](https://arnismc.com/
 
 ## Arnis 3.5.0 Confluence (fork)
 
-_Where Meld flows into Arnis._ This fork release (Teddy563/arnis) brings the large-world tooling and generation options of Meld into Arnis. Big areas build in parallel pieces that you can pause, stop, resume and retry, with progress as JSON lines for other programs. About 50 new flags cover data sources (`.osm.pbf`, a local archive, offline and prewarm), output (B_Linear, origin, world border), terrain (river beds, water detail, per-position climate, seed, Y limits), nature (rocks, bushes, tree packs, cave styles) and building (road detail, props, loot tables). The GUI gets a Meld features switch, run controls and a data panel, in 20 languages, and the branch is merged with upstream's Live mode. See the [3.5.0 release notes](docs/release/RELEASE-3.5.0-CONFLUENCE.mdx) for every flag, the phases, known limitations and how it was verified.
+This fork release (Teddy563/arnis) brings the large-world tooling and generation options of Meld into Arnis. Big areas build in parallel pieces that you can pause, stop, resume and retry, with progress as JSON lines for other programs. About 50 new flags cover data sources (`.osm.pbf`, a local archive, offline and prewarm), output (B_Linear, origin, world border), terrain (river beds, water detail, per-position climate, seed, Y limits), nature (rocks, bushes, tree packs, cave styles) and building (road detail, props, loot tables). The GUI gets a Meld features switch, run controls and a data panel, in 20 languages, and the branch is merged with upstream's Live mode. See the [3.5.0 release notes](docs/release/RELEASE-3.5.0-CONFLUENCE.mdx) for every flag, the phases, known limitations and how it was verified.
 
-**Every new flag is off by default.** With the Meld features switch off, and no new flag on the command line, Arnis builds the same world as stock.
+Every new flag is off by default. With the Meld features switch off and no new flag on the command line, Arnis builds the same world as stock, apart from the One World seam fix.
 
 <p>
 <img width="48%" src="docs/images/3.5.0/gui-generation-meld.png" alt="Meld settings in the Generation section">

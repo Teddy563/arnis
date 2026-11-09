@@ -1,11 +1,9 @@
 ---
 title: Arnis 3.5.0 "Confluence"
-description: Where Meld flows into Arnis. Large-world foundation, Meld features as flags, a GUI for them, 20 locales, and the merge with upstream Live mode.
+description: Large-world foundation, Meld features as flags, a GUI for them, 20 locales, and the merge with upstream Live mode.
 ---
 
 # Arnis 3.5.0 "Confluence"
-
-_Where Meld flows into Arnis._
 
 This is a fork release (Teddy563/arnis) built on upstream v3.4.0 and merged with upstream `main` (Live mode). Every new flag is off by default. With no new flag and the Meld features switch off, Arnis writes the same world as stock (the One World seam fix is the one exception, see Phase 0).
 
@@ -15,7 +13,7 @@ Contents: [Phase 0](#phase-0-the-large-world-foundation) / [Phase 1](#phase-1-me
 
 ## Phase 0: the large-world foundation
 
-Everything the later phases stand on. None of it changes output unless you ask.
+The later phases build on this. Apart from the seam fix, none of it changes output unless you ask.
 
 - **NDJSON progress.** `--progress json` also prints one JSON object per line on stdout (`{"v":1,"type":...}`): phases, progress, per-piece records, errors and a final `done` line with chunks, CPU seconds, peak memory and wall time. It is for programs that drive the CLI.
 - **Capabilities.** `--capabilities` prints one line, a JSON array of every long flag this build knows, and exits. A driver can probe before it passes a flag.
@@ -42,7 +40,7 @@ Each track lists every flag, then anything v3.4.0 already did that was left out.
 | `--prewarm` | Download and cache everything this command would read for `--bbox`, then exit without writing a world. |
 | `--prewarm-first` | With `--unit-regions`, warm the caches of every piece, one at a time, before the pieces build. |
 
-What it does: the `.pbf` reader uses the same query v3.4.0 sends to Overpass, and a test checks that both paths give the same elements. Offline mode hooks every download point (Overpass, tile index and ranges, elevation, land cover, canopy, Overture, 3D models) and removes the fresh world if something was missing. `ARNIS_CACHE_ROOT` moves all caches. One new crate: `osmpbf` 0.3.8.
+The `.pbf` reader uses the same query v3.4.0 sends to Overpass, and a test checks that both paths give the same elements. Offline mode hooks every download point (Overpass, tile index and ranges, elevation, land cover, canopy, Overture, 3D models) and removes the fresh world if something was missing. `ARNIS_CACHE_ROOT` moves all caches. One new crate: `osmpbf` 0.3.8.
 
 Already in v3.4.0, so not redone: the remote OSM tile archive and its cache, the Mapterhorn 404 markers (one extension: a `--prewarm` run proves the network once so absent tiles replay offline), and `--no-update-check`, `--no-cache-sweep` and `--max-downloads` (Phase 0).
 
@@ -111,7 +109,7 @@ The built-in table rolls the same chests as v3.4.0 (a test pins all five themes)
 
 ## Phase 2: the GUI
 
-The window gains the Meld features without changing what it looks like by default.
+By default the window looks the same as stock.
 
 **Meld features switch** (Advanced). Off, the window shows only stock settings and sends no new flag. On, the extra controls appear.
 
@@ -143,7 +141,7 @@ The window builds the same arguments as the CLI and runs them through the CLI's 
 
 ## Phase 3: translations
 
-The new strings (about 147 keys) are translated for the GUI's 20 locales: ar, de, en-US, es, fi, fr-FR, hu, ja, ka-GE, ko, lt, lv, pl, pt-BR, ro, ru, sl, sv, ua and zh-CN. Romanian had its own translation pass. The tooltips are translated too, along with every other new key, into all 19 locales besides en-US. The ka-GE, lt, lv and hu translations, and the Japanese and Korean terms for "props", want a check by a native speaker.
+The new strings (about 147 keys, tooltips included) are translated into all 19 locales besides en-US, so the GUI's 20 locales are covered: ar, de, en-US, es, fi, fr-FR, hu, ja, ka-GE, ko, lt, lv, pl, pt-BR, ro, ru, sl, sv, ua and zh-CN. Romanian had its own translation pass. The ka-GE, lt, lv and hu translations, and the Japanese and Korean terms for "props", want a check by a native speaker.
 
 ## Phase 4: merge with upstream main (Live mode)
 
@@ -179,11 +177,13 @@ Upstream `main` (Live mode, vehicles, stations, race tracks, golf and stadiums) 
 
 **Parity method.** Flags off must equal stock. The Bucharest parity area (`--bbox 44.4450,26.0950,44.4480,26.1030`) is built twice, plain and as a One World (a seed area, then the extension), and compared chunk by chunk after dropping `LastUpdate` and `InhabitedTime`. Every Phase 0 task and every track passed this gate before it was merged.
 
-- Before the upstream merge: **0 of 840** plain chunks and **0 of 880** One World chunks differ from the baseline.
-- After the merge: plain is **0 of 840** against stock upstream `main`. One World is 320 of 880 against stock `main`, all from the seam fix, and 0 of 880 against the seam-fixed baseline. Two renders by the merged build are identical.
+- Before the upstream merge: 0 of 840 plain chunks and 0 of 880 One World chunks differ from the baseline.
+- After the merge: plain is 0 of 840 against stock upstream `main`. One World is 320 of 880 against stock `main`, all from the seam fix, and 0 of 880 against the seam-fixed baseline. Two renders by the merged build are identical.
 - With river-bed and water-detail on, the parity area (no water in its land cover) also gives 0/840 and 0/880. With `--seed 7` the world differs on purpose.
 
-**Tests.** `cargo test --all-targets --all-features` on the release branch: 2,427 unit tests pass, 24 are ignored and 1 fails on Windows only (`locales_match_en_us_keys`, because `en.json` is a symlink that Windows does not create). The Wave 0 exit run had 2,176 passing. Integration tests run with `--no-fail-fast`, and `tests/offline.rs` passes. Run by hand with their environment: resume after a killed piece (880 of 880 chunks equal, twice), prewarm then offline equals online (0 differing chunks), and pieces against a single run within the stated residual. `cargo fmt --check` and `cargo clippy --all-targets --all-features -D warnings` are clean. `node tests/gui/meld-flags.mjs` confirms the switch sends no flag when off. **Live tile.** One Live tile was run by hand without the server or the EULA. It was an `--one-world --live-tile` run of region 0,0 into a staging copy of a small One World, flags off and again on a `--seed 7` world with an empty cache. Each took about 3 s (the deadline is 600 s), wrote 1,024 chunks into `r.0.0.mca` only, created no neighbour region, and recorded its area in the staging manifest.
+**Tests.** `cargo test --all-targets --all-features` on the release branch: 2,427 unit tests pass, 24 are ignored and 1 fails on Windows only (`locales_match_en_us_keys`, because `en.json` is a symlink that Windows does not create). The Wave 0 exit run had 2,176 passing. Integration tests run with `--no-fail-fast`, and `tests/offline.rs` passes. Run by hand with their environment: resume after a killed piece (880 of 880 chunks equal, twice), prewarm then offline equals online (0 differing chunks), and pieces against a single run within the stated residual. `cargo fmt --check` and `cargo clippy --all-targets --all-features -D warnings` are clean. `node tests/gui/meld-flags.mjs` confirms the switch sends no flag when off.
+
+**Live tile.** One Live tile was run by hand without the server or the EULA. It was an `--one-world --live-tile` run of region 0,0 into a staging copy of a small One World, flags off and again on a `--seed 7` world with an empty cache. Each took about 3 s (the deadline is 600 s), wrote 1,024 chunks into `r.0.0.mca` only, created no neighbour region, and recorded its area in the staging manifest.
 
 **Smoke runs.**
 - All flags on, One World, 2 workers, 1-region pieces, prewarm first: finished, 4 regions, border set. Flags: `--river-bed v1 --water-detail scaled --climate-mode per-position --seed 7 --rocks --bushes --tree-realm eur --caves --cave-style more-mix --cave-ores more --cave-seed 3 --road-detail clean --world-border`.
