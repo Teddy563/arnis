@@ -151,17 +151,64 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
 
 // ---- A job built in pieces: outlines on the map, Pause, Stop and Retry ----
 
-// piece index -> { state, bounds }, from the job's `piece` records.
+// piece index -> { state, bounds, halo, worker, pct, since, end, error }, from the job's
+// `piece` records. `since` is when it began running, `end` when it stopped.
 const pieces = new Map();
 let paused = false;
+let running = false;
+// The selection the pieces belong to: a different one makes them (and Retry) stale.
+let jobBBox = '';
 let retryNext = [];
 let call = () => {};
 let postToMap = () => {};
 let restart = () => {};
 let localizer = () => {};
 
+const RUNNING = new Set(['start', 'retry']);
+const STATE_TEXT = {
+  queued: ['run_state_queued', 'Waiting'], start: ['run_state_running', 'Running'],
+  retry: ['run_state_running', 'Running'], done: ['run_state_done', 'Done'],
+  skipped: ['run_state_skipped', 'Already built'], failed: ['run_state_failed', 'Failed'],
+  stopped: ['run_state_stopped', 'Stopped'],
+};
+
+// What the map draws; the words are localized here because the map has no language of its own.
 const outlines = () =>
-  [...pieces].map(([i, p]) => ({ i, state: p.state, bounds: p.bounds }));
+  [...pieces].map(([i, p]) => {
+    const [key, fallback] = STATE_TEXT[p.state] || STATE_TEXT.queued;
+    return {
+      i, n: i + 1, state: p.state, bounds: p.bounds, halo: p.halo, pct: p.pct, since: p.since, end: p.end,
+      text: {
+        piece: t('run_piece', 'Piece {n}', { n: i + 1 }),
+        state: t(key, fallback),
+        worker: p.worker ? t('run_worker', 'Worker {n}', { n: p.worker }) : '',
+        error: p.error || '',
+        hint: canRetry(p) ? t('run_retry_hint', 'Click to retry this piece') : '',
+      },
+    };
+  });
+
+// A finished job's failed or stopped piece can be rebuilt alone.
+const canRetry = (p) => !running && (p.state === 'failed' || p.state === 'stopped');
+
+// "3/8 done · 2 running · 1 failed"
+export function summary() {
+  const all = [...pieces.values()];
+  const count = (f) => all.filter(f).length;
+  return t('run_summary', '{done}/{total} done · {running} running · {failed} failed', {
+    done: count((p) => p.state === 'done' || p.state === 'skipped'),
+    total: all.length,
+    running: count((p) => RUNNING.has(p.state)),
+    failed: count((p) => p.state === 'failed'),
+  });
+}
+
+// One run of the job over the given pieces (1-based, as --only-pieces takes them). The run's
+// flags (meldFlags) take them; one a refused start leaves behind is dropped here.
+function retry(list) {
+  retryNext = list;
+  Promise.resolve(restart()).finally(() => { retryNext = []; });
+}
 
 export function initRunControls({ invoke, post, start, localize }) {
   call = invoke;
@@ -178,9 +225,18 @@ export function initRunControls({ invoke, post, start, localize }) {
     await call('gui_stop_generation');
   });
   el('run-retry-button').addEventListener('click', () => {
-    retryNext = [...pieces].filter(([, p]) => RETRYABLE.has(p.state)).map(([i]) => i + 1);
-    // Taken by the run's flags (meldFlags); one a refused start leaves behind is dropped here.
-    Promise.resolve(restart()).finally(() => { retryNext = []; });
+    retry([...pieces].filter(([, p]) => RETRYABLE.has(p.state)).map(([i]) => i + 1));
+  });
+  // The map: a click on a failed or stopped piece's outline retries just that piece.
+  window.addEventListener('message', (event) => {
+    const m = event.data;
+    if (!m || m.type !== 'retryPiece') return;
+    const p = pieces.get(m.piece);
+    if (p && canRetry(p)) retry([m.piece + 1]);
+  });
+  // The faint border around each piece showing what it builds beyond its own area.
+  el('run-halo-toggle').addEventListener('change', (e) => {
+    postToMap({ type: 'pieceHalo', on: e.target.checked });
   });
 }
 
@@ -197,19 +253,48 @@ const RETRYABLE = new Set(['failed', 'stopped', 'queued']);
 
 // A piece record from the backend. A retry keeps the pieces it does not rebuild.
 export function notePiece(piece) {
-  pieces.set(piece.piece, { state: piece.state, bounds: piece.bounds });
+  const was = pieces.get(piece.piece);
+  // Progress records repeat the running state: the clock starts with the first.
+  const since = RUNNING.has(piece.state) ? (was && RUNNING.has(was.state) ? was.since : Date.now()) : was?.since;
+  pieces.set(piece.piece, {
+    state: piece.state, bounds: piece.bounds, halo: piece.halo || was?.halo,
+    worker: piece.worker ?? was?.worker, since,
+    end: RUNNING.has(piece.state) || piece.state === 'queued' ? undefined : (was && !RUNNING.has(was.state) && was.end) || Date.now(),
+    // A piece that starts again begins at its first percent, and a failure's error is its own.
+    pct: piece.pct ?? (piece.state === 'queued' ? undefined : was?.pct),
+    error: piece.state === 'failed' ? piece.error : '',
+  });
   postToMap({ type: 'pieceOutlines', pieces: outlines() });
 }
 
-export function clearPieces() {
+// A new run starts clean; a retry keeps the pieces it does not rebuild. `bbox` is the selection
+// the run is for.
+export function clearPieces(bbox = '') {
   if (retryNext.length) return;
+  jobBBox = bbox;
+  forgetPieces();
+}
+
+// The selection changed under a finished job: its pieces (and Retry) no longer fit it.
+export function dropStalePieces(bbox) {
+  if (running || !pieces.size || bbox === jobBBox) return;
+  forgetPieces();
+  showRunControls(false);
+}
+
+function forgetPieces() {
   pieces.clear();
   postToMap({ type: 'pieceOutlines', pieces: [] });
 }
 
 // `running` is whether a generation is under way. Pause and Stop belong to a running job,
 // Retry to a finished one that left pieces behind.
-export function showRunControls(running) {
+export function showRunControls(isRunning) {
+  const wasRunning = running;
+  running = isRunning;
+  // The hint to click a failed piece comes and goes with the run.
+  if (wasRunning !== running && pieces.size) postToMap({ type: 'pieceOutlines', pieces: outlines() });
+  el('run-summary').textContent = pieces.size ? summary() : '';
   const unfinished = [...pieces.values()].some((p) => RETRYABLE.has(p.state));
   el('run-controls').hidden = pieces.size === 0 || !(running || unfinished);
   el('run-pause-button').hidden = el('run-stop-button').hidden = !running;

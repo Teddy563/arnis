@@ -876,6 +876,7 @@ input[type="range"] {
 /* Run controls of a job built in pieces (Meld features) */
 .run-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
@@ -883,6 +884,25 @@ input[type="range"] {
 .run-controls[hidden],
 .run-controls .run-button[hidden] {
   display: none;
+}
+
+.run-summary {
+  flex-basis: 100%;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.run-summary:empty {
+  display: none;
+}
+
+.run-halo {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .run-button {

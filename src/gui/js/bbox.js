@@ -1488,18 +1488,85 @@ $(document).ready(function () {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
         skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43'
     };
+    // Colour is never the only sign of a state: an icon in the label, and the line's pattern.
+    var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8' };
+    var PIECE_DASH = { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5' };
+    var lastPieces = [];
+    var hover = null; // the piece under the mouse: a redraw reopens its tooltip
+    var pieceHalo = false;
+    // Below this width on screen (px), a piece's number would not fit in it.
+    var PIECE_LABEL_MIN_PX = 44;
+
+    function pieceElapsed(p) {
+        if (!p.since) return '';
+        var s = Math.max(0, Math.round(((p.end || Date.now()) - p.since) / 1000));
+        return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }
+
+    function pieceTip(p) {
+        var row = function(text) {
+            var d = document.createElement('div');
+            d.textContent = text;
+            return d;
+        };
+        var box = document.createElement('div');
+        var running = p.state === 'start' || p.state === 'retry';
+        box.appendChild(row(p.text.piece + ' \u00B7 ' + p.text.state + (running && p.pct != null ? ' ' + p.pct + '%' : '')));
+        if (p.text.worker) box.appendChild(row(p.text.worker));
+        if (p.since) box.appendChild(row(pieceElapsed(p)));
+        if (p.text.error) box.appendChild(row(p.text.error));
+        if (p.text.hint) box.appendChild(row(p.text.hint));
+        return box;
+    }
+
     function drawPieceOutlines(pieces) {
+        lastPieces = pieces;
         pieceLayer.clearLayers();
         pieces.forEach(function(p) {
             var color = PIECE_COLORS[p.state] || '#8a8a8a';
             var b = p.bounds;
-            L.rectangle([[b[0], b[1]], [b[2], b[3]]], {
-                color: color, weight: 2, fillColor: color,
+            var running = p.state === 'start' || p.state === 'retry';
+            var retryable = Boolean(p.text.hint);
+            if (pieceHalo && p.halo) {
+                L.rectangle([[p.halo[0], p.halo[1]], [p.halo[2], p.halo[3]]], {
+                    color: color, weight: 1, opacity: 0.4, fill: false, dashArray: '2 6', interactive: false
+                }).addTo(pieceLayer);
+            }
+            var rect = L.rectangle([[b[0], b[1]], [b[2], b[3]]], {
+                color: color, weight: p.state === 'failed' ? 3 : 2, fillColor: color,
                 fillOpacity: p.state === 'queued' ? 0.05 : 0.18,
-                dashArray: p.state === 'queued' ? '4 4' : null, interactive: false
+                dashArray: PIECE_DASH[p.state] || null,
+                className: running ? 'piece-running' : (retryable ? 'piece-retryable' : ''),
+                interactive: true
             }).addTo(pieceLayer);
+            rect.bindTooltip(pieceTip(p), { sticky: true, className: 'piece-tip' });
+            rect.on('mousemove', function(e) { hover = { i: p.i, at: e.latlng }; });
+            rect.on('mouseout', function() { hover = null; });
+            if (hover && hover.i === p.i) rect.openTooltip(hover.at);
+            if (retryable) {
+                rect.on('click', function() {
+                    window.parent.postMessage({ type: 'retryPiece', piece: p.i }, '*');
+                });
+            }
+            var label = (PIECE_ICONS[p.state] ? PIECE_ICONS[p.state] + ' ' : '') + p.n +
+                (running && p.pct != null ? ' ' + p.pct + '%' : '');
+            L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false })
+                .setLatLng(rect.getBounds().getCenter()).setContent(label).addTo(pieceLayer);
         });
+        updatePieceLabels();
     }
+
+    // Labels stay out of pieces too small on screen to hold them.
+    function updatePieceLabels() {
+        var minPx = Infinity;
+        lastPieces.forEach(function(p) {
+            var sw = map.latLngToContainerPoint([p.bounds[0], p.bounds[1]]);
+            var ne = map.latLngToContainerPoint([p.bounds[2], p.bounds[3]]);
+            minPx = Math.min(minPx, Math.abs(ne.x - sw.x));
+        });
+        map.getContainer().classList.toggle('piece-labels-off', minPx < PIECE_LABEL_MIN_PX);
+    }
+    map.on('zoomend', updatePieceLabels);
 
     // Listen for messages from parent window
     window.addEventListener('message', function(event) {
@@ -1554,6 +1621,12 @@ $(document).ready(function () {
         // A job built in pieces: one outline per piece, coloured by its state.
         if (event.data && event.data.type === 'pieceOutlines') {
             drawPieceOutlines(event.data.pieces || []);
+        }
+
+        // The faint border around each piece, off until the user asks for it.
+        if (event.data && event.data.type === 'pieceHalo') {
+            pieceHalo = Boolean(event.data.on);
+            drawPieceOutlines(lastPieces);
         }
 
         // Handle world changed (disable preview)

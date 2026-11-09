@@ -186,8 +186,16 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
     let piece_record = |i: usize, state: &str, extra: Value| {
+        // The area the piece builds beyond its own: its halo, for the window's map.
+        let halo = crate::projection::llbbox_for_rect(
+            &proj,
+            &one_world::piece_build_rect(&units[i].rect, &rect),
+        )
+        .ok()
+        .map(|b| [b.min().lat(), b.min().lng(), b.max().lat(), b.max().lng()]);
         let mut body = json!({"piece": i, "of": of, "state": state,
-                              "rect": corners(&units[i].rect), "bounds": bounds(&units[i])});
+                              "rect": corners(&units[i].rect), "bounds": bounds(&units[i]),
+                              "halo": halo});
         if let (Value::Object(body), Value::Object(extra)) = (&mut body, extra) {
             body.extend(extra);
         }
