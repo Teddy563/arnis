@@ -624,5 +624,10 @@
   "area_pieces_info": "Будується в {n} частинах · Процесів: {w}",
   "meld_use_pieces": "Увімкніть функції Meld, щоб будувати частинами",
   "plan_totals_ring": "{pieces} частин · {regions} регіонів · кільце {ring}",
-  "plan_seconds": "{s} с"
+  "plan_seconds": "{s} с",
+  "layout_mode": "Макет головної сторінки",
+  "layout_mode_desc": "Сторінка з мапою на весь екран або класична. «Авто» слідує функціям Meld.",
+  "layout_mode_auto": "Авто",
+  "layout_mode_map": "Мапа в центрі",
+  "layout_mode_classic": "Класичний"
 }

@@ -1105,21 +1105,28 @@ body.map-first .controls-box .progress-section {
   margin-top: 8px;
 }
 
-/* The 3D preview: a card docked bottom-right over the map, resizable by its corner; a click
-   still opens the full preview. Clear of Leaflet's attribution below it. */
+/* The 3D preview: a card docked bottom-right over the map, clear of Leaflet's attribution.
+   Its corner grip (bottom-left, by direction: rtl, since the card grows up and left) resizes
+   it; the height follows the width (aspect-ratio), 200 px to 60 % of the window. A click still
+   opens the full preview; meld-features.js remembers the width. */
 body.map-first .preview3d-mini {
   position: fixed;
   right: 18px;
   bottom: 34px;
   z-index: 6;
   width: 300px;
-  height: 190px;
+  height: auto;
+  aspect-ratio: 16 / 10;
   min-width: 200px;
-  min-height: 130px;
-  max-width: calc(100vw - 420px);
-  max-height: calc(100vh - 120px);
+  max-width: 60vw;
+  max-height: 60vh;
   margin: 0;
-  resize: both;
+  direction: rtl;
+  resize: horizontal;
+}
+
+body.map-first .preview3d-mini > * {
+  direction: ltr;
 }
 
 /* The footer: one small line bottom-left over the map */

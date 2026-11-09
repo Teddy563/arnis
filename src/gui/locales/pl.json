@@ -624,5 +624,10 @@
   "area_pieces_info": "Budowane w {n} częściach · Procesy: {w}",
   "meld_use_pieces": "Użyj funkcji Meld, aby budować w częściach",
   "plan_totals_ring": "{pieces} części · {regions} regionów · pierścień {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Układ strony głównej",
+  "layout_mode_desc": "Strona z mapą na pierwszym planie lub klasyczna. Automatycznie podąża za funkcjami Meld.",
+  "layout_mode_auto": "Automatycznie",
+  "layout_mode_map": "Mapa na pierwszym planie",
+  "layout_mode_classic": "Klasyczny"
 }

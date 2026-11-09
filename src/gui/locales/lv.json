@@ -624,5 +624,10 @@
   "area_pieces_info": "Tiek būvēts {n} daļās · Procesi: {w}",
   "meld_use_pieces": "Izmantojiet Meld funkcijas, lai būvētu pa daļām",
   "plan_totals_ring": "{pieces} daļas · {regions} reģioni · gredzens {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Galvenās lapas izkārtojums",
+  "layout_mode_desc": "Lapa ar karti pa visu logu vai klasiskā. Automātiski seko Meld funkcijām.",
+  "layout_mode_auto": "Automātiski",
+  "layout_mode_map": "Karte pirmajā vietā",
+  "layout_mode_classic": "Klasisks"
 }

@@ -1609,6 +1609,19 @@
                 </div>
 
                 <div class="settings-row setting-tile is-wide">
+                  <label for="layout-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading"><span data-localize="layout_mode">Main Page Layout</span></span>
+                      <span class="setting-desc" data-localize="layout_mode_desc">The map-first page or the classic one. Auto follows Meld features.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="layout-select" name="layout-select" class="settings-select"><option value="auto" selected data-localize="layout_mode_auto">Auto</option><option value="map" data-localize="layout_mode_map">Map first</option><option value="classic" data-localize="layout_mode_classic">Classic</option></select>
+                  </div>
+                </div>
+
+                <div class="settings-row setting-tile is-wide">
                   <label for="save-path-input" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-folder"></use></svg>
                     <span class="setting-text">

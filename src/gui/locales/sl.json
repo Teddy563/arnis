@@ -624,5 +624,10 @@
   "area_pieces_info": "Gradi se v {n} delih · Procesi: {w}",
   "meld_use_pieces": "Uporabite funkcije Meld za gradnjo po delih",
   "plan_totals_ring": "{pieces} kosov · {regions} regij · obroč {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Postavitev glavne strani",
+  "layout_mode_desc": "Stran z zemljevidom v ospredju ali klasična. Samodejno sledi funkcijam Meld.",
+  "layout_mode_auto": "Samodejno",
+  "layout_mode_map": "Zemljevid v ospredju",
+  "layout_mode_classic": "Klasično"
 }

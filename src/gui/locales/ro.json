@@ -624,5 +624,10 @@
   "area_pieces_info": "Se construiește în {n} bucăți · Procese: {w}",
   "meld_use_pieces": "Folosește funcțiile Meld ca s-o construiești pe bucăți",
   "plan_totals_ring": "{pieces} bucăți · {regions} regiuni · inel {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Aspectul paginii principale",
+  "layout_mode_desc": "Pagina cu harta pe tot ecranul sau cea clasică. Automat urmează funcțiile Meld.",
+  "layout_mode_auto": "Automat",
+  "layout_mode_map": "Harta în prim-plan",
+  "layout_mode_classic": "Clasic"
 }

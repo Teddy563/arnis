@@ -21,15 +21,36 @@ const t = (key, fallback, vars = {}) => {
 export function initMeldFeatures() {
   const toggle = el('advanced-meld-features-toggle');
   if (!toggle) return;
-  // Off: today's 3.4.0-style page. On: the map-first page (styles.css, body.map-first).
+  // The map-first page (styles.css, body.map-first) with Meld features on, the 3.4.0-style one
+  // off, unless Settings > Application > Main Page Layout says which.
+  const layout = el('layout-select');
   const apply = () => {
+    const mode = layout ? layout.value : 'auto';
     document.body.classList.toggle('meld-off', !toggle.checked);
-    document.body.classList.toggle('map-first', toggle.checked);
+    const mapFirst = mode === 'map' || (mode === 'auto' && toggle.checked);
+    document.body.classList.toggle('map-first', mapFirst);
+    const dock = el('preview3d-mini');
+    if (dock) {
+      let w = 0;
+      try { w = Number(localStorage.getItem('arnis-preview-dock-width')); } catch (_) { /* default size */ }
+      dock.style.width = mapFirst && w >= 200 ? `${w}px` : '';
+    }
     // Off, a finished job's pieces leave the map with the rest of Meld features.
     if (!toggle.checked && !running && pieces.size) resetPieces();
   };
   toggle.addEventListener('change', apply);
+  if (layout) layout.addEventListener('change', apply);
   apply();
+
+  // The docked 3D preview keeps the width it was dragged to (map-first page only: the classic
+  // page sizes it itself, so apply() takes the dragged width off there).
+  const dock = el('preview3d-mini');
+  if (dock && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (!document.body.classList.contains('map-first') || !dock.offsetWidth) return;
+      try { localStorage.setItem('arnis-preview-dock-width', String(dock.offsetWidth)); } catch (_) { /* not kept */ }
+    }).observe(dock);
+  }
 
   // A click only moves the active segment; settings-store.js clicks too, to restore.
   document.querySelectorAll('.segmented-control[id^="meld-"]').forEach((group) => {

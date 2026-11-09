@@ -624,5 +624,10 @@
   "area_pieces_info": "分 {n} 块构建 · 工作进程：{w}",
   "meld_use_pieces": "启用 Meld 功能即可分块构建",
   "plan_totals_ring": "{pieces} 个分块 · {regions} 个区域 · 外圈 {ring}",
-  "plan_seconds": "{s} 秒"
+  "plan_seconds": "{s} 秒",
+  "layout_mode": "主页面布局",
+  "layout_mode_desc": "以地图为主的页面或经典页面。自动随 Meld 功能切换。",
+  "layout_mode_auto": "自动",
+  "layout_mode_map": "地图优先",
+  "layout_mode_classic": "经典"
 }

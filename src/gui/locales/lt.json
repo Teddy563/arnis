@@ -624,5 +624,10 @@
   "area_pieces_info": "Statoma {n} dalimis · Procesai: {w}",
   "meld_use_pieces": "Naudokite Meld funkcijas statyti dalimis",
   "plan_totals_ring": "{pieces} dalių · {regions} regionų · žiedas {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Pagrindinio puslapio išdėstymas",
+  "layout_mode_desc": "Puslapis su žemėlapiu per visą langą arba klasikinis. Automatinis seka Meld funkcijas.",
+  "layout_mode_auto": "Automatinis",
+  "layout_mode_map": "Žemėlapis pirmiausia",
+  "layout_mode_classic": "Klasikinis"
 }

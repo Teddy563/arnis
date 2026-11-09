@@ -624,5 +624,10 @@
   "area_pieces_info": "{n}개 조각으로 생성 · 작업자: {w}",
   "meld_use_pieces": "Meld 기능을 켜면 조각으로 나눠 지을 수 있습니다",
   "plan_totals_ring": "{pieces}개 조각 · {regions}개 리전 · 외곽 {ring}",
-  "plan_seconds": "{s}초"
+  "plan_seconds": "{s}초",
+  "layout_mode": "메인 화면 레이아웃",
+  "layout_mode_desc": "지도 중심 화면 또는 기존 화면. 자동은 Meld 기능을 따릅니다.",
+  "layout_mode_auto": "자동",
+  "layout_mode_map": "지도 우선",
+  "layout_mode_classic": "클래식"
 }

@@ -624,5 +624,10 @@
   "area_pieces_info": "შენდება {n} ნაწილად · პროცესები: {w}",
   "meld_use_pieces": "ნაწილებად ასაშენებლად ჩართეთ Meld ფუნქციები",
   "plan_totals_ring": "{pieces} ნაწილი · {regions} რეგიონი · რგოლი {ring}",
-  "plan_seconds": "{s} წმ"
+  "plan_seconds": "{s} წმ",
+  "layout_mode": "მთავარი გვერდის განლაგება",
+  "layout_mode_desc": "რუკაზე ორიენტირებული ან კლასიკური გვერდი. ავტომატური მიჰყვება Meld ფუნქციებს.",
+  "layout_mode_auto": "ავტომატური",
+  "layout_mode_map": "რუკა წინა პლანზე",
+  "layout_mode_classic": "კლასიკური"
 }

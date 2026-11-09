@@ -624,5 +624,10 @@
   "area_pieces_info": "{n} ピースに分割して構築 · ワーカー: {w}",
   "meld_use_pieces": "Meld 機能を使うと分割して構築できます",
   "plan_totals_ring": "{pieces} ピース · {regions} リージョン · 外周 {ring}",
-  "plan_seconds": "{s} 秒"
+  "plan_seconds": "{s} 秒",
+  "layout_mode": "メイン画面のレイアウト",
+  "layout_mode_desc": "地図中心の画面か従来の画面か。自動は Meld 機能に従います。",
+  "layout_mode_auto": "自動",
+  "layout_mode_map": "地図優先",
+  "layout_mode_classic": "クラシック"
 }

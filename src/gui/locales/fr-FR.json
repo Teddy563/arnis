@@ -624,5 +624,10 @@
   "area_pieces_info": "Construit en {n} parties · Processus : {w}",
   "meld_use_pieces": "Utilisez les fonctions Meld pour le construire en parties",
   "plan_totals_ring": "{pieces} morceaux · {regions} régions · anneau {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Disposition de la page principale",
+  "layout_mode_desc": "La page centrée sur la carte ou la page classique. Auto suit les fonctions Meld.",
+  "layout_mode_auto": "Auto",
+  "layout_mode_map": "Carte d'abord",
+  "layout_mode_classic": "Classique"
 }

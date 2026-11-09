@@ -624,5 +624,10 @@
   "area_pieces_info": "{n} részben épül · Feldolgozók: {w}",
   "meld_use_pieces": "A Meld funkciókkal részekben építheted meg",
   "plan_totals_ring": "{pieces} darab · {regions} régió · gyűrű {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Főoldal elrendezése",
+  "layout_mode_desc": "A térképközpontú vagy a klasszikus oldal. Az Automatikus a Meld funkciókat követi.",
+  "layout_mode_auto": "Automatikus",
+  "layout_mode_map": "Térkép előtérben",
+  "layout_mode_classic": "Klasszikus"
 }

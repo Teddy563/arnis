@@ -624,5 +624,10 @@
   "area_pieces_info": "Byggs i {n} delar · Arbetare: {w}",
   "meld_use_pieces": "Använd Meld-funktioner för att bygga det i delar",
   "plan_totals_ring": "{pieces} delar · {regions} regioner · ring {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Huvudsidans layout",
+  "layout_mode_desc": "Sidan med kartan i fokus eller den klassiska. Auto följer Meld-funktionerna.",
+  "layout_mode_auto": "Auto",
+  "layout_mode_map": "Kartan först",
+  "layout_mode_classic": "Klassisk"
 }

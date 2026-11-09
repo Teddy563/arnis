@@ -624,5 +624,10 @@
   "area_pieces_info": "تُبنى على {n} أجزاء · العمليات: {w}",
   "meld_use_pieces": "استخدم ميزات Meld لبنائها على أجزاء",
   "plan_totals_ring": "{pieces} أجزاء · {regions} مناطق · الحلقة {ring}",
-  "plan_seconds": "{s} ث"
+  "plan_seconds": "{s} ث",
+  "layout_mode": "تخطيط الصفحة الرئيسية",
+  "layout_mode_desc": "صفحة تتصدرها الخريطة أو الصفحة الكلاسيكية. التلقائي يتبع ميزات Meld.",
+  "layout_mode_auto": "تلقائي",
+  "layout_mode_map": "الخريطة أولاً",
+  "layout_mode_classic": "كلاسيكي"
 }

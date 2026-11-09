@@ -624,5 +624,10 @@
   "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
   "meld_use_pieces": "Use Meld features to build it in pieces",
   "plan_totals_ring": "{pieces} pieces · {regions} regions · ring {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Main Page Layout",
+  "layout_mode_desc": "The map-first page or the classic one. Auto follows Meld features.",
+  "layout_mode_auto": "Auto",
+  "layout_mode_map": "Map first",
+  "layout_mode_classic": "Classic"
 }

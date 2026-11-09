@@ -624,5 +624,10 @@
   "area_pieces_info": "Rakennetaan {n} osassa · Työprosessit: {w}",
   "meld_use_pieces": "Rakenna osissa Meld-ominaisuuksilla",
   "plan_totals_ring": "{pieces} palaa · {regions} aluetta · kehä {ring}",
-  "plan_seconds": "{s} s"
+  "plan_seconds": "{s} s",
+  "layout_mode": "Pääsivun asettelu",
+  "layout_mode_desc": "Karttakeskeinen sivu tai perinteinen. Automaattinen seuraa Meld-ominaisuuksia.",
+  "layout_mode_auto": "Automaattinen",
+  "layout_mode_map": "Kartta ensin",
+  "layout_mode_classic": "Perinteinen"
 }
