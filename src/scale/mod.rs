@@ -17,7 +17,7 @@ use crate::args::Args;
 use crate::coordinate_system::cartesian::XZBBox;
 use crate::one_world::{self, Manifest, PieceRef, RunContext, UnitLease};
 use crate::progress_json;
-use crate::work_units::{plan_units, WorkUnit};
+use crate::work_units::{self, WorkUnit};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -78,14 +78,7 @@ struct Job {
 }
 
 impl Job {
-    fn open(world_dir: &Path, rect: &XZBBox, n: i32, pieces: usize) -> Result<Self, String> {
-        let name = format!(
-            "{}_{}_{}_{}_n{n}",
-            rect.min_x(),
-            rect.min_z(),
-            rect.max_x(),
-            rect.max_z()
-        );
+    fn open(world_dir: &Path, name: String, pieces: usize) -> Result<Self, String> {
         let dir = world_dir.join(one_world::JOBS_DIR).join(&name);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
@@ -167,8 +160,14 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let manifest = Manifest::load(world_dir)?
         .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
     let proj = manifest.projection();
-    let (rect, _) = crate::projection::snap_bbox_to_chunks(&proj, &selection)?;
-    let units = plan_units(&proj, &rect, n)?;
+    let plan = work_units::plan(&proj, &selection, &args.units, n)?;
+    // A snapped job reaches past the selection, and its data must too.
+    let bake_area = if corners(&plan.rect) == corners(&plan.requested) {
+        selection
+    } else {
+        crate::projection::llbbox_for_rect(&proj, &plan.rect)?
+    };
+    let (rect, units) = (plan.rect, plan.units);
     let of = units.len();
     // `--only-pieces`: these are built, the job's other missing pieces wait.
     let only = args.units.only_pieces.as_deref();
@@ -176,12 +175,12 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         return Err(format!("--only-pieces {bad}: this job has {of} pieces."));
     }
     let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
-    let job = Job::open(world_dir, &rect, n, of)?;
+    let job = Job::open(world_dir, plan.name, of)?;
 
     println!("One World: building {of} piece(s) of up to {n}x{n} regions");
     // The extract is read once, here; each piece then cuts its own area from the bake.
     if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
-        crate::osm_pbf::bake_for_job(&src, selection)?;
+        crate::osm_pbf::bake_for_job(&src, bake_area)?;
     }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
@@ -613,6 +612,8 @@ const PER_PIECE: &[&str] = &[
     "--max-downloads",
     "--one-world-unit",
     "--only-pieces",
+    "--snap-regions",
+    "--margin-regions",
     // Handed over in the environment, out of sight of other processes.
     "--mapillary-token",
 ];
@@ -865,7 +866,7 @@ mod tests {
         let proj = crate::projection::WebMercatorProjection::new(44.4465, 26.099, 1.0);
         let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
         let (world, _) = crate::projection::snap_bbox_to_chunks(&proj, &req).unwrap();
-        let units = plan_units(&proj, &world, 1).unwrap();
+        let units = work_units::plan_units(&proj, &world, 1).unwrap();
         let argv = [
             "--one-world",
             "--bbox",
