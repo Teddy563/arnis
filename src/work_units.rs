@@ -446,11 +446,19 @@ pub fn print_plan(
         ..
     } = plan(&proj, requested, args, size)?;
     let mut existing = 0;
+    let workers = crate::scale::budget::sizing(
+        args,
+        units.len(),
+        units.iter().map(|u| u.regions).max().unwrap_or(1),
+    )
+    .workers;
+    let (job_estimate, warnings) = job_estimate(&units, args, workers, world_dir);
     let units: Vec<_> = units
         .iter()
         .map(|u| {
             let have = crate::one_world::existing_chunks(world_dir, &u.rect);
             existing += have;
+            let e = Estimate::of(&[u], args.scale, 1);
             serde_json::json!({
                 "index": u.index,
                 "key": format!("{},{}", u.gx, u.gz),
@@ -461,9 +469,13 @@ pub fn print_plan(
                 "chunks": u.chunks(),
                 "regions": u.regions,
                 "existing_chunks": have,
+                "estimate": {"disk_mb": e.disk_mb, "ram_mb": e.ram_mb, "time_min": e.time_min},
             })
         })
         .collect();
+    for w in &warnings {
+        eprintln!("Warning: {w}");
+    }
     let plan = serde_json::json!({
         "v": 1,
         "type": "plan",
@@ -475,14 +487,145 @@ pub fn print_plan(
         "requested": [asked.min_x(), asked.min_z(), asked.max_x(), asked.max_z()],
         "units": units,
         "existing_chunks": existing,
+        "estimate": job_estimate,
     });
+    let mut plan = plan;
+    if !warnings.is_empty() {
+        plan["warnings"] = serde_json::json!(warnings);
+    }
     println!("{plan}");
     Ok(())
+}
+
+/// On-disk KB per chunk, [low, high]. A chunk takes at least one 4,096-byte sector. Measured:
+/// 4.0 on rural preview worlds (Grindelwald, Danube), 4.3 on dense Bucharest, 4.1 on a One
+/// World; the T1 smokes (work/c35/t1-smoke) wrote 4.0 (rural, 16 regions), 4.06 (city,
+/// 64) and 4.14 (parity area, 4). The top leaves room above the densest.
+const DISK_KB_PER_CHUNK: [f64; 2] = [4.0, 4.6];
+/// Previews and map items beside the region files, KB per region, from the same smokes:
+/// 84 (rural), 220 (city) and 249 (parity area, many signage maps).
+const EXTRA_KB_PER_REGION: [f64; 2] = [84.0, 249.0];
+/// Wall seconds per 1,000 chunks for one worker. The T1 smokes ran 2 workers x 10 threads on
+/// 24 cores at scale 1, caches warm: 0.34 s per 1,000 chunks (city, 65,536 chunks), 0.90
+/// (rural, 16,384) and 0.99 (parity area, 4,096); doubled for one worker.
+const WORKER_S_PER_KCHUNK: [f64; 2] = [0.68, 1.98];
+
+/// Ranges for some pieces built by `workers` at once.
+#[derive(Debug, PartialEq)]
+struct Estimate {
+    disk_mb: [f64; 2],
+    /// Per worker: the largest piece's, as the coordinator plans for.
+    ram_mb: [f64; 2],
+    time_min: [f64; 2],
+}
+
+impl Estimate {
+    fn of(units: &[&WorkUnit], scale: f64, workers: usize) -> Self {
+        let chunks: u64 = units.iter().map(|u| u.chunks()).sum();
+        let regions: u64 = units.iter().map(|u| u.regions).sum();
+        let ram = |regions: Option<u64>| {
+            regions.map_or(0.0, |r| {
+                crate::scale::budget::estimate_piece_mb(r, scale) as f64
+            })
+        };
+        let at = |k: usize| {
+            (
+                (chunks as f64 * DISK_KB_PER_CHUNK[k] + regions as f64 * EXTRA_KB_PER_REGION[k])
+                    / 1024.0,
+                chunks as f64 / 1000.0 * WORKER_S_PER_KCHUNK[k] / workers.max(1) as f64 / 60.0,
+            )
+        };
+        let round = |v: f64| (v * 10.0).round() / 10.0;
+        let ((d0, t0), (d1, t1)) = (at(0), at(1));
+        Self {
+            disk_mb: [round(d0), round(d1)],
+            ram_mb: [
+                ram(units.iter().map(|u| u.regions).min()),
+                ram(units.iter().map(|u| u.regions).max()),
+            ],
+            time_min: [round(t0), round(t1)],
+        }
+    }
+}
+
+/// The plan line's `estimate` for the whole job, and what it warns about.
+fn job_estimate(
+    units: &[WorkUnit],
+    args: &crate::args::Args,
+    workers: usize,
+    world_dir: &std::path::Path,
+) -> (serde_json::Value, Vec<String>) {
+    let all: Vec<&WorkUnit> = units.iter().collect();
+    let e = Estimate::of(&all, args.scale, workers);
+    let mut basis = format!(
+        "disk: chunks x {:?} KB plus {:?} KB per region for previews and map items, measured \
+         on 3.5.0 worlds; ram_mb: per worker, scale::budget's piece estimate; time_min: \
+         {workers} worker(s) at {:?} s per 1,000 chunks for one worker, measured with warm \
+         caches on 24 cores at scale 1, so downloads add to it",
+        DISK_KB_PER_CHUNK, EXTRA_KB_PER_REGION, WORKER_S_PER_KCHUNK
+    );
+    if args.dh_lod {
+        basis.push_str("; the Distant Horizons LOD is not counted");
+    }
+    let mut out = serde_json::json!({
+        "disk_mb": e.disk_mb, "ram_mb": e.ram_mb, "time_min": e.time_min, "workers": workers,
+    });
+    // A local extract is what the job reads; Overpass and downloaded extracts are not known.
+    let pbf = args
+        .osm_pbf
+        .as_deref()
+        .filter(|p| *p != "geofabrik")
+        .and_then(|p| std::fs::metadata(p).ok());
+    if let Some(meta) = pbf {
+        let mb = (meta.len() as f64 / 1_048_576.0 * 10.0).round() / 10.0;
+        out["downloads_mb"] = serde_json::json!([mb, mb]);
+        basis.push_str("; downloads_mb: the --osm-pbf file, elevation tiles not counted");
+    } else {
+        basis.push_str("; downloads not estimated (Overpass and elevation sizes are not known)");
+    }
+    let mut warnings = Vec::new();
+    if let Some(free) = crate::data_plan::free_bytes(world_dir) {
+        let free_mb = (free / 1_048_576) as f64;
+        out["free_disk_mb"] = serde_json::json!(free_mb);
+        if e.disk_mb[1] > free_mb {
+            warnings.push(format!(
+                "this job may need up to {:.0} MB but the disk has {free_mb:.0} MB free.",
+                e.disk_mb[1]
+            ));
+        }
+    }
+    out["basis"] = serde_json::json!(basis);
+    (out, warnings)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn estimates_follow_the_measured_rates() {
+        let (proj, world) = bucharest();
+        let units = plan_units(&proj, &world, 1).unwrap();
+        let one: Vec<&WorkUnit> = units.iter().take(1).collect();
+        let (c, r) = (one[0].chunks() as f64, one[0].regions as f64);
+        let e = Estimate::of(&one, 1.0, 1);
+        let mb = |kb_chunk: f64, kb_region: f64| {
+            ((c * kb_chunk + r * kb_region) / 1024.0 * 10.0).round() / 10.0
+        };
+        assert_eq!(e.disk_mb, [mb(4.0, 84.0), mb(4.6, 249.0)]);
+        let ram = crate::scale::budget::estimate_piece_mb(one[0].regions, 1.0) as f64;
+        assert_eq!(e.ram_mb, [ram, ram]);
+        let min = |s: f64| (c / 1000.0 * s / 60.0 * 10.0).round() / 10.0;
+        assert_eq!(e.time_min, [min(0.68), min(1.98)]);
+        // Workers split the time, not the disk; RAM is per worker.
+        let all: Vec<&WorkUnit> = units.iter().collect();
+        let (a, b) = (Estimate::of(&all, 1.0, 1), Estimate::of(&all, 1.0, 4));
+        assert_eq!(a.disk_mb, b.disk_mb);
+        assert!((a.time_min[1] / 4.0 - b.time_min[1]).abs() <= 0.1);
+        assert!(a.ram_mb[0] <= a.ram_mb[1]);
+        // A 1,000-chunk piece at the measured top rate: 1.98 s.
+        assert_eq!(WORKER_S_PER_KCHUNK[1] / 2.0, 0.99);
+    }
 
     fn bucharest() -> (WebMercatorProjection, XZBBox) {
         let proj = WebMercatorProjection::new(44.4465, 26.099, 1.0);
