@@ -249,6 +249,8 @@ async function initFooter() {
       .replace("{year}", currentYear)
       .replace("{version}", version);
 
+    // The map-first page shows the version under the logo on hover.
+    document.getElementById("arnis-logo")?.closest("a")?.setAttribute("data-version", `v${version}`);
     // The About section of the settings page repeats the same line.
     const aboutVersion = document.getElementById("about-version");
     if (aboutVersion) aboutVersion.textContent = footerElement.textContent;

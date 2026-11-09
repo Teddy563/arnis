@@ -1036,37 +1036,49 @@ body.map-first .map-box {
   min-height: 0;
 }
 
-/* Logo small, top-left beside the map tools; the title centred over the map's top */
+/* The logo is the title: centred at the top over the map, no box behind it. A click opens
+   the Arnis site (its link); on hover the version shows under it (main.js sets data-version). */
 body.map-first .row {
   position: absolute;
-  top: 16px;
-  left: 64px;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 5;
+}
+
+body.map-first .row a {
+  position: relative;
+  display: block;
 }
 
 /* !important: the img's inline style sizes it for the 3.4.0 page. */
 body.map-first #arnis-logo {
   width: auto !important;
-  height: 28px !important;
+  height: 38px !important;
   padding: 0;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
 }
 
-body.map-first .flex-container::before {
-  content: "Arnis";
+body.map-first .row a::after {
+  content: attr(data-version);
   position: absolute;
-  top: 8px;
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 5;
-  padding: 2px 12px;
-  border-radius: 6px;
-  background: rgba(30, 30, 30, 0.8);
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(30, 30, 30, 0.9);
   color: #f2f2f2;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
   pointer-events: none;
+}
+
+body.map-first .row a:hover::after {
+  opacity: 1;
 }
 
 /* The controls: one stack of cards on the map's right, under the city search */
