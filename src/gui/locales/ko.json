@@ -620,5 +620,9 @@
   "plan_legend_selection": "선택 영역",
   "plan_legend_pieces": "생성할 조각",
   "plan_legend_ring": "외곽 (여백)",
-  "map_selection_size": "{w} × {h} km · 약 {r}개 리전"
+  "map_selection_size": "{w} × {h} km · 약 {r}개 리전",
+  "area_pieces_info": "{n}개 조각으로 생성 · 작업자: {w}",
+  "meld_use_pieces": "Meld 기능을 켜면 조각으로 나눠 지을 수 있습니다",
+  "plan_totals_ring": "{pieces}개 조각 · {regions}개 리전 · 외곽 {ring}",
+  "plan_seconds": "{s}초"
 }

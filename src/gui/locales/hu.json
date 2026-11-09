@@ -620,5 +620,9 @@
   "plan_legend_selection": "Kijelölés",
   "plan_legend_pieces": "Építendő darabok",
   "plan_legend_ring": "Gyűrű (szegély)",
-  "map_selection_size": "{w} × {h} km · kb. {r} régió"
+  "map_selection_size": "{w} × {h} km · kb. {r} régió",
+  "area_pieces_info": "{n} részben épül · Feldolgozók: {w}",
+  "meld_use_pieces": "A Meld funkciókkal részekben építheted meg",
+  "plan_totals_ring": "{pieces} darab · {regions} régió · gyűrű {ring}",
+  "plan_seconds": "{s} s"
 }

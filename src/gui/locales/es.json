@@ -620,5 +620,9 @@
   "plan_legend_selection": "Selección",
   "plan_legend_pieces": "Piezas por construir",
   "plan_legend_ring": "Anillo (margen)",
-  "map_selection_size": "{w} × {h} km · unas {r} regiones"
+  "map_selection_size": "{w} × {h} km · unas {r} regiones",
+  "area_pieces_info": "Se construye en {n} partes · Procesos: {w}",
+  "meld_use_pieces": "Usa las funciones Meld para construirlo por partes",
+  "plan_totals_ring": "{pieces} piezas · {regions} regiones · anillo {ring}",
+  "plan_seconds": "{s} s"
 }

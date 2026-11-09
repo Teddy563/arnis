@@ -620,5 +620,9 @@
   "plan_legend_selection": "Auswahl",
   "plan_legend_pieces": "Zu bauende Teile",
   "plan_legend_ring": "Ring (Rand)",
-  "map_selection_size": "{w} × {h} km · etwa {r} Regionen"
+  "map_selection_size": "{w} × {h} km · etwa {r} Regionen",
+  "area_pieces_info": "Wird in {n} Teilen gebaut · Worker: {w}",
+  "meld_use_pieces": "Mit Meld-Funktionen in Teilen bauen",
+  "plan_totals_ring": "{pieces} Teile · {regions} Regionen · Ring {ring}",
+  "plan_seconds": "{s} s"
 }

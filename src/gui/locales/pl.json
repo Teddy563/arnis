@@ -620,5 +620,9 @@
   "plan_legend_selection": "Zaznaczenie",
   "plan_legend_pieces": "Części do zbudowania",
   "plan_legend_ring": "Pierścień (margines)",
-  "map_selection_size": "{w} × {h} km · około {r} regionów"
+  "map_selection_size": "{w} × {h} km · około {r} regionów",
+  "area_pieces_info": "Budowane w {n} częściach · Procesy: {w}",
+  "meld_use_pieces": "Użyj funkcji Meld, aby budować w częściach",
+  "plan_totals_ring": "{pieces} części · {regions} regionów · pierścień {ring}",
+  "plan_seconds": "{s} s"
 }

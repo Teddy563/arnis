@@ -150,6 +150,8 @@
               <div id="one-world-status" class="one-world-status" style="display: none;" aria-live="polite"></div>
             </div>
             <span id="bbox-selection-info" class="bbox-selection-text" data-localize="select_area_prompt">Select an area on the map using the tools.</span>
+            <!-- Under a size warning: the way to build it in pieces (Meld features) -->
+            <button type="button" id="bbox-features-cta" hidden data-localize="meld_use_pieces">Use Meld features to build it in pieces</button>
 
             <!-- Mini 3D terrain preview (rendered via the map's terrain button, click to expand) -->
             <div id="preview3d-mini" class="preview3d-mini" style="display: none;" title="Click to expand 3D preview" data-localize-title="preview3d_expand">
@@ -164,6 +166,8 @@
           <div class="progress-section">
             <img src="" alt="" class="secret-parrot" id="secret-parrot">
             <span id="progress-info" class="progress-info-text"></span>
+            <!-- The plan of a job in pieces before it runs (above the bar), and the ring around a One World's built land. -->
+            <div id="job-plan" class="job-plan meld-only" role="status" aria-live="polite" hidden></div>
             <div class="progress-row">
               <div class="progress-bar-container">
                 <div class="progress-bar" id="progress-bar"></div>
@@ -171,8 +175,6 @@
               </div>
               <span id="progress-detail">0%</span>
             </div>
-            <!-- The plan of a job in pieces before it runs, and the ring around a One World's built land. -->
-            <div id="job-plan" class="job-plan meld-only" role="status" aria-live="polite" hidden></div>
             <button type="button" id="plan-expand-button" class="run-button plan-expand meld-only" hidden data-localize="plan_expand">Expand around the built land</button>
             <!-- A job built in pieces: Pause, Stop and Retry. Hidden unless Meld features is on. -->
             <div id="run-controls" class="run-controls meld-only" hidden>

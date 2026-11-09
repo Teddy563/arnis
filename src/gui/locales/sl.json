@@ -620,5 +620,9 @@
   "plan_legend_selection": "Izbor",
   "plan_legend_pieces": "Kosi za gradnjo",
   "plan_legend_ring": "Obroč (rob)",
-  "map_selection_size": "{w} × {h} km · približno {r} regij"
+  "map_selection_size": "{w} × {h} km · približno {r} regij",
+  "area_pieces_info": "Gradi se v {n} delih · Procesi: {w}",
+  "meld_use_pieces": "Uporabite funkcije Meld za gradnjo po delih",
+  "plan_totals_ring": "{pieces} kosov · {regions} regij · obroč {ring}",
+  "plan_seconds": "{s} s"
 }

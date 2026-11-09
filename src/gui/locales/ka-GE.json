@@ -620,5 +620,9 @@
   "plan_legend_selection": "მონიშვნა",
   "plan_legend_pieces": "ასაშენებელი ნაწილები",
   "plan_legend_ring": "რგოლი (ზღვარი)",
-  "map_selection_size": "{w} × {h} კმ · დაახლ. {r} რეგიონი"
+  "map_selection_size": "{w} × {h} კმ · დაახლ. {r} რეგიონი",
+  "area_pieces_info": "შენდება {n} ნაწილად · პროცესები: {w}",
+  "meld_use_pieces": "ნაწილებად ასაშენებლად ჩართეთ Meld ფუნქციები",
+  "plan_totals_ring": "{pieces} ნაწილი · {regions} რეგიონი · რგოლი {ring}",
+  "plan_seconds": "{s} წმ"
 }

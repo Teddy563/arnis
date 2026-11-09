@@ -620,5 +620,9 @@
   "plan_legend_selection": "Sélection",
   "plan_legend_pieces": "Morceaux à construire",
   "plan_legend_ring": "Anneau (marge)",
-  "map_selection_size": "{w} × {h} km · environ {r} régions"
+  "map_selection_size": "{w} × {h} km · environ {r} régions",
+  "area_pieces_info": "Construit en {n} parties · Processus : {w}",
+  "meld_use_pieces": "Utilisez les fonctions Meld pour le construire en parties",
+  "plan_totals_ring": "{pieces} morceaux · {regions} régions · anneau {ring}",
+  "plan_seconds": "{s} s"
 }

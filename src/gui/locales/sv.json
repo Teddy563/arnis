@@ -620,5 +620,9 @@
   "plan_legend_selection": "Markering",
   "plan_legend_pieces": "Delar att bygga",
   "plan_legend_ring": "Ring (marginal)",
-  "map_selection_size": "{w} × {h} km · cirka {r} regioner"
+  "map_selection_size": "{w} × {h} km · cirka {r} regioner",
+  "area_pieces_info": "Byggs i {n} delar · Arbetare: {w}",
+  "meld_use_pieces": "Använd Meld-funktioner för att bygga det i delar",
+  "plan_totals_ring": "{pieces} delar · {regions} regioner · ring {ring}",
+  "plan_seconds": "{s} s"
 }

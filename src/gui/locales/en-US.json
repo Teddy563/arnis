@@ -620,5 +620,9 @@
   "plan_legend_selection": "Selection",
   "plan_legend_pieces": "Pieces to build",
   "plan_legend_ring": "Ring (margin)",
-  "map_selection_size": "{w} × {h} km · about {r} regions"
+  "map_selection_size": "{w} × {h} km · about {r} regions",
+  "area_pieces_info": "Builds in {n} pieces · Workers: {w}",
+  "meld_use_pieces": "Use Meld features to build it in pieces",
+  "plan_totals_ring": "{pieces} pieces · {regions} regions · ring {ring}",
+  "plan_seconds": "{s} s"
 }

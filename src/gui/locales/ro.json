@@ -620,5 +620,9 @@
   "plan_legend_selection": "Selecția",
   "plan_legend_pieces": "Bucăți de construit",
   "plan_legend_ring": "Inel (margine)",
-  "map_selection_size": "{w} × {h} km · aproximativ {r} regiuni"
+  "map_selection_size": "{w} × {h} km · aproximativ {r} regiuni",
+  "area_pieces_info": "Se construiește în {n} bucăți · Procese: {w}",
+  "meld_use_pieces": "Folosește funcțiile Meld ca s-o construiești pe bucăți",
+  "plan_totals_ring": "{pieces} bucăți · {regions} regiuni · inel {ring}",
+  "plan_seconds": "{s} s"
 }

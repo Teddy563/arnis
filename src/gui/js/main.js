@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, initJobPlan, planPieces, selectWithRing, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -28,11 +28,20 @@ const DEFAULT_LOCALE_PATH = `./locales/en.json`;
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
 let currentBboxSelectionColor = "#ffffff";
+let currentBboxSelectionVars = null;
+
+// "{n}"-style values of the current bbox line (area_pieces_info), kept for language changes.
+function fillBboxSelectionVars(element) {
+  for (const k in (currentBboxSelectionVars || {})) {
+    element.textContent = element.textContent.split('{' + k + '}').join(currentBboxSelectionVars[k]);
+  }
+}
 
 // Helper function to set bbox selection info text and track it for language changes
-async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color) {
+async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color, vars) {
   currentBboxSelectionKey = localizationKey;
   currentBboxSelectionColor = color;
+  currentBboxSelectionVars = vars || null;
   
   // Ensure localization is available
   let localization = window.localization;
@@ -41,6 +50,7 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   }
   
   localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
 }
 
@@ -131,6 +141,9 @@ async function localizeElement(json, elementObject, localizedStringKey) {
 async function applyLocalization(localization) {
   const localizationElements = {
     "#start-button > span[data-localize='start_generation']": "start_generation",
+    // Meld features: the size warning's way out and the One World's Expand.
+    "#bbox-features-cta": "meld_use_pieces",
+    "#plan-expand-button": "plan_expand",
     "#world-name-label[data-placeholder]": "no_world_generated_yet",
     "input[id='world-name-input']": "placeholder_world_name",
     // DEPRECATED: Ground level localization removed
@@ -177,6 +190,7 @@ async function applyLocalization(localization) {
   const bboxSelectionInfo = document.getElementById("bbox-selection-info");
   if (bboxSelectionInfo && currentBboxSelectionKey) {
     localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    fillBboxSelectionVars(bboxSelectionInfo);
     bboxSelectionInfo.style.color = currentBboxSelectionColor;
   }
 
@@ -1329,7 +1343,10 @@ function initSettings() {
     key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}`,
     map: () => getMapFrame()?.contentWindow,
   });
+  document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
   initJobPlan({
+    // A new plan, or none: the line under the buttons says how the selection is built.
+    changed: refreshBboxSelectionInfo,
     // A job in pieces of a One World with a selection; Live mode builds no pieces.
     request: () => {
       const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
@@ -2713,15 +2730,42 @@ let bboxInputError = false;  // The coordinate field holds input that did not va
 function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   const t = AREA_THRESHOLDS[selectedCelestialBody] || AREA_THRESHOLDS.earth;
   selectedSize *= earthScaleFactor();
-  if (selectedSize > t.extreme) {
+  // Meld features: built in pieces, the size is no longer a worry; say how instead.
+  const pieces = planPieces();
+  let warned = false;
+  if (pieces) {
+    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+  } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
+    warned = true;
   } else if (selectedSize > t.large) {
     setBboxSelectionInfo(bboxSelectionElement, "area_too_large", "#fa7878");
+    warned = true;
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
+    warned = true;
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  // The warning's way out (Meld features off or no pieces yet): build it in pieces.
+  document.getElementById("bbox-features-cta").hidden = !(warned && selectedCelestialBody === "earth");
+}
+
+// Turns on Meld features, One World and parallel pieces, and shows the Scale card.
+function useMeldPieces() {
+  window.openSettings();
+  const meld = document.getElementById("advanced-meld-features-toggle");
+  if (!meld.checked) {
+    meld.checked = true;
+    meld.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (oneWorldMode() !== "on") document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+  const workers = document.getElementById("meld-workers-select");
+  if (!workers.value) {
+    workers.value = "auto";
+    workers.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  workers.scrollIntoView({ block: "center" });
 }
 
 // Blocks, and so memory, grow with the square of the scale; Moon and Mars use a fixed one.

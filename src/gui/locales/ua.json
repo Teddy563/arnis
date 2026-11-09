@@ -620,5 +620,9 @@
   "plan_legend_selection": "Виділення",
   "plan_legend_pieces": "Частини до побудови",
   "plan_legend_ring": "Кільце (поле)",
-  "map_selection_size": "{w} × {h} км · близько {r} регіонів"
+  "map_selection_size": "{w} × {h} км · близько {r} регіонів",
+  "area_pieces_info": "Будується в {n} частинах · Процесів: {w}",
+  "meld_use_pieces": "Увімкніть функції Meld, щоб будувати частинами",
+  "plan_totals_ring": "{pieces} частин · {regions} регіонів · кільце {ring}",
+  "plan_seconds": "{s} с"
 }

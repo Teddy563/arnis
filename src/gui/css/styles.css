@@ -878,7 +878,6 @@ input[type="range"] {
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.5;
-  opacity: 0.85;
 }
 
 .job-plan[hidden],
@@ -970,4 +969,46 @@ input[type="range"] {
 
 .run-button:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Under a size warning (Meld features): a link, centred, as wide as the warning (3.4.0) */
+#bbox-features-cta {
+  display: block;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--primary-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: center;
+  line-height: 1.3em;
+  white-space: normal;
+}
+
+#bbox-features-cta[hidden] {
+  display: none;
+}
+
+#bbox-features-cta:hover {
+  color: var(--primary-accent-dark);
+}
+
+/* Meld features: the world line under Start Generation is plain text. The block's drop
+   shadow ran right under it and read as a glow; the grey status takes the panel's own colour (no opacity: a
+   translucent layer loses the crisp text rendering). */
+body:not(.meld-off) .button-block {
+  box-shadow: none;
+}
+
+body:not(.meld-off) .one-world-status:not(.is-warn):not(.is-error) {
+  color: inherit;
+}
+
+.plan-expand.is-running {
+  display: none;
 }

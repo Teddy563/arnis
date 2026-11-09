@@ -620,5 +620,9 @@
   "plan_legend_selection": "Pasirinkimas",
   "plan_legend_pieces": "Statomos dalys",
   "plan_legend_ring": "Žiedas (paraštė)",
-  "map_selection_size": "{w} × {h} km · apie {r} regionų"
+  "map_selection_size": "{w} × {h} km · apie {r} regionų",
+  "area_pieces_info": "Statoma {n} dalimis · Procesai: {w}",
+  "meld_use_pieces": "Naudokite Meld funkcijas statyti dalimis",
+  "plan_totals_ring": "{pieces} dalių · {regions} regionų · žiedas {ring}",
+  "plan_seconds": "{s} s"
 }

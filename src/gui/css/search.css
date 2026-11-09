@@ -99,14 +99,14 @@
 .search-select-area {
     margin-top: 6px;
     padding: 3px 8px;
-    border: 1px solid #e6b73d;
+    border: 1px solid #fecc44;
     border-radius: 3px;
-    background: white;
-    color: #333;
+    background: transparent;
+    color: #fecc44;
     font-size: 11px;
     cursor: pointer;
 }
 
 .search-select-area:hover {
-    background-color: #fdf3d8;
+    background-color: rgba(254, 204, 68, 0.15);
 }

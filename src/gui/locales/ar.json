@@ -620,5 +620,9 @@
   "plan_legend_selection": "التحديد",
   "plan_legend_pieces": "الأجزاء المراد بناؤها",
   "plan_legend_ring": "الحلقة (الهامش)",
-  "map_selection_size": "{w} × {h} كم · نحو {r} منطقة"
+  "map_selection_size": "{w} × {h} كم · نحو {r} منطقة",
+  "area_pieces_info": "تُبنى على {n} أجزاء · العمليات: {w}",
+  "meld_use_pieces": "استخدم ميزات Meld لبنائها على أجزاء",
+  "plan_totals_ring": "{pieces} أجزاء · {regions} مناطق · الحلقة {ring}",
+  "plan_seconds": "{s} ث"
 }

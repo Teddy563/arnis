@@ -224,19 +224,29 @@ export function summary() {
 // When this run started: the ETA counts only what it built.
 let runStart = 0;
 
-// " · about 12 min left": the rate of this run so far (its finished pieces and the running
-// ones' share), carried over what is left. Nothing until a piece has finished.
+// The shown ETA in minutes, smoothed as 3.4.0's was: it falls gently and resists rising.
+let shownEta = null;
+const ETA_A_DOWN = 0.28;
+const ETA_A_UP = 0.1;
+
+// " · 3:12 · about 12 min left": time since this run started, then the rate of this run so far
+// (its finished pieces and the running ones' share) carried over what is left. No ETA until a
+// piece has finished.
 function eta() {
   if (!running) return '';
+  const ms = Date.now() - runStart;
+  const s = Math.floor(ms / 1000);
+  let out = ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   const all = [...pieces.values()];
   const built = all.filter((p) => p.state === 'done' && p.end >= runStart).length;
-  if (!built) return '';
   const share = all.filter((p) => RUNNING.has(p.state)).reduce((sum, p) => sum + (p.pct || 0) / 100, 0);
   const left = all.filter((p) => p.state === 'queued' || RUNNING.has(p.state)).length - share;
-  if (left <= 0) return '';
-  const min = ((Date.now() - runStart) / (built + share)) * left / 60000;
-  return ' · ' + t('run_eta', 'about {time} left', { time: minutes(min) });
+  if (!built || left <= 0) return out;
+  const raw = (ms / (built + share)) * left / 60000;
+  shownEta = shownEta == null ? raw : shownEta + (raw <= shownEta ? ETA_A_DOWN : ETA_A_UP) * (raw - shownEta);
+  return out + ' · ' + t('run_eta', 'about {time} left', { time: minutes(shownEta) });
 }
+
 
 // One run of the job over the given pieces (1-based, as --only-pieces takes them). The run's
 // flags (meldFlags) take them; one a refused start leaves behind is dropped here.
@@ -256,6 +266,10 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   localizer = localize;
   postToMap = post;
   restart = start;
+  // The run line ticks once a second while a job runs.
+  setInterval(() => {
+    if (running && pieces.size) el('run-summary').textContent = summary() + eta();
+  }, 1000);
   el('run-pause-button').addEventListener('click', async () => {
     setPaused(!paused);
     await call('gui_pause_generation', { paused });
@@ -312,6 +326,7 @@ export function notePiece(piece) {
 // the run is for.
 export function clearPieces() {
   runStart = Date.now();
+  shownEta = null;
   if (retryNext.length) return;
   jobKey = keyOf();
   forgetPieces();
@@ -344,8 +359,12 @@ export function showRunControls(isRunning) {
   // The hint to click a failed piece comes and goes with the run.
   if (wasRunning !== running && pieces.size) postToMap({ type: 'pieceOutlines', pieces: outlines() });
   el('run-summary').textContent = pieces.size ? summary() + eta() : '';
-  // A run that ended built pieces: the plan's states are read again.
+  // A run that starts puts its own line in place of the plan; one that ended built pieces,
+  // so the plan's states are read again.
+  if (!wasRunning && running) schedulePlan();
   if (wasRunning && !running) schedulePlan(true);
+  // Expand is for between runs.
+  el('plan-expand-button').classList.toggle('is-running', running);
   const unfinished = [...pieces.values()].some((p) => RETRYABLE.has(p.state));
   el('run-controls').hidden = pieces.size === 0 || !(running || unfinished);
   el('run-pause-button').hidden = el('run-stop-button').hidden = !running;
@@ -369,8 +388,14 @@ let planSeq = 0;
 // Past this many pieces the map would crawl; the totals still show.
 const MAX_DRAWN = 3000;
 
-export function initJobPlan({ request }) {
+// The last plan drawn, { n pieces, w workers }, while it is the current one; null otherwise.
+let lastPlan = null;
+export const planPieces = () => lastPlan;
+let onPlan = () => {};
+
+export function initJobPlan({ request, changed = () => {} }) {
   planRequest = request;
+  onPlan = changed;
   // Any setting may change the plan; an unchanged request is not asked again.
   ['change', 'click'].forEach((type) => document.addEventListener(type, () => schedulePlan()));
   schedulePlan();
@@ -389,6 +414,11 @@ export function schedulePlan(fresh = false) {
   if (fresh) planKey = '';
   if (planWanted().key !== planKey) {
     planSeq++;
+    // A running job keeps its "Builds in n pieces" line.
+    if (lastPlan && !running) {
+      lastPlan = null;
+      onPlan();
+    }
     if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
   }
   clearTimeout(planTimer);
@@ -411,9 +441,14 @@ export function selectWithRing(bounds, skipBuilt = false) {
 
 const gb = (mbs) => (mbs >= 1048576 ? `${(mbs / 1048576).toFixed(1)} TB` : mbs >= 1024 ? `${(mbs / 1024).toFixed(1)} GB` : `${Math.round(mbs)} MB`);
 const range = ([lo, hi], unit) => (unit(lo) === unit(hi) ? unit(lo) : `${unit(lo)}–${unit(hi)}`);
-const minutes = (m) => (m >= 60
-  ? t('plan_hours', '{h} h {m} min', { h: Math.floor(m / 60), m: Math.round(m % 60) })
-  : t('plan_minutes', '{m} min', { m: Math.max(1, Math.round(m)) }));
+// Rounded so a time never claims more than it knows (as 3.4.0's formatEstimateTime): 5 s
+// steps, then minutes, then 10 minutes.
+const minutes = (m) => {
+  if (m < 1.5) return t('plan_seconds', '{s} s', { s: Math.max(5, Math.round((m * 60) / 5) * 5) });
+  if (m < 60) return t('plan_minutes', '{m} min', { m: Math.round(m) });
+  const r = Math.round(m / 10) * 10;
+  return t('plan_hours', '{h} h {m} min', { h: Math.floor(r / 60), m: r % 60 });
+};
 
 // "4 × 4 regions" for the piece numbered `i` in the last plan.
 const planSizes = new Map();
@@ -454,6 +489,10 @@ async function updatePlan() {
   planKey = key;
   const seq = ++planSeq;
   if (!req) {
+    if (!running) {
+      lastPlan = null;
+      onPlan();
+    }
     showPlan([]);
     startLabel(0);
     if (!pieces.size) postToMap({ type: 'pieceOutlines', pieces: [] });
@@ -472,13 +511,19 @@ async function updatePlan() {
   const units = plan.units || [];
   const e = plan.estimate || {};
   const done = units.filter((u) => u.done).length;
+  lastPlan = { n: units.length, w: e.workers };
+  onPlan();
   planSizes.clear();
   units.forEach((u) => planSizes.set(u.index, u.size));
   startLabel(done, units.length);
+  const regions = (list) => list.reduce((n, u) => n + u.regions, 0);
+  const ring = regions(units.filter((u) => u.ring));
+  const totals = { pieces: units.length, regions: regions(units), ring };
+  // Two lines: what is built, then what it costs.
   showPlan([
-    t('plan_totals', '{pieces} pieces · {regions} regions', { pieces: units.length, regions: units.reduce((n, u) => n + u.regions, 0) }),
-    t('plan_disk', 'Disk {disk} · RAM {ram} per worker', { disk: range(e.disk_mb, gb), ram: range(e.ram_mb, gb) }),
-    t('plan_time', 'Time {time} with {workers} workers (estimate, warm caches)', { time: range(e.time_min, minutes), workers: e.workers }),
+    ring ? t('plan_totals_ring', '{pieces} pieces · {regions} regions · ring {ring}', totals) : t('plan_totals', '{pieces} pieces · {regions} regions', totals),
+    t('plan_disk', 'Disk {disk} · RAM {ram} per worker', { disk: range(e.disk_mb, gb), ram: range(e.ram_mb, gb) })
+      + ' · ' + t('plan_time', 'Time {time} with {workers} workers (estimate, warm caches)', { time: range(e.time_min, minutes), workers: e.workers }),
     ...(units.length > MAX_DRAWN ? [t('plan_too_many', 'Too many pieces to draw on the map.')] : []),
   ], e.free_disk_mb != null && e.disk_mb[1] > e.free_disk_mb ? t('plan_low_disk', 'Only {free} free on this disk.', { free: gb(e.free_disk_mb) }) : '',
   units.some((u) => u.ring));
