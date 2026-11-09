@@ -19,7 +19,8 @@ if (window.__TAURI__) {
 } else {
   function dummyFunc() { }
   window.__TAURI__ = { event: { listen: dummyFunc } };
-  invoke = dummyFunc;
+  // A plain browser preview: callers chain .then on invoke.
+  invoke = async () => undefined;
 }
 
 const DEFAULT_LOCALE_PATH = `./locales/en.json`;
@@ -153,6 +154,21 @@ async function applyLocalization(localization) {
   // selector.
   document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
+  });
+
+  // Attributes: tooltips (English stays in data-tooltip as the fallback) and
+  // title / aria-label, anywhere on the page.
+  const loc = (key, fallback) => localization[key] ?? fallback;
+  document.querySelectorAll("[data-tooltip-key]").forEach((el) => {
+    const text = loc(el.dataset.tooltipKey, el.dataset.tooltip);
+    el.dataset.tooltip = text;
+    el.setAttribute("aria-label", text);
+  });
+  document.querySelectorAll("[data-localize-title]").forEach((el) => {
+    el.title = loc(el.dataset.localizeTitle, el.title);
+  });
+  document.querySelectorAll("[data-localize-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", loc(el.dataset.localizeAriaLabel, el.getAttribute("aria-label")));
   });
 
   // settings-store.js creates these buttons and owns their text.
@@ -2857,7 +2873,10 @@ function refreshWorldNameEditUI() {
   const editButton = document.getElementById('world-name-edit-button');
   if (editButton) {
     editButton.style.display = canEditCustomWorldName() ? '' : 'none';
-    const title = isOneWorldEnabled() ? 'Choose the One World to extend or create' : 'Name the next world';
+    const loc = window.localization || {};
+    const title = isOneWorldEnabled()
+      ? (loc.world_name_edit_one_world || 'Choose the One World to extend or create')
+      : (loc.world_name_edit_title || 'Name the next world');
     editButton.title = title;
     editButton.setAttribute('aria-label', title);
   }

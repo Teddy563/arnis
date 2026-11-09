@@ -99,7 +99,7 @@
     <div class="flex-container">
       <!-- Left Box: Map -->
       <section class="section map-box">
-        <iframe src="maps.html" width="100%" height="100%" class="map-container" title="Map Picker"></iframe>
+        <iframe src="maps.html" width="100%" height="100%" class="map-container" title="Map Picker" data-localize-title="map_picker_title"></iframe>
       </section>
 
       <!-- Right Box: Directory Selection, Start Button, and Progress Bar -->
@@ -131,7 +131,7 @@
                     </button>
                   </div>
                 </div>
-                <button type="button" class="settings-button" onclick="openSettings()" aria-label="Settings">
+                <button type="button" class="settings-button" onclick="openSettings()" aria-label="Settings" data-localize-aria-label="customization_settings">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
               </div>
@@ -152,7 +152,7 @@
             <span id="bbox-selection-info" class="bbox-selection-text" data-localize="select_area_prompt">Select an area on the map using the tools.</span>
 
             <!-- Mini 3D terrain preview (rendered via the map's terrain button, click to expand) -->
-            <div id="preview3d-mini" class="preview3d-mini" style="display: none;" title="Click to expand 3D preview">
+            <div id="preview3d-mini" class="preview3d-mini" style="display: none;" title="Click to expand 3D preview" data-localize-title="preview3d_expand">
               <div id="preview3d-mini-map"></div>
               <div id="preview3d-mini-loader" class="preview3d-mini-loader" style="display: none;">
                 <span id="preview3d-mini-loader-text">Rendering terrain preview…</span>
@@ -194,7 +194,7 @@
           <img src="./images/logo.png" alt="Arnis">
         </div>
 
-        <nav class="settings-nav" aria-label="Settings sections">
+        <nav class="settings-nav" aria-label="Settings sections" data-localize-aria-label="settings_sections_label">
           <button type="button" class="settings-nav-item" data-target="settings-section-world">
             <svg class="icon" aria-hidden="true"><use href="#i-globe"></use></svg>
             <span class="settings-nav-text">
@@ -284,7 +284,7 @@
             <h2 id="settings-title" data-localize="customization_settings">Settings</h2>
             <p data-localize="settings_subtitle">Configure how your Minecraft world should look and behave.</p>
           </div>
-          <button type="button" class="settings-close" onclick="closeSettings()" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="settings-close" onclick="closeSettings()" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -306,7 +306,7 @@
                 <label class="setting-label">
                   <span class="setting-heading">
                     <span data-localize="gamemode">Game Mode</span>
-                    <span class="tooltip-icon" data-tooltip="The game mode the world starts in. On Luanti, Spectator becomes Creative.">?</span>
+                    <span class="tooltip-icon" data-tooltip-key="gamemode_tip" data-tooltip="The game mode the world starts in. On Luanti, Spectator becomes Creative.">?</span>
                   </span>
                 </label>
                 <div class="segmented-control choice-cards" id="gamemode-group">
@@ -350,7 +350,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="world_type">World Type</span>
-                        <span class="tooltip-icon" data-tooltip="What Minecraft generates past the edge of the area: empty void, so the area is an island, or a flat grass plain. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="world_type_tip" data-tooltip="What Minecraft generates past the edge of the area: empty void, so the area is an island, or a flat grass plain. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="world_type_desc">What lies past the edge of the area. Java only.</span>
                     </span>
@@ -369,7 +369,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="mob_spawning">Mob Spawning</span>
-                        <span class="tooltip-icon" data-tooltip="Animals puts the world on Peaceful: animals turn up over time on lawns and in parks, and fish in the water. Animals &amp; Monsters puts it on Normal, so monsters come out at night and in dark buildings, with mob griefing off so creepers and endermen leave the city standing. Not with Zombie Outbreak or Disasters.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="mob_spawning_tip" data-tooltip="Animals puts the world on Peaceful: animals turn up over time on lawns and in parks, and fish in the water. Animals &amp; Monsters puts it on Normal, so monsters come out at night and in dark buildings, with mob griefing off so creepers and endermen leave the city standing. Not with Zombie Outbreak or Disasters.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="mob_spawning_desc">Let animals, and monsters too if you like, spawn on their own. Java and Bedrock.</span>
                     </span>
@@ -403,7 +403,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="custom_world_name">Custom World Name</span>
-                        <span class="tooltip-icon" data-tooltip="Adds a pencil icon to the Start button so you can name each new world yourself instead of 'Arnis World N'. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="custom_world_name_tip" data-tooltip="Adds a pencil icon to the Start button so you can name each new world yourself instead of 'Arnis World N'. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="custom_world_name_desc">Name new worlds yourself instead of "Arnis World N". Java only.</span>
                     </span>
@@ -421,7 +421,7 @@
                       <span class="setting-text">
                         <span class="setting-heading">
                           <span data-localize="one_world">One World</span>
-                          <span class="tooltip-icon" data-tooltip="With On, every area you generate joins one shared world instead of becoming a new world. With Live, you play that world on a Minecraft server on this computer while Arnis generates the land around you. Some settings are then fixed by the world. Java only.">?</span>
+                          <span class="tooltip-icon" data-tooltip-key="one_world_tip" data-tooltip="With On, every area you generate joins one shared world instead of becoming a new world. With Live, you play that world on a Minecraft server on this computer while Arnis generates the land around you. Some settings are then fixed by the world. Java only.">?</span>
                         </span>
                         <span class="setting-desc" id="one-world-desc" data-localize="one_world_desc_off">Every area becomes a world of its own. Java only.</span>
                       </span>
@@ -476,7 +476,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_region_format">Region Format</span>
-                        <span class="tooltip-icon" data-tooltip="Experimental. B_Linear writes Leaf 1.21.11+ and 26.x regions. Java only; not with One World, Voxy LOD or Distant Horizons LOD.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_region_format_tip" data-tooltip="Experimental. B_Linear writes Leaf 1.21.11+ and 26.x regions. Java only; not with One World, Voxy LOD or Distant Horizons LOD.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_region_format_desc">File format for Java region files.</span>
                     </span>
@@ -491,7 +491,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_blinear_level">B_Linear Level</span>
-                        <span class="tooltip-icon" data-tooltip="zstd level from 1 to 22; Leaf&#x27;s own default is 6. Only with the B_Linear region format.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_blinear_level_tip" data-tooltip="zstd level from 1 to 22; Leaf&#x27;s own default is 6. Only with the B_Linear region format.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_blinear_level_desc">Compression level of B_Linear regions.</span>
                     </span>
@@ -506,7 +506,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_osm_source">OSM Data Source</span>
-                        <span class="tooltip-icon" data-tooltip="Default reads Arnis&#x27;s tile archive. Local Archive reads a folder of tiles baked on this computer (Experimental: the bake makes an older archive format, so it is sparser than the public tiles; needs arnis-tiles). Region Download fetches the smallest Geofabrik extract holding the area and cuts it locally.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_osm_source_tip" data-tooltip="Default reads Arnis&#x27;s tile archive. Local Archive reads a folder of tiles baked on this computer (Experimental: the bake makes an older archive format, so it is sparser than the public tiles; needs arnis-tiles). Region Download fetches the smallest Geofabrik extract holding the area and cuts it locally.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_osm_source_desc">Where the map data comes from.</span>
                     </span>
@@ -521,7 +521,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_archive_folder">Archive Folder</span>
-                        <span class="tooltip-icon" data-tooltip="Experimental. Where Download &amp; Bake writes and Local Archive reads. Empty uses the default folder in the cache.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_archive_folder_tip" data-tooltip="Experimental. Where Download &amp; Bake writes and Local Archive reads. Empty uses the default folder in the cache.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_archive_folder_desc">Folder of the local tile archive.</span>
                     </span>
@@ -536,7 +536,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_pbf_url">Extract URL</span>
-                        <span class="tooltip-icon" data-tooltip="A .osm.pbf URL for Region Download, instead of the smallest region holding the area.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_pbf_url_tip" data-tooltip="A .osm.pbf URL for Region Download, instead of the smallest region holding the area.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_pbf_url_desc">Pick the Geofabrik extract yourself.</span>
                     </span>
@@ -551,7 +551,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_overpass">Overpass Server</span>
-                        <span class="tooltip-icon" data-tooltip="URL of a self-hosted Overpass server, asked in place of Arnis&#x27;s own. Separate several with commas.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_overpass_tip" data-tooltip="URL of a self-hosted Overpass server, asked in place of Arnis&#x27;s own. Separate several with commas.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_overpass_desc">Your own Overpass instance.</span>
                     </span>
@@ -566,7 +566,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_offline">Offline Mode</span>
-                        <span class="tooltip-icon" data-tooltip="Never uses the network. A run the caches cannot serve stops and lists what is missing.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_offline_tip" data-tooltip="Never uses the network. A run the caches cannot serve stops and lists what is missing.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_offline_desc">Build only from what is already downloaded.</span>
                     </span>
@@ -581,7 +581,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_prepare">Prepare Countries</span>
-                        <span class="tooltip-icon" data-tooltip="Experimental. Lists the Geofabrik countries that cover the selected area, then downloads and bakes them into the archive folder with arnis-tiles. The bake makes an older archive format, so it is sparser than the public tiles. Needs arnis-tiles next to Arnis or on PATH.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_prepare_tip" data-tooltip="Experimental. Lists the Geofabrik countries that cover the selected area, then downloads and bakes them into the archive folder with arnis-tiles. The bake makes an older archive format, so it is sparser than the public tiles. Needs arnis-tiles next to Arnis or on PATH.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_prepare_desc">Download and bake the countries your area covers.</span>
                     </span>
@@ -599,7 +599,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_plan">Download Plan</span>
-                        <span class="tooltip-icon" data-tooltip="Shows, for the selected area and the current settings, which data a run reads and how much of it the caches already hold. Only reads the disk.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_plan_tip" data-tooltip="Shows, for the selected area and the current settings, which data a run reads and how much of it the caches already hold. Only reads the disk.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_plan_desc">What this area needs and what is already downloaded.</span>
                     </span>
@@ -667,7 +667,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="overture">Additional Buildings</span>
-                        <span class="tooltip-icon" data-tooltip="Adds buildings that are missing from OpenStreetMap, using Overture Maps footprints. Helps most in rural areas. They are detected from satellite imagery, so a few may be wrong.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="overture_tip" data-tooltip="Adds buildings that are missing from OpenStreetMap, using Overture Maps footprints. Helps most in rural areas. They are detected from satellite imagery, so a few may be wrong.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="overture_desc">Fills gaps in OpenStreetMap with satellite-detected footprints.</span>
                     </span>
@@ -684,7 +684,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="three_dmr">3D Models &amp; Props</span>
-                        <span class="tooltip-icon" data-tooltip="Adds 3D models of famous landmarks such as the Eiffel Tower, and props like cars, boats, cranes, planes and wind turbines.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="three_dmr_tip" data-tooltip="Adds 3D models of famous landmarks such as the Eiffel Tower, and props like cars, boats, cranes, planes and wind turbines.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="three_dmr_desc">Famous landmarks plus cars, boats, cranes and wind turbines.</span>
                     </span>
@@ -713,7 +713,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="signage">Signage</span>
-                        <span class="tooltip-icon" data-tooltip="Readable image signs. Basic covers street names, traffic signs, transit stops and billboards. Full adds shop names, house numbers and crossing signs. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="signage_tip" data-tooltip="Readable image signs. Basic covers street names, traffic signs, transit stops and billboards. Full adds shop names, house numbers and crossing signs. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="signage_desc">Readable street names, traffic signs and shop plates. Java only.</span>
                     </span>
@@ -733,7 +733,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="winter">Winter</span>
-                        <span class="tooltip-icon" data-preview-on="winter-on" data-preview-off="buildings-on" data-tooltip="Covers the ground, roofs and trees in snow, freezes rivers and lakes and makes every biome snowy, so it keeps snowing in game. Roads stay clear.">?</span>
+                        <span class="tooltip-icon" data-preview-on="winter-on" data-preview-off="buildings-on" data-tooltip-key="winter_tip" data-tooltip="Covers the ground, roofs and trees in snow, freezes rivers and lakes and makes every biome snowy, so it keeps snowing in game. Roads stay clear.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="winter_desc">Snow on the ground, roofs and trees, frozen rivers and lakes.</span>
                     </span>
@@ -749,7 +749,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="post_apocalyptic">Post-Apocalyptic</span>
-                        <span class="tooltip-icon" data-preview-on="post-apocalyptic-on" data-preview-off="buildings-on" data-tooltip="Turns the city into ruins: partly collapsed buildings, broken windows, cracked roads with grass, rubble, moss and vines, and every light off. Goes well with Zombie Outbreak.">?</span>
+                        <span class="tooltip-icon" data-preview-on="post-apocalyptic-on" data-preview-off="buildings-on" data-tooltip-key="post_apocalyptic_tip" data-tooltip="Turns the city into ruins: partly collapsed buildings, broken windows, cracked roads with grass, rubble, moss and vines, and every light off. Goes well with Zombie Outbreak.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="post_apocalyptic_desc">Collapsed, overgrown buildings, cracked roads and no lights.</span>
                     </span>
@@ -764,7 +764,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_seed">World Seed</span>
-                        <span class="tooltip-icon" data-tooltip="Mixed into every random choice: trees, rocks, flowers and building variety. Empty or 0 keeps the default look. A One World keeps the seed its first area used. Experimental.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_seed_tip" data-tooltip="Mixed into every random choice: trees, rocks, flowers and building variety. Empty or 0 keeps the default look. A One World keeps the seed its first area used. Experimental.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_seed_desc">Rebuild the same area with a different, repeatable look.</span>
                     </span>
@@ -779,7 +779,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_min_y">Lowest Y</span>
-                        <span class="tooltip-icon" data-tooltip="A multiple of 16 from -2032 to -64. Needs Extend build height, a new Java world and no One World. Empty keeps -2032. Java 1.21.4+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_min_y_tip" data-tooltip="A multiple of 16 from -2032 to -64. Needs Extend build height, a new Java world and no One World. Empty keeps -2032. Java 1.21.4+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_min_y_desc">Bottom of the extended-height world.</span>
                     </span>
@@ -794,7 +794,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_max_y">Highest Y</span>
-                        <span class="tooltip-icon" data-tooltip="One less than a multiple of 16, from 319 to 2031. Needs Extend build height, a new Java world and no One World. Empty keeps 2031. Java 1.21.4+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_max_y_tip" data-tooltip="One less than a multiple of 16, from 319 to 2031. Needs Extend build height, a new Java world and no One World. Empty keeps 2031. Java 1.21.4+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_max_y_desc">Top of the extended-height world.</span>
                     </span>
@@ -809,7 +809,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_road_detail">Road Detail</span>
-                        <span class="tooltip-icon" data-preview-seg="road-detail" data-tooltip="Max builds every marking and way as mapped. Clean removes lane dividers except on one-way roads wider than 5 blocks, every line on service and pedestrian ways and roads under 4 blocks wide, and paints crossing bars 2 blocks apart. Compact is Clean with longer dashes, and also removes footways and sidewalks (at every scale), paths, cycleways, steps, service roads, tracks and crossings.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="road-detail" data-tooltip-key="meld_road_detail_tip" data-tooltip="Max builds every marking and way as mapped. Clean removes lane dividers except on one-way roads wider than 5 blocks, every line on service and pedestrian ways and roads under 4 blocks wide, and paints crossing bars 2 blocks apart. Compact is Clean with longer dashes, and also removes footways and sidewalks (at every scale), paths, cycleways, steps, service roads, tracks and crossings.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_road_detail_desc">How many road markings and minor roads to build.</span>
                     </span>
@@ -824,7 +824,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_surface_patches">Surface Patches</span>
-                        <span class="tooltip-icon" data-tooltip="Lays asphalt, concrete, paving and built-up stone ground in patches a few blocks across instead of a per-block speckle, and gives pitched clay roofs a full block in their stairs' colour.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_surface_patches_tip" data-tooltip="Lays asphalt, concrete, paving and built-up stone ground in patches a few blocks across instead of a per-block speckle, and gives pitched clay roofs a full block in their stairs' colour.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_surface_patches_desc">Lay road and paving blocks in patches, not single-block dots.</span>
                     </span>
@@ -839,7 +839,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_buildings">Buildings</span>
-                        <span class="tooltip-icon" data-preview-on="buildings-on" data-preview-off="buildings-off" data-tooltip="Off leaves out buildings, building parts, doors, entrances and Overture footprints. Roads, rail, water, land cover and terrain are built as usual.">?</span>
+                        <span class="tooltip-icon" data-preview-on="buildings-on" data-preview-off="buildings-off" data-tooltip-key="meld_buildings_tip" data-tooltip="Off leaves out buildings, building parts, doors, entrances and Overture footprints. Roads, rail, water, land cover and terrain are built as usual.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_buildings_desc">Turn off to leave out every building.</span>
                     </span>
@@ -854,7 +854,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_props">Props Override</span>
-                        <span class="tooltip-icon" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_props_tip" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_props_desc">Overrides which 3D props are placed.</span>
                     </span>
@@ -883,7 +883,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="height_multiplier">Terrain Height</span>
-                        <span class="tooltip-icon" data-tooltip="Makes the terrain taller or flatter. Buildings and trees keep their size. Terrain that would pass the build limit is compressed, unless Extend build height is on.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="height_multiplier_tip" data-tooltip="Makes the terrain taller or flatter. Buildings and trees keep their size. Terrain that would pass the build limit is compressed, unless Extend build height is on.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="height_multiplier_desc">1.00 is real height. Higher values make hills and mountains taller.</span>
                     </span>
@@ -900,7 +900,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="fillground">Fill Ground</span>
-                        <span class="tooltip-icon" data-tooltip="Fills the ground under the surface with stone and ores for survival mining. Takes longer and makes the world bigger on disk.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="fillground_tip" data-tooltip="Fills the ground under the surface with stone and ores for survival mining. Takes longer and makes the world bigger on disk.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="fillground_desc">Stone and ores below the surface for survival mining.</span>
                     </span>
@@ -916,7 +916,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="caves">Caves</span>
-                        <span class="tooltip-icon" data-preview-on="caves-on" data-preview-off="caves-off" data-tooltip="Carves caves, underground rivers and cave biomes under hills and mountains. Turns on Fill Ground and takes longer.">?</span>
+                        <span class="tooltip-icon" data-preview-on="caves-on" data-preview-off="caves-off" data-tooltip-key="caves_tip" data-tooltip="Carves caves, underground rivers and cave biomes under hills and mountains. Turns on Fill Ground and takes longer.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="caves_desc">Caves, underground rivers and cave biomes under hills.</span>
                     </span>
@@ -933,7 +933,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="canopy_height">Real Tree Cover</span>
-                        <span class="tooltip-icon" data-tooltip="Places trees where real ones stand, at about their real height, using a global canopy height map. Off uses land cover, which fills every wooded area with dense forest.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="canopy_height_tip" data-tooltip="Places trees where real ones stand, at about their real height, using a global canopy height map. Off uses land cover, which fills every wooded area with dense forest.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="canopy_height_desc">Trees stand where real ones do, at roughly their height.</span>
                     </span>
@@ -949,7 +949,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="legacy_trees">Legacy trees</span>
-                        <span class="tooltip-icon" data-preview-on="legacy-trees-on" data-preview-off="legacy-trees-off" data-tooltip="Simple procedural trees instead of the bundled tree models. Quicker, blockier.">?</span>
+                        <span class="tooltip-icon" data-preview-on="legacy-trees-on" data-preview-off="legacy-trees-off" data-tooltip-key="legacy_trees_tip" data-tooltip="Simple procedural trees instead of the bundled tree models. Quicker, blockier.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="legacy_trees_desc">Simple procedural trees instead of detailed models.</span>
                     </span>
@@ -965,7 +965,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="max_tree_size">Max Tree Size</span>
-                        <span class="tooltip-icon" data-tooltip="Tallest tree allowed: Small 6, Medium 12, Big 20 and Tall 28 blocks; Giant has no cap. Taller trees become a smaller species where one exists.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="max_tree_size_tip" data-tooltip="Tallest tree allowed: Small 6, Medium 12, Big 20 and Tall 28 blocks; Giant has no cap. Taller trees become a smaller species where one exists.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="max_tree_size_desc">Taller trees are swapped for a smaller species.</span>
                     </span>
@@ -988,7 +988,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="field_preset">Farmland Style</span>
-                        <span class="tooltip-icon" data-tooltip="Classic mixes crops block by block. The others give each field one crop and split large fields into strips: narrow for Smallholding, medium for Patchwork, wide and mostly wheat for Prairie.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="field_preset_tip" data-tooltip="Classic mixes crops block by block. The others give each field one crop and split large fields into strips: narrow for Smallholding, medium for Patchwork, wide and mostly wheat for Prairie.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="field_preset_desc">Each field grows its own crop instead of a mixed sheet.</span>
                     </span>
@@ -1009,7 +1009,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_rocks">Rocks</span>
-                        <span class="tooltip-icon" data-preview-on="rocks-on" data-preview-off="rocks-off" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="rocks-on" data-preview-off="rocks-off" data-tooltip-key="meld_rocks_tip" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_rocks_desc">Scatter small rocks over open land.</span>
                     </span>
@@ -1024,7 +1024,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_bushes">Bushes</span>
-                        <span class="tooltip-icon" data-preview-on="bushes-on" data-preview-off="rocks-off" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="bushes-on" data-preview-off="rocks-off" data-tooltip-key="meld_bushes_tip" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_bushes_desc">Scatter small bushes over open land.</span>
                     </span>
@@ -1039,7 +1039,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_tree_realm">Tree Realm</span>
-                        <span class="tooltip-icon" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the local ecoregion mixes and keeps its palms.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_tree_realm_tip" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the local ecoregion mixes and keeps its palms.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_realm_desc">Force one region&#x27;s trees instead of picking by location.</span>
                     </span>
@@ -1054,7 +1054,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_tree_pack_dir">Custom Tree Folder</span>
-                        <span class="tooltip-icon" data-tooltip="Laid out like the bundled packs: realm / community / tree type / size / any name.schem. A file that does not load is skipped with a warning. Experimental.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_tree_pack_dir_tip" data-tooltip="Laid out like the bundled packs: realm / community / tree type / size / any name.schem. A file that does not load is skipped with a warning. Experimental.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_pack_dir_desc">A folder of your own tree schematics.</span>
                     </span>
@@ -1069,7 +1069,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_tree_pack_mode">Custom Trees</span>
-                        <span class="tooltip-icon" data-tooltip="Add mixes the folder&#x27;s trees in. Replace swaps a realm&#x27;s built-in trees wherever the folder has any. Needs a folder.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_tree_pack_mode_tip" data-tooltip="Add mixes the folder&#x27;s trees in. Replace swaps a realm&#x27;s built-in trees wherever the folder has any. Needs a folder.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_pack_mode_desc">Add your trees to the built-in ones, or replace them.</span>
                     </span>
@@ -1084,7 +1084,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_cave_style">Cave Style</span>
-                        <span class="tooltip-icon" data-tooltip="Vanilla keeps plain caves. More vanilla is about 30% themed, All mix about 77% and More mix about 89%. Needs Caves.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_cave_style_tip" data-tooltip="Vanilla keeps plain caves. More vanilla is about 30% themed, All mix about 77% and More mix about 89%. Needs Caves.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_cave_style_desc">How much of the underground gets themed caves.</span>
                     </span>
@@ -1099,7 +1099,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_cave_ores">Cave Ores</span>
-                        <span class="tooltip-icon" data-tooltip="Normal is vanilla&#x27;s ore table. More doubles the veins of every metal and gem ore, at vanilla&#x27;s heights. Needs Caves.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_cave_ores_tip" data-tooltip="Normal is vanilla&#x27;s ore table. More doubles the veins of every metal and gem ore, at vanilla&#x27;s heights. Needs Caves.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_cave_ores_desc">How many ore veins the caves hold.</span>
                     </span>
@@ -1114,7 +1114,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_river_bed">River Bed</span>
-                        <span class="tooltip-icon" data-preview-seg="river-bed" data-tooltip="Smooth gives rivers, canals and streams a U-shaped bed that deepens with their width. Lakes and the sea keep their bed.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="river-bed" data-tooltip-key="meld_river_bed_tip" data-tooltip="Smooth gives rivers, canals and streams a U-shaped bed that deepens with their width. Lakes and the sea keep their bed.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_river_bed_desc">Shape the bed of mapped rivers.</span>
                     </span>
@@ -1129,7 +1129,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_water_detail">Water Detail</span>
-                        <span class="tooltip-icon" data-tooltip="Scaled rounds bed depths instead of flooring them. On small maps it also carves narrow bodies of water as bowls, narrows streams, and lets water run over roads that are not bridges.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_water_detail_tip" data-tooltip="Scaled rounds bed depths instead of flooring them. On small maps it also carves narrow bodies of water as bowls, narrows streams, and lets water run over roads that are not bridges.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_water_detail_desc">How water beds are rounded and narrowed.</span>
                     </span>
@@ -1144,7 +1144,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_climate_mode">Climate</span>
-                        <span class="tooltip-icon" data-tooltip="Origin reads it once, at the centre of the area. Per position reads it at every block, so a large world crosses climate zones. Experimental, not with rotation.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_climate_mode_tip" data-tooltip="Origin reads it once, at the centre of the area. Per position reads it at every block, so a large world crosses climate zones. Experimental, not with rotation.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_climate_mode_desc">Where the climate for surfaces and biomes is sampled.</span>
                     </span>
@@ -1159,7 +1159,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_rock_density">Rock Density</span>
-                        <span class="tooltip-icon" data-tooltip="From 0 to 1; the default is 0.02. Only with Rocks.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_rock_density_tip" data-tooltip="From 0 to 1; the default is 0.02. Only with Rocks.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_rock_density_desc">Share of chunks that get a rock.</span>
                     </span>
@@ -1174,7 +1174,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_bush_density">Bush Density</span>
-                        <span class="tooltip-icon" data-tooltip="From 0 to 1; the default is 0.05. Where a chunk rolls both, the rock wins. Only with Bushes.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_bush_density_tip" data-tooltip="From 0 to 1; the default is 0.05. Where a chunk rolls both, the rock wins. Only with Bushes.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_bush_density_desc">Share of chunks that get a bush.</span>
                     </span>
@@ -1204,7 +1204,7 @@
                 <label class="setting-label">
                   <span class="setting-heading">
                     <span data-localize="facade_source">Facade Source</span>
-                    <span class="tooltip-icon" data-tooltip="Preset uses bundled photos picked by building type, Mapillary real street photos where available. Photo walls need Java 1.21.4+ and the world's resources.zip. On a server, host it and set resource-pack in server.properties.">?</span>
+                    <span class="tooltip-icon" data-tooltip-key="facade_source_tip" data-tooltip="Preset uses bundled photos picked by building type, Mapillary real street photos where available. Photo walls need Java 1.21.4+ and the world's resources.zip. On a server, host it and set resource-pack in server.properties.">?</span>
                   </span>
                 </label>
                 <div class="segmented-control choice-cards" id="facade-source-group">
@@ -1234,7 +1234,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="mapillary_token">Mapillary Token</span>
-                        <span class="tooltip-icon" data-tooltip="Free: register an app at mapillary.com/developer and copy its Client Token (starts with MLY|). It stays on this computer and is only sent to Mapillary.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="mapillary_token_tip" data-tooltip="Free: register an app at mapillary.com/developer and copy its Client Token (starts with MLY|). It stays on this computer and is only sent to Mapillary.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="mapillary_token_desc">Free from mapillary.com/developer. Stays on this computer.</span>
                     </span>
@@ -1250,7 +1250,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="facade_mode">Facade Mode</span>
-                        <span class="tooltip-icon" data-tooltip="Photos hangs the photo itself on the wall (Java 1.21.4+). Blocks builds walls in matching colours and works on every world format.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="facade_mode_tip" data-tooltip="Photos hangs the photo itself on the wall (Java 1.21.4+). Blocks builds walls in matching colours and works on every world format.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="facade_mode_desc">Hang the photos themselves, or match wall blocks to them.</span>
                     </span>
@@ -1270,7 +1270,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="facade_detail">Facade Detail</span>
-                        <span class="tooltip-icon" data-tooltip="Standard works on any graphics card. High is sharper but needs a recent graphics card on every computer that opens the world.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="facade_detail_tip" data-tooltip="Standard works on any graphics card. High is sharper but needs a recent graphics card on every computer that opens the world.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="facade_detail_desc">Higher detail is sharper but needs a modern graphics card.</span>
                     </span>
@@ -1290,7 +1290,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="facade_precompute">Precompute Area</span>
-                        <span class="tooltip-icon" data-tooltip="Builds the facades for the selected area ahead of time, so generating there is quick and the 3D preview shows them. Up to 0.1 km²; a city block takes about 20 minutes. Check coverage on mapillary.com first.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="facade_precompute_tip" data-tooltip="Builds the facades for the selected area ahead of time, so generating there is quick and the 3D preview shows them. Up to 0.1 km²; a city block takes about 20 minutes. Check coverage on mapillary.com first.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="facade_precompute_desc">Build the selected area's facades ahead of generating.</span>
                     </span>
@@ -1327,7 +1327,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="pause_menu">Arnis Pause Menu</span>
-                        <span class="tooltip-icon" data-tooltip="Adds an Arnis button to the pause menu for travelling to landmarks, seeing discoveries and the map credits. Java 1.21.6+; on 1.21.4 and 1.21.5 the credits go to chat.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="pause_menu_tip" data-tooltip="Adds an Arnis button to the pause menu for travelling to landmarks, seeing discoveries and the map credits. Java 1.21.6+; on 1.21.4 and 1.21.5 the credits go to chat.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="pause_menu_desc">Travel, discoveries and credits from the pause menu.</span>
                     </span>
@@ -1342,7 +1342,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="discoveries">Discoveries</span>
-                        <span class="tooltip-icon" data-tooltip="Adds an advancement tab with the area's landmarks, museums, parks, stations and more. Each one unlocks when you get there. Java 1.21.4+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="discoveries_tip" data-tooltip="Adds an advancement tab with the area's landmarks, museums, parks, stations and more. Each one unlocks when you get there. Java 1.21.4+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="discoveries_desc">Walk to real landmarks to unlock them as advancements.</span>
                     </span>
@@ -1357,7 +1357,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="traffic_lights">Working Traffic Lights</span>
-                        <span class="tooltip-icon" data-tooltip="Traffic lights cycle through red, amber and green, with pedestrian and bike lights at crossings. Crossing roads take turns. Java 1.21.4+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="traffic_lights_tip" data-tooltip="Traffic lights cycle through red, amber and green, with pedestrian and bike lights at crossings. Crossing roads take turns. Java 1.21.4+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="traffic_lights_desc">Traffic lights that actually switch.</span>
                     </span>
@@ -1372,7 +1372,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="moving_vehicles">Moving Vehicles</span>
-                        <span class="tooltip-icon" data-tooltip="Cars drive the mapped streets at the speed limit and, on Java, stop at red lights. Trains and trams run the tracks and stop at stations. Only vehicles near a player move. Java 1.21.4+ or Bedrock 1.21.120+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="moving_vehicles_tip" data-tooltip="Cars drive the mapped streets at the speed limit and, on Java, stop at red lights. Trains and trams run the tracks and stop at stations. Only vehicles near a player move. Java 1.21.4+ or Bedrock 1.21.120+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="moving_vehicles_desc">Cars, trams, metros and trains that run your streets and tracks.</span>
                     </span>
@@ -1388,7 +1388,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="zombie_outbreak">Zombie Outbreak</span>
-                        <span class="tooltip-icon" data-tooltip="Survive five nights as bigger zombie waves hunt you through the streets, until Patient Zero rises on the fifth. Supply drops land each morning. Starts in Survival on Normal. Java 1.21.6+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="zombie_outbreak_tip" data-tooltip="Survive five nights as bigger zombie waves hunt you through the streets, until Patient Zero rises on the fifth. Supply drops land each morning. Starts in Survival on Normal. Java 1.21.6+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="zombie_outbreak_desc">Five nights of zombie waves through your streets, with a boss.</span>
                     </span>
@@ -1403,7 +1403,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="disasters">Disasters</span>
-                        <span class="tooltip-icon" data-tooltip="Disasters strike one after another, each with a short warning: storms, meteors, tornadoes, floods, wildfires and more. The damage stays. Turns on Fill Ground and interiors and starts in Survival. Java 1.21.6+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="disasters_tip" data-tooltip="Disasters strike one after another, each with a short warning: storms, meteors, tornadoes, floods, wildfires and more. The damage stays. Turns on Fill Ground and interiors and starts in Survival. Java 1.21.6+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="disasters_desc">A disaster every few minutes: floods, tornadoes, earthquakes and more.</span>
                     </span>
@@ -1418,7 +1418,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="body_gravity">Moon &amp; Mars Gravity</span>
-                        <span class="tooltip-icon" data-tooltip="Players and mobs fall with real surface gravity: about 1/6 of Earth's on the Moon and 3/8 on Mars. Fall damage scales to match. Java 1.21.4+.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="body_gravity_tip" data-tooltip="Players and mobs fall with real surface gravity: about 1/6 of Earth's on the Moon and 3/8 on Mars. Fall damage scales to match. Java 1.21.4+.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="body_gravity_desc">Real low gravity on Moon and Mars worlds.</span>
                     </span>
@@ -1477,7 +1477,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="rotation_angle">Rotation Angle</span>
-                        <span class="tooltip-icon" data-tooltip="Rotates the area so its streets line up with Minecraft's axes. Use the line tool to draw a reference line.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="rotation_angle_tip" data-tooltip="Rotates the area so its streets line up with Minecraft's axes. Use the line tool to draw a reference line.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="rotation_angle_desc">Turn the area so streets line up with the block grid.</span>
                     </span>
@@ -1499,12 +1499,12 @@
                   <div class="settings-control">
                     <select id="tile-theme-select" name="tile-theme-select" class="settings-select">
                       <option value="osm">Standard</option>
-                      <option value="esri-imagery">Satellite</option>
-                      <option value="opentopomap">Topographic</option>
-                      <option value="stadia-bright">Smooth Bright</option>
-                      <option value="stadia-dark">Smooth Dark</option>
-                      <option value="openfreemap-liberty">Modern</option>
-                      <option value="custom">Custom</option>
+                      <option value="esri-imagery" data-localize="map_theme_satellite">Satellite</option>
+                      <option value="opentopomap" data-localize="map_theme_topographic">Topographic</option>
+                      <option value="stadia-bright" data-localize="map_theme_smooth_bright">Smooth Bright</option>
+                      <option value="stadia-dark" data-localize="map_theme_smooth_dark">Smooth Dark</option>
+                      <option value="openfreemap-liberty" data-localize="map_theme_modern">Modern</option>
+                      <option value="custom" data-localize="map_theme_custom">Custom</option>
                     </select>
                   </div>
                 </div>
@@ -1516,7 +1516,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="custom_map_source">Custom Map Source</span>
-                        <span class="tooltip-icon" data-tooltip="Tile URL with {z}, {x} and {y}. Must be WGS-84; GCJ-02 sources (most Chinese ones) show up shifted.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="custom_map_source_tip" data-tooltip="Tile URL with {z}, {x} and {y}. Must be WGS-84; GCJ-02 sources (most Chinese ones) show up shifted.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="custom_map_source_desc">Your own tile server, as a URL with {z}, {x} and {y}.</span>
                     </span>
@@ -1531,7 +1531,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_origin">World Origin</span>
-                        <span class="tooltip-icon" data-tooltip="LAT,LON for the origin of a One World this run creates, instead of the centre of the selection. One World only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_origin_tip" data-tooltip="LAT,LON for the origin of a One World this run creates, instead of the centre of the selection. One World only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_origin_desc">Latitude and longitude of block (0, 0).</span>
                     </span>
@@ -1546,7 +1546,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_world_border">World Border</span>
-                        <span class="tooltip-icon" data-tooltip="Sets the border after the run; in a One World, around all its areas. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_world_border_tip" data-tooltip="Sets the border after the run; in a One World, around all its areas. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_world_border_desc">Put the world border around the generated area.</span>
                     </span>
@@ -1612,8 +1612,8 @@
                     </span>
                   </label>
                   <div class="settings-control save-path-control">
-                    <input type="text" id="save-path-input" name="save-path-input" class="save-path-input" placeholder="Minecraft saves directory" spellcheck="false">
-                    <button type="button" id="save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                    <input type="text" id="save-path-input" name="save-path-input" class="save-path-input" placeholder="Minecraft saves directory" data-localize="placeholder_save_path" spellcheck="false">
+                    <button type="button" id="save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse" data-localize-title="browse_title" data-localize-aria-label="browse_label">
                       <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
                     </button>
                   </div>
@@ -1625,14 +1625,14 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="bedrock_save_path">Bedrock Save Path</span>
-                        <span class="tooltip-icon" data-tooltip="Folder the Bedrock .mcworld file is saved to. Open the file to import the world into Minecraft.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="bedrock_save_path_tip" data-tooltip="Folder the Bedrock .mcworld file is saved to. Open the file to import the world into Minecraft.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="bedrock_save_path_desc">Folder the .mcworld file is saved to.</span>
                     </span>
                   </label>
                   <div class="settings-control save-path-control">
-                    <input type="text" id="bedrock-save-path-input" name="bedrock-save-path-input" class="save-path-input" placeholder="Bedrock .mcworld directory" spellcheck="false">
-                    <button type="button" id="bedrock-save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                    <input type="text" id="bedrock-save-path-input" name="bedrock-save-path-input" class="save-path-input" placeholder="Bedrock .mcworld directory" data-localize="placeholder_bedrock_save_path" spellcheck="false">
+                    <button type="button" id="bedrock-save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse" data-localize-title="browse_title" data-localize-aria-label="browse_label">
                       <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
                     </button>
                   </div>
@@ -1648,8 +1648,8 @@
                     </span>
                   </label>
                   <div class="settings-control save-path-control">
-                    <input type="text" id="luanti-save-path-input" name="luanti-save-path-input" class="save-path-input" placeholder="Luanti worlds directory" spellcheck="false">
-                    <button type="button" id="luanti-save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse">
+                    <input type="text" id="luanti-save-path-input" name="luanti-save-path-input" class="save-path-input" placeholder="Luanti worlds directory" data-localize="placeholder_luanti_save_path" spellcheck="false">
+                    <button type="button" id="luanti-save-path-browse" class="save-path-browse" title="Browse..." aria-label="Browse" data-localize-title="browse_title" data-localize-aria-label="browse_label">
                       <svg class="icon" aria-hidden="true"><use href="#i-folder-open"></use></svg>
                     </button>
                   </div>
@@ -1675,7 +1675,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="clear_tile_cache">Clear Cache</span>
-                        <span class="tooltip-icon" data-tooltip="Deletes all cached map tiles and facade textures to free the space shown. They are downloaded again when needed.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="clear_tile_cache_tip" data-tooltip="Deletes all cached map tiles and facade textures to free the space shown. They are downloaded again when needed.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="clear_tile_cache_desc">Delete cached map tiles and facade textures.</span>
                     </span>
@@ -1705,7 +1705,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="advanced_meld_features">Meld features</span>
-                        <span class="tooltip-icon" data-tooltip="Shows the Scale settings here and extra settings in Generation, Terrain &amp; Nature, Map &amp; Input and World. Turning it off hides them and sends none of them. Experimental.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="advanced_meld_features_tip" data-tooltip="Shows the Scale settings here and extra settings in Generation, Terrain &amp; Nature, Map &amp; Input and World. Turning it off hides them and sends none of them. Experimental.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="advanced_meld_features_desc">Extra settings for large worlds and finer control. Off, Arnis behaves as before.</span>
                     </span>
@@ -1724,7 +1724,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_workers">Parallel pieces</span>
-                        <span class="tooltip-icon" data-tooltip="Splits a One World selection into pieces of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_workers_tip" data-tooltip="Splits a One World selection into pieces of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_workers_desc">Build a One World in pieces, several at a time.</span>
                     </span>
@@ -1739,7 +1739,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_cpu_target">CPU share</span>
-                        <span class="tooltip-icon" data-tooltip="Percent of the cores to use, from 10 to 100. The default is 90. Ignored when Threads is set.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_cpu_target_tip" data-tooltip="Percent of the cores to use, from 10 to 100. The default is 90. Ignored when Threads is set.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_cpu_target_desc">Share of the cores to generate on.</span>
                     </span>
@@ -1754,7 +1754,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_ram_budget">Memory budget</span>
-                        <span class="tooltip-icon" data-tooltip="Sizes parallel work to this much memory instead of the free RAM measured, so several runs can share a machine. Empty measures free RAM.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_ram_budget_tip" data-tooltip="Sizes parallel work to this much memory instead of the free RAM measured, so several runs can share a machine. Empty measures free RAM.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_ram_budget_desc">How much memory a run may use, in MB.</span>
                     </span>
@@ -1769,7 +1769,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_threads">Threads</span>
-                        <span class="tooltip-icon" data-tooltip="Overrides CPU share. Empty uses 90% of the cores. A job in pieces splits it between the pieces.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_threads_tip" data-tooltip="Overrides CPU share. Empty uses 90% of the cores. A job in pieces splits it between the pieces.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_threads_desc">Exact number of worker threads.</span>
                     </span>
@@ -1787,7 +1787,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="disable_height_limit">Extend build height</span>
-                        <span class="tooltip-icon" data-tooltip="Raises the build height only where the terrain or buildings would not fit, and on Java only as far as they reach. Off compresses tall terrain instead. Java 1.21.4+ and Bedrock 1.21.120+, not for Realms.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="disable_height_limit_tip" data-tooltip="Raises the build height only where the terrain or buildings would not fit, and on Java only as far as they reach. Off compresses tall terrain instead. Java 1.21.4+ and Bedrock 1.21.120+, not for Realms.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="disable_height_limit_desc">Raises the height limit when an area needs it. Not for Realms.</span>
                     </span>
@@ -1803,7 +1803,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="aws_only_elevation">Legacy Terrain</span>
-                        <span class="tooltip-icon" data-tooltip="Uses the older AWS terrain tiles (about 30 m) instead of Mapterhorn. Less detailed; only useful if Mapterhorn can't be reached.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="aws_only_elevation_tip" data-tooltip="Uses the older AWS terrain tiles (about 30 m) instead of Mapterhorn. Less detailed; only useful if Mapterhorn can't be reached.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="aws_only_elevation_desc">Older, coarser elevation source for when the default fails.</span>
                     </span>
@@ -1819,7 +1819,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="bake_lighting">Bake lighting</span>
-                        <span class="tooltip-icon" data-tooltip="Precomputes lighting so LOD mods like Voxy show distant chunks lit before you visit them. Not needed in vanilla; takes longer.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="bake_lighting_tip" data-tooltip="Precomputes lighting so LOD mods like Voxy show distant chunks lit before you visit them. Not needed in vanilla; takes longer.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="bake_lighting_desc">Precomputed light for LOD mods like Voxy. Slower.</span>
                     </span>
@@ -1835,7 +1835,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="voxy_lod">Pre-generate Voxy LOD</span>
-                        <span class="tooltip-icon" data-tooltip="Writes Voxy's LOD cache with the world, so distant terrain shows on first join without /voxy import. Turns on Bake lighting and takes longer. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="voxy_lod_tip" data-tooltip="Writes Voxy's LOD cache with the world, so distant terrain shows on first join without /voxy import. Turns on Bake lighting and takes longer. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="voxy_lod_desc">Distant terrain renders on first join. Java only.</span>
                     </span>
@@ -1851,7 +1851,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="dh_lod">Pre-generate Distant Horizons LOD</span>
-                        <span class="tooltip-icon" data-tooltip="Writes the Distant Horizons LOD database with the world, so distant terrain shows on first join instead of loading chunk by chunk. Turns on Bake lighting and takes longer. Java only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="dh_lod_tip" data-tooltip="Writes the Distant Horizons LOD database with the world, so distant terrain shows on first join instead of loading chunk by chunk. Turns on Bake lighting and takes longer. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="dh_lod_desc">Distant terrain renders on first join. Java only.</span>
                     </span>
@@ -1942,7 +1942,7 @@
               <span data-localize="preview3d_buildings">Buildings</span>
             </label>
           </div>
-          <button type="button" class="dialog-close" onclick="closePreview3D()" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" onclick="closePreview3D()" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -1966,21 +1966,21 @@
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="telemetry-title" tabindex="-1">
         <header class="dialog-header">
           <div class="dialog-heading">
-            <h2 id="telemetry-title">Help improve Arnis</h2>
+            <h2 id="telemetry-title" data-localize="telemetry_title">Help improve Arnis</h2>
           </div>
-          <button type="button" class="dialog-close" onclick="rejectTelemetry()" aria-label="Close">
+          <button type="button" class="dialog-close" onclick="rejectTelemetry()" aria-label="Close" data-localize-aria-label="close_label">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
         <div class="dialog-body">
           <p>
-            We’d like to collect anonymous usage data like crashes and performance to make Arnis more stable and faster.
-            <a href="https://arnismc.com/privacypolicy.html" target="_blank" rel="noopener noreferrer">No personal data or world contents are collected.</a>
+            <span data-localize="telemetry_body">We’d like to collect anonymous usage data like crashes and performance to make Arnis more stable and faster.</span>
+            <a href="https://arnismc.com/privacypolicy.html" target="_blank" rel="noopener noreferrer" data-localize="telemetry_privacy_link">No personal data or world contents are collected.</a>
           </p>
         </div>
         <footer class="dialog-footer">
-          <button type="button" class="dialog-button" onclick="rejectTelemetry()">No thanks</button>
-          <button type="button" class="dialog-button is-primary" onclick="acceptTelemetry()">Allow anonymous data</button>
+          <button type="button" class="dialog-button" onclick="rejectTelemetry()" data-localize="telemetry_decline">No thanks</button>
+          <button type="button" class="dialog-button is-primary" onclick="acceptTelemetry()" data-localize="telemetry_accept">Allow anonymous data</button>
         </footer>
       </div>
     </div>
@@ -1992,7 +1992,7 @@
           <div class="dialog-heading">
             <h2 id="discord-modal-title" data-localize="discord_modal_title">Join the Arnis Discord</h2>
           </div>
-          <button type="button" class="dialog-close" onclick="closeDiscordModal()" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" onclick="closeDiscordModal()" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -2016,7 +2016,7 @@
           <div class="dialog-heading">
             <h2 id="one-world-confirm-title" data-localize="one_world_confirm_title">Replace existing chunks?</h2>
           </div>
-          <button type="button" class="dialog-close" id="one-world-confirm-close" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" id="one-world-confirm-close" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -2037,7 +2037,7 @@
           <div class="dialog-heading">
             <h2 id="live-title" data-localize="live_eula_title">Minecraft EULA</h2>
           </div>
-          <button type="button" class="dialog-close" id="live-close" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" id="live-close" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -2062,7 +2062,7 @@
           <div class="dialog-heading">
             <h2 id="license-title" data-localize="license_and_credits">License and Credits</h2>
           </div>
-          <button type="button" class="dialog-close" onclick="closeLicense()" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" onclick="closeLicense()" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
@@ -2081,7 +2081,7 @@
             <h2 id="update-modal-title" data-localize="update_modal_title">What's new in Arnis</h2>
             <div id="update-modal-meta" class="dialog-meta"></div>
           </div>
-          <button type="button" class="dialog-close" onclick="closeUpdateModal()" aria-label="Close" title="Close (Esc)">
+          <button type="button" class="dialog-close" onclick="closeUpdateModal()" aria-label="Close" title="Close (Esc)" data-localize-aria-label="close_label" data-localize-title="close_esc">
             <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
           </button>
         </header>
