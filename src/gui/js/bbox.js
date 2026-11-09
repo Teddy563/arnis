@@ -1581,7 +1581,7 @@ $(document).ready(function () {
                 path.classList.toggle('piece-retryable', retryable);
             }
             item.rect.setTooltipContent(pieceTip(p));
-            item.label.setContent((PIECE_ICONS[p.state] ? PIECE_ICONS[p.state] + ' ' : '') + p.n +
+            item.label.setContent((PIECE_ICONS[p.state] ? '<span class="piece-icon-' + p.state + '">' + PIECE_ICONS[p.state] + '</span> ' : '') + p.n +
                 (running && p.pct != null ? ' ' + p.pct + '%' : ''));
             if (item.halo) { pieceLayer.removeLayer(item.halo); item.halo = null; }
             if (pieceHalo && p.halo) {
