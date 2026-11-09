@@ -798,6 +798,33 @@ impl Args {
     }
 }
 
+/// Gameplay extras install one datapack and edit level.dat for the whole world; pieces of a
+/// job would each write their own over the others', so the two are not combined.
+pub fn refuse_extras_in_pieces(args: &Args) -> Result<(), String> {
+    if !args.units.coordinates() {
+        return Ok(());
+    }
+    let used: Vec<&str> = [
+        (args.body_gravity, "--body-gravity"),
+        (args.traffic_lights, "--traffic-lights"),
+        (args.discoveries, "--discoveries"),
+        (args.pause_menu, "--pause-menu"),
+        (args.zombie_outbreak, "--zombie-outbreak"),
+        (args.disasters, "--disasters"),
+        (args.moving_vehicles, "--moving-vehicles"),
+    ]
+    .into_iter()
+    .filter_map(|(on, name)| on.then_some(name))
+    .collect();
+    if used.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} install one datapack for the whole world, which the pieces of a job would overwrite          each other's; leave them out or build without --one-world-workers and --unit-regions.",
+        used.join(", ")
+    ))
+}
+
 /// Live tiles build with upstream's settings only, so `--live` refuses every 3.5 flag that
 /// would be dropped on its tiles. `--seed`, `--cave-seed` and `--cave-datum-y` travel in the
 /// world's manifest; `--no-update-check` and `--no-cache-sweep` act on this process only.
@@ -1485,6 +1512,7 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         );
     }
     refuse_live_extras(args)?;
+    refuse_extras_in_pieces(args)?;
     // --- end confluence:core ---
     // --- confluence:output ---
     crate::output_args::validate(args)?;
@@ -2809,6 +2837,30 @@ mod tests {
         ];
         let args = Args::parse_from(cmd.iter());
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn gameplay_extras_are_refused_in_pieces() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+        let parse = |extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+            cmd.extend_from_slice(extra);
+            Args::parse_from(cmd.iter())
+        };
+        for job in [
+            &["--one-world-workers", "2"][..],
+            &["--unit-regions", "1"],
+            &["--one-world-workers", "1"],
+        ] {
+            let mut argv = vec!["--one-world", "--traffic-lights", "--pause-menu"];
+            argv.extend_from_slice(job);
+            let err = validate_args(&parse(&argv)).unwrap_err();
+            assert!(err.contains("--traffic-lights, --pause-menu"), "{err}");
+        }
+        // One process, or a piece run by its coordinator, keeps its extras.
+        assert!(refuse_extras_in_pieces(&parse(&["--one-world", "--traffic-lights"])).is_ok());
+        assert!(refuse_extras_in_pieces(&parse(&["--one-world", "--unit-regions", "1"])).is_ok());
     }
 
     #[test]

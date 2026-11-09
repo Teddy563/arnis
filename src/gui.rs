@@ -2561,6 +2561,10 @@ fn gui_start_generation(
             crate::args::apply_body_defaults(&mut args);
             crate::args::apply_feature_needs(&mut args);
             crate::y_bounds::apply(&mut args);
+            if let Err(e) = crate::args::refuse_extras_in_pieces(&args) {
+                emit_gui_error(&e);
+                return Err(e);
+            }
 
             let mut one_world_extending = false;
             if one_world {
