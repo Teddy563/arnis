@@ -8,7 +8,7 @@ from the Arnis map palette parsed out of src/map_renderer.rs.
 
 Crop keys (see previews3d.json): slab=[z centre frac, z width, x frac lo, x frac hi],
 box=[x0, x1, z0, z1] absolute, vert=vertical exaggeration, floor=N clamps the diorama
-bottom to median ground - N, depth=N draws the cut N blocks below the lowest ground (default 3, caves need ~40), cut=true drops the half of the window on the +z side so
+bottom to median ground - N, depth=N draws the cut N blocks below the lowest ground (default 3, caves need ~40), cut="diag" removes every column below the line from the image's top-left to its bottom-right corner (a river cross-section on a diagonal cut face); cut=F (true = 0.5) keeps the first fraction F of the window along z and drops the +z side (bottom-left on screen, framing stays that of the whole window) so
 the exposed face along the diagonal is a cross-section (top-left to bottom-right on screen).
 Driver: previews3d.py.
 """
@@ -129,13 +129,13 @@ def load(world, slab=None, box=None, margin=0.96, cut=False):
         z0, z1 = zc - slab[1] // 2, zc + slab[1] // 2
     if box:
         x0, x1, z0, z1 = box
-    if cut:  # the window keeps its square span for scale; columns past the centre line are dropped
-        zcut = (z0 + z1) // 2
+    if cut:  # cut = fraction of the window's z depth kept; render() drops the rest after framing the whole window
+        zcut = z0 + int((z1 - z0) * (0.5 if cut is True else 0.5 if cut == "diag" else cut))
     span = (x1 - x0) + (z1 - z0)
     s_est = min(W * margin / span, H * margin * 2 / span)
     k = max(1, round(0.7 / s_est))
     cols, prof = {}, {}  # prof: the cut face's columns block by block (stone, ores, caves show as they are)
-    zl = ((zcut - 1) // k) * k if cut else None
+    zl = ((zcut - 1) // k) * k if cut and cut != "diag" else None
     for cx, cz, mca, off in all_chunks:
         if cz * 16 + 15 < z0 or cz * 16 >= z1 or cx * 16 + 15 < x0 or cx * 16 >= x1:
             continue
@@ -146,7 +146,7 @@ def load(world, slab=None, box=None, margin=0.96, cut=False):
         solid, water, glass = np.array(blocks.solid), np.array(blocks.water), np.array(blocks.glass)
         for z in range(16):
             wz = cz * 16 + z
-            if wz % k or not z0 <= wz < (zcut if cut else z1):
+            if wz % k or not z0 <= wz < z1:
                 continue
             for x in range(16):
                 wx = cx * 16 + x
@@ -160,13 +160,13 @@ def load(world, slab=None, box=None, margin=0.96, cut=False):
                     under = int(vol[t - 1, z, x]) if t > b else top
                     runs.append((y0 + b, y0 + t, top, under))
                 col = vol[:, z, x]
-                if wz == zl:
+                if cut and (cut == "diag" or wz == zl):
                     prof[(wx, wz)] = (y0, col.copy())
                 wcol = np.nonzero(water[col])[0]
                 gl = [(y0 + int(y), int(col[y])) for y in np.nonzero(glass[col])[0]]
                 cols[(wx, wz)] = (runs, y0 + int(wcol[-1]) if len(wcol) else None,
                                   y0 + int(wcol[0]) if len(wcol) else None, gl)
-    return cols, blocks.names, k, prof
+    return cols, blocks.names, k, prof, zl
 
 
 # --- per-cell tones -------------------------------------------------------------
@@ -205,7 +205,7 @@ def amp(name):
 def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, floor=None, cut=False, depth=3):
     t0 = time.time()
     margin = 0.93 if "shadow" in fx else 0.96
-    cols, names, k, prof = load(world, slab=slab, box=box, margin=margin, cut=cut)
+    cols, names, k, prof, zl = load(world, slab=slab, box=box, margin=margin, cut=cut)
     t1 = time.time()
     keys = list(cols)
     ground = {key: (cols[key][0][0][1] if cols[key][0] else -64) for key in keys}
@@ -225,6 +225,19 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
     cw, ch = W * ss, H * ss
     ox = cw / 2 - (xmin + xmax) / 2 * S
     oy = ch / 2 - (ymin + ymax) / 2 * S - (H * 0.012 * ss if "shadow" in fx else 0)
+    if cut:  # framed on the whole window; the +z side (bottom-left on screen) is now removed and leaves the background
+        mid = int(np.median(list(ground.values())))  # one height for every column, so the cut is a clean plane
+        for q in keys:
+            x, z = q
+            if cut == "diag":  # below the line from the image's top-left to its bottom-right corner
+                sx = ((x - z + k) * S + ox) / ss
+                sy = ((x + z + k) * S / 2 - (mid + 1) * S * vert + oy) / ss
+                gone = sy / H > sx / W
+            else:
+                gone = q[1] > zl
+            if gone:
+                del cols[q], ground[q]
+        keys = list(cols)
     # Cells per face edge: about one per 4 output px of a block's width, 1..3.
     n = max(1, min(3, round(2 * s * k / 4))) if ("noise" in fx or "ao" in fx) else 1
 
@@ -312,14 +325,13 @@ def render(world, slab=None, vert=VERT, box=None, fx=frozenset(STEPS), ss=2, flo
         if top_c is not None:
             draw.polygon([P(x, z, hi), P(x + k, z, hi), P(x + k, z + k, hi), P(x, z + k, hi)], fill=top_c + (a,))
 
-    zcut = max(z for _, z in keys) if cut else None  # the cut face's row of columns
     cells = n > 1 or "shade" in fx or "edges" in fx  # per-block drawing path
     nb = 0
     for (x, z) in sorted(keys, key=lambda q: (q[0] + q[1], q[0])):
         runs, wt, wb, gl = cols[(x, z)]
         front = [ground.get((x + k, z)), ground.get((x, z + k))]
         items = [(r[0], 0, r) for r in runs] + ([(g[0], 1, g) for g in gl] if "glass" in fx else [])
-        if z == zcut:  # air between runs (caves) shows on the cut face as dark openings
+        if cut and ((x, z + k) not in cols if cut == "diag" else z == zl):  # air between runs (caves) shows on the cut face as dark openings
             for (_, t0, _, _), (b1, _, _, _) in zip(runs, runs[1:]):
                 if b1 > t0 + 1:
                     draw.polygon([P(x, z + k, b1), P(x + k, z + k, b1), P(x + k, z + k, t0 + 1), P(x, z + k, t0 + 1)],

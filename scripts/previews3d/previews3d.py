@@ -3,6 +3,8 @@
 For each {name, bbox, flags, crop} in previews3d.json (next to this file) builds the tiny world with the
 Arnis binary into a temp dir (worlds with the same bbox and flags are built once) and renders
 <out>/<name>.webp, 480x360. Needs nbtlib, numpy, Pillow. Default out: src/gui/images/previews3d.
+The exe fetches live OSM and elevation data, so a regenerated picture can differ a little from the committed
+one (new map edits); regenerate only the pictures whose setting changed (name prefix).
 """
 import json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -20,11 +22,13 @@ def main():
         if k not in argv:
             return d
         i = argv.index(k)
+        if i + 1 >= len(argv):
+            sys.exit(f"{k} needs a value")
         v = argv[i + 1]
         del argv[i:i + 2]
         return Path(v)
 
-    exe = opt("--exe", Path(os.environ.get("ARNIS_EXE", ROOT / "target/release/arnis.exe")))
+    exe = opt("--exe", Path(os.environ.get("ARNIS_EXE", ROOT / ("target/release/arnis.exe" if os.name == "nt" else "target/release/arnis"))))
     out = opt("--out", ROOT / "src/gui/images/previews3d")
     manifest = opt("--manifest", HERE / "previews3d.json")
     keep = "--keep" in argv
@@ -55,4 +59,5 @@ def main():
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-main()
+if __name__ == "__main__":
+    main()

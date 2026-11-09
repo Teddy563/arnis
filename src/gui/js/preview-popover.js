@@ -37,14 +37,23 @@ export function place(row, pop, vw, vh) {
   const rowFirst = (row.left + row.right) / 2 < vw / 2 ? [fitsRight && right, fitsLeft && left] : [fitsLeft && left, fitsRight && right];
   const x = rowFirst.find((v) => v !== false);
   if (x !== undefined) return { left: x, top: middle };
+  // Full-width row: below it, else above it. In a window too short for either, on the side with more room.
   const x0 = Math.max(MARGIN, Math.min(row.left, vw - pop.w - MARGIN));
   const below = row.bottom + GAP;
-  return { left: x0, top: below + pop.h <= vh - MARGIN ? below : clampY(row.top - GAP - pop.h) };
+  const above = row.top - GAP - pop.h;
+  if (below + pop.h <= vh - MARGIN) return { left: x0, top: below };
+  if (above >= MARGIN) return { left: x0, top: above };
+  return { left: x0, top: vh - row.bottom > row.top ? clampY(below) : clampY(above) };
 }
 
+let started = false;
+
 export function initPreviews() {
+  if (started) return; // the popover is created once, whoever calls this
+  started = true;
   const pop = document.createElement('div');
   pop.className = 'preview-popover';
+  pop.id = 'preview-popover';
   pop.setAttribute('role', 'tooltip');
   pop.setAttribute('aria-hidden', 'true');
   const img = document.createElement('img');
@@ -59,8 +68,12 @@ export function initPreviews() {
   document.body.appendChild(pop);
 
   let open = false;
+  let current = null; // the icon the picture is for
+  let want = null; // the file being loaded
   const hide = () => {
     open = false;
+    want = null;
+    if (current) current.removeAttribute('aria-describedby');
     pop.classList.remove('is-visible');
     pop.setAttribute('aria-hidden', 'true');
   };
@@ -68,8 +81,22 @@ export function initPreviews() {
     const name = previewName(icon, button);
     if (!name) return hide();
     const text = (window.localization && window.localization[captionKey(name)]) || '';
+    if (current && current !== icon) current.removeAttribute('aria-describedby');
+    current = icon;
+    icon.setAttribute('aria-describedby', pop.id);
+    // The popover appears once the picture is in, so the one before it never flashes; the caption is the
+    // text (the picture's alt is empty so a screen reader does not say it twice).
+    pop.classList.remove('is-visible');
     img.onerror = hide; // a picture that is missing leaves the icon's text tooltip alone
-    img.alt = text;
+    want = name;
+    img.onload = () => {
+      if (want === name) {
+        pop.classList.add('is-visible');
+        pop.setAttribute('aria-hidden', 'false');
+      }
+    };
+    img.removeAttribute('src');
+    img.alt = '';
     img.src = `${BASE}${name}.webp`;
     caption.textContent = text;
     const row = icon.closest('.settings-row').getBoundingClientRect();
@@ -78,15 +105,19 @@ export function initPreviews() {
     pop.style.left = `${at.left}px`;
     pop.style.top = `${at.top}px`;
     open = true;
-    pop.classList.add('is-visible');
-    pop.setAttribute('aria-hidden', 'false');
   };
 
   document.querySelectorAll('.tooltip-icon[data-preview-on], .tooltip-icon[data-preview-seg]').forEach((icon) => {
     for (const ev of ['mouseenter', 'focus']) icon.addEventListener(ev, () => show(icon, null));
     for (const ev of ['mouseleave', 'blur']) icon.addEventListener(ev, hide);
+    const row = icon.closest('.settings-row');
+    const sw = row.querySelector('input.switch');
+    if (sw) {
+      sw.addEventListener('focus', () => show(icon, null));
+      sw.addEventListener('blur', hide);
+    }
     if (!icon.dataset.previewSeg) return;
-    icon.closest('.settings-row').querySelectorAll('.segment').forEach((b) => {
+    row.querySelectorAll('.segment').forEach((b) => {
       for (const ev of ['mouseenter', 'focus']) b.addEventListener(ev, () => show(icon, b));
       for (const ev of ['mouseleave', 'blur']) b.addEventListener(ev, hide);
     });
@@ -96,7 +127,10 @@ export function initPreviews() {
   // closes the picture first and the page on the next press.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && open) {
+      const icon = current;
       hide();
+      // Louis's text tooltip hides on mouseleave; it would otherwise stay up with the picture gone.
+      if (icon) icon.dispatchEvent(new Event('mouseleave'));
       e.stopPropagation();
     }
   }, true);
