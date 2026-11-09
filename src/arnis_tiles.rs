@@ -77,12 +77,6 @@ pub fn parse_prepare(stdout: &str) -> Option<Prepare> {
         .find_map(|l| serde_json::from_str(l).ok())
 }
 
-/// `--bbox` as arnis-tiles takes it: min_lat,min_lon,max_lat,max_lon.
-fn bbox_arg(bbox: &crate::coordinate_system::geographic::LLBBox) -> String {
-    let (lo, hi) = (bbox.min(), bbox.max());
-    format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng())
-}
-
 /// `exe` with its index cache and scratch kept under `state`, never in the
 /// working directory.
 fn command(exe: &Path, state: &Path, out: &Path) -> Result<Command, String> {
@@ -107,7 +101,7 @@ pub fn dry_run(
     bbox: &crate::coordinate_system::geographic::LLBBox,
 ) -> Result<Prepare, String> {
     let mut cmd = command(exe, state, &state.join("out"))?;
-    cmd.args(["prepare", "--dry-run", "--bbox", &bbox_arg(bbox)]);
+    cmd.args(["prepare", "--dry-run", "--bbox", &bbox.arg()]);
     let out = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -424,7 +418,7 @@ pub fn bake(
     let published = Published::take(folder);
     let since = std::time::SystemTime::now();
     let mut cmd = command(exe, state, folder)?;
-    cmd.args(["prepare", "--bbox", &bbox_arg(bbox), "--threads"])
+    cmd.args(["prepare", "--bbox", &bbox.arg(), "--threads"])
         .arg(threads.max(1).to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

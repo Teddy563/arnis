@@ -365,6 +365,17 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         job: corners(&rect),
         tiled: crate::tile::create_tiles(&rect, crate::tile::DEFAULT_TILE_SIZE).len() >= 3,
     };
+    // Writes piece `i`'s lease; returns it with the bbox the piece builds, halo included.
+    let piece_child = |i: usize| -> Result<(PathBuf, String), String> {
+        let lease = job.lease_path(i);
+        write(
+            &lease,
+            &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
+        )?;
+        let built = one_world::piece_build_rect(&units[i].rect, &rect);
+        let bbox = crate::projection::llbbox_for_rect(&proj, &built)?.arg();
+        Ok((lease, bbox))
+    };
 
     // `--prewarm-first`: one piece at a time, each with the job's whole download allowance, so N
     // workers then read the caches instead of all fetching at once. `--prewarm` stops after it.
@@ -382,16 +393,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             if STOP.load(Ordering::Acquire) {
                 return Err(STOPPED.to_string());
             }
-            let lease = job.lease_path(i);
-            write(
-                &lease,
-                &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
-            )?;
             // Warm what the piece will build: its rect plus the halo.
-            let built = one_world::piece_build_rect(&units[i].rect, &rect);
-            let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
-            let (lo, hi) = (bbox.min(), bbox.max());
-            let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
+            let (lease, bbox) = piece_child(i)?;
             let mut warm_argv = child_args(argv.iter().cloned(), &bbox, &lease, false);
             let downloads = args.max_downloads.unwrap_or(16).to_string();
             warm_argv.extend([
@@ -471,16 +474,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     // Builds piece `i` on worker slot `w`: Ok(None) when Stop ended it or it failed.
     let build = |i: usize, w: usize| -> Result<Option<PieceResult>, String> {
         let unit = &units[i];
-        let lease = job.lease_path(i);
-        write(
-            &lease,
-            &serde_json::to_value(lease_for(i)).map_err(|e| e.to_string())?,
-        )?;
         // The piece builds its halo too; its lease says which part it writes.
-        let built = one_world::piece_build_rect(&unit.rect, &rect);
-        let bbox = crate::projection::llbbox_for_rect(&proj, &built)?;
-        let (lo, hi) = (bbox.min(), bbox.max());
-        let bbox = format!("{},{},{},{}", lo.lat(), lo.lng(), hi.lat(), hi.lng());
+        let (lease, bbox) = piece_child(i)?;
         let argv = sizing.child_args(child_args(
             argv.iter().cloned(),
             &bbox,
@@ -1075,7 +1070,7 @@ mod tests {
         let got = |keep| {
             child_args(
                 argv.iter().cloned(),
-                &units[3].bbox_arg(),
+                &units[3].bbox.arg(),
                 Path::new("l.json"),
                 keep,
             )
@@ -1093,7 +1088,7 @@ mod tests {
                 "--no-update-check",
                 "--scale=1",
                 "--bbox",
-                &units[3].bbox_arg(),
+                &units[3].bbox.arg(),
                 "--one-world-unit",
                 "l.json",
                 "--progress",
