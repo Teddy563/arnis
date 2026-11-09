@@ -852,11 +852,7 @@ fn run_piece_until(
         let tail = Arc::clone(&tail);
         std::thread::spawn(move || {
             for line in BufReader::new(err).split(b'\n').map_while(Result::ok) {
-                let mut t = lock(&tail);
-                if t.len() == TAIL_LINES {
-                    t.pop_front();
-                }
-                t.push_back(String::from_utf8_lossy(&line).trim_end().to_string());
+                push(&tail, String::from_utf8_lossy(&line).trim_end().to_string());
             }
         })
     });
