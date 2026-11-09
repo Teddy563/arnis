@@ -207,9 +207,9 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     };
     // How far a running piece is, for its outline in the window. Not in the NDJSON stream: that
     // keeps one record per state change.
-    let piece_progress = |i: usize, worker: usize, pct: f64| {
+    let piece_progress = |i: usize, state: &str, worker: usize, pct: f64| {
         crate::progress::emit_gui_piece(&json!({
-            "piece": i, "of": of, "state": "start", "rect": corners(&units[i].rect),
+            "piece": i, "of": of, "state": state, "rect": corners(&units[i].rect),
             "bounds": bounds(&units[i]), "worker": worker, "pct": pct.round(),
         }));
     };
@@ -381,11 +381,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 if attempt > 0 { " (retry)" } else { "" }
             );
             let slot = w + 1;
-            piece_record(
-                i,
-                if attempt > 0 { "retry" } else { "start" },
-                json!({"worker": slot, "pct": 0}),
-            );
+            let state = if attempt > 0 { "retry" } else { "start" };
+            piece_record(i, state, json!({"worker": slot, "pct": 0}));
             // The window hears of a piece's progress once a second, or at 5 % more.
             let mut sent = (std::time::Instant::now(), 0.0f64);
             let seen = |f: f64| {
@@ -393,7 +390,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 let pct = f * 100.0;
                 if sent.0.elapsed().as_secs() >= 1 || pct - sent.1 >= 5.0 {
                     sent = (std::time::Instant::now(), pct);
-                    piece_progress(i, slot, pct);
+                    piece_progress(i, state, slot, pct);
                 }
             };
             match run_piece_until(&argv, &sizing.child_env(), &STOP, seen) {

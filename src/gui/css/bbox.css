@@ -537,7 +537,7 @@ body,
   display: none;
 }
 
-.piece-labels-off .piece-label {
+.leaflet-tooltip.piece-label.piece-label-off {
   display: none;
 }
 
@@ -545,4 +545,9 @@ body,
   .piece-running {
     animation: none;
   }
+}
+
+.leaflet-tooltip.piece-tip {
+  max-width: 360px;
+  white-space: pre-wrap;
 }

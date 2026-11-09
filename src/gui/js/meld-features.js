@@ -86,7 +86,8 @@ export function meldProblem({ oneWorld, java, extendHeight }) {
 export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
   if (!on('advanced-meld-features-toggle')) return [];
   const f = [];
-  if (retryNext.length) f.push(`--only-pieces=${retryNext.join(',')}`);
+  // Never for another selection or world than the pieces came from.
+  if (retryNext.length && keyOf() === jobKey) f.push(`--only-pieces=${retryNext.join(',')}`);
   retryNext = [];
   const add = (flag, v) => v !== '' && f.push(`${flag}=${v}`);
 
@@ -156,8 +157,9 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
 const pieces = new Map();
 let paused = false;
 let running = false;
-// The selection the pieces belong to: a different one makes them (and Retry) stale.
-let jobBBox = '';
+// What the pieces belong to (selection and world): a different one makes them, and Retry, stale.
+let jobKey = '';
+let keyOf = () => '';
 let retryNext = [];
 let call = () => {};
 let postToMap = () => {};
@@ -182,7 +184,8 @@ const outlines = () =>
         piece: t('run_piece', 'Piece {n}', { n: i + 1 }),
         state: t(key, fallback),
         worker: p.worker ? t('run_worker', 'Worker {n}', { n: p.worker }) : '',
-        error: p.error || '',
+        // The first line is the failure; the child's output after it stays in the log.
+        error: (p.error || '').split('\n')[0],
         hint: canRetry(p) ? t('run_retry_hint', 'Click to retry this piece') : '',
       },
     };
@@ -206,11 +209,17 @@ export function summary() {
 // One run of the job over the given pieces (1-based, as --only-pieces takes them). The run's
 // flags (meldFlags) take them; one a refused start leaves behind is dropped here.
 function retry(list) {
+  // --only-pieces names pieces of the job the outlines came from, not of another area.
+  if (keyOf() !== jobKey) return dropStalePieces();
   retryNext = list;
   Promise.resolve(restart()).finally(() => { retryNext = []; });
 }
 
-export function initRunControls({ invoke, post, start, localize }) {
+let mapWindow = () => null;
+
+export function initRunControls({ invoke, post, start, localize, key = () => '', map = () => null }) {
+  keyOf = key;
+  mapWindow = map;
   call = invoke;
   localizer = localize;
   postToMap = post;
@@ -230,7 +239,7 @@ export function initRunControls({ invoke, post, start, localize }) {
   // The map: a click on a failed or stopped piece's outline retries just that piece.
   window.addEventListener('message', (event) => {
     const m = event.data;
-    if (!m || m.type !== 'retryPiece') return;
+    if (!m || m.type !== 'retryPiece' || event.source !== mapWindow()) return;
     const p = pieces.get(m.piece);
     if (p && canRetry(p)) retry([m.piece + 1]);
   });
@@ -269,15 +278,21 @@ export function notePiece(piece) {
 
 // A new run starts clean; a retry keeps the pieces it does not rebuild. `bbox` is the selection
 // the run is for.
-export function clearPieces(bbox = '') {
+export function clearPieces() {
   if (retryNext.length) return;
-  jobBBox = bbox;
+  jobKey = keyOf();
   forgetPieces();
 }
 
 // The selection changed under a finished job: its pieces (and Retry) no longer fit it.
-export function dropStalePieces(bbox) {
-  if (running || !pieces.size || bbox === jobBBox) return;
+export function dropStalePieces() {
+  if (running || !pieces.size || keyOf() === jobKey) return;
+  resetPieces();
+}
+
+// A new world: no piece of the old one is left on the map.
+export function resetPieces() {
+  if (running) return;
   forgetPieces();
   showRunControls(false);
 }

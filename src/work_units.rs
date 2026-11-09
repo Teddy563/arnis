@@ -209,16 +209,34 @@ mod tests {
     /// boundaries, tile the job, and `bounds` projects back to `rect` within a block.
     #[test]
     fn the_piece_grid_is_what_the_overlay_draws() {
-        let req = LLBBox::new(44.40, 26.00, 44.52, 26.22).unwrap();
-        for scale in [1.0, 0.5, 0.25, 0.05] {
+        // The second is thin and far from the projection's origin.
+        let reqs = [
+            LLBBox::new(44.40, 26.00, 44.52, 26.22).unwrap(),
+            LLBBox::new(44.80, 25.30, 44.82, 25.90).unwrap(),
+        ];
+        for (req, scale) in reqs
+            .iter()
+            .flat_map(|r| [1.0, 0.5, 0.25, 0.05].map(|s| (r, s)))
+        {
             let proj = WebMercatorProjection::new(44.46, 26.11, scale);
-            let world = snap_bbox_to_chunks(&proj, &req).unwrap().0;
+            let world = snap_bbox_to_chunks(&proj, req).unwrap().0;
+            if scale == 0.05 && req.min().lat() > 44.7 {
+                assert!(plan_units(&proj, &world, 1).unwrap().len() > 1);
+            }
             for n in [1, 2] {
                 let side = 512 * n;
                 let units = plan_units(&proj, &world, n).unwrap();
                 let mut area = 0u64;
                 for (i, a) in units.iter().enumerate() {
                     let [x0, z0, x1, z1] = r(&a.rect);
+                    assert!(
+                        x0 >= world.min_x() && x1 <= world.max_x(),
+                        "s={scale} n={n}"
+                    );
+                    assert!(
+                        z0 >= world.min_z() && z1 <= world.max_z(),
+                        "s={scale} n={n}"
+                    );
                     // Interior edges are region boundaries; the job's own edges are chunks.
                     assert!(x0 == world.min_x() || x0 % side == 0, "s={scale} n={n}");
                     assert!(z0 == world.min_z() || z0 % side == 0, "s={scale} n={n}");

@@ -10,7 +10,7 @@ import {
   flushSettingsStore,
 } from './settings-store.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, dropStalePieces, showRunControls, meldFlags } from './meld-features.js';
+import { initMeldFeatures, initRunControls, initDataPanel, meldProblem, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1301,6 +1301,8 @@ function initSettings() {
     post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
     start: () => startGeneration(),
     localize: (element, key) => localizeElement(window.localization, { element }, key),
+    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}`,
+    map: () => getMapFrame()?.contentWindow,
   });
   initDataPanel({
     invoke,
@@ -2515,7 +2517,7 @@ function handleBboxInput() {
       customBBoxValid = false;
       bboxInputError = false;
       selectedBBox = mapSelectedBBox;
-      dropStalePieces(selectedBBox);
+      dropStalePieces();
       
       // Clear the info text only if no map selection exists
       if (!mapSelectedBBox) {
@@ -2570,7 +2572,7 @@ function handleBboxInput() {
         customBBoxValid = true;
         bboxInputError = false;
         selectedBBox = bboxText.replace(/,/g, ' '); // Convert to space format for consistency
-        dropStalePieces(selectedBBox);
+        dropStalePieces();
         setBboxSelectionInfo(bboxSelectionInfo, "custom_selection_confirmed", "#7bd864");
 
         // Reset rotation when bbox changes via manual input
@@ -2715,7 +2717,7 @@ function displayBboxInfoText(bboxText) {
 
   // Map selection always takes priority - clear custom input and update selectedBBox
   selectedBBox = mapSelectedBBox;
-  dropStalePieces(selectedBBox);
+  dropStalePieces();
   customBBoxValid = false;
   bboxInputError = false;
 
@@ -4010,7 +4012,7 @@ async function startGeneration() {
 
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
-    clearPieces(selectedBBox);
+    clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
@@ -4158,6 +4160,7 @@ async function showWorldPreviewButton() {
  */
 function notifyWorldChanged() {
   currentWorldMapData = null;
+  resetPieces();
   const mapFrame = document.querySelector('.map-container');
   if (mapFrame && mapFrame.contentWindow) {
     mapFrame.contentWindow.postMessage({
