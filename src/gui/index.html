@@ -350,7 +350,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="world_type">World Type</span>
-                        <span class="tooltip-icon" data-tooltip-key="world_type_tip" data-tooltip="What Minecraft generates past the edge of the area: empty void, so the area is an island, or a flat grass plain. Java only.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="world-type" data-preview-key="worldType" data-preview-group="world-type-group" data-tooltip-key="world_type_tip" data-tooltip="What Minecraft generates past the edge of the area: empty void, so the area is an island, or a flat grass plain. Java only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="world_type_desc">What lies past the edge of the area. Java only.</span>
                     </span>
@@ -625,7 +625,7 @@
               <!-- The select stays the source of truth (generation, the settings
                    store and the Earth-only gate all read it); the cards are a view
                    of it, kept in step by settings-layout.js. -->
-              <div class="settings-row setting-choice">
+              <div data-preview-seg="generation-mode" data-preview-key="value" data-preview-group="generation-mode-cards" class="settings-row setting-choice">
                 <label for="generation-mode-select" class="setting-label">
                   <span class="setting-heading"><span data-localize="generation_mode">Generation Mode</span></span>
                 </label>
@@ -684,7 +684,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="three_dmr">3D Models &amp; Props</span>
-                        <span class="tooltip-icon" data-tooltip-key="three_dmr_tip" data-tooltip="Adds 3D models of famous landmarks such as the Eiffel Tower, and props like cars, boats, cranes, planes and wind turbines.">?</span>
+                        <span class="tooltip-icon" data-preview-on="props-all" data-preview-off="props-none" data-tooltip-key="three_dmr_tip" data-tooltip="Adds 3D models of famous landmarks such as the Eiffel Tower, and props like cars, boats, cranes, planes and wind turbines.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="three_dmr_desc">Famous landmarks plus cars, boats, cranes and wind turbines.</span>
                     </span>
@@ -854,7 +854,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_props">Props Override</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_props_tip" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="props" data-tooltip-key="meld_props_tip" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_props_desc">Overrides which 3D props are placed.</span>
                     </span>
@@ -883,7 +883,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="height_multiplier">Terrain Height</span>
-                        <span class="tooltip-icon" data-tooltip-key="height_multiplier_tip" data-tooltip="Makes the terrain taller or flatter. Buildings and trees keep their size. Terrain that would pass the build limit is compressed, unless Extend build height is on.">?</span>
+                        <span class="tooltip-icon" data-preview-num="height-multiplier" data-preview-steps="0.5,1,2" data-tooltip-key="height_multiplier_tip" data-tooltip="Makes the terrain taller or flatter. Buildings and trees keep their size. Terrain that would pass the build limit is compressed, unless Extend build height is on.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="height_multiplier_desc">1.00 is real height. Higher values make hills and mountains taller.</span>
                     </span>
@@ -933,7 +933,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="canopy_height">Real Tree Cover</span>
-                        <span class="tooltip-icon" data-tooltip-key="canopy_height_tip" data-tooltip="Places trees where real ones stand, at about their real height, using a global canopy height map. Off uses land cover, which fills every wooded area with dense forest.">?</span>
+                        <span class="tooltip-icon" data-preview-on="canopy-height-on" data-preview-off="canopy-height-off" data-tooltip-key="canopy_height_tip" data-tooltip="Places trees where real ones stand, at about their real height, using a global canopy height map. Off uses land cover, which fills every wooded area with dense forest.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="canopy_height_desc">Trees stand where real ones do, at roughly their height.</span>
                     </span>
@@ -965,7 +965,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="max_tree_size">Max Tree Size</span>
-                        <span class="tooltip-icon" data-tooltip-key="max_tree_size_tip" data-tooltip="Tallest tree allowed: Small 6, Medium 12, Big 20 and Tall 28 blocks; Giant has no cap. Taller trees become a smaller species where one exists.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="max-tree-size" data-preview-key="maxTreeSize" data-preview-group="max-tree-size-group" data-tooltip-key="max_tree_size_tip" data-tooltip="Tallest tree allowed: Small 6, Medium 12, Big 20 and Tall 28 blocks; Giant has no cap. Taller trees become a smaller species where one exists.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="max_tree_size_desc">Taller trees are swapped for a smaller species.</span>
                     </span>
@@ -988,7 +988,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="field_preset">Farmland Style</span>
-                        <span class="tooltip-icon" data-tooltip-key="field_preset_tip" data-tooltip="Classic mixes crops block by block. The others give each field one crop and split large fields into strips: narrow for Smallholding, medium for Patchwork, wide and mostly wheat for Prairie.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="farmland" data-preview-key="fieldPreset" data-preview-group="field-preset-group" data-tooltip-key="field_preset_tip" data-tooltip="Classic mixes crops block by block. The others give each field one crop and split large fields into strips: narrow for Smallholding, medium for Patchwork, wide and mostly wheat for Prairie.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="field_preset_desc">Each field grows its own crop instead of a mixed sheet.</span>
                     </span>
@@ -1039,7 +1039,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_tree_realm">Tree Realm</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_tree_realm_tip" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the local ecoregion mixes and keeps its palms.">?</span>
+                        <span class="tooltip-icon" data-preview-sel="tree-realm" data-tooltip-key="meld_tree_realm_tip" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the local ecoregion mixes and keeps its palms.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_tree_realm_desc">Force one region&#x27;s trees instead of picking by location.</span>
                     </span>
@@ -1153,7 +1153,7 @@
                     <div class="segmented-control" id="meld-climate-mode-group"><button type="button" class="segment active" data-default data-v="origin" data-localize="meld_climate_mode_origin">Origin</button><button type="button" class="segment" data-v="per-position" data-localize="meld_climate_mode_per_position">Per position</button></div>
                   </div>
                 </div>
-                <div class="settings-row setting-tile meld-only">
+                <div data-preview-num="rock-density" data-preview-steps="0.02,0.2,1" class="settings-row setting-tile meld-only">
                   <label for="meld-rock-density-input" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-mountain"></use></svg>
                     <span class="setting-text">
@@ -1168,7 +1168,7 @@
                     <input type="number" id="meld-rock-density-input" class="meld-short" min="0" max="1" step="0.01" value="0.02">
                   </div>
                 </div>
-                <div class="settings-row setting-tile meld-only">
+                <div data-preview-num="bush-density" data-preview-steps="0.05,0.2,1" class="settings-row setting-tile meld-only">
                   <label for="meld-bush-density-input" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
                     <span class="setting-text">
@@ -1454,7 +1454,7 @@
                   </div>
                 </div>
 
-                <div class="settings-row setting-tile is-wide">
+                <div data-preview-num="scale" data-preview-steps="0.5,1,2" class="settings-row setting-tile is-wide">
                   <label for="scale-value-slider" class="setting-label">
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-scale"></use></svg>
                     <span class="setting-text">
@@ -1477,7 +1477,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="rotation_angle">Rotation Angle</span>
-                        <span class="tooltip-icon" data-tooltip-key="rotation_angle_tip" data-tooltip="Rotates the area so its streets line up with Minecraft's axes. Use the line tool to draw a reference line.">?</span>
+                        <span class="tooltip-icon" data-preview-num="rotation" data-preview-steps="0,45" data-tooltip-key="rotation_angle_tip" data-tooltip="Rotates the area so its streets line up with Minecraft's axes. Use the line tool to draw a reference line.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="rotation_angle_desc">Turn the area so streets line up with the block grid.</span>
                     </span>

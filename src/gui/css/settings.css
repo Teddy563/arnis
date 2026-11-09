@@ -563,24 +563,23 @@ label[for].setting-label {
   color: var(--primary-accent);
 }
 
-/* Picture of what a setting does (preview-popover.js). Same box as .global-tooltip; the image has
-   no baked shadow, so the drop shadow is CSS. Fixed size, so nothing moves when the image loads. */
+/* Picture of what a setting does (preview-popover.js): large, centred in the window, no shadow. The
+   image box has a fixed 4:3 size, so nothing moves when the picture loads, and the popover ignores the
+   pointer so it never steals the hover from the control under it. */
 .preview-popover {
   position: fixed;
   top: 0;
   left: 0;
-  width: 264px;
   box-sizing: border-box;
-  padding: 12px 12px 8px;
+  padding: 10px 10px 6px;
   background-color: #2a2a2a;
   border: 1px solid #fecc44;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: opacity 0.15s ease, visibility 0.15s ease;
   z-index: 30000;
-  pointer-events: none;
 }
 
 .preview-popover.is-visible {
@@ -590,16 +589,15 @@ label[for].setting-label {
 
 .preview-popover img {
   display: block;
-  width: 240px;
-  height: 180px;
-  filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.55));
+  width: min(720px, calc(100vw - 64px), calc((100vh - 110px) * 4 / 3));
+  height: auto;
+  aspect-ratio: 4 / 3;
 }
 
 .preview-popover-caption {
-  min-height: 2.7em;
   margin-top: 6px;
   color: #fecc44;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
   text-align: center;
   overflow-wrap: break-word;

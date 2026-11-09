@@ -47,32 +47,36 @@ assert.equal(previewName(segIcon, null), 'road-detail-max', 'the active button')
 assert.equal(previewName(segIcon, segs[1]), 'road-detail-clean', 'the hovered button');
 assert.equal(captionKey('post-apocalyptic-on'), 'preview_post_apocalyptic_on');
 
-// placement: beside the row, never over it
-const pop = { w: 264, h: 230 };
-let at = place(swRow.rect, pop, 1000, 650);
-assert.equal(at.left, 488, 'left column: right of the row');
-at = place(segRow.rect, pop, 1000, 650);
-assert.equal(at.left, 520 - 8 - 264, 'right column: left of the row');
-assert.ok(at.top >= 8 && at.top + 230 <= 642);
-const wide = { left: 8, right: 992, top: 300, bottom: 360 };
-at = place(wide, pop, 1000, 650);
-assert.ok(at.top >= wide.bottom || at.top + pop.h <= wide.top, 'a full-width row: above or below, not over');
+// placement: centred in the window, kept inside it
+const pop = { w: 740, h: 560 };
+let at = place(pop, 1000, 700);
+assert.deepEqual(at, { left: 130, top: 70 }, 'the centre of the window');
+at = place(pop, 600, 400);
+assert.deepEqual(at, { left: 16, top: 16 }, 'a window smaller than the picture: top left margin');
 
-// narrow and short windows: a wide row's picture goes below, else above, and does not cover the row
-const row500 = { left: 8, right: 492, top: 400, bottom: 460 };
-at = place(row500, pop, 500, 700);
-assert.ok(at.top + pop.h <= row500.top && at.top >= 8, 'above when there is no room below');
-assert.ok(at.left >= 8 && at.left + pop.w <= 492);
-at = place({ left: 8, right: 492, top: 100, bottom: 160 }, pop, 500, 700);
-assert.equal(at.top, 168, 'below when it fits');
-at = place({ left: 8, right: 492, top: 150, bottom: 210 }, pop, 500, 400);
-assert.ok(at.top >= 8 && at.top + pop.h <= 392, 'stays inside the window even when it must cover the row');
+// switch, select, slider and number box rows, and a row that carries the data itself
+const sel = node({ value: 'x' });
+const selRow = node({ querySelector: (q) => (q === 'select' ? sel : null) });
+sel.value = 'eur';
+assert.equal(previewName(node({ dataset: { previewSel: 'tree-realm' }, closest: () => selRow }), null), 'tree-realm-eur');
+const rng = node({ value: '1.3' });
+const rngRow = node({ querySelector: (q) => (q.includes('range') ? rng : null) });
+const rngIcon = node({ dataset: { previewNum: 'height-multiplier', previewSteps: '0.5,1,2' }, closest: () => rngRow });
+assert.equal(previewName(rngIcon, null), 'height-multiplier-1');
+rng.value = '1.6';
+assert.equal(previewName(rngIcon, null), 'height-multiplier-2');
+rng.value = '-45';
+assert.equal(previewName(node({ dataset: { previewNum: 'rotation', previewSteps: '0,45' }, closest: () => rngRow }), null), 'rotation-45', 'a negative angle is shown by its size');
+const keyed = node({ dataset: { maxTreeSize: 'tall' } });
+const keyedRow = node({ querySelector: () => keyed });
+assert.equal(previewName(node({ dataset: { previewSeg: 'max-tree-size', previewKey: 'maxTreeSize' }, closest: () => keyedRow }), null), 'max-tree-size-tall');
+keyed.dataset.nopreview = '';
+assert.equal(previewName(node({ dataset: { previewSeg: 'max-tree-size', previewKey: 'maxTreeSize' }, closest: () => keyedRow }), null), null, 'a button without a picture');
 
 // behaviour
 initPreviews();
 const el = body.children[0];
 const img = el.children[0];
-assert.equal(img.loading, 'lazy');
 assert.equal(img.width * 3, img.height * 4, 'fixed 4:3 box, so nothing shifts when it loads');
 assert.ok(!el.classList.contains('is-visible'));
 fire(swIcon, 'mouseenter');
@@ -130,17 +134,24 @@ assert.ok(!el.classList.contains('is-visible'), 'a missing picture hides it');
 const html = read('src/gui/index.html');
 const names = new Set();
 for (const m of html.matchAll(/data-preview-(?:on|off)="([^"]+)"/g)) names.add(m[1]);
-for (const m of html.matchAll(/data-preview-seg="([^"]+)"/g)) {
-  for (const b of html.matchAll(new RegExp(`id="meld-${m[1]}-group">(.*?)</div>`, 'g'))) {
-    for (const v of b[1].matchAll(/data-v="([^"]+)"/g)) names.add(`${m[1]}-${v[1]}`);
-  }
+const camel = (k) => k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+for (const m of html.matchAll(/data-preview-seg="([^"]+)"(?: data-preview-key="([^"]+)")?(?: data-preview-group="([^"]+)")?/g)) {
+  const [, stem, key, group] = m;
+  const g = new RegExp(`id="${group || `meld-${stem}-group`}"[^>]*>([^]*?)</div>`).exec(html);
+  assert.ok(g, `no button group for ${stem}`);
+  for (const v of g[1].matchAll(new RegExp(`data-${key ? camel(key) : 'v'}="([^"]+)"`, 'g'))) names.add(`${stem}-${v[1]}`);
 }
-assert.ok(names.size >= 16, `${names.size} pictures named`);
+for (const m of html.matchAll(/data-preview-sel="([^"]+)"/g)) {
+  const g = new RegExp(`id="meld-${m[1]}-select"[^>]*>([^]*?)</select>`).exec(html);
+  for (const v of g[1].matchAll(/<option value="([^"]+)"/g)) names.add(`${m[1]}-${v[1]}`);
+}
+for (const m of html.matchAll(/data-preview-num="([^"]+)" data-preview-steps="([^"]+)"/g)) for (const v of m[2].split(',')) names.add(`${m[1]}-${v}`);
+assert.ok(names.size >= 60, `${names.size} pictures named`);
 const locales = fs.readdirSync(root + 'src/gui/locales').filter((f) => f.endsWith('.json') && fs.statSync(`${root}src/gui/locales/${f}`).size > 100);
 assert.ok(locales.length >= 20);
 for (const n of names) {
   const f = fs.statSync(`${root}src/gui/images/previews3d/${n}.webp`);
-  assert.ok(f.size > 1000 && f.size <= 30 * 1024, `${n}.webp is ${f.size} bytes`);
+  assert.ok(f.size > 1000 && f.size <= 60 * 1024, `${n}.webp is ${f.size} bytes`);
   for (const l of locales) assert.ok(JSON.parse(read(`src/gui/locales/${l}`))[captionKey(n)], `${l} lacks ${captionKey(n)}`);
 }
 // Romanian: every caption present, translated (no English words left) and with its diacritics
@@ -152,7 +163,7 @@ for (const n of names) {
   assert.notEqual(ro[k], en[k], `${k} is not translated in ro.json`);
   const words = (t) => t.toLowerCase().match(/\p{L}+/gu) || [];
   const english = new Set(words(en[k]));
-  const left = words(ro[k]).filter((w) => english.has(w) && !['compact', 'post'].includes(w)); // same word in both languages
+  const left = words(ro[k]).filter((w) => english.has(w) && !['compact', 'post', 'africa', 'florida', 'vanilla', 'blueprint', 'auto', 'prairie', 'asia', 'america', 'india', 'australasia'].includes(w)); // same word in both languages
   assert.deepEqual(left, [], `English left in ro ${k}: ${ro[k]}`);
   assert.ok(!/\d\.\d/.test(ro[k]), `${k}: Romanian writes decimals with a comma`);
 }
