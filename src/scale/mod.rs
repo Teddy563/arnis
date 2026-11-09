@@ -106,11 +106,22 @@ impl Job {
             .as_ref()
             .map(|v| (v["area_base"].as_u64(), v["map_base"].as_i64(), &v["slots"]))
         {
-            Some((Some(a), Some(m), slots)) => (
-                a as u32,
-                m as i32,
-                slots.as_object().cloned().unwrap_or_default(),
-            ),
+            Some((Some(a), Some(m), slots)) => {
+                let slots = slots.as_object().cloned().unwrap_or_default();
+                // Shares are by region key; a 3.5.0 job has none and uses the plan index.
+                if let Some(u) = (!slots.is_empty())
+                    .then(|| units.iter().find(|u| !slots.contains_key(&done_key(u))))
+                    .flatten()
+                {
+                    return Err(format!(
+                        "{} was planned with other pieces (none at region {}); delete it or run \
+                         the command that started it.",
+                        dir.display(),
+                        u.region_key()
+                    ));
+                }
+                (a as u32, m as i32, slots)
+            }
             _ => {
                 // Reserved once, so a run in between cannot take a piece's ids.
                 let _guard = lock(&MANIFEST);
@@ -957,13 +968,23 @@ mod tests {
         std::fs::write(&want, r#"{"chunks":9}"#).unwrap();
         assert_eq!(job.finished(&units[1]).map(|r| r.chunks), Some(9));
         // Slots kept in job.json win over the index.
-        let slots = json!({ done_key(&units[2]): 11 });
+        let mut slots: serde_json::Map<String, Value> = units
+            .iter()
+            .map(|u| (done_key(u), json!(u.index)))
+            .collect();
+        slots.insert(done_key(&units[2]), json!(11));
         let state = json!({"area_base": 5, "map_base": 100, "slots": slots});
         std::fs::write(dir.join("job.json"), state.to_string()).unwrap();
         let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
         assert_eq!(job.area_id(&units[2]), 16);
         assert_eq!(job.first_map_id(&units[2]), 100 + 11 * MAP_IDS_PER_PIECE);
         assert_eq!(job.area_id(&units[3]), 8);
+        // Slots kept but one of this plan's pieces missing: another plan, refused.
+        slots.remove(&done_key(&units[3]));
+        let state = json!({"area_base": 5, "map_base": 100, "slots": slots});
+        std::fs::write(dir.join("job.json"), state.to_string()).unwrap();
+        let err = Job::open(tmp.path(), "j".into(), &units).err().unwrap();
+        assert!(err.contains("planned with other pieces"), "{err}");
     }
 
     #[test]

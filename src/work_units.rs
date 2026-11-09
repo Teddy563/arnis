@@ -387,10 +387,13 @@ pub fn plan(
     let rect = XZBBox::rect_from_min_max(x0 - m, z0 - m, x1 + m, z1 + m)?;
     let merge = units.snap_regions == Some(SnapRegions::Merge);
     let mask = units.plan_mask.as_deref().map(Mask::load).transpose()?;
-    let mut cut = match size {
-        UnitSize::N(n) => plan_cells(proj, &rect, n, merge)?,
-        UnitSize::Auto => {
-            let max = crate::scale::budget::auto_max_regions(args);
+    // The largest auto size follows the memory, so it names the job: a resume on a machine
+    // that picks another size opens another folder instead of misreading this one's pieces.
+    let auto_max = (size == UnitSize::Auto).then(|| crate::scale::budget::auto_max_regions(args));
+    let mut cut = match (size, auto_max) {
+        (UnitSize::N(n), _) => plan_cells(proj, &rect, n, merge)?,
+        (UnitSize::Auto, max) => {
+            let max = max.unwrap_or(AUTO_SIZES[0]);
             // Larger leaves until the map ids go round.
             let mut cut = Vec::new();
             for min in AUTO_SIZES.into_iter().rev().filter(|&s| s <= max) {
@@ -409,6 +412,9 @@ pub fn plan(
         rect.max_x(),
         rect.max_z()
     );
+    if let Some(max) = auto_max {
+        name.push_str(&max.to_string());
+    }
     // Merged edges cut other pieces than a plain job over the same rectangle.
     if merge {
         name.push_str("_merge");
@@ -694,7 +700,7 @@ mod tests {
         let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
         // Covered to the 2-region lattice: 8 x 8 regions around block 0.
         assert_eq!(r(&p.rect), [-2048, -2048, 2047, 2047]);
-        assert!(p.name.ends_with("_nauto"));
+        assert!(p.name.ends_with("_nauto8"));
         // The 8-lattice lines at x 0 and z 0 cut it into four whole 4 x 4 pieces.
         assert_eq!(sizes(&p.units), [(2048, 2048); 4]);
         assert!(p.units.iter().all(|u| u.size == 4));
@@ -710,10 +716,13 @@ mod tests {
         let area: u64 = p.units.iter().map(WorkUnit::chunks).sum();
         let [x0, z0, x1, z1] = r(&p.rect);
         assert_eq!(area, ((x1 - x0 + 1) / 16 * ((z1 - z0 + 1) / 16)) as u64);
-        // Less memory: no 8 x 8 pieces.
+        // Less memory: no 8 x 8 pieces, and another job folder.
+        let eights = p.name.clone();
         args.ram_budget_mb = Some(2000);
         let p = plan(&proj, &wide, &args, UnitSize::Auto).unwrap();
         assert!(p.units.iter().all(|u| u.size <= 4));
+        assert!(p.name.ends_with("_nauto4") && eights.ends_with("_nauto8"));
+        assert_ne!(p.name, eights);
         // Without snapping, edge leaves are clipped 2 x 2 cells.
         args.units.snap_regions = None;
         let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
