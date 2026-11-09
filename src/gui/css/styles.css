@@ -1012,3 +1012,114 @@ body:not(.meld-off) .one-world-status:not(.is-warn):not(.is-error) {
 .plan-expand.is-running {
   display: none;
 }
+
+/* ---- Map-first main page (Meld features; off = the 3.4.0 layout above) ----
+   The map fills the window; logo, title, the control cards, the 3D preview and the footer
+   float over it. CSS only: every element keeps its place in the markup. */
+body.map-first .container {
+  position: relative;
+  padding: 0;
+}
+
+body.map-first .flex-container {
+  position: absolute;
+  inset: 6px;
+  margin: 0;
+  min-height: 0;
+  display: block;
+}
+
+body.map-first .map-box {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  min-height: 0;
+}
+
+/* Logo small, top-left beside the map tools; the title centred over the map's top */
+body.map-first .row {
+  position: absolute;
+  top: 16px;
+  left: 64px;
+  z-index: 5;
+}
+
+/* !important: the img's inline style sizes it for the 3.4.0 page. */
+body.map-first #arnis-logo {
+  width: auto !important;
+  height: 28px !important;
+  padding: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+
+body.map-first .flex-container::before {
+  content: "Arnis";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 2px 12px;
+  border-radius: 6px;
+  background: rgba(30, 30, 30, 0.8);
+  color: #f2f2f2;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  pointer-events: none;
+}
+
+/* The controls: one stack of cards on the map's right, under the city search */
+body.map-first .controls-box {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  z-index: 5;
+  width: min(340px, 40vw);
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
+}
+
+body.map-first .controls-content {
+  height: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(42, 42, 42, 0.94);
+  color: var(--ui-text, #f2f2f2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+body.map-first .controls-box .progress-section {
+  margin-top: 8px;
+}
+
+/* The 3D preview: a card docked bottom-right over the map, resizable by its corner; a click
+   still opens the full preview. Clear of Leaflet's attribution below it. */
+body.map-first .preview3d-mini {
+  position: fixed;
+  right: 18px;
+  bottom: 34px;
+  z-index: 6;
+  width: 300px;
+  height: 190px;
+  min-width: 200px;
+  min-height: 130px;
+  max-width: calc(100vw - 420px);
+  max-height: calc(100vh - 120px);
+  margin: 0;
+  resize: both;
+}
+
+/* The footer: one small line bottom-left over the map */
+body.map-first .footer {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  z-index: 5;
+  margin: 0;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(30, 30, 30, 0.8);
+  font-size: 11px;
+  line-height: 18px;
+}

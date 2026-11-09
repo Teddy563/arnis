@@ -21,7 +21,11 @@ const t = (key, fallback, vars = {}) => {
 export function initMeldFeatures() {
   const toggle = el('advanced-meld-features-toggle');
   if (!toggle) return;
-  const apply = () => document.body.classList.toggle('meld-off', !toggle.checked);
+  // Off: today's 3.4.0-style page. On: the map-first page (styles.css, body.map-first).
+  const apply = () => {
+    document.body.classList.toggle('meld-off', !toggle.checked);
+    document.body.classList.toggle('map-first', toggle.checked);
+  };
   toggle.addEventListener('change', apply);
   apply();
 
