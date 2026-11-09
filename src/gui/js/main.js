@@ -3593,7 +3593,13 @@ async function startGeneration() {
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? oneWorldFolderName() : "",
-        flags: meldFlags({ oneWorld: oneWorld })
+        flags: meldFlags({
+          oneWorld: oneWorld,
+          java: getEffectiveWorldFormat() === "java",
+          caves: caves,
+          extendHeight: disable_height_limit && !oneWorld && getEffectiveWorldFormat() === "java",
+          lods: voxy_lod || dh_lod
+        })
     });
 
     console.log("Generation process started.");

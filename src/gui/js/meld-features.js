@@ -28,7 +28,7 @@ export function initMeldFeatures() {
 
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
 // as typed: the backend parses it with the CLI's own parser and says what is wrong.
-export function meldFlags({ oneWorld }) {
+export function meldFlags({ oneWorld, java, caves, extendHeight, lods }) {
   if (!on('advanced-meld-features-toggle')) return [];
   const f = [];
   if (retryNext.length) f.push(`--only-pieces=${retryNext.join(',')}`);
@@ -42,6 +42,38 @@ export function meldFlags({ oneWorld }) {
   else if (value('meld-cpu-target-input') !== '90') add('--cpu-target', value('meld-cpu-target-input'));
   add('--ram-budget-mb', value('meld-ram-budget-input'));
 
+  // Generation
+  add('--seed', value('meld-seed-input'));
+  if (extendHeight) {
+    add('--min-y', value('meld-min-y-input'));
+    add('--max-y', value('meld-max-y-input'));
+  }
+  if (choice('meld-road-detail-group') !== 'max') add('--road-detail', choice('meld-road-detail-group'));
+  if (!on('meld-buildings-toggle')) f.push('--no-buildings');
+  if (choice('meld-props-group') !== 'auto') add('--props', choice('meld-props-group'));
+
+  // Nature
+  if (on('meld-rocks-toggle')) f.push('--rocks');
+  if (on('meld-bushes-toggle')) f.push('--bushes');
+  if (value('meld-tree-realm-select') !== 'auto') add('--tree-realm', value('meld-tree-realm-select'));
+  if (value('meld-tree-pack-dir-input')) {
+    add('--tree-pack-dir', value('meld-tree-pack-dir-input'));
+    if (choice('meld-tree-pack-mode-group') !== 'add') add('--tree-pack-mode', choice('meld-tree-pack-mode-group'));
+  }
+  if (caves) {
+    if (value('meld-cave-style-select') !== 'all-mix') add('--cave-style', value('meld-cave-style-select'));
+    if (choice('meld-cave-ores-group') !== 'normal') add('--cave-ores', choice('meld-cave-ores-group'));
+  }
+  if (choice('meld-river-bed-group') !== 'off') add('--river-bed', choice('meld-river-bed-group'));
+  if (choice('meld-water-detail-group') !== 'default') add('--water-detail', choice('meld-water-detail-group'));
+  if (choice('meld-climate-mode-group') !== 'origin') add('--climate-mode', choice('meld-climate-mode-group'));
+
+  // Map and World
+  if (oneWorld) add('--origin', value('meld-origin-input'));
+  if (java && on('meld-world-border-toggle')) f.push('--world-border');
+  if (java && !oneWorld && !lods && choice('meld-region-format-group') !== 'mca') {
+    add('--region-format', choice('meld-region-format-group'));
+  }
   return f;
 }
 

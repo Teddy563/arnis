@@ -426,6 +426,21 @@
                     <input type="checkbox" class="switch" id="one-world-toggle" name="one-world-toggle">
                   </div>
                 </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-hard-drive"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_region_format">Region Format</span>
+                        <span class="tooltip-icon" data-tooltip="Experimental. B_Linear writes Leaf 1.21.11+ and 26.x regions. Java only; not with One World, Voxy LOD or Distant Horizons LOD.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_region_format_desc">File format the Java regions are written in.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-region-format-group"><button type="button" class="segment active" data-default data-v="mca">Anvil (.mca)</button><button type="button" class="segment" data-v="blinear">B_Linear</button></div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -575,6 +590,96 @@
                     <input type="checkbox" class="switch" id="post-apocalyptic-toggle" name="post-apocalyptic-toggle">
                   </div>
                 </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-seed-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_seed">World Seed</span>
+                        <span class="tooltip-icon" data-tooltip="Mixed into every random choice: trees, rocks, flowers and building variety. Empty or 0 keeps the default look. A One World keeps the seed its first area used. Experimental.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_seed_desc">Rebuild the same area with a different, repeatable look.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-seed-input" name="meld-seed-input" class="meld-short" placeholder="Default" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-min-y-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_min_y">Lowest Y</span>
+                        <span class="tooltip-icon" data-tooltip="A multiple of 16 from -2032 to -64. Needs Extend build height, a new Java world and no One World. Empty keeps -2032. Java 1.21.4+.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_min_y_desc">Bottom of the extended-height world.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-min-y-input" name="meld-min-y-input" class="meld-short" placeholder="-2032" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-max-y-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_max_y">Highest Y</span>
+                        <span class="tooltip-icon" data-tooltip="One less than a multiple of 16, from 319 to 2031. Needs Extend build height, a new Java world and no One World. Empty keeps 2031. Java 1.21.4+.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_max_y_desc">Top of the extended-height world.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-max-y-input" name="meld-max-y-input" class="meld-short" placeholder="2031" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-signpost"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_road_detail">Road Detail</span>
+                        <span class="tooltip-icon" data-tooltip="Max builds every marking and way as mapped. Clean keeps centre lines and 2-block crossing bars. Compact is clean with longer dashes and no footways, paths, service roads, tracks or crossings.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_road_detail_desc">How many road markings and minor ways to build.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-road-detail-group"><button type="button" class="segment active" data-default data-v="max">Max</button><button type="button" class="segment" data-v="clean">Clean</button><button type="button" class="segment" data-v="compact">Compact</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile meld-only">
+                  <label for="meld-buildings-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-building"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_buildings">Buildings</span>
+                        <span class="tooltip-icon" data-tooltip="Off leaves out buildings, building parts, doors, entrances and Overture footprints. Roads, rail, water, land cover and terrain are built as usual.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_buildings_desc">Turn off to leave out every building.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-buildings-toggle" name="meld-buildings-toggle" checked>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-car"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_props">3D Props</span>
+                        <span class="tooltip-icon" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_props_desc">Which 3D props to place.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-props-group"><button type="button" class="segment active" data-default data-v="auto">Auto</button><button type="button" class="segment" data-v="all">All</button><button type="button" class="segment" data-v="none">None</button></div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -710,6 +815,156 @@
                       <button type="button" class="segment active" data-default data-field-preset="patchwork" data-localize="field_preset_patchwork">Patchwork</button>
                       <button type="button" class="segment" data-field-preset="prairie" data-localize="field_preset_prairie">Prairie</button>
                     </div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile meld-only">
+                  <label for="meld-rocks-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-mountain"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_rocks">Rocks</span>
+                        <span class="tooltip-icon" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_rocks_desc">Scatter small rocks over open land.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-rocks-toggle" name="meld-rocks-toggle">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile meld-only">
+                  <label for="meld-bushes-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_bushes">Bushes</span>
+                        <span class="tooltip-icon" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_bushes_desc">Scatter small bushes over open land.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-bushes-toggle" name="meld-bushes-toggle">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-tree-realm-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-trees"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_tree_realm">Tree Realm</span>
+                        <span class="tooltip-icon" data-tooltip="Auto picks the tree pack from the area&#x27;s location. A forced realm skips the ecoregion mixes and keeps its palms.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_tree_realm_desc">Force one region&#x27;s trees instead of picking by location.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="meld-tree-realm-select" name="meld-tree-realm-select" class="settings-select"><option value="auto" selected>Auto</option><option value="afr">Africa</option><option value="asn">Northern Asia</option><option value="aus">Australasia</option><option value="ena">Eastern North America</option><option value="eur">Europe</option><option value="fl">Florida &amp; Caribbean</option><option value="ind">India &amp; Southeast Asia</option><option value="sam">South America</option><option value="wna">Western North America</option><option value="vanilla-plus">Vanilla+</option></select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-tree-pack-dir-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-folder"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_tree_pack_dir">Own Tree Folder</span>
+                        <span class="tooltip-icon" data-tooltip="Laid out like the bundled packs: realm / community / tree type / size / any name.schem. A file that does not load is skipped with a warning. Experimental.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_tree_pack_dir_desc">A folder of your own tree schematics.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-tree-pack-dir-input" name="meld-tree-pack-dir-input" placeholder="No folder" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-tree"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_tree_pack_mode">Own Trees</span>
+                        <span class="tooltip-icon" data-tooltip="Add mixes the folder&#x27;s trees in. Replace swaps a realm&#x27;s built-in trees wherever the folder has any. Needs a folder.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_tree_pack_mode_desc">Add to the built-in trees or replace them.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-tree-pack-mode-group"><button type="button" class="segment active" data-default data-v="add">Add</button><button type="button" class="segment" data-v="replace">Replace</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-cave-style-select" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-cave"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_cave_style">Cave Style</span>
+                        <span class="tooltip-icon" data-tooltip="Vanilla keeps plain caves. More vanilla is about 30% themed, All mix about 77% and More mix about 89%. Needs Caves.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_cave_style_desc">How much of the underground the themed caves take.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <select id="meld-cave-style-select" name="meld-cave-style-select" class="settings-select"><option value="vanilla">Vanilla</option><option value="more-vanilla">More vanilla</option><option value="all-mix" selected>All mix</option><option value="more-mix">More mix</option></select>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-pickaxe"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_cave_ores">Cave Ores</span>
+                        <span class="tooltip-icon" data-tooltip="Normal is vanilla&#x27;s ore table. More doubles the veins of every metal and gem ore, at vanilla&#x27;s heights. Needs Caves.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_cave_ores_desc">How many ore veins the caves hold.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-cave-ores-group"><button type="button" class="segment active" data-default data-v="normal">Normal</button><button type="button" class="segment" data-v="more">More</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-earth"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_river_bed">River Bed</span>
+                        <span class="tooltip-icon" data-tooltip="Smooth gives rivers, canals and streams a U-shaped bed that deepens with their width. Lakes and the sea keep their bed.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_river_bed_desc">Shape the bed of mapped rivers.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-river-bed-group"><button type="button" class="segment active" data-default data-v="off">Off</button><button type="button" class="segment" data-v="v1">Smooth</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_water_detail">Water Detail</span>
+                        <span class="tooltip-icon" data-tooltip="Scaled rounds bed depths instead of flooring them and, on small maps, carves narrow bodies as bowls, narrows streams and lets water flow over roads not tagged as bridges.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_water_detail_desc">How water beds are rounded and narrowed.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-water-detail-group"><button type="button" class="segment active" data-default data-v="default">Default</button><button type="button" class="segment" data-v="scaled">Scaled</button></div>
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-sun"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_climate_mode">Climate</span>
+                        <span class="tooltip-icon" data-tooltip="Origin reads it once, at the centre of the area. Per position reads it at every block, so a large world crosses climate zones. Experimental, not with rotation.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_climate_mode_desc">Where the climate behind surfaces and biomes is read.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <div class="segmented-control" id="meld-climate-mode-group"><button type="button" class="segment active" data-default data-v="origin">Origin</button><button type="button" class="segment" data-v="per-position">Per position</button></div>
                   </div>
                 </div>
               </div>
@@ -1052,6 +1307,36 @@
                   </label>
                   <div class="settings-control">
                     <input type="text" id="custom-tile-url" name="custom-tile-url" placeholder="https://example.com/{z}/{x}/{y}.png" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile is-wide meld-only">
+                  <label for="meld-origin-input" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-compass"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_origin">World Origin</span>
+                        <span class="tooltip-icon" data-tooltip="LAT,LON for the origin of a One World this run creates, instead of the centre of the selection. One World only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_origin_desc">Latitude and longitude of block (0, 0).</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="text" id="meld-origin-input" name="meld-origin-input" placeholder="LAT,LON" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div class="settings-row setting-tile meld-only">
+                  <label for="meld-world-border-toggle" class="setting-label">
+                    <svg class="icon setting-icon" aria-hidden="true"><use href="#i-frame"></use></svg>
+                    <span class="setting-text">
+                      <span class="setting-heading">
+                        <span data-localize="meld_world_border">World Border</span>
+                        <span class="tooltip-icon" data-tooltip="Sets the border after the run; in a One World, around all its areas. Java only.">?</span>
+                      </span>
+                      <span class="setting-desc" data-localize="meld_world_border_desc">Put the world border around the generated area.</span>
+                    </span>
+                  </label>
+                  <div class="settings-control">
+                    <input type="checkbox" class="switch" id="meld-world-border-toggle" name="meld-world-border-toggle">
                   </div>
                 </div>
               </div>

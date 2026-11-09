@@ -2643,6 +2643,46 @@ mod tests {
         assert_eq!(format!("{extra:?}"), format!("{stock:?}"));
     }
 
+    /// Every flag the window can send is one the CLI parser takes.
+    #[test]
+    fn every_flag_the_window_sends_parses() {
+        let flags: Vec<String> = [
+            "--seed=7",
+            "--min-y=-64",
+            "--max-y=319",
+            "--road-detail=compact",
+            "--no-buildings",
+            "--props=none",
+            "--rocks",
+            "--bushes",
+            "--tree-realm=vanilla-plus",
+            "--tree-pack-dir=trees",
+            "--tree-pack-mode=replace",
+            "--cave-style=more-mix",
+            "--cave-ores=more",
+            "--river-bed=v1",
+            "--water-detail=scaled",
+            "--climate-mode=per-position",
+            "--world-border",
+            "--region-format=blinear",
+            "--ram-budget-mb=4096",
+            "--threads=4",
+        ]
+        .map(String::from)
+        .to_vec();
+        let extra = confluence_args(&flags, false, "java", true).unwrap();
+        assert!(!extra.buildings && extra.world_border && extra.disable_height_limit);
+        let one = ["--origin=44.4,26.1".to_string()];
+        assert!(confluence_args(&one, true, "java", false)
+            .unwrap()
+            .origin
+            .is_some());
+        // Y limits are refused for a world that cannot take them.
+        let y = ["--min-y=-64".to_string()];
+        assert!(confluence_args(&y, true, "java", false).is_err());
+        assert!(confluence_args(&y, false, "bedrock", true).is_err());
+    }
+
     #[test]
     fn the_flags_reach_the_run_and_its_pieces() {
         use clap::Parser;
