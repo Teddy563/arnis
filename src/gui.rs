@@ -87,6 +87,12 @@ fn owns_selected_world(is_new_world: bool, one_world: bool, flags: &[String]) ->
     is_new_world && !one_world && !flags.iter().any(|f| f == "--prewarm")
 }
 
+/// Whether a run names and places its output. A prewarm writes none, so it asks Nominatim for
+/// no Bedrock place name and creates no Luanti worlds folder.
+fn names_output(prewarm: bool) -> bool {
+    !prewarm
+}
+
 /// The folder a run works in: the selected world, or the One World named in its saves folder.
 /// A prewarm writes no world, so its path never comes from `selected_world` (the window sends
 /// none): it works in `scratch`, a folder under the OS temp directory that the run removes.
@@ -2881,6 +2887,7 @@ fn gui_start_generation(
 
             // Determine output path and level name based on format
             let (generation_path, level_name) = match world_format {
+                _ if !names_output(args.prewarm) => (world_path.clone(), None),
                 WorldFormat::JavaAnvil => {
                     // Java: use the selected world path, add localized name if new
                     let updated_path = if is_new_world {
@@ -3560,6 +3567,13 @@ mod tests {
             one_world_dir("saves", &name)
         );
         assert_eq!(run_world_path("w", None, None), PathBuf::from("w"));
+    }
+
+    /// A Bedrock or Luanti prewarm names no output: no place-name request, no worlds folder.
+    #[test]
+    fn prewarm_names_no_output() {
+        assert!(!names_output(true));
+        assert!(names_output(false));
     }
 
     /// The switch off sends no flags, and no flags leave every setting at the stock run's.
