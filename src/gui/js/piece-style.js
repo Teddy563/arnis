@@ -15,3 +15,10 @@ globalThis.arnisPieceStyle = {
     // The outline of a drawn shape that cuts the plan.
     mask: '#ffea00'
 };
+
+// Snap to Pieces while a selection is dragged: lengths in degrees move in whole regions (`side`).
+// `span` is a size (at least one region, its sign kept); `shift` is a move.
+globalThis.arnisSnap = {
+    span: (d, side) => (Math.round(d / side) || (d < 0 ? -1 : 1)) * side,
+    shift: (d, side) => Math.round(d / side) * side
+};

@@ -1781,6 +1781,7 @@ $(document).ready(function () {
             var was = window.arnisMeldOn;
             window.arnisMeldOn = Boolean(event.data.on);
             window.arnisWorldScale = Number(event.data.scale) || 1;
+            window.arnisSnapOn = Boolean(event.data.snap);
             // The map-first page's look (hover font, previews under the selection); Classic keeps 3.4.0's.
             window.arnisMapFirst = Boolean(event.data.mapFirst);
             document.body.classList.toggle('map-first', window.arnisMapFirst);
@@ -2716,6 +2717,26 @@ $(document).ready(function () {
         _bboxHandles.push(mover);
     }
 
+    // Snap to Pieces on: a dragged selection changes in whole regions (a region is 512 blocks,
+    // 512 / scale metres), so what is drawn is what the build covers.
+    function regionDegrees(lat) {
+        var side = 512 / (window.arnisWorldScale || 1);
+        return [side / map.distance([lat, 0], [lat + 1, 0]), side / map.distance([lat, 0], [lat, 1])];
+    }
+    function snapShift(dLat, dLng, lat) {
+        if (!window.arnisMeldOn || !window.arnisSnapOn) return [dLat, dLng];
+        var r = regionDegrees(lat);
+        return [arnisSnap.shift(dLat, r[0]), arnisSnap.shift(dLng, r[1])];
+    }
+    // `p` dragged against the fixed edge or corner (a null axis is not constrained).
+    function snapPoint(fixedLat, fixedLng, p) {
+        if (!window.arnisMeldOn || !window.arnisSnapOn) return p;
+        var r = regionDegrees(fixedLat === null ? p.lat : fixedLat);
+        return L.latLng(
+            fixedLat === null ? p.lat : fixedLat + arnisSnap.span(p.lat - fixedLat, r[0]),
+            fixedLng === null ? p.lng : fixedLng + arnisSnap.span(p.lng - fixedLng, r[1]));
+    }
+
     function addRectHandles(rect) {
         var b = rect.getBounds();
         var corners = [
@@ -2737,7 +2758,7 @@ $(document).ready(function () {
                 fixedCorner = rect.getBounds()[c.opp]();
             });
             marker.on('drag', function (ev) {
-                rect.setBounds(new L.LatLngBounds(fixedCorner, ev.target.getLatLng()));
+                rect.setBounds(new L.LatLngBounds(fixedCorner, snapPoint(fixedCorner.lat, fixedCorner.lng, ev.target.getLatLng())));
                 liveSelection(rect);
             });
             marker.on('dragend', function () {
@@ -2752,6 +2773,8 @@ $(document).ready(function () {
         addMoveHandle(rect, b.getCenter(), {
             start: function () { startB = rect.getBounds(); },
             by: function (dLat, dLng) {
+                var d = snapShift(dLat, dLng, startB.getCenter().lat);
+                dLat = d[0]; dLng = d[1];
                 rect.setBounds(new L.LatLngBounds(
                     [startB.getSouth() + dLat, startB.getWest() + dLng],
                     [startB.getNorth() + dLat, startB.getEast() + dLng]
@@ -2798,10 +2821,10 @@ $(document).ready(function () {
 
     // Each edge's midpoint moves that edge alone.
     var EDGES = [
-        { cls: 'ns', at: function (b) { return [b.getNorth(), b.getCenter().lng]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [p.lat, b.getEast()]]; } },
-        { cls: 'ns', at: function (b) { return [b.getSouth(), b.getCenter().lng]; }, set: function (b, p) { return [[p.lat, b.getWest()], [b.getNorth(), b.getEast()]]; } },
-        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getEast()]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [b.getNorth(), p.lng]]; } },
-        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getWest()]; }, set: function (b, p) { return [[b.getSouth(), p.lng], [b.getNorth(), b.getEast()]]; } }
+        { cls: 'ns', at: function (b) { return [b.getNorth(), b.getCenter().lng]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [p.lat, b.getEast()]]; }, fix: function (b) { return [b.getSouth(), null]; } },
+        { cls: 'ns', at: function (b) { return [b.getSouth(), b.getCenter().lng]; }, set: function (b, p) { return [[p.lat, b.getWest()], [b.getNorth(), b.getEast()]]; }, fix: function (b) { return [b.getNorth(), null]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getEast()]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [b.getNorth(), p.lng]]; }, fix: function (b) { return [null, b.getWest()]; } },
+        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getWest()]; }, set: function (b, p) { return [[b.getSouth(), p.lng], [b.getNorth(), b.getEast()]]; }, fix: function (b) { return [null, b.getEast()]; } }
     ];
     var sizeLabel = null;
     var liveSync = 0;
@@ -2814,7 +2837,8 @@ $(document).ready(function () {
             var start = null;
             marker.on('dragstart', function () { start = rect.getBounds(); });
             marker.on('drag', function (ev) {
-                rect.setBounds(L.latLngBounds(e.set(start, ev.target.getLatLng())));
+                var f = e.fix(start);
+                rect.setBounds(L.latLngBounds(e.set(start, snapPoint(f[0], f[1], ev.target.getLatLng()))));
                 liveSelection(rect);
             });
             marker.on('dragend', function () {
@@ -2871,9 +2895,9 @@ $(document).ready(function () {
         if (!inside) return;
         // The button went up where the map did not see it (another frame, outside the window).
         if (!(ev.originalEvent.buttons & 1)) return endMove();
-        var dLat = ev.latlng.lat - inside.from.lat;
-        var dLng = ev.latlng.lng - inside.from.lng;
         var b = inside.b;
+        var d = snapShift(ev.latlng.lat - inside.from.lat, ev.latlng.lng - inside.from.lng, b.getCenter().lat);
+        var dLat = d[0], dLng = d[1];
         inside.rect.setBounds(L.latLngBounds([b.getSouth() + dLat, b.getWest() + dLng], [b.getNorth() + dLat, b.getEast() + dLng]));
         if (!inside.moved) clearBboxHandles();
         inside.moved = true;

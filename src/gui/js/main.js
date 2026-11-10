@@ -1402,8 +1402,9 @@ function initSettings() {
   // The map offers "Select this area" on a country or region, the edge handles and the size
   // readout only with Meld features on; the readout counts regions at the world scale.
   const meldToggle = document.getElementById('advanced-meld-features-toggle');
-  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, mapFirst: document.body.classList.contains('map-first') });
+  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, snap: Boolean(document.querySelector('#meld-snap-group .segment.active:not([data-v="off"])')), mapFirst: document.body.classList.contains('map-first') });
   document.addEventListener('change', pushMeldToMap);
+  document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
   // A One World's built land, and a ring of regions around it to build next.
