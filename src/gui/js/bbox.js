@@ -2861,12 +2861,20 @@ $(document).ready(function () {
     // ---- Meld features: edge handles, move from inside, a size readout, a live plan ----
 
     // Each edge's midpoint moves that edge alone.
-    var EDGES = [
-        { cls: 'ns', at: function (b) { return [b.getNorth(), b.getCenter().lng]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [p.lat, b.getEast()]]; }, fix: function (b) { return [b.getSouth(), null]; } },
-        { cls: 'ns', at: function (b) { return [b.getSouth(), b.getCenter().lng]; }, set: function (b, p) { return [[p.lat, b.getWest()], [b.getNorth(), b.getEast()]]; }, fix: function (b) { return [b.getNorth(), null]; } },
-        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getEast()]; }, set: function (b, p) { return [[b.getSouth(), b.getWest()], [b.getNorth(), p.lng]]; }, fix: function (b) { return [null, b.getWest()]; } },
-        { cls: 'ew', at: function (b) { return [b.getCenter().lat, b.getWest()]; }, set: function (b, p) { return [[b.getSouth(), p.lng], [b.getNorth(), b.getEast()]]; }, fix: function (b) { return [null, b.getEast()]; } }
-    ];
+    // [edge, the opposite edge, axis]: the axis is the one the edge moves along.
+    var EDGES = [['North', 'South', 'ns'], ['South', 'North', 'ns'], ['East', 'West', 'ew'], ['West', 'East', 'ew']].map(function (d) {
+        var lat = d[2] === 'ns';
+        return {
+            cls: d[2],
+            at: function (b) { var v = b['get' + d[0]](); return lat ? [v, b.getCenter().lng] : [b.getCenter().lat, v]; },
+            set: function (b, p) {
+                var o = { South: b.getSouth(), West: b.getWest(), North: b.getNorth(), East: b.getEast() };
+                o[d[0]] = lat ? p.lat : p.lng;
+                return [[o.South, o.West], [o.North, o.East]];
+            },
+            fix: function (b) { var v = b['get' + d[1]](); return lat ? [v, null] : [null, v]; }
+        };
+    });
     var sizeLabel = null;
     var liveSync = 0;
 
