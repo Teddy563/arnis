@@ -1432,7 +1432,7 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
             })
         })
         .collect();
-    worlds.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    worlds.sort_by_key(|w| std::cmp::Reverse(w.modified_ms));
     Ok(worlds)
 }
 
