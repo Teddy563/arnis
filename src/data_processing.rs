@@ -840,6 +840,14 @@ pub fn generate_world_with_options(
         None => xzbbox.clone(),
     };
     let clip_bbox = crate::projection::ProjectionSpec::from_args(args).clip_bbox(&xzbbox);
+    if let Some(shape) = xzbbox.outline() {
+        let all = shape.rect().total_blocks();
+        let inside = shape.covered_columns();
+        println!(
+            "  Area shape covers {inside} of the {all} columns around it ({:.0}%)",
+            inside as f64 * 100.0 / all.max(1) as f64
+        );
+    }
 
     // Before anything reads a footprint, so the ground under them stays open.
     if !args.buildings {
@@ -897,7 +905,12 @@ pub fn generate_world_with_options(
         world_format == WorldFormat::JavaAnvil && args.world_type == crate::args::WorldType::Void;
     editor.set_void_world(void_world);
     editor.set_blinear_level(args.blinear_level());
-    if (void_world || args.blinear_level().is_some()) && !extending {
+    // An outline can miss it in a flat world too, where its template chunks would stand in the plain.
+    if (void_world
+        || args.blinear_level().is_some()
+        || (xzbbox.outline().is_some() && world_format == WorldFormat::JavaAnvil))
+        && !extending
+    {
         // A world made by `create_new_world` starts with the flat template region. The area
         // rewrites it when it reaches that region; one it misses would stay a grass square.
         crate::world_utils::remove_untouched_template_region(&output_path);
@@ -1551,7 +1564,7 @@ pub fn generate_world_with_options(
         let (sx, sz) = options
             .spawn_point
             .or_else(|| crate::map_item::read_spawn_xz(&output_path))
-            .unwrap_or((xzbbox.min_x() + 1, xzbbox.min_z() + 1));
+            .unwrap_or_else(|| xzbbox.default_spawn());
         (sx >> 9, sz >> 9)
     });
 
@@ -1559,15 +1572,18 @@ pub fn generate_world_with_options(
     // Tile subdivision is aligned to 512-block Minecraft region boundaries.
     let tiles = tile::create_tiles(&xzbbox, tile::DEFAULT_TILE_SIZE);
 
-    // Tile editors are created as JavaAnvil (WorldEditor::new), so their
-    // format-dependent block-entity schema (banners) only matches Java output.
-    // Restrict the parallel tile path to Java; Bedrock/Luanti large worlds use
-    // the sequential path (correct, just not tile-parallel).
+    // Tile editors take the world's format, so what they write that depends on it (a
+    // banner's block entity) matches the output. Luanti keeps the sequential path: its
+    // editor carries a game and a ground level that the tile editors are not given.
     // A piece of a job takes the path the whole job would, or its blocks differ from a single run's.
     let wants_tiles = one_world
         .and_then(|run| run.unit.as_ref())
         .map_or(tiles.len() >= 3, |unit| unit.tiled);
-    let use_parallel_tiles = wants_tiles && matches!(world_format, WorldFormat::JavaAnvil);
+    let use_parallel_tiles = wants_tiles
+        && matches!(
+            world_format,
+            WorldFormat::JavaAnvil | WorldFormat::BedrockMcWorld
+        );
 
     if use_parallel_tiles {
         // Large area: process tiles in parallel using rayon.
@@ -1700,15 +1716,25 @@ pub fn generate_world_with_options(
             // max_* are exclusive; rect_from_min_max treats max as inclusive,
             // so subtract 1. Clamp to the world bbox so edge-tile halos don't
             // extend past world bounds.
-            let tile_xzbbox = XZBBox::rect_from_min_max(
-                (tile_bounds.min_x - tile::TILE_EDITOR_HALO).max(xzbbox.min_x()),
-                (tile_bounds.min_z - tile::TILE_EDITOR_HALO).max(xzbbox.min_z()),
-                (tile_bounds.max_x - 1 + tile::TILE_EDITOR_HALO).min(xzbbox.max_x()),
-                (tile_bounds.max_z - 1 + tile::TILE_EDITOR_HALO).min(xzbbox.max_z()),
-            )
-            .expect("Failed to create tile XZBBox");
+            // A crop keeps a drawn outline's mask, so tiles write only inside it too.
+            let tile_xzbbox = xzbbox
+                .crop(
+                    (tile_bounds.min_x - tile::TILE_EDITOR_HALO).max(xzbbox.min_x()),
+                    (tile_bounds.min_z - tile::TILE_EDITOR_HALO).max(xzbbox.min_z()),
+                    (tile_bounds.max_x - 1 + tile::TILE_EDITOR_HALO).min(xzbbox.max_x()),
+                    (tile_bounds.max_z - 1 + tile::TILE_EDITOR_HALO).min(xzbbox.max_z()),
+                )
+                .expect("Failed to create tile XZBBox");
 
-            let mut tile_editor = WorldEditor::new(PathBuf::new(), &tile_xzbbox, llbbox);
+            let mut tile_editor = WorldEditor::new_with_format_and_name(
+                PathBuf::new(),
+                &tile_xzbbox,
+                llbbox,
+                world_format,
+                None,
+                None,
+                false,
+            );
             tile_editor.set_ground(Arc::clone(&ground));
             tile_editor.set_water_field(Arc::clone(&big_water_field));
             tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
@@ -2452,7 +2478,7 @@ pub fn generate_world_with_options(
         let (sx, sz) = options
             .spawn_point
             .or_else(|| crate::map_item::read_spawn_xz(&output_path))
-            .unwrap_or((xzbbox.min_x() + 1, xzbbox.min_z() + 1));
+            .unwrap_or_else(|| xzbbox.default_spawn());
         if wants_map_item {
             editor.place_map_item_frame(sx, sz, first_map_id, first_map_id + 1);
         } else {

@@ -24,6 +24,8 @@ mod datapack;
 mod decals;
 mod deferred_placement;
 mod deterministic_rng;
+#[cfg(feature = "gui")]
+mod discord;
 mod distant_horizons;
 mod ecoregion;
 mod element_processing;
@@ -325,6 +327,10 @@ fn run_cli() {
         print_banner(&args, planning);
     }
 
+    if let Err(e) = args::resolve_shapes(&mut args) {
+        eprintln!("{}: {}", "Error".red().bold(), e);
+        std::process::exit(1);
+    }
     let asked_mob_spawning = args.mob_spawning;
     if args.progress == Some(args::ProgressFormat::Json) {
         progress_json::enable();
@@ -1079,6 +1085,14 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
         }
     }
 
+    // Cut to the drawn shapes while the frame is still the projection's own.
+    xzbbox = projection::ProjectionSpec::from_args(&args)
+        .shaped(&effective_bbox, xzbbox, args.shapes.as_ref())
+        .unwrap_or_else(|e| {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            exit_failed();
+        });
+
     // Transform map (parsed_elements). Operations are defined in a json file
     map_transformation::transform_map(&mut parsed_elements, &mut xzbbox, &mut ground);
     bench.mark("transform_map");
@@ -1142,19 +1156,19 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
     // level.dat template's own spot lies outside the area: beside it in a flat world, and
     // over nothing at all in a void one.
     // A piece of a job builds past its own area, so its corner is its own, not its halo's.
-    let (corner_x, corner_z) = args
+    let (spawn_x, spawn_z) = args
         .one_world_run
         .as_ref()
         .and_then(|r| r.unit.as_ref())
-        .map_or(
-            (pre_rotation_bbox.min_x(), pre_rotation_bbox.min_z()),
-            |u| (u.rect[0], u.rect[1]),
+        .map_or_else(
+            || pre_rotation_bbox.default_spawn(),
+            |u| (u.rect[0] + 1, u.rect[1] + 1),
         );
     let java_spawn = spawn_point.or_else(|| {
         (world_format == world_editor::WorldFormat::JavaAnvil).then(|| {
             map_transformation::rotate::rotate_xz_point(
-                corner_x + 1,
-                corner_z + 1,
+                spawn_x,
+                spawn_z,
                 args.rotation,
                 &pre_rotation_bbox,
             )

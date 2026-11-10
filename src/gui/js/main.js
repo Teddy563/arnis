@@ -75,6 +75,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // After initSettings(), so the slider label and rotation handlers exist
   // before restored values are applied. Labels get localized a few lines below.
   initSettingsStore({ resetWorldFormat: () => setWorldFormat('java') });
+  syncDiscordStatus();
   // The store's restore fired the toggle's change event before the save path
   // and the world name were known; read the world once more with both in hand.
   refreshOneWorldState();
@@ -823,7 +824,7 @@ function registerMessageEvent() {
     // selection updates (typed ones carrying coordinates must not be).
     if (bboxText && !event.data.type) {
       console.log("Updated BBOX Coordinates:", bboxText);
-      displayBboxInfoText(bboxText);
+      displayBboxInfoText(bboxText, event.data.shapes);
     }
 
     // "Select this area" on a search result: the area and a ring of regions around it.
@@ -1690,6 +1691,17 @@ function initSettings() {
     syncTelemetryConsent();
   });
 
+  // Discord status: sent on change and after restore; hidden in builds without a Discord app.
+  const discordToggle = document.getElementById("discord-status-toggle");
+  if (discordToggle) {
+    discordToggle.addEventListener("change", syncDiscordStatus);
+    Promise.resolve(invoke('gui_discord_available')).then((available) => {
+      if (available) return;
+      const row = discordToggle.closest('.settings-row');
+      if (row) row.style.display = 'none';
+    }).catch(() => {});
+  }
+
 
   /// License and Credits
   async function openLicense() {
@@ -2087,6 +2099,13 @@ function updateFormatToggleUI(format) {
 
 // Expose to window for onclick handlers
 window.setWorldFormat = setWorldFormat;
+
+// The backend shows nothing on Discord until it is told the toggle is on.
+function syncDiscordStatus() {
+  const toggle = document.getElementById("discord-status-toggle");
+  const enabled = !!(toggle && toggle.checked);
+  Promise.resolve(invoke('gui_set_discord_status', { enabled })).catch(() => {});
+}
 
 // The backend only reports crashes and errors while it holds a consent of true,
 // so push the stored answer to it at startup and on every change.
@@ -2782,6 +2801,8 @@ const AREA_THRESHOLDS = {
 
 let selectedBBox = "";
 let mapSelectedBBox = "";  // Tracks bbox from map selection
+// Drawn areas as [lat, lng] rings, or null for a single rectangle (the plain bbox).
+let selectedShapes = null;
 let customBBoxValid = false;  // Tracks if custom input is valid
 let bboxInputError = false;  // The coordinate field holds input that did not validate
 
@@ -2798,7 +2819,7 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   let warned = false;
   if (pieces) {
     setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
-  } else if (hasPlanMask()) {
+  } else if (hasPlanMask() && !selectedShapes) {
     // An outline only leaves pieces out: a build in one go would build the whole box.
     setBboxSelectionInfo(bboxSelectionElement, "area_outline_needs_pieces", "#fecc44");
     warned = true;
@@ -2854,7 +2875,18 @@ function refreshBboxSelectionInfo() {
 }
 
 // Function to handle incoming bbox data
-function displayBboxInfoText(bboxText) {
+function displayBboxInfoText(bboxText, shapes) {
+  const hadShapes = Boolean(selectedShapes);
+  selectedShapes = Array.isArray(shapes) && shapes.length ? shapes : null;
+  // Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask).
+  if (selectedShapes) {
+    setPlanMask({
+      type: 'MultiPolygon',
+      coordinates: selectedShapes.map((ring) => [ring.concat([ring[0]]).map(([lat, lng]) => [lng, lat])])
+    });
+  } else if (hadShapes) {
+    setPlanMask(null);
+  }
   // Two producers, two separators: the map posts formatBounds output, which is
   // space separated, while manual coordinate entry synthesizes a comma
   // separated string. Splitting on " " alone turned the manual one into a
@@ -3381,6 +3413,7 @@ function applyOneWorldPins(info) {
   setSettingsRowAvailable('voxy-lod-toggle', false);
   setSettingsRowAvailable('dh-lod-toggle', false);
   postToMap({ type: 'setRotationLocked', locked: true });
+  syncShapesLock();
 
   const exists = !!(info && info.exists);
   pinControl('scale-value-slider', exists && typeof info.scale === 'number' ? info.scale : null);
@@ -3409,6 +3442,14 @@ function releaseOneWorldPins() {
   restoreNaturalRows();
   postToMap({ type: 'setRotationLocked', locked: false });
 }
+
+// A One World takes shapes only when it is built in pieces (Advanced features, workers set).
+function syncShapesLock() {
+  const pieces = document.getElementById('advanced-meld-features-toggle').checked &&
+    document.getElementById('meld-workers-select').value;
+  if (oneWorldPinned) postToMap({ type: 'setShapesLocked', locked: isLiveMode() || !pieces });
+}
+document.addEventListener('change', syncShapesLock);
 
 // The areas of the One World on the map, which "Expand" rings.
 let builtAreas = [];
@@ -4188,6 +4229,12 @@ async function startGeneration(confirmed = false) {
   if (generationButtonEnabled === false) {
     return;
   }
+  // One World and Live keep their areas as rectangles of whole chunks; a One World built in
+  // pieces takes the shapes as the outline of the pieces it builds.
+  if (selectedShapes && (isLiveMode() || (isOneWorldEnabled() && !isPiecesJob()))) {
+    setBboxSelectionInfo(document.getElementById('bbox-selection-info'), "shapes_one_world", "#fa7878");
+    return;
+  }
   if (isLiveMode()) {
     startLive();
     return;
@@ -4311,7 +4358,8 @@ async function startGeneration(confirmed = false) {
           caves: settings.cavesEnabled,
           extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
           lods: settings.voxyLodEnabled || settings.dhLodEnabled
-        })
+        }),
+        selectionShapes: oneWorld ? null : selectedShapes
     });
 
     console.log("Generation process started.");

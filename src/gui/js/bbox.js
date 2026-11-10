@@ -950,7 +950,7 @@ $(document).ready(function () {
     var oneWorldOverlayHidden = false;
     // Slider positions; null is the layout's default: a One World's areas at 70 % on the
     // map-first page, opaque in Classic (3.4.0).
-    var overlayOpacity = { world: 50, oneWorld: null };
+    var overlayOpacity = { world: 70, oneWorld: null };
     // On the map-first page the world's preview images draw under the selection and the piece
     // outlines (overlayPane is 400); Classic keeps them in overlayPane.
     map.createPane('arnisPreview').style.zIndex = 350;
@@ -1031,7 +1031,7 @@ $(document).ready(function () {
             slider.type = 'range';
             slider.min = '0';
             slider.max = '100';
-            slider.value = '50';
+            slider.value = '70';
             slider.id = 'world-preview-opacity';
             slider.title = 'Overlay Opacity';
 
@@ -1107,7 +1107,7 @@ $(document).ready(function () {
             }
 
             var opacity = document.getElementById('world-preview-opacity');
-            var opacityValue = opacity ? opacity.value / 100 : 0.5;
+            var opacityValue = opacity ? opacity.value / 100 : 0.7;
 
             worldOverlay = buildWorldOverlay(data, opacityValue);
             worldOverlay.addTo(map);
@@ -1205,8 +1205,26 @@ $(document).ready(function () {
                 </svg>
                 <span id="live-teleport-text">Teleport here</span>
             </div>
+            <div class="coordinate-context-menu-item" id="remove-area-item">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                <span id="remove-area-text">Remove this area</span>
+            </div>
         `;
         document.body.appendChild(contextMenuElement);
+
+        contextMenuElement.querySelector('#remove-area-item').addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var target = contextMenuElement._area;
+            hideContextMenu();
+            if (!target || !drawnItems.hasLayer(target)) return;
+            // The delete path resets bounds, notifies the parent and refreshes handles.
+            map.fire('draw:deleted', { layers: L.layerGroup([target]) });
+        });
 
         contextMenuElement.querySelector('#live-teleport-item').addEventListener('click', function(e) {
             e.preventDefault();
@@ -1232,16 +1250,19 @@ $(document).ready(function () {
     }
 
     // Show context menu at position
-    function showContextMenu(x, y, latLng, canCopy) {
+    function showContextMenu(x, y, latLng, canCopy, area) {
         var menu = createContextMenu();
+        menu._area = area || null;
         menu.querySelector('#copy-coords-item').style.display = canCopy ? '' : 'none';
         menu.querySelector('#live-teleport-item').style.display = liveCanTeleport ? '' : 'none';
+        menu.querySelector('#remove-area-item').style.display = area ? '' : 'none';
         menu.querySelector('#copy-coords-text').textContent = mapText('map_copy_coordinates', 'Copy coordinates');
         menu.querySelector('#live-teleport-text').textContent = mapText('live_teleport', 'Teleport here');
+        menu.querySelector('#remove-area-text').textContent = mapText('map_remove_area', 'Remove this area');
 
         // Position the menu, ensuring it stays within viewport
         var menuWidth = 180;
-        var menuHeight = (canCopy && liveCanTeleport) ? 76 : 40;
+        var menuHeight = 4 + 36 * [canCopy, liveCanTeleport, !!area].filter(Boolean).length;
         var viewportWidth = window.innerWidth;
         var viewportHeight = window.innerHeight;
 
@@ -1385,8 +1406,9 @@ $(document).ready(function () {
         }
         // During a live session the copied command would jump onto land not built yet.
         if (liveActive) canCopy = false;
-        if (canCopy || liveCanTeleport) {
-            showContextMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.latlng, canCopy);
+        var area = areaAt(e.latlng);
+        if (canCopy || liveCanTeleport || area) {
+            showContextMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.latlng, canCopy, area);
         }
     });
 
@@ -1764,14 +1786,18 @@ $(document).ready(function () {
             // The map-first page's look (hover font, previews under the selection); Classic keeps 3.4.0's.
             window.arnisMapFirst = Boolean(event.data.mapFirst);
             document.body.classList.toggle('map-first', window.arnisMapFirst);
-            document.body.classList.toggle('meld-on', window.arnisMeldOn);
             if (!window.arnisMeldOn && planMask) setPlanMask(null);
             if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 
-        // One World keeps rotation at 0.
+        // One World keeps rotation at 0, and its areas are rectangles.
         if (event.data && event.data.type === 'setRotationLocked') {
             setRotationLocked(!!event.data.locked);
+            setShapesLocked(!!event.data.locked);
+        }
+        // A One World built in pieces takes shapes too: its pieces outside them are left out.
+        if (event.data && event.data.type === 'setShapesLocked') {
+            setShapesLocked(!!event.data.locked);
         }
 
         // Handle rotation preview angle update (store it for preview-skip logic)
@@ -1838,6 +1864,147 @@ $(document).ready(function () {
     drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
+    // ========== Area shapes ==========
+    // The selection: one or more rectangles and drawn shapes (L.Rectangle is an L.Polygon too).
+    var AREA_STYLE = {
+        color: '#fecc44',
+        opacity: 1.0,
+        weight: 3,
+        fill: '#fecc44',
+        fillOpacity: 0.08,
+        lineCap: 'round',
+        lineJoin: 'round'
+    };
+
+    function isArea(layer) {
+        return layer instanceof L.Polygon;
+    }
+
+    function areaLayers() {
+        var out = [];
+        drawnItems.eachLayer(function (l) { if (isArea(l)) out.push(l); });
+        return out;
+    }
+
+    // The selection when it is one rectangle, which the Advanced handles work on; else null.
+    function _getBboxRect() {
+        var areas = areaLayers();
+        return areas.length === 1 && areas[0] instanceof L.Rectangle ? areas[0] : null;
+    }
+
+    function ringOf(layer) {
+        var ll = layer.getLatLngs();
+        return L.LineUtil.isFlat(ll) ? ll : ll[0];
+    }
+
+    // [lat, lng] points on the map copy around longitude 0; null across the 180° meridian.
+    function normalizedRing(layer) {
+        var ring = ringOf(layer);
+        var west = Infinity, east = -Infinity;
+        ring.forEach(function (p) { west = Math.min(west, p.lng); east = Math.max(east, p.lng); });
+        var shift = -360 * Math.round((west + east) / 720);
+        if (west + shift < -180 || east + shift > 180) return null;
+        return ring.map(function (p) { return [p.lat, p.lng + shift]; });
+    }
+
+    // Whether these areas, moved onto the copy around longitude 0, span at most 180° together.
+    function fitOneSide(areas) {
+        var west = Infinity, east = -Infinity;
+        for (var i = 0; i < areas.length; i++) {
+            var ring = normalizedRing(areas[i]);
+            if (!ring) return false;
+            ring.forEach(function (p) { west = Math.min(west, p[1]); east = Math.max(east, p[1]); });
+        }
+        return east - west <= 180;
+    }
+
+    // Earth's "extensive" size tier at scale 1, in m²: past it, a mostly empty rectangle is refused.
+    var FAR_APART_M2 = 100e6;
+
+    // Whether the rectangle around these areas, all of which is downloaded and processed, is
+    // large and mostly empty: such areas are better generated as worlds of their own.
+    function tooFarApart(areas) {
+        if (areas.length < 2 || currentBody !== 'earth') return false;
+        var rad = Math.PI / 180, R = 6371000;
+        var size = function (s, w, n, e) {
+            return R * R * (n - s) * rad * (e - w) * rad * Math.cos((s + n) / 2 * rad);
+        };
+        var own = 0, all = [90, 180, -90, -180];
+        for (var i = 0; i < areas.length; i++) {
+            var ring = normalizedRing(areas[i]);
+            if (!ring) return false;
+            var b = [90, 180, -90, -180];
+            ring.forEach(function (p) {
+                b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])];
+            });
+            own += size(b[0], b[1], b[2], b[3]);
+            all = [Math.min(all[0], b[0]), Math.min(all[1], b[1]), Math.max(all[2], b[2]), Math.max(all[3], b[3])];
+        }
+        var total = size(all[0], all[1], all[2], all[3]);
+        return total > FAR_APART_M2 && total > 2 * own;
+    }
+
+    // For generation: null for a single rectangle (the plain bbox), else every area as a ring.
+    function selectionShapes() {
+        var areas = areaLayers();
+        if (areas.length === 0 || (areas.length === 1 && areas[0] instanceof L.Rectangle)) return null;
+        // Sent as is across the meridian, so the backend refuses it instead of silently dropping it.
+        return areas.map(function (l) {
+            return normalizedRing(l) || ringOf(l).map(function (p) { return [p.lat, p.lng]; });
+        });
+    }
+    window.arnisSelectionShapes = selectionShapes;
+
+    // Point in an area: by bounds for a rectangle, even-odd for a shape.
+    function areaContains(layer, latlng) {
+        if (layer instanceof L.Rectangle) return layer.getBounds().contains(latlng);
+        var ring = ringOf(layer), inside = false;
+        for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            var a = ring[i], b = ring[j];
+            if ((a.lat > latlng.lat) !== (b.lat > latlng.lat) &&
+                latlng.lng < (b.lng - a.lng) * (latlng.lat - a.lat) / (b.lat - a.lat) + a.lng) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
+    // The topmost area under a point, for the right-click menu.
+    function areaAt(latlng) {
+        var areas = areaLayers();
+        for (var i = areas.length - 1; i >= 0; i--) {
+            if (areaContains(areas[i], latlng)) return areas[i];
+        }
+        return null;
+    }
+
+    // Shift held during a drawing adds the area; one set from the coordinate field always replaces.
+    var _drawing = false;
+    var _addToSelection = false;
+    var _boxZoomWasOn = false;
+    function noteShift(e) {
+        if (_drawing && e.shiftKey) _addToSelection = true;
+    }
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') noteShift({ shiftKey: true });
+    }, true);
+    map.getContainer().addEventListener('mousedown', noteShift, true);
+    map.getContainer().addEventListener('click', noteShift, true);
+    map.on('draw:drawstart', function () {
+        _drawing = true;
+        _addToSelection = false;
+        // Shift-drag is also Leaflet's box zoom, which would zoom into the drawing.
+        _boxZoomWasOn = !!(map.boxZoom && map.boxZoom.enabled());
+        if (_boxZoomWasOn) map.boxZoom.disable();
+    });
+    map.on('draw:drawstop', function () {
+        _drawing = false;
+        if (_boxZoomWasOn) map.boxZoom.enable();
+    });
+
+    // One World and live mode generate rectangles only.
+    var _shapesLocked = false;
+
     // Custom icon for drawn markers
     var customMarkerIcon = L.icon({
         iconUrl: 'images/marker-icon.png',
@@ -1891,10 +2058,21 @@ $(document).ready(function () {
                 repeatMode: false
             },
             polyline: false,
-            // Advanced features only (map-controls.css hides it otherwise): an outline, see setPlanMask.
             polygon: {
                 allowIntersection: false,
-                shapeOptions: { color: '#ffea00', weight: 2, fillOpacity: 0.1 }
+                showArea: false,
+                drawError: { color: '#fa7878', timeout: 2500 },
+                shapeOptions: {
+                    color: '#fecc44',
+                    opacity: 0.8,
+                    weight: 3,
+                    fillColor: '#fecc44',
+                    fillOpacity: 0.1,
+                    dashArray: '10, 10',
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                },
+                repeatMode: false
             },
             circle: false,
             circlemarker: false,
@@ -1904,6 +2082,33 @@ $(document).ready(function () {
         }
     });
     map.addControl(drawControl);
+
+    // Leaflet.draw lists the shape tool first; it belongs after the rectangle.
+    (function placeShapeTool() {
+        var bar = document.querySelector('.leaflet-draw-toolbar.leaflet-draw-toolbar-top');
+        var rect = bar && bar.querySelector('.leaflet-draw-draw-rectangle');
+        var shape = bar && bar.querySelector('.leaflet-draw-draw-polygon');
+        if (rect && shape) bar.insertBefore(shape, rect.nextSibling);
+    })();
+
+    // Leaflet.draw's own hints while a shape is being drawn.
+    function localizeDrawHints() {
+        var h = L.drawLocal.draw.handlers;
+        h.polygon.tooltip.start = mapText('map_shape_start', 'Click to place the first corner.');
+        h.polygon.tooltip.cont = mapText('map_shape_continue', 'Click to place the next corner.');
+        h.polygon.tooltip.end = mapText('map_shape_end', 'Click the first corner to close the shape.');
+        h.polyline.error = mapText('map_shape_cross', 'The outline cannot cross itself.');
+        // The shape tool copied the message when it was made, so it is set there too.
+        var mode = drawControl && drawControl._toolbars && drawControl._toolbars.draw &&
+            drawControl._toolbars.draw._modes.polygon;
+        if (mode) mode.handler.options.drawError.message = h.polyline.error;
+        // Read each time a tool starts, so a language change reaches them too.
+        var t = L.drawLocal.draw.toolbar;
+        t.finish.title = t.finish.text = mapText('map_shape_finish', 'Finish');
+        t.undo.title = t.undo.text = mapText('map_shape_undo', 'Delete last point');
+        t.actions.title = t.actions.text = mapText('map_draw_cancel', 'Cancel');
+    }
+    localizeDrawHints();
 
     // ========== Toolbar labels and tooltips ==========
     // Every button says what it is and what it does, and the ones that depend
@@ -1920,16 +2125,19 @@ $(document).ready(function () {
 
     function describeTool(btn) {
         var c = btn.classList;
+        var addHint = mapText('map_tool_add_hint', 'Hold Shift while drawing to add it to the selection.');
         if (c.contains('leaflet-draw-draw-rectangle')) {
             return {
                 name: mapText('map_tool_area', 'Select area'),
-                desc: mapText('map_tool_area_desc', 'Drag over the map to choose what gets generated.')
+                desc: mapText('map_tool_area_desc', 'Drag over the map to choose what gets generated.') +
+                    (_shapesLocked ? '' : ' ' + addHint)
             };
         }
         if (c.contains('leaflet-draw-draw-polygon')) {
             return {
-                name: mapText('map_tool_shape', 'Select shape'),
-                desc: mapText('map_tool_shape_desc', 'Click points around the area, then click the first point again. Pieces outside the shape are not built.')
+                name: mapText('map_tool_shape', 'Draw a shape'),
+                desc: mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.') + ' ' + addHint,
+                note: _shapesLocked ? mapText('map_tool_shape_one_world', 'One World generates rectangles only.') : ''
             };
         }
         if (c.contains('leaflet-draw-draw-polyline')) {
@@ -2060,17 +2268,14 @@ $(document).ready(function () {
     function refreshAreaToolAttention() {
         var areaBtn = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-rectangle');
         if (!areaBtn) return;
-        var hasArea = false;
-        drawnItems.eachLayer(function (l) {
-            if (l instanceof L.Rectangle) hasArea = true;
-        });
-        areaBtn.classList.toggle('map-tool-attention', !hasArea && !areaToolLearned());
+        areaBtn.classList.toggle('map-tool-attention', !areaLayers().length && !areaToolLearned());
     }
     drawnItems.on('layeradd layerremove', refreshAreaToolAttention);
 
     // Every label again, for a language change. Also the search placeholder,
     // the other piece of text on the map that is always visible.
     function refreshMapToolLabels() {
+        localizeDrawHints();
         document.querySelectorAll('.leaflet-draw-toolbar a').forEach(refreshToolLabel);
         var search = document.getElementById('city-search');
         if (search) search.placeholder = mapText('map_search_placeholder', 'Search for a city...');
@@ -2206,6 +2411,32 @@ $(document).ready(function () {
     }
 
     var _rotationLocked = false;
+
+    function setShapesLocked(locked) {
+        _shapesLocked = locked;
+        var btn = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-polygon');
+        if (!btn) return;
+        if (locked && drawControl._toolbars.draw._activeMode &&
+            drawControl._toolbars.draw._activeMode.handler.type === 'polygon') {
+            drawControl._toolbars.draw._activeMode.handler.disable();
+        }
+        btn.classList.toggle('leaflet-disabled', locked);
+        btn.setAttribute('aria-disabled', locked ? 'true' : 'false');
+        refreshToolLabel(btn);
+        var rect = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-rectangle');
+        if (rect) refreshToolLabel(rect);
+    }
+
+    // Stops a locked tool before Leaflet.draw's own click handler starts it.
+    (function guardShapeTool() {
+        var btn = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-polygon');
+        if (!btn) return;
+        btn.addEventListener('click', function (e) {
+            if (!_shapesLocked) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }, true);
+    })();
 
     function setRotationLocked(locked) {
         _rotationLocked = locked;
@@ -2408,19 +2639,35 @@ $(document).ready(function () {
     });
     map.addLayer(bounds);
 
-    // ========== Always-on bbox handles (corner resize + centre move) ==========
+    // ========== Always-on area handles ==========
+    // Rectangles get corner handles, shapes Leaflet.draw's vertex editing; both a centre move handle.
     var _bboxHandles = [];
 
-    function _getBboxRect() {
-        var rect = null;
-        drawnItems.eachLayer(function (layer) {
-            if (layer instanceof L.Rectangle) rect = layer;
-        });
-        return rect;
+    // The bounds frame shows over a single rectangle only; with shapes it would look like an area.
+    function styleBoundsFrame(areas) {
+        var plain = areas.length === 1 && areas[0] instanceof L.Rectangle;
+        bounds.setStyle(plain ? { opacity: 1.0, fillOpacity: 0.2 } : { opacity: 0, fillOpacity: 0 });
+        // Invisible, it must not take the pointer from the shapes under it either.
+        if (bounds._path) L.DomUtil[plain ? 'addClass' : 'removeClass'](bounds._path, 'leaflet-interactive');
     }
 
-    function _syncFromRect(rect) {
-        bounds.setBounds(rect.getBounds());
+    // Bounds, the coordinate fields and the parent all follow the areas.
+    function syncSelection() {
+        var areas = areaLayers();
+        if (areas.length) {
+            var union = new L.LatLngBounds();
+            areas.forEach(function (l) { union.extend(l.getBounds()); });
+            bounds.setBounds(union);
+        } else {
+            bounds.setBounds(new L.LatLngBounds([0.0, 0.0], [0.0, 0.0]));
+        }
+        styleBoundsFrame(areas);
+        if (selectionShapes() && !fitOneSide(areas)) {
+            showRotationToast(mapText('map_shape_date_line', 'Draw the area on one side of the 180° meridian.'));
+        } else if (tooFarApart(areas)) {
+            // Moved apart by a handle: kept, but said.
+            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas: everything between them would be generated too. Make it a world of its own.'));
+        }
         $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
         $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
         notifyBboxUpdate();
@@ -2432,12 +2679,33 @@ $(document).ready(function () {
         sizeLabel = null;
     }
 
-    function refreshBboxHandles() {
-        clearBboxHandles();
-        var rect = _getBboxRect();
-        if (!rect) return;
-        var b = rect.getBounds();
+    function addMoveHandle(layer, center, moveTo) {
+        var moveIcon = L.divIcon({
+            className: 'bbox-handle bbox-handle-move',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        });
+        var mover = L.marker(center, { icon: moveIcon, draggable: true, zIndexOffset: 2000 });
+        var startCenter = null;
+        mover.on('dragstart', function (ev) {
+            startCenter = ev.target.getLatLng();
+            moveTo.start();
+        });
+        mover.on('drag', function (ev) {
+            var cur = ev.target.getLatLng();
+            moveTo.by(cur.lat - startCenter.lat, cur.lng - startCenter.lng);
+        });
+        mover.on('dragend', function () {
+            moveTo.end();
+            syncSelection();
+            refreshBboxHandles();
+        });
+        mover.addTo(map);
+        _bboxHandles.push(mover);
+    }
 
+    function addRectHandles(rect) {
+        var b = rect.getBounds();
         var corners = [
             { get: 'getNorthWest', opp: 'getSouthEast', cls: 'nwse' },
             { get: 'getNorthEast', opp: 'getSouthWest', cls: 'nesw' },
@@ -2461,42 +2729,57 @@ $(document).ready(function () {
                 liveSelection(rect);
             });
             marker.on('dragend', function () {
-                _syncFromRect(rect);
+                syncSelection();
                 refreshBboxHandles();
             });
             marker.addTo(map);
             _bboxHandles.push(marker);
         });
 
-        var moveIcon = L.divIcon({
-            className: 'bbox-handle bbox-handle-move',
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-        });
-        var mover = L.marker(b.getCenter(), { icon: moveIcon, draggable: true, zIndexOffset: 2000 });
-        var startCenter = null;
         var startB = null;
-        mover.on('dragstart', function (ev) {
-            startCenter = ev.target.getLatLng();
-            startB = rect.getBounds();
+        addMoveHandle(rect, b.getCenter(), {
+            start: function () { startB = rect.getBounds(); },
+            by: function (dLat, dLng) {
+                rect.setBounds(new L.LatLngBounds(
+                    [startB.getSouth() + dLat, startB.getWest() + dLng],
+                    [startB.getNorth() + dLat, startB.getEast() + dLng]
+                ));
+                liveSelection(rect);
+            },
+            end: function () {}
         });
-        mover.on('drag', function (ev) {
-            var cur = ev.target.getLatLng();
-            var dLat = cur.lat - startCenter.lat;
-            var dLng = cur.lng - startCenter.lng;
-            rect.setBounds(new L.LatLngBounds(
-                [startB.getSouth() + dLat, startB.getWest() + dLng],
-                [startB.getNorth() + dLat, startB.getEast() + dLng]
-            ));
-            liveSelection(rect);
+    }
+
+    function addShapeHandles(shape) {
+        if (shape.editing && !shape.editing.enabled()) shape.editing.enable();
+        var startRing = null;
+        addMoveHandle(shape, shape.getBounds().getCenter(), {
+            start: function () {
+                startRing = ringOf(shape).map(function (p) { return L.latLng(p.lat, p.lng); });
+                // The corner handles would stay behind while the outline moves.
+                if (shape.editing) shape.editing.disable();
+            },
+            by: function (dLat, dLng) {
+                shape.setLatLngs(startRing.map(function (p) {
+                    return L.latLng(p.lat + dLat, p.lng + dLng);
+                }));
+            },
+            end: function () {
+                if (!shape.editing) return;
+                // setLatLngs swapped the corner array; the editor would keep handles on the old one.
+                shape.editing.latlngs = [shape._latlngs];
+                shape.editing.enable();
+            }
         });
-        mover.on('dragend', function () {
-            _syncFromRect(rect);
-            refreshBboxHandles();
+    }
+
+    function refreshBboxHandles() {
+        clearBboxHandles();
+        areaLayers().forEach(function (layer) {
+            if (layer instanceof L.Rectangle) addRectHandles(layer);
+            else addShapeHandles(layer);
         });
-        mover.addTo(map);
-        _bboxHandles.push(mover);
-        if (window.arnisMeldOn) meldHandles(rect);
+        if (window.arnisMeldOn && _getBboxRect()) meldHandles(_getBboxRect());
     }
 
     // ---- Meld features: edge handles, move from inside, a size readout, a live plan ----
@@ -2523,7 +2806,7 @@ $(document).ready(function () {
                 liveSelection(rect);
             });
             marker.on('dragend', function () {
-                _syncFromRect(rect);
+                syncSelection();
                 refreshBboxHandles();
             });
             marker.addTo(map);
@@ -2546,7 +2829,7 @@ $(document).ready(function () {
     // selection once a second (and at the end), so the planned pieces follow without a plan
     // request on every move.
     function liveSelection(rect) {
-        if (!window.arnisMeldOn) return;
+        if (!window.arnisMeldOn || _getBboxRect() !== rect) return;
         var b = rect.getBounds();
         // Shown while dragging only: at rest it would sit over the ring's piece numbers.
         if (!sizeLabel) {
@@ -2558,7 +2841,7 @@ $(document).ready(function () {
         var now = Date.now();
         if (now - liveSync < 1000) return;
         liveSync = now;
-        _syncFromRect(rect);
+        syncSelection();
     }
 
     // Meld features: a drag that starts inside the selection moves it, while all of it is on
@@ -2592,7 +2875,7 @@ $(document).ready(function () {
         map.dragging.enable();
         // A click (say on a failed piece, to retry it) moved nothing.
         if (!moved) return;
-        _syncFromRect(rect);
+        syncSelection();
         refreshBboxHandles();
     }
     map.on('mouseup', endMove);
@@ -2617,18 +2900,23 @@ $(document).ready(function () {
     }
 
     map.on('draw:created', function (e) {
-        // instanceof, not layerType: restore paths fire rectangles as "polygon"
-        var isRectangle = e.layer instanceof L.Rectangle;
+        var area = isArea(e.layer);
+        var adding = area && _drawing && _addToSelection && !_shapesLocked && areaLayers().length > 0;
 
-        // Advanced features: a shape selects its bounding box, and the shape is the outline.
-        if (window.arnisMeldOn && !isRectangle && e.layer instanceof L.Polygon) {
-            window.arnisSelectShape(e.layer.toGeoJSON().geometry);
+        // No map copy holds an area across the 180° meridian, nor areas on both sides of it.
+        var together = adding ? areaLayers().concat([e.layer]) : [e.layer];
+        if (area && !(e.layer instanceof L.Rectangle && !adding) && !fitOneSide(together)) {
+            showRotationToast(mapText('map_shape_date_line', 'Draw the area on one side of the 180° meridian.'));
+            return;
+        }
+        if (adding && tooFarApart(together)) {
+            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas: everything between them would be generated too. Make it a world of its own.'));
             return;
         }
 
         // The first area ever selected retires the hint for good. Recorded
         // before the layer is added below, whose layeradd refreshes the outline.
-        if (isRectangle) {
+        if (area) {
             markAreaToolLearned();
             var hint = document.querySelector('.bbox-hint-overlay');
             if (hint) hint.style.display = 'none';
@@ -2636,7 +2924,6 @@ $(document).ready(function () {
 
         // If it's a marker, make sure we only have one
         if (e.layerType === 'marker') {
-            // Remove any existing markers
             drawnItems.eachLayer(function(layer) {
                 if (layer instanceof L.Marker) {
                     drawnItems.removeLayer(layer);
@@ -2644,61 +2931,34 @@ $(document).ready(function () {
             });
         }
 
-        // If it's a rectangle, remove any existing rectangles first
-        if (isRectangle) {
-            drawnItems.eachLayer(function(layer) {
-                if (layer instanceof L.Rectangle) {
-                    drawnItems.removeLayer(layer);
-                }
-            });
+        // A new area replaces the selection, unless Shift added it.
+        if (area && !adding) {
+            areaLayers().forEach(function (layer) { drawnItems.removeLayer(layer); });
         }
 
-        // Check if it's a rectangle and set proper styles before adding it to the layer
-        if (isRectangle) {
-            e.layer.setStyle({
-                color: '#fecc44',
-                opacity: 1.0,
-                weight: 3,
-                fill: '#fecc44',
-                fillOpacity: 0.08,
-                lineCap: 'round',
-                lineJoin: 'round'
-            });
+        if (area) {
+            e.layer.setStyle(AREA_STYLE);
+            // Dragged corners may not make the outline cross itself either.
+            e.layer.options.poly = { allowIntersection: false };
+            if (!(e.layer instanceof L.Rectangle)) {
+                e.layer.on('edit', function () {
+                    syncSelection();
+                    refreshBboxHandles();
+                });
+            }
         }
 
         drawnItems.addLayer(e.layer);
         // bbox.css fades it while pieces build.
         if (e.layer.getElement && e.layer.getElement()) e.layer.getElement().classList.add('bbox-selection');
 
-        // Only update the bounds based on non-marker layers
-        if (e.layerType !== 'marker') {
-            // Calculate bounds only from non-marker layers
-            const nonMarkerBounds = new L.LatLngBounds();
-            let hasNonMarkerLayers = false;
-            
-            drawnItems.eachLayer(function(layer) {
-                if (!(layer instanceof L.Marker)) {
-                    hasNonMarkerLayers = true;
-                    nonMarkerBounds.extend(layer.getBounds());
-                }
-            });
-            
-            // Only update bounds if there are non-marker layers
-            if (hasNonMarkerLayers) {
-                bounds.setBounds(nonMarkerBounds);
-                $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
-                $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
-                notifyBboxUpdate();
-            }
-        }
+        if (area) syncSelection();
 
-        if (!e.geojson &&
-            !((drawnItems.getLayers().length == 1) && (drawnItems.getLayers()[0] instanceof L.Marker))) {
+        var onlyMarker = drawnItems.getLayers().length == 1 && drawnItems.getLayers()[0] instanceof L.Marker;
+        if (!e.geojson && !onlyMarker) {
             map.fitBounds(bounds.getBounds());
-        } else {
-            if ((drawnItems.getLayers().length == 1) && (drawnItems.getLayers()[0] instanceof L.Marker)) {
-                map.panTo(drawnItems.getLayers()[0].getLatLng());
-            }
+        } else if (onlyMarker) {
+            map.panTo(drawnItems.getLayers()[0].getLatLng());
         }
 
         refreshBboxHandles();
@@ -2711,55 +2971,24 @@ $(document).ready(function () {
 
         // No area left: the hint only comes back for someone who has never
         // selected one.
-        var hasRectangle = false;
-        drawnItems.eachLayer(function(layer) {
-            if (layer instanceof L.Rectangle) hasRectangle = true;
-        });
-        if (!hasRectangle && !areaToolLearned()) {
+        var areas = areaLayers();
+        if (!areas.length && !areaToolLearned()) {
             var hint = document.querySelector('.bbox-hint-overlay');
             if (hint) hint.style.display = '';
         }
 
-        if (drawnItems.getLayers().length > 0 &&
-            !((drawnItems.getLayers().length == 1) && (drawnItems.getLayers()[0] instanceof L.Marker))) {
-            bounds.setBounds(drawnItems.getBounds())
-            $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
-            $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
-            notifyBboxUpdate();
+        syncSelection();
+        if (areas.length) {
             map.fitBounds(bounds.getBounds());
-        } else {
-            bounds.setBounds(new L.LatLngBounds([0.0, 0.0], [0.0, 0.0]));
-            $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
-            $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
-            notifyBboxUpdate();
-            if (drawnItems.getLayers().length == 1) {
-                map.panTo(drawnItems.getLayers()[0].getLatLng());
-            }
+        } else if (drawnItems.getLayers().length == 1) {
+            map.panTo(drawnItems.getLayers()[0].getLatLng());
         }
 
         refreshBboxHandles();
     });
 
     map.on('draw:edited', function (e) {
-        // Calculate bounds only from non-marker layers
-        const nonMarkerBounds = new L.LatLngBounds();
-        let hasNonMarkerLayers = false;
-        
-        drawnItems.eachLayer(function(layer) {
-            if (!(layer instanceof L.Marker)) {
-                hasNonMarkerLayers = true;
-                nonMarkerBounds.extend(layer.getBounds());
-            }
-        });
-        
-        // Only update bounds if there are non-marker layers
-        if (hasNonMarkerLayers) {
-            bounds.setBounds(nonMarkerBounds);
-        }
-        
-        $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
-        $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
-        notifyBboxUpdate();
+        syncSelection();
         map.fitBounds(bounds.getBounds());
     });
 
@@ -2839,10 +3068,22 @@ $(document).ready(function () {
 });
 
 function notifyBboxUpdate() {
-    const bboxText = document.getElementById('boxbounds').textContent;
+    var shapes = typeof window.arnisSelectionShapes === 'function' ? window.arnisSelectionShapes() : null;
+    var bboxText = document.getElementById('boxbounds').textContent;
     // Moved, resized, redrawn or cleared: the outline belonged to the old selection.
     if (planMask && planMask.bboxText !== bboxText) setPlanMask(null);
-    window.parent.postMessage({ bboxText: bboxText }, '*');
+    // Shapes on another map copy move back into range, with their rectangle.
+    if (shapes) {
+        var s = 90, w = 180, n = -90, e = -180;
+        shapes.forEach(function (ring) {
+            ring.forEach(function (p) {
+                s = Math.min(s, p[0]); n = Math.max(n, p[0]);
+                w = Math.min(w, p[1]); e = Math.max(e, p[1]);
+            });
+        });
+        bboxText = [s, w, n, e].map(function (v) { return v.toFixed(6); }).join(' ');
+    }
+    window.parent.postMessage({ bboxText: bboxText, shapes: shapes }, '*');
     updateTerrainPreviewButton();
 }
 

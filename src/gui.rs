@@ -1,6 +1,6 @@
 use crate::args::Args;
 use crate::coordinate_system::cartesian::{XZBBox, XZPoint};
-use crate::coordinate_system::geographic::{LLBBox, LLPoint};
+use crate::coordinate_system::geographic::{LLBBox, LLPoint, LLShapes};
 use crate::coordinate_system::transformation::CoordTransformer;
 use crate::data_processing::{self, GenerationOptions};
 use crate::ground::{self, Ground};
@@ -150,6 +150,8 @@ pub fn run_gui() -> Result<(), String> {
             gui_write_plan_mask,
             gui_log,
             gui_set_telemetry_consent,
+            gui_set_discord_status,
+            gui_discord_available,
             gui_live_info,
             gui_live_start,
             gui_live_stop,
@@ -323,7 +325,7 @@ fn gui_live_start(options: LiveStartOptions) -> Result<(), String> {
         .map_err(|e| format!("Failed to parse bounding box: {e}"))?;
     // The spawn marker if there is one, else the middle of the selection.
     let start = bbox.map(|b| {
-        spawn_marker(options.spawn_point, &b).map_or(
+        spawn_marker(options.spawn_point, &b, None).map_or(
             (
                 (b.min().lat() + b.max().lat()) / 2.0,
                 (b.min().lng() + b.max().lng()) / 2.0,
@@ -625,6 +627,18 @@ fn gui_set_telemetry_consent(consent: bool) {
     telemetry::set_telemetry_consent(consent);
 }
 
+/// The Discord status toggle in Settings, sent at start-up and on every change.
+#[tauri::command]
+fn gui_set_discord_status(enabled: bool) {
+    crate::discord::set_enabled(enabled);
+}
+
+/// Whether the build has a Discord application, without which the toggle is hidden.
+#[tauri::command]
+fn gui_discord_available() -> bool {
+    crate::discord::available()
+}
+
 /// Opens a native folder-picker dialog and returns the chosen path.
 #[tauri::command]
 fn gui_pick_save_directory(start_path: String) -> Result<String, String> {
@@ -783,19 +797,17 @@ fn add_localized_world_name(
     world_path
 }
 
-/// Calculates the default spawn point at X=1, Z=1 relative to the world origin.
-/// This is used when no spawn point is explicitly selected by the user.
-fn calculate_default_spawn(xzbbox: &XZBBox) -> (i32, i32) {
-    (xzbbox.min_x() + 1, xzbbox.min_z() + 1)
-}
-
 /// The map marker, unless it lies outside the area: the map keeps it when the area moves.
 /// The map repeats sideways, so a marker on another copy of it comes with a longitude past
 /// 180 degrees, while the area has been brought back into range.
-fn spawn_marker(spawn_point: Option<(f64, f64)>, bbox: &LLBBox) -> Option<LLPoint> {
+fn spawn_marker(
+    spawn_point: Option<(f64, f64)>,
+    bbox: &LLBBox,
+    shapes: Option<&LLShapes>,
+) -> Option<LLPoint> {
     spawn_point
         .and_then(|(lat, lng)| LLPoint::new(lat, (lng + 180.0).rem_euclid(360.0) - 180.0).ok())
-        .filter(|p| bbox.contains(p))
+        .filter(|p| bbox.contains(p) && shapes.is_none_or(|s| s.contains(p)))
 }
 
 /// Sets the player spawn point in level.dat using Minecraft XZ coordinates.
@@ -1499,11 +1511,11 @@ fn gui_plan_job(
         .map(|b| b.arg())
         .collect();
     if let Some(path) = mask {
-        let mask = crate::work_units::Mask::load(&path)?;
+        let mask = crate::work_units::Mask::load(&path, &proj, &all.rect)?;
         line["excluded"] = all
             .units
             .iter()
-            .filter(|u| !mask.touches(&u.bbox))
+            .filter(|u| !mask.touches(&u.rect))
             .map(|u| u.bbox.arg())
             .collect();
     }
@@ -1519,7 +1531,7 @@ fn gui_write_plan_mask(geojson: String) -> Result<String, String> {
     h.write(geojson.as_bytes());
     let path = env::temp_dir().join(format!("arnis-plan-mask-{:016x}.geojson", h.finish()));
     fs::write(&path, &geojson).map_err(|e| format!("{}: {e}", path.display()))?;
-    crate::work_units::Mask::load(&path)?;
+    crate::work_units::Mask::read(&path)?;
     Ok(path.display().to_string())
 }
 
@@ -2204,9 +2216,53 @@ fn gui_start_generation(
     one_world_name: String,
     // The "Meld features" settings as CLI flags (`--name=value`); none when the switch is off.
     flags: Vec<String>,
+    selection_shapes: Option<Vec<Vec<(f64, f64)>>>,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
+
+    // Shapes replace the rectangle; the status line holds 35 characters, so details go to the log.
+    let shapes = match selection_shapes.filter(|rings| !rings.is_empty()) {
+        Some(rings) => match LLShapes::new(rings.into_iter().map(|ring| vec![ring]).collect()) {
+            Ok(shapes) => Some(shapes),
+            Err(e) => {
+                let short = if e.contains("180") {
+                    "Areas cross the 180° meridian."
+                } else {
+                    "The drawn area is not valid."
+                };
+                let e = format!("The drawn area cannot be used: {e}");
+                eprintln!("{e}");
+                emit_gui_error(short);
+                // The frontend made a new world for this run.
+                if is_new_world && world_format != "bedrock" && !world_format.starts_with("luanti")
+                {
+                    remove_new_java_world(&PathBuf::from(&selected_world));
+                }
+                return Err(e);
+            }
+        },
+        None => None,
+    };
+    if shapes.is_some() && one_world {
+        let e = "One World needs a rectangle.".to_string();
+        emit_gui_error(&e);
+        return Err(e);
+    }
+    // Full precision, so the parse below gives back exactly the shapes' extent.
+    let bbox_text = match &shapes {
+        Some(s) => {
+            let b = s.bbox();
+            format!(
+                "{},{},{},{}",
+                b.min().lat(),
+                b.min().lng(),
+                b.max().lat(),
+                b.max().lng()
+            )
+        }
+        None => bbox_text,
+    };
 
     // A One World is resolved inside the worker, once `Args` exist. Refused rather than
     // dropped: `selected_world` is then the saves folder, which a new-world cleanup deletes.
@@ -2256,6 +2312,8 @@ fn gui_start_generation(
             .max_downloads
             .map_or(crate::net::MAX_CONCURRENT_REQUESTS, |n| n as usize),
     );
+    // Dropped with the slot, so the Discord status leaves "generating" on every way out.
+    let presence = crate::discord::Generation::begin();
 
     // Resolved before validation: off Earth the slider value is ignored, so
     // validating it could reject a run over a scale that never gets used.
@@ -2296,13 +2354,17 @@ fn gui_start_generation(
 
             let (transformer, xzbbox) = CoordTransformer::llbbox_to_xzbbox(&llbbox, world_scale)
                 .map_err(|e| format!("Failed to create coordinate transformer: {e}"))?;
+            let xzbbox = match &shapes {
+                Some(s) => xzbbox.with_outline(transformer.transform_shapes(s))?,
+                None => xzbbox,
+            };
 
-            let (spawn_x, spawn_z) = match spawn_marker(spawn_point, &llbbox) {
+            let (spawn_x, spawn_z) = match spawn_marker(spawn_point, &llbbox, shapes.as_ref()) {
                 Some(llpoint) => {
                     let xzpoint = transformer.transform_point(llpoint);
                     (xzpoint.x, xzpoint.z)
                 }
-                None => calculate_default_spawn(&xzbbox),
+                None => xzbbox.default_spawn(),
             };
 
             let (spawn_x, spawn_z) = map_transformation::rotate::rotate_xz_point(
@@ -2329,6 +2391,7 @@ fn gui_start_generation(
     tauri::async_runtime::spawn(async move {
         // Held until the worker finishes, on every path, so the globals stay this run's.
         let _generation_slot = generation_slot;
+        let _presence = presence;
         let work = move || -> Result<(), String> {
             let world_path = if one_world {
                 one_world_dir(&selected_world, &one_world_name)
@@ -2421,6 +2484,9 @@ fn gui_start_generation(
             let tall_forced = extra.disable_height_limit;
             let mut args: Args = Args {
                 bbox: Some(bbox),
+                polygon: Vec::new(),
+                polygon_file: None,
+                shapes,
                 file: None,
                 save_json_file: None,
                 // The localized name only goes into level.dat; the folder stays.
@@ -2719,10 +2785,13 @@ fn gui_start_generation(
             // Calculate MC spawn coordinates from lat/lng if spawn point was provided
             // Otherwise, default to X=1, Z=1 (relative to xzbbox min coordinates).
             // An extended One World keeps its spawn unless a marker was placed.
-            let mc_spawn_point: Option<(i32, i32)> = if let Ok((transformer, pre_rot_bbox)) =
-                crate::projection::ProjectionSpec::from_args(&args).transformer(&bbox)
-            {
-                let marker = spawn_marker(spawn_point, &bbox);
+            let spec = crate::projection::ProjectionSpec::from_args(&args);
+            let mc_spawn_point: Option<(i32, i32)> = if let Some((transformer, pre_rot_bbox)) =
+                spec.transformer(&bbox).ok().and_then(|(t, rect)| {
+                    let shaped = spec.shaped(&bbox, rect, args.shapes.as_ref()).ok()?;
+                    Some((t, shaped))
+                }) {
+                let marker = spawn_marker(spawn_point, &bbox, args.shapes.as_ref());
                 match (marker, one_world_extending) {
                     (None, true) => None,
                     (marker, _) => {
@@ -2731,7 +2800,7 @@ fn gui_start_generation(
                                 let xzpoint = transformer.transform_point(llpoint);
                                 (xzpoint.x, xzpoint.z)
                             }
-                            None => calculate_default_spawn(&pre_rot_bbox),
+                            None => pre_rot_bbox.default_spawn(),
                         };
                         Some(map_transformation::rotate::rotate_xz_point(
                             sx,
@@ -2807,10 +2876,13 @@ fn gui_start_generation(
 
                 // Empty parsed_elements and xzbbox, as no OSM is loaded
                 let mut parsed_elements = Vec::new();
-                let (_coord_transformer, mut xzbbox) =
-                    crate::projection::ProjectionSpec::from_args(&args)
-                        .transformer(&bbox)
-                        .map_err(|e| format!("Failed to create coordinate transformer: {}", e))?;
+                let spec = crate::projection::ProjectionSpec::from_args(&args);
+                let (_coord_transformer, xzbbox) = spec
+                    .transformer(&bbox)
+                    .map_err(|e| format!("Failed to create coordinate transformer: {}", e))?;
+                let mut xzbbox = spec
+                    .shaped(&bbox, xzbbox, args.shapes.as_ref())
+                    .inspect_err(|e| emit_gui_error(e))?;
 
                 // The spawn point is rotated above, so skipping the world
                 // rotation here would drop the player outside the terrain.
@@ -2979,6 +3051,11 @@ fn gui_start_generation(
                         outline_suppression,
                         args.mode,
                     );
+
+                    // Cut to the drawn shapes while the frame is still the projection's own.
+                    xzbbox = crate::projection::ProjectionSpec::from_args(&args)
+                        .shaped(&bbox, xzbbox, args.shapes.as_ref())
+                        .inspect_err(|e| emit_gui_error(e))?;
 
                     // Transform map (parsed_elements). Operations are defined in a json file
                     map_transformation::transform_map(
@@ -3409,19 +3486,33 @@ mod tests {
     #[test]
     fn a_spawn_marker_outside_the_area_is_ignored() {
         let bbox = LLBBox::from_str("52.50,13.37,52.53,13.42").unwrap();
-        assert!(spawn_marker(Some((52.51, 13.40)), &bbox).is_some());
-        assert!(spawn_marker(Some((48.14, 11.58)), &bbox).is_none());
-        assert!(spawn_marker(None, &bbox).is_none());
+        assert!(spawn_marker(Some((52.51, 13.40)), &bbox, None).is_some());
+        assert!(spawn_marker(Some((48.14, 11.58)), &bbox, None).is_none());
+        assert!(spawn_marker(None, &bbox, None).is_none());
+    }
+
+    #[test]
+    fn a_spawn_marker_outside_the_drawn_shapes_is_ignored() {
+        let shapes = LLShapes::new(vec![vec![vec![
+            (52.50, 13.37),
+            (52.53, 13.37),
+            (52.50, 13.42),
+        ]]])
+        .unwrap();
+        let bbox = shapes.bbox();
+        assert!(spawn_marker(Some((52.505, 13.38)), &bbox, Some(&shapes)).is_some());
+        // Inside the rectangle, across the diagonal from the triangle.
+        assert!(spawn_marker(Some((52.528, 13.415)), &bbox, Some(&shapes)).is_none());
     }
 
     #[test]
     fn a_spawn_marker_on_another_copy_of_the_map_counts_where_it_really_is() {
         let bbox = LLBBox::new(52.5, 13.3, 52.6, 13.5).unwrap();
         for lng in [13.40 + 360.0, 13.40 - 360.0, 13.40 + 720.0] {
-            let marker = spawn_marker(Some((52.51, lng)), &bbox).expect("inside the area");
+            let marker = spawn_marker(Some((52.51, lng)), &bbox, None).expect("inside the area");
             assert!((marker.lng() - 13.40).abs() < 1e-9, "{lng}");
         }
-        assert!(spawn_marker(Some((48.14, 11.58 + 360.0)), &bbox).is_none());
+        assert!(spawn_marker(Some((48.14, 11.58 + 360.0)), &bbox, None).is_none());
     }
 
     fn read_level_dat(world: &Path) -> Value {

@@ -8,7 +8,7 @@
 
 use crate::args::UnitSize;
 use crate::coordinate_system::cartesian::XZBBox;
-use crate::coordinate_system::geographic::LLBBox;
+use crate::coordinate_system::geographic::{LLBBox, LLShapes};
 use crate::projection::{llbbox_for_rect, snap_bbox_to_chunks, WebMercatorProjection};
 
 const REGION_BLOCKS: i32 = 512;
@@ -138,37 +138,39 @@ fn order_centre_out(world: &XZBBox, units: &mut [WorkUnit]) {
     }
 }
 
-/// `--plan-mask`: the polygon a job keeps its pieces in.
+/// `--plan-mask`: the polygon a job keeps its pieces in, as an area shape over the job's
+/// rectangle, so a piece is kept when some column of it is inside, as a run would build it.
 pub struct Mask {
-    rings: Vec<crate::osm_pbf::Ring>,
+    shape: XZBBox,
     /// Of the file, so two masks over one rectangle keep apart job folders.
     hash: u64,
 }
 
 impl Mask {
     /// A GeoJSON (Multi)Polygon, Feature or FeatureCollection, or an Osmosis `.poly` file.
-    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+    pub fn read(path: &std::path::Path) -> Result<(LLShapes, u64), String> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("--plan-mask {}: {e}", path.display()))?;
-        let rings = match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(v) => match v["type"].as_str() {
-                Some("FeatureCollection") => v["features"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|f| crate::osm_pbf::rings(&f["geometry"]))
-                    .collect(),
-                Some("Feature") => crate::osm_pbf::rings(&v["geometry"]),
-                _ => crate::osm_pbf::rings(&v),
-            },
-            Err(_) => poly_rings(&text),
-        };
-        if rings.is_empty() {
+        // A .poly file is one polygon whose rings go even-odd, holes or not.
+        let polygons = LLShapes::from_geojson(&text).unwrap_or_else(|_| {
+            let rings: Vec<Vec<(f64, f64)>> = poly_rings(&text)
+                .into_iter()
+                .map(|r| r.into_iter().map(|(lon, lat)| (lat, lon)).collect())
+                .collect();
+            if rings.is_empty() {
+                Vec::new()
+            } else {
+                vec![rings]
+            }
+        });
+        if polygons.is_empty() {
             return Err(format!(
                 "--plan-mask {}: no polygon found (GeoJSON or .poly).",
                 path.display()
             ));
         }
+        let shapes =
+            LLShapes::new(polygons).map_err(|e| format!("--plan-mask {}: {e}", path.display()))?;
         // FNV-1a: stable across builds, unlike the std hasher.
         let hash = {
             use std::hash::Hasher;
@@ -176,38 +178,47 @@ impl Mask {
             h.write(text.as_bytes());
             h.finish()
         };
-        Ok(Self { rings, hash })
+        Ok((shapes, hash))
     }
 
-    /// Points spread over `b`, corners included, as (lon, lat).
-    // ponytail: a 5 x 5 sample plus the polygon's own vertices; a sliver of polygon crossing
-    // a piece between samples without a vertex inside is missed. Edge intersection if needed.
-    fn samples(b: &LLBBox) -> impl Iterator<Item = (f64, f64)> + '_ {
-        (0..25).map(move |k| {
-            let (i, j) = (f64::from(k / 5) / 4.0, f64::from(k % 5) / 4.0);
-            (
-                b.min().lng() + (b.max().lng() - b.min().lng()) * j,
-                b.min().lat() + (b.max().lat() - b.min().lat()) * i,
-            )
-        })
+    /// The file's polygons over `rect`, in `proj`'s blocks. Fails when they hold none of it.
+    pub fn load(
+        path: &std::path::Path,
+        proj: &WebMercatorProjection,
+        rect: &XZBBox,
+    ) -> Result<Self, String> {
+        let (shapes, hash) = Self::read(path)?;
+        let polygons = shapes
+            .polygons()
+            .iter()
+            .map(|rings| {
+                rings
+                    .iter()
+                    .map(|ring| {
+                        ring.iter()
+                            .map(|p| (proj.x_for_lon(p.lng()), proj.z_for_lat(p.lat())))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+        let shape = rect
+            .clone()
+            .with_outline(polygons)
+            .map_err(|e| format!("--plan-mask: the polygon holds no piece of this job ({e})"))?;
+        Ok(Self { shape, hash })
     }
 
-    fn vertex_inside(&self, b: &LLBBox) -> bool {
-        self.rings.iter().flatten().any(|&(lon, lat)| {
-            lon > b.min().lng() && lon < b.max().lng() && lat > b.min().lat() && lat < b.max().lat()
-        })
+    /// Whether some column of `r` is in the polygon.
+    pub fn touches(&self, r: &XZBBox) -> bool {
+        self.shape
+            .touches_rect(r.min_x(), r.min_z(), r.max_x(), r.max_z())
     }
 
-    /// Whether any of `b` is in the polygon.
-    pub fn touches(&self, b: &LLBBox) -> bool {
-        Self::samples(b).any(|(x, y)| crate::osm_pbf::in_rings(x, y, &self.rings))
-            || self.vertex_inside(b)
-    }
-
-    /// Whether all of `b` is in the polygon.
-    fn covers(&self, b: &LLBBox) -> bool {
-        Self::samples(b).all(|(x, y)| crate::osm_pbf::in_rings(x, y, &self.rings))
-            && !self.vertex_inside(b)
+    /// Whether every column of `r` is in the polygon.
+    fn covers(&self, r: &XZBBox) -> bool {
+        self.shape
+            .covers_rect(r.min_x(), r.min_z(), r.max_x(), r.max_z())
     }
 }
 
@@ -267,10 +278,10 @@ fn auto_cells(
         let rect = XZBBox::rect_from_min_max(clipped[0], clipped[1], clipped[2], clipped[3])?;
         // A cell the mask misses is dropped; one it only partly holds splits.
         let piece = unit(proj, rect, gx, gz, s)?;
-        if mask.is_some_and(|m| !m.touches(&piece.bbox)) {
+        if mask.is_some_and(|m| !m.touches(&piece.rect)) {
             return Ok(());
         }
-        if (clipped == cell && mask.is_none_or(|m| m.covers(&piece.bbox))) || s <= min {
+        if (clipped == cell && mask.is_none_or(|m| m.covers(&piece.rect))) || s <= min {
             out.push(piece);
             return Ok(());
         }
@@ -382,7 +393,11 @@ pub fn plan(
     let (z0, z1) = axis(requested.min_z(), requested.max_z());
     let rect = XZBBox::rect_from_min_max(x0 - m, z0 - m, x1 + m, z1 + m)?;
     let merge = units.snap_regions == Some(SnapRegions::Merge);
-    let mask = units.plan_mask.as_deref().map(Mask::load).transpose()?;
+    let mask = units
+        .plan_mask
+        .as_deref()
+        .map(|path| Mask::load(path, proj, &rect))
+        .transpose()?;
     // The largest auto size follows the memory, so it names the job: a resume on a machine
     // that picks another size opens another folder instead of misreading this one's pieces.
     let auto_max = (size == UnitSize::Auto).then(|| crate::scale::budget::auto_max_regions(args));
@@ -416,7 +431,7 @@ pub fn plan(
         name.push_str("_merge");
     }
     if let Some(mask) = &mask {
-        cut.retain(|u| mask.touches(&u.bbox));
+        cut.retain(|u| mask.touches(&u.rect));
         if cut.is_empty() {
             return Err("--plan-mask: the polygon holds no piece of this job.".to_string());
         }
