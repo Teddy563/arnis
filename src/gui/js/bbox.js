@@ -1033,7 +1033,7 @@ $(document).ready(function () {
             slider.max = '100';
             slider.value = '70';
             slider.id = 'world-preview-opacity';
-            slider.title = 'Overlay Opacity';
+            slider.title = mapText('map_overlay_opacity', 'Overlay Opacity');
 
             L.DomEvent.on(slider, 'input', function(e) {
                 var kind = worldOverlayData && worldOverlayData.areas ? 'oneWorld' : 'world';
@@ -1525,15 +1525,13 @@ $(document).ready(function () {
 
     var pieceLayer = L.layerGroup().addTo(map);
     var stretchLayer = L.layerGroup().addTo(map);
-    var PIECE_COLORS = {
-        queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
-        skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff'
-    };
+    // The colours and line patterns live in piece-style.js, which the legend reads too.
+    var PIECE_COLORS = window.arnisPieceStyle.colors;
     // How full each state's cup is: a running piece fills to its percent, a finished one to the top.
     var PIECE_FULL = { done: 1, skipped: 1, failed: 1, stopped: 1 };
     // Colour is never the only sign of a state: an icon in the label, and the line's pattern.
     var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8' };
-    var PIECE_DASH = { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5' };
+    var PIECE_DASH = window.arnisPieceStyle.dash;
     var lastPieces = [];
     var pieceHalo = false;
     // Below this width on screen (px) a piece shows no number: zoomed out, thousands of numbers
@@ -1617,7 +1615,7 @@ $(document).ready(function () {
                 color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
                 opacity: room ? 0.6 : 1,
                 fillOpacity: excluded ? 0.3 : room ? 0 : planned ? (p.ring ? 0.03 : 0.08) : 0,
-                dashArray: room ? '1 4' : planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
+                dashArray: room ? PIECE_DASH.room : planned && p.ring ? PIECE_DASH.ring : PIECE_DASH[p.state] || null
             });
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
             if (full > 0) {
@@ -1640,7 +1638,7 @@ $(document).ready(function () {
             if (item.halo) { pieceLayer.removeLayer(item.halo); item.halo = null; }
             if (pieceHalo && p.halo) {
                 item.halo = L.rectangle([[p.halo[0], p.halo[1]], [p.halo[2], p.halo[3]]], {
-                    color: color, weight: 1, opacity: 0.4, fill: false, dashArray: '2 6', interactive: false
+                    color: color, weight: 1, opacity: 0.4, fill: false, dashArray: PIECE_DASH.halo, interactive: false
                 }).addTo(pieceLayer);
             }
         });
@@ -1733,7 +1731,7 @@ $(document).ready(function () {
         if (event.data && event.data.type === 'stretchLines') {
             stretchLayer.clearLayers();
             (event.data.lines || []).forEach(function(l) {
-                L.polyline([[l.lat, -180], [l.lat, 180]], { color: l.color, weight: 2, opacity: 0.9, dashArray: '8 6', interactive: false }).addTo(stretchLayer);
+                L.polyline([[l.lat, -180], [l.lat, 180]], { color: l.color, weight: 2, opacity: 0.9, dashArray: PIECE_DASH.stretch, interactive: false }).addTo(stretchLayer);
                 L.tooltip({ permanent: true, direction: 'top', className: 'piece-label', interactive: false })
                     .setLatLng([l.lat, l.lon]).setContent(l.label).addTo(stretchLayer);
             });
@@ -2003,6 +2001,15 @@ $(document).ready(function () {
         _drawing = false;
         if (_boxZoomWasOn) map.boxZoom.enable();
     });
+    // What the legend (meld-features.js) may show: the selection, a box being drawn, and the boxes of
+    // land the world holds (the One World preview).
+    window.arnisLegendState = function () {
+        return {
+            selection: drawnItems.getLayers().length > 0,
+            drawing: _drawing,
+            held: Boolean(worldOverlayEnabled && worldOverlayData && worldOverlayData.areas)
+        };
+    };
 
     // One World and live mode generate rectangles only.
     var _shapesLocked = false;
@@ -2054,7 +2061,7 @@ $(document).ready(function () {
                     weight: 3,
                     fillColor: '#fecc44',
                     fillOpacity: 0.1,
-                    dashArray: '10, 10',
+                    dashArray: window.arnisPieceStyle.selectionDash,
                     lineCap: 'round',
                     lineJoin: 'round'
                 },
@@ -2071,7 +2078,7 @@ $(document).ready(function () {
                     weight: 3,
                     fillColor: '#fecc44',
                     fillOpacity: 0.1,
-                    dashArray: '10, 10',
+                    dashArray: window.arnisPieceStyle.selectionDash,
                     lineCap: 'round',
                     lineJoin: 'round'
                 },
@@ -3099,7 +3106,7 @@ function setPlanMask(geometry) {
     if (planMask) map.removeLayer(planMask.layer);
     planMask = geometry ? {
         bboxText: document.getElementById('boxbounds').textContent,
-        layer: L.geoJSON(geometry, { interactive: false, style: { color: '#ffea00', weight: 2, fillOpacity: 0.05 } }).addTo(map)
+        layer: L.geoJSON(geometry, { interactive: false, style: { color: window.arnisPieceStyle.mask, weight: 2, fillOpacity: 0.05 } }).addTo(map)
     } : null;
     window.parent.postMessage({ type: 'planMask', geojson: geometry || null }, '*');
 }

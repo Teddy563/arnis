@@ -1004,6 +1004,37 @@ input[type="range"] {
   opacity: 0.8;
 }
 
+.job-plan-legend .legend-help {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* The card behind the "?": one line per thing the map shows now, in the map's own line patterns */
+.legend-card {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  color: var(--ui-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.legend-card .swatch {
+  width: 24px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 0;
+}
+
+.legend-card .swatch svg {
+  display: block;
+}
+
 .job-plan-warn {
   color: #fa7878;
 }

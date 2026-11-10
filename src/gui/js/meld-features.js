@@ -258,7 +258,11 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   mapWindow = map;
   call = invoke;
   localizer = localize;
-  postToMap = post;
+  // The legend shows what the map was last sent.
+  postToMap = (m) => {
+    if (m.type === 'pieceOutlines') drawn = m.pieces;
+    post(m);
+  };
   restart = start;
   // The run line ticks once a second while a job runs.
   setInterval(() => {
@@ -480,9 +484,98 @@ function showPlan(rows, warn = '', ring = false) {
       item.append(Object.assign(document.createElement('i'), { className: `swatch swatch-${kind}` }), t(key, fallback));
       legend.append(item);
     }
+    // The "?" opens the card of every line the map can show right now.
+    const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon legend-help', id: 'legend-help', textContent: '?', title: t('legend_title', LEGEND_TEXT.legend_title) });
+    help.ariaExpanded = String(legendOpen);
+    help.addEventListener('click', () => {
+      legendOpen = !legendOpen;
+      showPlan(...shown);
+      el('legend-help')?.focus();
+    });
+    legend.append(help);
     box.append(legend);
+    if (legendOpen) box.append(legendCard());
   }
   box.hidden = !rows.length && !stretchRows.length;
+}
+
+// ---- What the lines on the map mean ----
+
+// Every row is drawn from the map's own tables (piece-style.js), only when it is on the map.
+// Words: the plan's and the run's own keys where they say the same, a few of its own.
+const LEGEND_TEXT = {
+  legend_title: 'What the lines on the map mean',
+  legend_drawing: 'Your selection while you draw it',
+  plan_legend_selection: 'Selection',
+  legend_shape: 'The shape you drew; pieces it touches are built whole',
+  plan_state: 'Planned',
+  run_state_queued: 'Waiting',
+  run_state_running: 'Running',
+  run_state_done: 'Done',
+  run_state_failed: 'Failed',
+  run_state_stopped: 'Stopped',
+  plan_state_excluded: 'Outside the outline: not built',
+  plan_state_room: 'Room to grow: you can build here later',
+  plan_legend_ring: 'Ring (margin)',
+  legend_overlap: 'Overlap two neighbouring pieces share',
+  legend_stretch_5: 'Past this line the map is stretched 5% against real distances',
+  legend_stretch_10: 'Past this line the stretch is 10%; start a new world instead',
+  legend_held: 'Land this world already holds',
+};
+
+// state: { drawing, selection, shape, cells: [{ state, ring }], halo, stretch: [0.05, 0.1], held }
+// -> [{ swatch: { color, weight, fill, dash?, line? }, key }]
+export function legendRows(state) {
+  const { colors, dash, selection, selectionDash, mask } = globalThis.arnisPieceStyle;
+  const rows = [];
+  const add = (show, key, color, swatch = {}) => show && rows.push({ key, swatch: { color, weight: 2, fill: 0, ...swatch } });
+  const has = (...states) => state.cells.some((c) => states.includes(c.state));
+  add(state.drawing, 'legend_drawing', selection, { weight: 3, fill: 0.1, dash: selectionDash });
+  add(state.selection, 'plan_legend_selection', selection, { weight: 3, fill: 0.08 });
+  add(state.shape, 'legend_shape', mask, { fill: 0.05 });
+  add(state.cells.some((c) => c.state === 'planned' && !c.ring), 'plan_state', colors.planned, { weight: 1, fill: 0.08 });
+  add(has('queued'), 'run_state_queued', colors.queued, { dash: dash.queued });
+  add(has('start', 'retry'), 'run_state_running', colors.start, { dash: dash.start });
+  add(has('done', 'skipped'), 'run_state_done', colors.done);
+  add(has('failed'), 'run_state_failed', colors.failed, { weight: 3 });
+  add(has('stopped'), 'run_state_stopped', colors.stopped, { dash: dash.stopped });
+  add(has('excluded'), 'plan_state_excluded', colors.excluded, { weight: 1, fill: 0.3 });
+  add(has('room'), 'plan_state_room', colors.room, { weight: 1, dash: dash.room });
+  add(state.cells.some((c) => c.state === 'planned' && c.ring), 'plan_legend_ring', colors.planned, { weight: 1, fill: 0.03, dash: dash.ring });
+  add(state.halo, 'legend_overlap', colors.queued, { weight: 1, dash: dash.halo });
+  for (const [level, color] of STRETCH_LEVELS) {
+    add(state.stretch.includes(level), `legend_stretch_${Math.round(level * 100)}`, color, { line: true, dash: dash.stretch });
+  }
+  add(state.held, 'legend_held', selection, { weight: 1 });
+  return rows;
+}
+
+// The last outlines sent to the map, and whether the legend card is open.
+let drawn = [];
+let legendOpen = false;
+
+function legendCard() {
+  const map = mapWindow()?.arnisLegendState?.() || {};
+  const rows = legendRows({
+    drawing: map.drawing, selection: map.selection, held: map.held, shape: hasPlanMask(),
+    cells: drawn, halo: Boolean(el('run-halo-toggle')?.checked), stretch: stretchShown,
+  });
+  const card = div('legend-card', '');
+  Object.assign(card, { role: 'group', ariaLabel: t('legend_title', LEGEND_TEXT.legend_title) });
+  const svg = (name, attrs) => Object.entries(attrs).reduce((n, [k, v]) => (n.setAttribute(k, v), n), document.createElementNS('http://www.w3.org/2000/svg', name));
+  for (const { swatch: w, key } of rows) {
+    const line = { stroke: w.color, 'stroke-width': w.weight, 'stroke-dasharray': w.dash || 'none' };
+    const mark = svg('svg', { viewBox: '0 0 24 12', width: 24, height: 12, 'aria-hidden': 'true' });
+    mark.append(w.line
+      ? svg('line', { x1: 0, x2: 24, y1: 6, y2: 6, ...line })
+      : svg('rect', { x: 2, y: 2, width: 20, height: 8, fill: w.color, 'fill-opacity': w.fill, ...line }));
+    const row = document.createElement('div');
+    const swatch = Object.assign(document.createElement('i'), { className: 'swatch' });
+    swatch.append(mark);
+    row.append(swatch, t(key, LEGEND_TEXT[key]));
+    card.append(row);
+  }
+  return card;
 }
 
 async function updatePlan() {
@@ -596,6 +689,8 @@ let stretchSource = () => null;
 let stretchRows = [];
 let stretchKey = 'null';
 let shown = [[], '', false];
+// The stretch levels drawn on the map now (STRETCH_LEVELS), for the legend.
+let stretchShown = [];
 const STRETCH_LEVELS = [[0.05, '#fecc44'], [0.1, '#fa7878']];
 
 export function refreshStretch() {
@@ -626,6 +721,7 @@ export function refreshStretch() {
       })));
     }
   }
+  stretchShown = STRETCH_LEVELS.filter(([, color]) => lines.some((l) => l.color === color)).map(([level]) => level);
   postToMap({ type: 'stretchLines', lines });
   showPlan(...shown);
 }
