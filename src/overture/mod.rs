@@ -864,8 +864,12 @@ fn drop_where_wet(
 
 /// Shared HTTP client for Overture fetches (generation and 3D preview paths).
 pub(crate) fn overture_client() -> Result<Client, Box<dyn std::error::Error>> {
+    client_waiting(HTTP_TIMEOUT_SECS)
+}
+
+fn client_waiting(secs: u64) -> Result<Client, Box<dyn std::error::Error>> {
     Ok(Client::builder()
-        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(secs))
         .user_agent(concat!(
             "Arnis/",
             env!("CARGO_PKG_VERSION"),
@@ -1332,9 +1336,10 @@ fn shared_listing(value: Option<&str>) -> Option<Vec<String>> {
 }
 
 /// Discovers the releases once for a job's pieces, as an environment entry.
-/// `None` when discovery fails, which leaves each piece to discover for itself.
+/// `None` when discovery fails, which leaves each piece to discover for itself. It waits
+/// 10 s at most, since nothing shows while the job's start waits on it.
 pub(crate) fn shared_releases_env() -> Option<(&'static str, String)> {
-    let releases = discover_releases(&overture_client().ok()?).ok()?;
+    let releases = discover_releases(&client_waiting(10).ok()?).ok()?;
     (!releases.is_empty()).then(|| (SHARED_RELEASES_ENV, releases.join(",")))
 }
 

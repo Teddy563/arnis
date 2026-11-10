@@ -275,7 +275,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         match crate::osm_pbf::bake_for_job(&src, bake_area) {
             Err(e) if crate::osm_pbf::fallback_allowed(&src, crate::net::offline()) => {
                 crate::retrieve_data::warn_region_download_fallback(&e);
-                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"]);
+                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"], &[]);
             }
             r => r?,
         }
@@ -360,13 +360,16 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         );
     }
     // `--mapillary-token` reads MAPILLARY_TOKEN, so a piece gets it without a command line.
-    // The Overture release listing too: asked once here instead of once per piece.
+    // The Overture release listing too: asked once here instead of once per piece, and only
+    // when a piece is left to build and reads Overture.
+    let reads_overture =
+        args.overture && !args.skip_objects() && (!queue.is_empty() || head.is_some());
     let token: Vec<(&str, String)> = args
         .mapillary_api_token()
         .map(|t| ("MAPILLARY_TOKEN", t.to_string()))
         .into_iter()
         .chain(
-            args.overture
+            reads_overture
                 .then(crate::overture::shared_releases_env)
                 .flatten(),
         )
@@ -774,8 +777,8 @@ const PER_PIECE_SWITCHES: &[&str] = &[
 /// and a run refuses a spawn outside its area.
 const SPAWN: &[&str] = &["--spawn-lat", "--spawn-lng"];
 
-/// `argv` without the options `names` and their values.
-fn without_options(argv: Vec<OsString>, names: &[&str]) -> Vec<OsString> {
+/// `argv` without the options `names` and their values, and without the `switches`.
+fn without_options(argv: Vec<OsString>, names: &[&str], switches: &[&str]) -> Vec<OsString> {
     let mut skip_value = false;
     argv.into_iter()
         .filter(|arg| {
@@ -783,9 +786,10 @@ fn without_options(argv: Vec<OsString>, names: &[&str]) -> Vec<OsString> {
                 return false;
             }
             let text = arg.to_string_lossy();
-            let named = names.contains(&text.split('=').next().unwrap_or_default());
+            let name = text.split('=').next().unwrap_or_default();
+            let named = names.contains(&name);
             skip_value = named && !text.contains('=');
-            !named
+            !named && !switches.contains(&name)
         })
         .collect()
 }
@@ -798,23 +802,11 @@ fn child_args(
     lease: &Path,
     keep_spawn: bool,
 ) -> Vec<OsString> {
-    let mut out = Vec::new();
-    let mut skip_value = false;
-    for arg in argv {
-        if std::mem::take(&mut skip_value) {
-            continue;
-        }
-        let text = arg.to_string_lossy();
-        let name = text.split('=').next().unwrap_or_default();
-        if PER_PIECE_SWITCHES.contains(&name) {
-            continue;
-        }
-        if PER_PIECE.contains(&name) || (!keep_spawn && SPAWN.contains(&name)) {
-            skip_value = !text.contains('=');
-            continue;
-        }
-        out.push(arg);
+    let mut names = PER_PIECE.to_vec();
+    if !keep_spawn {
+        names.extend(SPAWN);
     }
+    let mut out = without_options(argv.collect(), &names, PER_PIECE_SWITCHES);
     out.extend([
         "--bbox".into(),
         bbox.into(),
@@ -861,8 +853,9 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 /// Runs one piece to the end, or kills it as soon as `cancel` is set. `progress` gets the
 /// piece's own fraction done. Its output lines are also written to `log`.
 /// A piece's log, appended to so a retry (or the build after a prewarm) keeps the
-/// first failure; each try opens with a `--- try N ---` line.
-fn open_piece_log(path: &Path) -> Option<std::fs::File> {
+/// first failure; each build try opens with a `--- try N ---` line, the warm step with
+/// `--- warm ---`, which is not a try.
+fn open_piece_log(path: &Path, warm: bool) -> Option<std::fs::File> {
     let tries = std::fs::read_to_string(path)
         .map(|t| t.lines().filter(|l| l.starts_with("--- try ")).count())
         .unwrap_or(0);
@@ -871,7 +864,11 @@ fn open_piece_log(path: &Path) -> Option<std::fs::File> {
         .append(true)
         .open(path)
         .ok()?;
-    writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    if warm {
+        writeln!(f, "--- warm ---").ok()?;
+    } else {
+        writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    }
     Some(f)
 }
 
@@ -908,7 +905,9 @@ fn run_piece_until(
     // Held open for the piece's life: on Unix it exits when this closes.
     let _stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_LINES)));
-    let log = Arc::new(Mutex::new(open_piece_log(log)));
+    // Only the warm step's command line carries `--prewarm`: the coordinator strips it.
+    let warm = argv.iter().any(|a| a == "--prewarm");
+    let log = Arc::new(Mutex::new(open_piece_log(log, warm)));
     let push =
         |tail: &Mutex<VecDeque<String>>, log: &Mutex<Option<std::fs::File>>, line: String| {
             if let Some(f) = lock(log).as_mut() {
@@ -1020,17 +1019,23 @@ mod tests {
     fn a_piece_log_keeps_every_try() {
         let p = std::env::temp_dir().join(format!("piece-log-{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&p);
-        for line in ["first failure", "second failure"] {
-            writeln!(open_piece_log(&p).unwrap(), "{line}").unwrap();
+        for (warm, line) in [
+            (true, "warmed"),
+            (false, "first failure"),
+            (false, "second"),
+        ] {
+            writeln!(open_piece_log(&p, warm).unwrap(), "{line}").unwrap();
         }
         let t = std::fs::read_to_string(&p).unwrap();
         let _ = std::fs::remove_file(&p);
         assert_eq!(
             t,
-            "--- try 1 ---
+            "--- warm ---
+warmed
+--- try 1 ---
 first failure
 --- try 2 ---
-second failure
+second
 "
         );
     }
@@ -1184,6 +1189,7 @@ second failure
         let got = without_options(
             argv.map(OsString::from).to_vec(),
             &["--osm-pbf", "--osm-pbf-url"],
+            &[],
         );
         assert_eq!(got, ["--scale", "1"].map(OsString::from));
     }
