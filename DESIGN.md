@@ -9,7 +9,7 @@ One job: pick an area on a map and turn it into a Minecraft world. Everything on
 Rules that follow from it:
 
 - The map comes first. Nothing sits on it that does not help to choose an area or to watch a build.
-- A person who never opens Settings still gets a good world. Defaults are the answer; options are for people who ask.
+- A person who never opens Settings still gets a good world. Defaults should give a good world without opening Settings.
 - Advanced features (big worlds in pieces, offline data, finer control) are off by default. Off, the window matches stock Arnis (section 7).
 - The window is at least 1000 x 650 and always dark (`tauri.conf.json`: `minWidth`, `minHeight`, `theme`).
 
@@ -61,7 +61,7 @@ The colours of the pieces on the map are not tokens. They live in one table, `ar
 - Motion is short (0.15s to 0.2s) and every animation stops under `prefers-reduced-motion` (`settings.css`, `styles.css`, `bbox.css`). A running piece's dash animation is no exception.
 - Focus: `:focus-visible` gets a 2px yellow outline. Keep it.
 - Icons: one stroke sprite at the top of `src/gui/index.html` (`<symbol id="i-*">`, 24px viewBox, Lucide paths). Use `<svg class="icon"><use href="#i-NAME"></use></svg>`; stroke and size come from `.icon` in `styles.css`. To add one, copy the 24px path into the sprite. No icon font, no filled icons, no second source.
-- Copy: Title Case for section and setting names (`Terrain &amp; Nature`), one plain sentence with a full stop for a description, a single verb on a button. Say why a control is unavailable instead of only greying it. Never write "Meld" in text a person reads; the switch is called Advanced features. (Two credit strings that name the project are the exception.)
+- Copy: Title Case for section and setting names (`Terrain &amp; Nature`; the legend heading is a plain caption), one plain sentence with a full stop for a description, a single verb on a button. Say why a control is unavailable instead of only greying it. Never write "Meld" in text a person reads; the switch is called Advanced features. (The exception is two credit strings: `advanced_meld_features_desc` and `about_meld_credit`.)
 
 ## 4. Page layout
 
@@ -174,7 +174,7 @@ Test: `node tests/gui/meld-flags.mjs` checks the switch sends no flag when off.
 - Never build a sentence by gluing translated pieces; give the whole sentence a key with placeholders.
 - Numbers, sizes and times go through `toLocaleString` or the existing format helpers, not hand-made separators.
 - Romanian is read by hand. Translate meaning, not words; keep tooltips short enough for 240px.
-- Wording rules: no "Meld" in user text, no marketing words, a full stop on a sentence, no stop on a label. Prose passes the `no-ai-slop` skill.
+- Wording rules: no "Meld" in user text, no marketing words, a full stop on a sentence, no stop on a label. A legend caption is a label, even a long one. Prose passes the `no-ai-slop` skill.
 - Window tests: `for f in tests/gui/*.mjs; do node "$f"; done`.
 
 ## 9. Setting previews
