@@ -89,7 +89,7 @@ Rules for both:
 
 ## 5. Settings pages
 
-The settings page is a full-window view: a section sidebar (`.settings-nav`) and one scrolling column of section cards (`.settings-section`). The sections, in order, have the ids `settings-section-world`, `-generation`, `-nature`, `-facades`, `-gameplay`, `-map`, `-application`, `-advanced`, `-about`. `src/gui/js/settings-layout.js` owns the sidebar, scroll spy and the cards that stand in for a `<select>`. `src/gui/js/settings-store.js` owns saving, the per-row revert arrow, the "modified" dot and Reset all.
+The settings page is a full-window view: a section sidebar (`.settings-nav`) and one scrolling column of section cards (`.settings-section`). The sections, in order, have the ids `settings-section-world`, `-projects`, `-generation`, `-nature`, `-facades`, `-gameplay`, `-map`, `-application`, `-advanced`, `-about`. `src/gui/js/settings-layout.js` owns the sidebar, scroll spy and the cards that stand in for a `<select>`. `src/gui/js/settings-store.js` owns saving, the per-row revert arrow, the "modified" dot and Reset all.
 
 Rules:
 
@@ -115,6 +115,7 @@ Rules:
 2. Add `<section class="settings-section" id="settings-section-NAME">` with a `.settings-section-head` (icon, `h3`, one-sentence `p`) and a `.setting-grid`.
 3. Add keys for the title, the subtitle and the description to all 20 locales: `settings_section_NAME`, `settings_section_NAME_desc`, `settings_nav_NAME`.
 4. Keep the two-column grid at 1000px wide.
+5. An advanced tab gets `meld-only` on both its nav button and its section.
 
 Do not add a tab for one or two settings. Put them in the nearest section.
 
