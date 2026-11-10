@@ -1433,6 +1433,7 @@ function initSettings() {
   });
   initDataPanel({
     invoke,
+    prefetch: () => startGeneration(true, true),
     area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
     plan: () => {
       const mode = document.getElementById("generation-mode-select").value;
@@ -4224,7 +4225,8 @@ function holdToConfirm(button, done) {
 }
 
 // `confirmed`: the hold (or a retry) already said yes to a job in pieces.
-async function startGeneration(confirmed = false) {
+// `prewarm`: Download Plan's "Download now", a run that only fills the caches.
+async function startGeneration(confirmed = false, prewarm = false) {
   // In Live the button starts and stops the session instead.
   if (liveActive()) {
     stopLive();
@@ -4356,13 +4358,13 @@ async function startGeneration(confirmed = false) {
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? oneWorldFolderName() : "",
-        flags: meldFlags({
+        flags: [...meldFlags({
           oneWorld: oneWorld,
           java: getEffectiveWorldFormat() === "java",
           caves: settings.cavesEnabled,
           extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
           lods: settings.voxyLodEnabled || settings.dhLodEnabled
-        }),
+        }), ...(prewarm ? ["--prewarm"] : [])],
         selectionShapes: oneWorld ? null : selectedShapes
     });
 

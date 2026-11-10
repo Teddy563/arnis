@@ -1,0 +1,33 @@
+// Run: node tests/gui/data-panel.mjs
+// Download Plan: rows use the translated source names, a row with nothing to count is not
+// drawn as "0 of 0", and the cache folder is named with a button to open it.
+import assert from 'node:assert';
+
+const nodes = new Map();
+const node = () => ({ value: '', checked: false, hidden: false, textContent: '', children: [], listeners: {}, addEventListener(e, f) { this.listeners[e] = f; }, append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } });
+globalThis.document = { createElement: node, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
+globalThis.window = { localization: { data_source_elevation: 'Altitudine' } };
+const { initDataPanel } = await import('../../src/gui/js/meld-features.js');
+
+const calls = [];
+const plan = { cache_root: 'D:\arnis\cache', free_bytes: null, items: [
+  { source: 'osm', cached: 0, total: 0, missing_bytes: null },
+  { source: 'elevation', cached: 1, total: 4, missing_bytes: 3e6 },
+] };
+const invoke = async (cmd, args) => { calls.push([cmd, args]); return cmd === 'gui_data_plan' ? plan : undefined; };
+let prefetched = 0;
+initDataPanel({ invoke, area: () => '1 2 3 4', plan: () => ({}), prefetch: () => { prefetched++; } });
+
+await document.getElementById('meld-plan-show').listeners.click();
+const text = document.getElementById('meld-plan-out').children.map((l) => l.children.map((c) => c.textContent).join(' | '));
+assert.ok(!text.some((l) => l.includes('0 of 0')), text.join('\n'));
+assert.ok(text.some((l) => l.startsWith('Map data | ')), text.join('\n'));
+assert.ok(text.some((l) => l.startsWith('Altitudine: 1 of 4 cached')), text.join('\n'));
+assert.equal(document.getElementById('meld-plan-path').textContent, 'Files are kept in D:\arnis\cache');
+assert.equal(document.getElementById('meld-plan-where').hidden, false);
+
+document.getElementById('meld-plan-open').listeners.click();
+assert.deepEqual(calls.at(-1), ['gui_show_in_folder', { path: 'D:\arnis\cache' }]);
+await document.getElementById('meld-plan-download').listeners.click();
+assert.equal(prefetched, 1);
+console.log('data-panel ok');

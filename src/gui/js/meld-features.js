@@ -753,8 +753,10 @@ function lines(box, rows) {
   box.hidden = false;
 }
 
+const SOURCE_NAMES = { osm: 'Map data', elevation: 'Elevation', land_cover: 'Land cover', overture: 'Building footprints' };
+
 // `area()` is the selected bbox; `plan()` the settings a run's plan depends on.
-export function initDataPanel({ invoke, area, plan }) {
+export function initDataPanel({ invoke, area, plan, prefetch }) {
   const needArea = () => t('meld_select_area', 'Select an area on the map first.');
   const list = el('meld-prepare-list');
   const out = el('meld-plan-out');
@@ -796,15 +798,51 @@ export function initDataPanel({ invoke, area, plan }) {
   });
   stop.addEventListener('click', () => invoke('gui_cancel_bake'));
 
-  el('meld-plan-show').addEventListener('click', async () => {
+  const where = el('meld-plan-where');
+  let cacheRoot = '';
+  const check = async (ready = false) => {
     if (!area()) return say(out, needArea());
     try {
       const p = await invoke('gui_data_plan', { bboxText: area(), ...plan() });
-      const rows = p.items.map((i) => [t('meld_cached', '{source}: {cached} of {total} cached', { source: i.source, cached: i.cached, total: i.total }), i.missing_bytes != null ? t('meld_to_download', '{size} to download', { size: mb(i.missing_bytes) }) : t('meld_size_unknown', 'size unknown')]);
+      const rows = p.items.map((i) => {
+        const name = t(`data_source_${i.source}`, SOURCE_NAMES[i.source] || i.source);
+        if (!i.total) return [name, t('meld_size_unknown', 'size unknown')];
+        return [t('meld_cached', '{source}: {cached} of {total} cached', { source: name, cached: i.cached, total: i.total }), i.missing_bytes != null ? t('meld_to_download', '{size} to download', { size: mb(i.missing_bytes) }) : t('meld_size_unknown', 'size unknown')];
+      });
       if (p.free_bytes != null) rows.push([t('meld_free_space', 'Free space'), mb(p.free_bytes)]);
+      if (ready) rows.unshift([t('meld_ready_offline', 'Ready to build offline.'), '']);
       lines(out, rows.length ? rows : [[t('meld_nothing_to_download', 'Nothing to download.'), '']]);
+      cacheRoot = p.cache_root || '';
+      el('meld-plan-path').textContent = cacheRoot ? t('meld_cache_path', 'Files are kept in {path}', { path: cacheRoot }) : '';
+      where.hidden = !cacheRoot;
     } catch (e) {
       say(out, t('plan_error', 'Could not plan this selection: {error}', { error: e }));
     }
+  };
+  el('meld-plan-show').addEventListener('click', () => check());
+  el('meld-plan-open').addEventListener('click', () => cacheRoot && invoke('gui_show_in_folder', { path: cacheRoot }).catch(() => {}));
+
+  // Download now: a run with --prewarm fills the caches and writes no world. The run's own
+  // progress lines come through the window's progress-update event.
+  let prefetching = false;
+  const listen = window.__TAURI__?.event?.listen;
+  if (listen) {
+    listen('progress-update', (e) => {
+      const m = e.payload && e.payload.message;
+      if (!prefetching || !m || e.payload.piece) return;
+      if (m.startsWith('Done!')) {
+        prefetching = false;
+        check(true);
+      } else {
+        if (/^(Error!|Stopped)/.test(m)) prefetching = false;
+        say(out, m);
+      }
+    });
+  }
+  el('meld-plan-download').addEventListener('click', async () => {
+    if (!area()) return say(out, needArea());
+    prefetching = true;
+    say(out, t('meld_downloading', 'Downloading: the progress is on the main bar.'));
+    await prefetch();
   });
 }
