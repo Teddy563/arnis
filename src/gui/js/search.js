@@ -162,8 +162,8 @@ var citySearch = {
             }
             
             html += '<div class="search-result-item" data-index="' + index + '" data-lat=""' + result.lat + '" data-lon="' + result.lon + '">';
-            html += '<div class="search-result-name">' + self.escapeHtml(mainName) + '</div>';
-            html += '<div class="search-result-details">' + self.escapeHtml(details) + '</div>';
+            html += '<div class="search-result-text"><div class="search-result-name">' + self.escapeHtml(mainName) + '</div>';
+            html += '<div class="search-result-details">' + self.escapeHtml(details) + '</div></div>';
             // A country or region (Meld features): select all of it, not just look there.
             if (window.arnisMeldOn && !window.arnisMapFirst && result.boundingbox && (result.class === 'boundary' || result.type === 'administrative')) {
                 html += '<button type="button" class="search-select-area" data-index="' + index + '"></button>';
@@ -181,7 +181,9 @@ var citySearch = {
             e.stopPropagation();
             self.selectArea(results[$(this).data('index')]);
         });
-        $results.find('.search-use-outline').text(window.mapText('map_use_outline', 'Use outline')).on('click', function(e) {
+        // The outline button: an icon (a dashed shape with corner points) and the words, at the right of the name.
+        var outlineIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M5 8l6-4 8 5-2 9-9 2z" stroke-dasharray="3 2"/><circle cx="5" cy="8" r="1.6" fill="currentColor"/><circle cx="19" cy="9" r="1.6" fill="currentColor"/><circle cx="17" cy="18" r="1.6" fill="currentColor"/><circle cx="8" cy="20" r="1.6" fill="currentColor"/></svg>';
+        $results.find('.search-use-outline').empty().append(outlineIcon, $('<span>').text(window.mapText('map_use_outline', 'Use outline'))).on('click', function(e) {
             e.stopPropagation();
             window.arnisSelectShape(results[$(this).data('index')].geojson);
             $('#city-search').val('');
