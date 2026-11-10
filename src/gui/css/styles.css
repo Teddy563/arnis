@@ -906,7 +906,7 @@ input[type="range"] {
   padding: 0 22px;
 }
 
-.plan-help {
+.job-plan .plan-help {
   position: absolute;
   top: 2px;
   right: 0;
