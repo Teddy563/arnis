@@ -31,7 +31,7 @@
   "no_world_selected_error": "No world selected",
   "create_world_first": "Create a world first!",
   "select_location_first": "Select a location first!",
-  "shapes_one_world": "One World generates rectangles. Draw a rectangle, or turn One World off. Building in pieces (Advanced features, Parallel pieces) allows shapes.",
+  "shapes_one_world": "One World builds rectangles only. Draw a rectangle, or turn One World off.",
   "area_too_large": "This area is very large and could exceed typical computing limits.",
   "area_extreme": "This area is extremely large and may be too big to generate successfully.",
   "area_extensive": "The area is quite extensive and may take significant time and resources.",

@@ -24,7 +24,7 @@
   "no_world_selected_error": "Nie wybrano świata",
   "create_world_first": "Najpierw utwórz świat!",
   "select_location_first": "Najpierw wybierz lokalizację!",
-  "shapes_one_world": "Jeden świat generuje prostokąty. Narysuj prostokąt lub wyłącz Jeden świat. Budowanie w częściach (Funkcje zaawansowane, Równoległe części) pozwala na kształty.",
+  "shapes_one_world": "Jeden świat generuje tylko prostokąty. Narysuj prostokąt lub wyłącz Jeden świat.",
   "area_too_large": "Ten obszar jest bardzo duży i może przekroczyć limity obliczeniowe.",
   "area_extreme": "Ten obszar jest ekstremalnie duży i może być zbyt rozległy, aby zostać pomyślnie wygenerowany.",
   "area_extensive": "Ten obszar jest rozległy i może pochłonąć dużo czasu oraz zasobów.",

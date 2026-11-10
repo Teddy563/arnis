@@ -24,7 +24,7 @@
   "no_world_selected_error": "Ni izbranega sveta",
   "create_world_first": "Najprej ustvarite svet!",
   "select_location_first": "Najprej izberite lokacijo!",
-  "shapes_one_world": "En svet ustvarja pravokotnike. Narišite pravokotnik ali izklopite En svet. Gradnja po delih (Napredne funkcije, Vzporedni deli) dovoljuje oblike.",
+  "shapes_one_world": "En svet ustvarja samo pravokotnike. Narišite pravokotnik ali izklopite En svet.",
   "area_too_large": "To območje je zelo veliko in lahko preseže običajne računske omejitve.",
   "area_extreme": "To območje je izredno veliko in morda preveliko za uspešno generiranje.",
   "area_extensive": "Območje je precej obsežno in lahko zahteva veliko časa ter sistemskih virov.",

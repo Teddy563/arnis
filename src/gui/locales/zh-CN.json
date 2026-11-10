@@ -24,7 +24,7 @@
   "no_world_selected_error": "未选择世界",
   "create_world_first": "请先创建一个世界！",
   "select_location_first": "请先选择一个位置！",
-  "shapes_one_world": "单一世界只生成矩形。请绘制矩形，或关闭单一世界。分块生成（高级功能、并行分块）时可以使用形状。",
+  "shapes_one_world": "单一世界只生成矩形。请绘制矩形，或关闭单一世界。",
   "area_too_large": "该区域非常大，可能会超出典型的计算限制。",
   "area_extreme": "此区域极大，可能过大而无法成功生成。",
   "area_extensive": "该区域相当广泛，可能需要大量时间和资源。",

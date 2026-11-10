@@ -24,7 +24,7 @@
   "no_world_selected_error": "Nenhum mundo selecionado",
   "create_world_first": "Crie um mundo primeiro!",
   "select_location_first": "Selecione um local primeiro!",
-  "shapes_one_world": "O Mundo único gera retângulos. Desenhe um retângulo ou desative o Mundo único. Construir em partes (Recursos avançados, Partes em paralelo) permite formas.",
+  "shapes_one_world": "O Mundo único gera apenas retângulos. Desenhe um retângulo ou desative o Mundo único.",
   "area_too_large": "Esta área é muito grande e pode exceder os limites típicos de computação.",
   "area_extreme": "Esta área é extremamente grande e pode ser grande demais para ser gerada com sucesso.",
   "area_extensive": "A área é bastante extensa e pode exigir bastante tempo e recursos.",

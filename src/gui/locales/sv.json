@@ -24,7 +24,7 @@
   "no_world_selected_error": "Ingen värld vald fel",
   "create_world_first": "Skapa en värld först!",
   "select_location_first": "Välj plats först!",
-  "shapes_one_world": "En värld genererar rektanglar. Rita en rektangel eller stäng av En värld. Att bygga i delar (Avancerade funktioner, Parallella delar) tillåter former.",
+  "shapes_one_world": "En värld genererar bara rektanglar. Rita en rektangel eller stäng av En värld.",
   "area_too_large": "Detta område är mycket stort och kan överskrida vanliga beräkningsgränser.",
   "area_extreme": "Det här området är extremt stort och kan vara för stort för att genereras framgångsrikt.",
   "area_extensive": "Området är ganska extensivt och kan ta betydande tid och resurser.",

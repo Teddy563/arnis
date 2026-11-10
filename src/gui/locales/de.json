@@ -24,7 +24,7 @@
   "no_world_selected_error": "Keine Welt ausgewählt",
   "create_world_first": "Erstelle zuerst eine Welt!",
   "select_location_first": "Wähle zuerst einen Standort aus!",
-  "shapes_one_world": "Eine Welt generiert nur Rechtecke. Zeichne ein Rechteck oder schalte Eine Welt aus. Beim Bauen in Teilen (Erweiterte Funktionen, Parallele Teile) sind Formen erlaubt.",
+  "shapes_one_world": "Eine Welt generiert nur Rechtecke. Zeichne ein Rechteck oder schalte Eine Welt aus.",
   "area_too_large": "Dieses Gebiet ist sehr groß und könnte das Berechnungslimit überschreiten.",
   "area_extreme": "Dieses Gebiet ist extrem groß und könnte möglicherweise zu groß sein, um erfolgreich generiert zu werden.",
   "area_extensive": "Diese Gebietsgröße könnte längere Zeit für die Generierung benötigen.",

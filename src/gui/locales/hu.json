@@ -24,7 +24,7 @@
   "no_world_selected_error": "Nincs kiválasztott világ",
   "create_world_first": "Először hozz létre egy világot!",
   "select_location_first": "Válassz egy helyet először!",
-  "shapes_one_world": "Az Egy világ téglalapokat generál. Rajzolj téglalapot, vagy kapcsold ki az Egy világot. A darabokban építés (Speciális funkciók, Párhuzamos részek) engedi az alakzatokat.",
+  "shapes_one_world": "Az Egy világ csak téglalapokat generál. Rajzolj téglalapot, vagy kapcsold ki az Egy világot.",
   "area_too_large": "Ez a terület nagyon nagy, és meghaladhatja a szokásos számítási korlátokat.",
   "area_extreme": "Ez a terület rendkívül nagy, és lehet, hogy túl nagy ahhoz, hogy sikeresen legenerálható legyen.",
   "area_extensive": "A terület meglehetősen kiterjedt, és jelentős időt és erőforrásokat igényelhet.",
