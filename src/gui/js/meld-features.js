@@ -23,6 +23,20 @@ export const t = (key, fallback, vars = {}) => {
 export const tn = (key, fallback, one, n) =>
   n === 1 && (window.localization?.[`${key}_one`] || !window.localization?.[key]) ? t(`${key}_one`, one, { n }) : t(key, fallback, { n });
 
+// A count in the language's plural category (one / few / other ...): `<key>_<category>`, else
+// `<key>_other`, else the plain `<key>`, else English's. The category comes from the language
+// the app is showing (`arnis-language`, as language-selector.js); `lang` overrides it.
+export const tp = (key, fallback, n, lang) => {
+  let cat = n === 1 ? 'one' : 'other';
+  try {
+    lang ||= globalThis.localStorage?.getItem('arnis-language') || globalThis.navigator?.language || 'en';
+    cat = new Intl.PluralRules(lang).select(n);
+  } catch {}
+  const L = window.localization || {};
+  const k = [`${key}_${cat}`, `${key}_other`, key].find((x) => L[x]);
+  return t(k || key, fallback, { n });
+};
+
 // What the status line shows for a progress payload. An error that carries `detail` keeps the
 // short `message` on the line and the full text as its tooltip and in the log; a Region Download
 // fallback is a notice in the user's language rather than the raw log line.
@@ -284,7 +298,7 @@ const canRetry = (p) => !running && (p.state === 'failed' || p.state === 'stoppe
 // Under the bar: "2 failed", only above 0 (the title and the bar say the rest).
 export function failedLine() {
   const n = [...pieces.values()].filter((p) => p.state === 'failed').length;
-  return n ? t('run_failed', '{n} failed', { n }) : '';
+  return n ? tp('run_failed', '{n} failed', n) : '';
 }
 
 // When this run's first piece record came, so after any dialog: the clock and the ETA count
