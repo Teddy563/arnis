@@ -93,6 +93,7 @@ pub fn run_gui() -> Result<(), String> {
 
     // Clean up old cached elevation tiles on startup
     crate::elevation_data::cleanup_old_cached_tiles();
+    remove_old_plan_masks(&env::temp_dir(), std::time::Duration::from_secs(24 * 3600));
 
     // Launch the UI
     println!("Launching UI...");
@@ -1597,7 +1598,31 @@ fn gui_write_plan_mask(geojson: String) -> Result<String, String> {
     let path = env::temp_dir().join(format!("arnis-plan-mask-{:016x}.geojson", h.finish()));
     fs::write(&path, &geojson).map_err(|e| format!("{}: {e}", path.display()))?;
     crate::work_units::Mask::read(&path)?;
+    // The outline it replaces is read by nothing any more: a job loads its mask as it starts.
+    static LAST: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(old) = last.replace(path.clone()).filter(|old| *old != path) {
+        let _ = fs::remove_file(old);
+    }
     Ok(path.display().to_string())
+}
+
+/// Removes the outlines [`gui_write_plan_mask`] left in `dir` older than `max_age`.
+fn remove_old_plan_masks(dir: &Path, max_age: std::time::Duration) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > max_age));
+        if old && name.starts_with("arnis-plan-mask-") && name.ends_with(".geojson") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Reveals a file or folder in the system file explorer.
@@ -3414,6 +3439,25 @@ mod locale_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Startup removes only plan outlines, and only old ones.
+    #[test]
+    fn old_plan_masks_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let day = std::time::Duration::from_secs(24 * 3600);
+        let file = |name: &str, age: u32| {
+            let p = dir.path().join(name);
+            let f = fs::File::create(&p).unwrap();
+            f.set_modified(std::time::SystemTime::now() - day * age)
+                .unwrap();
+            p
+        };
+        let old = file("arnis-plan-mask-0000000000000001.geojson", 2);
+        let new = file("arnis-plan-mask-0000000000000002.geojson", 0);
+        let other = file("other.geojson", 2);
+        remove_old_plan_masks(dir.path(), day);
+        assert!(!old.exists() && new.exists() && other.exists());
+    }
 
     /// A prewarm leaves an existing selected world alone, even sent as a new world, and runs
     /// with no world selected at all.
