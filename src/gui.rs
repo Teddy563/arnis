@@ -80,6 +80,13 @@ fn pieces_job_keeps_world(prewarm: bool) -> bool {
     !prewarm
 }
 
+/// Whether a run made `selected_world` for itself, so it sets that world's spawn and removes it
+/// when the run fails. A prewarm writes no world: whatever the window sends, the selected one
+/// (or none) is left as it is.
+fn owns_selected_world(is_new_world: bool, one_world: bool, flags: &[String]) -> bool {
+    is_new_world && !one_world && !flags.iter().any(|f| f == "--prewarm")
+}
+
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -1901,7 +1908,7 @@ fn confluence_args(
         return Err("Retrying pieces only applies to a job built in pieces.".to_string());
     }
     if extra.min_y.is_some() || extra.max_y.is_some() {
-        if !is_new_world || extra.bedrock || extra.luanti {
+        if !(is_new_world || extra.prewarm) || extra.bedrock || extra.luanti {
             return Err("Lowest and highest Y only apply to a new Java world.".to_string());
         }
         extra.disable_height_limit = true;
@@ -2290,6 +2297,7 @@ fn gui_start_generation(
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
+    let is_new_world = owns_selected_world(is_new_world, one_world, &flags);
 
     // Shapes replace the rectangle; the status line holds 35 characters, so details go to the log.
     let shapes = match selection_shapes.filter(|rings| !rings.is_empty()) {
@@ -2345,7 +2353,6 @@ fn gui_start_generation(
         emit_gui_error(&e);
         return Err(e);
     }
-    let is_new_world = is_new_world && !one_world;
 
     // Claim the process before touching any shared state. The frontend disables its button
     // for the same reason; this is the authoritative check behind it.
@@ -2516,9 +2523,9 @@ fn gui_start_generation(
             // Acquire session lock for Java worlds only
             // Session lock prevents Minecraft from having the world open during generation
             // Bedrock worlds are generated as .mcworld files and don't need this lock.
-            // A One World is locked by `prepare` below.
+            // A One World is locked by `prepare` below; a prewarm writes no world.
             let mut _session_lock: Option<SessionLock> =
-                if world_format == WorldFormat::JavaAnvil && !one_world {
+                if world_format == WorldFormat::JavaAnvil && !one_world && !extra.prewarm {
                     match SessionLock::acquire(&world_path) {
                         Ok(lock) => Some(lock),
                         Err(e) => {
@@ -3078,7 +3085,7 @@ fn gui_start_generation(
             };
             if args.prewarm && fetch_result.is_ok() {
                 // Same as run_cli: 3D models download while they are placed, so their prescan
-                // fetches them. The world guard stays armed, so a world made for this run goes.
+                // fetches them. A prewarm owns no selected world, so nothing is removed.
                 if let (true, Ok(raw)) = (args.use_3d && !args.skip_objects(), fetch_result) {
                     let (elements, ..) = osm_parser::parse_osm_data(
                         raw,
@@ -3407,6 +3414,33 @@ mod locale_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A prewarm leaves an existing selected world alone, even sent as a new world, and runs
+    /// with no world selected at all.
+    #[test]
+    fn prewarm_never_owns_the_selected_world() {
+        let prewarm = vec!["--prewarm".to_string()];
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("Built World");
+        fs::create_dir(&world).unwrap();
+        fs::write(world.join("level.dat"), b"kept").unwrap();
+        for is_new_world in [true, false] {
+            let owns = owns_selected_world(is_new_world, false, &prewarm);
+            assert!(!owns);
+            // What gui_start_generation arms for a world it owns.
+            drop(owns.then(|| NewWorldCleanup::new(world.clone())));
+        }
+        assert_eq!(fs::read(world.join("level.dat")).unwrap(), b"kept");
+        assert!(owns_selected_world(true, false, &[]));
+        assert!(!owns_selected_world(true, true, &[]));
+        // A fresh session's prewarm: no world, and Lowest Y still accepted.
+        let flags = vec!["--prewarm".to_string(), "--min-y=-128".to_string()];
+        assert!(
+            confluence_args(&flags, false, "java", false)
+                .unwrap()
+                .prewarm
+        );
+    }
 
     /// The switch off sends no flags, and no flags leave every setting at the stock run's.
     #[test]
