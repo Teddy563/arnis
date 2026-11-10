@@ -2177,7 +2177,7 @@ $(document).ready(function () {
 
     function describeTool(btn) {
         var c = btn.classList;
-        var addHint = mapText('map_tool_add_hint', 'Hold Shift while drawing to add it to the selection.');
+        var addHint = mapText('map_tool_add_hint', 'Hold Shift while drawing to add the shape to the selection.');
         if (c.contains('leaflet-draw-draw-rectangle')) {
             return {
                 name: mapText('map_tool_area', 'Select area'),

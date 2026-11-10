@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Adaugă Luanti (Mineclonia) ca format de ieșire. Experimental.",
   "map_tool_area": "Selectează zona",
   "map_tool_area_desc": "Trage pe hartă pentru a alege ce va fi generat.",
-  "map_tool_add_hint": "Ține apăsat Shift în timp ce desenezi pentru a o adăuga la selecție.",
+  "map_tool_add_hint": "Ține apăsat Shift în timp ce desenezi, ca să adaugi forma la selecție.",
   "map_tool_shape": "Desenează o formă",
   "map_tool_shape_desc": "Dă clic în jurul zonei pentru a genera exact acest contur.",
   "map_tool_shape_pieces_desc": "Bucățile atinse de formă se construiesc întregi.",

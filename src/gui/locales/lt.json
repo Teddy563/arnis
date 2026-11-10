@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Prideda Luanti (Mineclonia) kaip išvesties formatą. Eksperimentinis.",
   "map_tool_area": "Pasirinkti sritį",
   "map_tool_area_desc": "Vilkite per žemėlapį, kad pasirinktumėte, kas bus generuojama.",
-  "map_tool_add_hint": "Piešdami laikykite Shift, kad pridėtumėte prie pasirinkimo.",
+  "map_tool_add_hint": "Piešdami laikykite Shift, kad pridėtumėte figūrą prie pasirinkimo.",
   "map_tool_shape": "Nubrėžti figūrą",
   "map_tool_shape_desc": "Spustelėkite aplink sritį, kad būtų sugeneruotas būtent šis kontūras.",
   "map_tool_shape_pieces_desc": "Dalys, kurių figūra liečia, sukuriamos visos.",

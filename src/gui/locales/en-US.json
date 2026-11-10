@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Adds Luanti (Mineclonia) as an output format. Experimental.",
   "map_tool_area": "Select area",
   "map_tool_area_desc": "Drag over the map to choose what gets generated.",
-  "map_tool_add_hint": "Hold Shift while drawing to add it to the selection.",
+  "map_tool_add_hint": "Hold Shift while drawing to add the shape to the selection.",
   "map_tool_shape": "Draw a shape",
   "map_tool_shape_desc": "Click around the area to generate exactly that outline.",
   "map_tool_shape_pieces_desc": "Pieces the shape touches are built whole.",

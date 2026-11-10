@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Ajoute Luanti (Mineclonia) comme format de sortie. Expérimental.",
   "map_tool_area": "Sélectionner une zone",
   "map_tool_area_desc": "Faites glisser sur la carte pour choisir ce qui est généré.",
-  "map_tool_add_hint": "Maintenez Maj pendant le tracé pour l'ajouter à la sélection.",
+  "map_tool_add_hint": "Maintenez Maj pendant le tracé pour ajouter la forme à la sélection.",
   "map_tool_shape": "Dessiner une forme",
   "map_tool_shape_desc": "Cliquez autour de la zone pour générer exactement ce contour.",
   "map_tool_shape_pieces_desc": "Les morceaux que la forme touche sont construits en entier.",

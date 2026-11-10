@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Hozzáadja a Luantit (Mineclonia) kimeneti formátumként. Kísérleti.",
   "map_tool_area": "Terület kijelölése",
   "map_tool_area_desc": "Húzd át a térképen, hogy kiválaszd, mi generálódjon.",
-  "map_tool_add_hint": "Rajzolás közben tartsd lenyomva a Shiftet, hogy a kijelöléshez add.",
+  "map_tool_add_hint": "Rajzolás közben tartsd lenyomva a Shiftet, hogy az alakzatot a kijelöléshez add.",
   "map_tool_shape": "Alakzat rajzolása",
   "map_tool_shape_desc": "Kattints körbe a terület mentén, hogy pontosan ezt a körvonalat generáld.",
   "map_tool_shape_pieces_desc": "Az alakzat által érintett darabok egészben épülnek fel.",

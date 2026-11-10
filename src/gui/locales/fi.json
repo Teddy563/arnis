@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Lisää Luantin (Mineclonia) tulostusmuodoksi. Kokeellinen.",
   "map_tool_area": "Valitse alue",
   "map_tool_area_desc": "Vedä kartan yli valitaksesi, mitä generoidaan.",
-  "map_tool_add_hint": "Pidä Shift pohjassa piirtäessäsi, niin se lisätään valintaan.",
+  "map_tool_add_hint": "Pidä Shift pohjassa piirtäessäsi, niin muoto lisätään valintaan.",
   "map_tool_shape": "Piirrä muoto",
   "map_tool_shape_desc": "Napsauta alueen ympäri, niin juuri tämä ääriviiva generoidaan.",
   "map_tool_shape_pieces_desc": "Osat, joihin muoto osuu, rakennetaan kokonaan.",

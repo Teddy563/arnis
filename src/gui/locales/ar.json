@@ -203,7 +203,7 @@
   "enable_luanti_desc": "يضيف Luanti (Mineclonia) كصيغة إخراج. تجريبي.",
   "map_tool_area": "تحديد منطقة",
   "map_tool_area_desc": "اسحب على الخريطة لاختيار ما سيُولَّد.",
-  "map_tool_add_hint": "اضغط مع الاستمرار على Shift أثناء الرسم لإضافته إلى التحديد.",
+  "map_tool_add_hint": "اضغط مع الاستمرار على Shift أثناء الرسم لإضافة الشكل إلى التحديد.",
   "map_tool_shape": "رسم شكل",
   "map_tool_shape_desc": "انقر حول المنطقة لتوليد هذا المخطط بالضبط.",
   "map_tool_shape_pieces_desc": "القطع التي يلمسها الشكل تُبنى كاملة.",

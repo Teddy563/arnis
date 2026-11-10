@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Lägger till Luanti (Mineclonia) som utdataformat. Experimentellt.",
   "map_tool_area": "Välj område",
   "map_tool_area_desc": "Dra över kartan för att välja vad som genereras.",
-  "map_tool_add_hint": "Håll ned Shift medan du ritar för att lägga till det i markeringen.",
+  "map_tool_add_hint": "Håll ned Shift medan du ritar för att lägga till formen i markeringen.",
   "map_tool_shape": "Rita en form",
   "map_tool_shape_desc": "Klicka runt området för att generera exakt den konturen.",
   "map_tool_shape_pieces_desc": "Delar som formen rör vid byggs hela.",

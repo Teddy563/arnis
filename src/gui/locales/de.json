@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Fügt Luanti (Mineclonia) als Ausgabeformat hinzu. Experimentell.",
   "map_tool_area": "Bereich auswählen",
   "map_tool_area_desc": "Über die Karte ziehen, um zu wählen, was generiert wird.",
-  "map_tool_add_hint": "Halte beim Zeichnen Shift gedrückt, um es zur Auswahl hinzuzufügen.",
+  "map_tool_add_hint": "Halte beim Zeichnen Shift gedrückt, um die Form zur Auswahl hinzuzufügen.",
   "map_tool_shape": "Form zeichnen",
   "map_tool_shape_desc": "Klicke rund um den Bereich, um genau diesen Umriss zu generieren.",
   "map_tool_shape_pieces_desc": "Teile, die die Form berührt, werden vollständig gebaut.",

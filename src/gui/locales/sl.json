@@ -203,7 +203,7 @@
   "enable_luanti_desc": "Doda Luanti (Mineclonia) kot izhodno obliko. Poskusno.",
   "map_tool_area": "Izberi območje",
   "map_tool_area_desc": "Povlecite čez zemljevid, da izberete, kaj se generira.",
-  "map_tool_add_hint": "Med risanjem držite Shift, da ga dodate izboru.",
+  "map_tool_add_hint": "Med risanjem držite Shift, da obliko dodate izboru.",
   "map_tool_shape": "Nariši obliko",
   "map_tool_shape_desc": "Klikajte okoli območja, da se ustvari natanko ta obris.",
   "map_tool_shape_pieces_desc": "Deli, ki se jih oblika dotika, se zgradijo v celoti.",
