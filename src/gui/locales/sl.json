@@ -470,7 +470,7 @@
   "data_source_land_cover": "Pokrovnost tal",
   "data_source_overture": "Tlorisi stavb",
   "meld_cache_path": "Datoteke so shranjene v {path}",
-  "region_download_fallback": "Prenos regije za ta izbor ni bil na voljo; uporabljen je bil privzeti vir.",
+  "region_download_fallback": "Prenos regije za ta izbor ni na voljo, zato je Arnis uporabil privzeti vir.",
   "meld_open_folder": "Odpri mapo",
   "meld_plan_download": "Prenesi zdaj",
   "meld_downloading": "Prenašanje. Napredek je na glavni vrstici.",

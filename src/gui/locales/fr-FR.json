@@ -470,7 +470,7 @@
   "data_source_land_cover": "Occupation du sol",
   "data_source_overture": "Emprises des bâtiments",
   "meld_cache_path": "Les fichiers sont conservés dans {path}",
-  "region_download_fallback": "Le téléchargement de région n’était pas disponible pour cette sélection ; la source par défaut a été utilisée.",
+  "region_download_fallback": "Le téléchargement de région n’est pas disponible pour cette sélection, donc Arnis a utilisé la source par défaut.",
   "meld_open_folder": "Ouvrir le dossier",
   "meld_plan_download": "Télécharger maintenant",
   "meld_downloading": "Téléchargement en cours. La progression est sur la barre principale.",

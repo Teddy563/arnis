@@ -38,7 +38,7 @@ export const generationTarget = ({ prewarm, oneWorld, savePath, worldPath }) =>
 
 export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
-    return { text: t('region_download_fallback', 'Region Download was not available for this selection; the default source was used.'), title: '', log: message, notice: true };
+    return { text: t('region_download_fallback', 'Region Download is not available for this selection, so Arnis used the default source.'), title: '', log: message, notice: true };
   }
   return { text: message, title: detail, log: detail || null, notice: false };
 }

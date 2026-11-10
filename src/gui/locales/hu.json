@@ -470,7 +470,7 @@
   "data_source_land_cover": "Földborítás",
   "data_source_overture": "Épületek alaprajza",
   "meld_cache_path": "A fájlok itt vannak: {path}",
-  "region_download_fallback": "A régiólétöltés nem volt elérhető ehhez a kijelöléshez; az alapértelmezett forrást használtuk.",
+  "region_download_fallback": "A régiólétöltés nem érhető el ehhez a kijelöléshez, ezért az Arnis az alapértelmezett forrást használta.",
   "meld_open_folder": "Mappa megnyitása",
   "meld_plan_download": "Letöltés most",
   "meld_downloading": "Letöltés. Az előrehaladás a fő sávon látható.",

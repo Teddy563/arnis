@@ -470,7 +470,7 @@
   "data_source_land_cover": "Landbedeckung",
   "data_source_overture": "Gebäudegrundrisse",
   "meld_cache_path": "Die Dateien liegen in {path}",
-  "region_download_fallback": "Der Regions-Download war für diese Auswahl nicht verfügbar; die Standardquelle wurde verwendet.",
+  "region_download_fallback": "Der Regions-Download ist für diese Auswahl nicht verfügbar, daher hat Arnis die Standardquelle verwendet.",
   "meld_open_folder": "Ordner öffnen",
   "meld_plan_download": "Jetzt herunterladen",
   "meld_downloading": "Download läuft. Der Fortschritt steht in der Hauptleiste.",
