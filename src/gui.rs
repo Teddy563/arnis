@@ -147,6 +147,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
+            gui_write_plan_mask,
             gui_log,
             gui_set_telemetry_consent,
             gui_live_info,
@@ -1471,12 +1472,36 @@ fn gui_plan_job(
         .units
         .unit_regions
         .unwrap_or(crate::args::UnitSize::N(crate::scale::DEFAULT_UNIT_REGIONS));
-    crate::work_units::plan_line(
-        &one_world_dir(&save_path, &world_name),
-        &LLBBox::from_str(&bbox_text)?,
-        &args,
-        size,
-    )
+    let world_dir = one_world_dir(&save_path, &world_name);
+    let bbox = LLBBox::from_str(&bbox_text)?;
+    let mut line = crate::work_units::plan_line(&world_dir, &bbox, &args, size)?;
+    // With an outline, the pieces it leaves out too, for the map to grey: the same plan
+    // without it, less the pieces the outline touches.
+    if let Some(path) = args.units.plan_mask.take() {
+        let mask = crate::work_units::Mask::load(&path)?;
+        let proj = crate::one_world::frame_for(&world_dir, &bbox, &args)?;
+        let all = crate::work_units::plan(&proj, &bbox, &args, size)?;
+        line["excluded"] = all
+            .units
+            .iter()
+            .filter(|u| !mask.touches(&u.bbox))
+            .map(|u| u.bbox.arg())
+            .collect();
+    }
+    Ok(line)
+}
+
+/// An outline picked on the map, as the file `--plan-mask` reads: named by its content in
+/// the temp folder, and read back the way the job reads it.
+#[tauri::command]
+fn gui_write_plan_mask(geojson: String) -> Result<String, String> {
+    use std::hash::Hasher;
+    let mut h = fnv::FnvHasher::default();
+    h.write(geojson.as_bytes());
+    let path = env::temp_dir().join(format!("arnis-plan-mask-{:016x}.geojson", h.finish()));
+    fs::write(&path, &geojson).map_err(|e| format!("{}: {e}", path.display()))?;
+    crate::work_units::Mask::load(&path)?;
+    Ok(path.display().to_string())
 }
 
 /// Reveals a file or folder in the system file explorer.
@@ -1711,6 +1736,7 @@ const WINDOW_FLAGS: &[&str] = &[
     "piece-order",
     "skip-built",
     "stitch-map",
+    "plan-mask",
     "threads",
     "ram-budget-mb",
     "max-downloads",
