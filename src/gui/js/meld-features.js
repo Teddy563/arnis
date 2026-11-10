@@ -51,6 +51,38 @@ export function progressText({ message = '', detail = '' }) {
   return { text: message, title: detail, log: detail || null, notice: false };
 }
 
+// The docked 3D preview's width after its top-left grip moved `dx` px (left grows it): 200 px up to
+// 60 % of the window's width, and of its height at 16:10.
+export const dockWidth = (start, dx, vw, vh) => Math.round(Math.max(200, Math.min(start - dx, vw * 0.6, vh * 0.6 * 1.6)));
+
+// The grip: dragging or the arrow keys (20 px) resize `dock`; its right and bottom stay where they are.
+// A click on the grip is not a click on the card, so it never opens the full preview.
+export function initDockGrip(dock, grip) {
+  let from = null; // { x, w } while dragging
+  const size = (w) => { dock.style.width = `${w}px`; };
+  const stop = (e) => e.stopPropagation();
+  grip.addEventListener('click', stop);
+  grip.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    from = { x: e.clientX, w: dock.offsetWidth };
+    grip.setPointerCapture?.(e.pointerId);
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (from) size(dockWidth(from.w, e.clientX - from.x, window.innerWidth, window.innerHeight));
+  });
+  const end = (e) => { if (from) { from = null; grip.releasePointerCapture?.(e.pointerId); } };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  grip.addEventListener('keydown', (e) => {
+    const step = { ArrowLeft: 20, ArrowUp: 20, ArrowRight: -20, ArrowDown: -20 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    e.stopPropagation();
+    size(dockWidth(dock.offsetWidth, -step, window.innerWidth, window.innerHeight));
+  });
+}
+
 export function initMeldFeatures() {
   const toggle = el('advanced-meld-features-toggle');
   if (!toggle) return;
@@ -87,6 +119,7 @@ export function initMeldFeatures() {
   // The docked 3D preview keeps the width it was dragged to (map-first page only: the classic
   // page sizes it itself, so apply() takes the dragged width off there).
   const dock = el('preview3d-mini');
+  if (dock && el('preview3d-grip')) initDockGrip(dock, el('preview3d-grip'));
   if (dock && window.ResizeObserver) {
     new ResizeObserver(() => {
       if (!document.body.classList.contains('map-first') || !dock.offsetWidth) return;

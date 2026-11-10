@@ -648,6 +648,7 @@
   "browse_title": "찾아보기...",
   "map_picker_title": "지도 선택기",
   "preview3d_expand": "클릭하여 3D 미리보기 확대",
+  "preview3d_resize": "3D 미리보기 크기 조절",
   "settings_sections_label": "설정 섹션",
   "world_name_edit_title": "다음 월드의 이름 지정",
   "world_name_edit_one_world": "확장하거나 만들 하나의 월드를 선택하세요",

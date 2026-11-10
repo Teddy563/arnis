@@ -648,6 +648,7 @@
   "browse_title": "Examinar...",
   "map_picker_title": "Selector de mapa",
   "preview3d_expand": "Haz clic para ampliar la vista previa 3D",
+  "preview3d_resize": "Cambiar el tamaño de la vista previa 3D",
   "settings_sections_label": "Secciones de ajustes",
   "world_name_edit_title": "Poner nombre al próximo mundo",
   "world_name_edit_one_world": "Elige el Un solo mundo que ampliar o crear",

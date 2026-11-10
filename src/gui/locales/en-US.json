@@ -648,6 +648,7 @@
   "browse_title": "Browse...",
   "map_picker_title": "Map Picker",
   "preview3d_expand": "Click to expand 3D preview",
+  "preview3d_resize": "Resize the 3D preview",
   "settings_sections_label": "Settings sections",
   "world_name_edit_title": "Name the next world",
   "world_name_edit_one_world": "Choose the One World to extend or create",

@@ -1375,9 +1375,9 @@ body.map-first .one-world-status:not(.is-warn):not(.is-error) {
 }
 
 /* The 3D preview: a card docked bottom-right over the map, clear of Leaflet's attribution.
-   Its corner grip (bottom-left, by direction: rtl, since the card grows up and left) resizes
-   it; the height follows the width (aspect-ratio), 200 px to 60 % of the window. A click still
-   opens the full preview; meld-features.js remembers the width. */
+   Its grip in the top-left corner (#preview3d-grip, meld-features.js) resizes it, the bottom-right
+   staying put; the height follows the width (aspect-ratio), 200 px to 60 % of the window. A click
+   still opens the full preview; meld-features.js remembers the width. */
 body.map-first .preview3d-mini {
   position: fixed;
   right: 18px;
@@ -1390,12 +1390,34 @@ body.map-first .preview3d-mini {
   max-width: 60vw;
   max-height: 60vh;
   margin: 0;
-  direction: rtl;
-  resize: horizontal;
 }
 
-body.map-first .preview3d-mini > * {
-  direction: ltr;
+/* Three diagonal strokes in the corner, as the native grip draws them (mirrored to the top-left) */
+.preview3d-mini .preview3d-grip { /* two classes: .controls-box button sets width, margin and shadow */
+  position: absolute;
+  margin: 0;
+  box-shadow: none;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: linear-gradient(135deg, transparent 0 3px, rgba(255, 255, 255, 0.85) 3px 4.5px, transparent 4.5px 7px, rgba(255, 255, 255, 0.85) 7px 8.5px, transparent 8.5px 11px, rgba(255, 255, 255, 0.85) 11px 12.5px, transparent 12.5px);
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: 8px 0 8px 0;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.preview3d-mini .preview3d-grip:focus-visible {
+  outline: 2px solid var(--primary-accent);
+  outline-offset: -2px;
+}
+
+body:not(.map-first) .preview3d-mini .preview3d-grip {
+  display: none;
 }
 
 /* The footer: the search bar's box (same height, row, fill, radius and font size; map-controls.css) but

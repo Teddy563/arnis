@@ -648,6 +648,7 @@
   "browse_title": "参照...",
   "map_picker_title": "マップピッカー",
   "preview3d_expand": "クリックして 3D プレビューを拡大",
+  "preview3d_resize": "3Dプレビューのサイズを変更",
   "settings_sections_label": "設定セクション",
   "world_name_edit_title": "次のワールドに名前を付ける",
   "world_name_edit_one_world": "拡張または作成するワンワールドを選択",
