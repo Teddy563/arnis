@@ -234,48 +234,75 @@
 
 /* One balance slider: world tiles faded to the left, the cells to the right, both full at the
    centre tick. */
-.world-preview-slider-container.leaflet-bar {
+.world-preview-slider-container.leaflet-bar,
+.leaflet-touch .world-preview-slider-container.leaflet-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  padding: 5px 8px;
 }
 
 .world-preview-slider-container a {
   display: none;
 }
 
+/* World tiles at one end, the grid at the other (the row follows the page direction) */
 .world-preview-slider-icon {
   display: inline-flex;
+  flex: none;
   color: var(--map-muted);
 }
 
 .world-preview-slider-track {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  flex: none;
   width: 110px;
+  height: 18px;
 }
 
 .world-preview-slider {
   position: relative;
-  z-index: 1;
   display: block;
   width: 100%;
-  height: 8px;
+  height: 18px;
   margin: 0;
-  accent-color: var(--map-accent);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
   cursor: pointer;
+}
+
+.world-preview-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.world-preview-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+  border: 2px solid #1c1c1c;
+  border-radius: 50%;
+  background: var(--map-accent);
 }
 
 /* The centre mark, over the track so it shows with the thumb elsewhere */
 .world-preview-slider-tick {
   position: absolute;
   left: 50%;
-  top: -3px;
-  bottom: -3px;
+  top: 3px;
+  bottom: 3px;
   width: 2px;
   margin-left: -1px;
   border-radius: 1px;
-  background: var(--map-muted);
+  background: var(--map-text);
   pointer-events: none;
   z-index: 2;
 }
