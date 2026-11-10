@@ -72,3 +72,50 @@ globalThis.arnisCellsExtent = (pieces) => {
     }
     return e;
 };
+
+// A button that acts only when held for `ms` (pointer, or Space/Enter); letting go earlier does
+// nothing. `.is-holding` is on while it is held, for the fill (CSS, timed to the same `ms`). Used
+// by Start's hold (main.js) and the map's Clear selection (bbox.js). `blocked()` says the button
+// cannot be used now; a hidden panel starts nothing either.
+globalThis.arnisHold = (button, done, ms, blocked = () => button.disabled) => {
+    let timer = 0;
+    const stop = () => {
+        clearTimeout(timer);
+        timer = 0;
+        button.classList.remove('is-holding');
+    };
+    // Only the primary button holds.
+    const start = (e) => {
+        if (blocked() || timer || (e && e.button)) return;
+        button.classList.add('is-holding');
+        timer = setTimeout(() => {
+            stop();
+            if (!blocked() && !button.closest('[hidden]')) done();
+        }, ms);
+    };
+    const isKey = (e) => e.key === ' ' || e.key === 'Enter';
+    button.addEventListener('pointerdown', start);
+    ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach((type) => button.addEventListener(type, stop));
+    button.addEventListener('keydown', (e) => {
+        if (!isKey(e)) return;
+        e.preventDefault();
+        if (!e.repeat) start();
+    });
+    button.addEventListener('keyup', (e) => {
+        if (!isKey(e)) return;
+        e.preventDefault();
+        stop();
+    });
+};
+
+// The map's one balance slider, -100..100. At the centre both layers are at their default; to the
+// left the Minecraft world overlay fades (0 at the far left), to the right the cell overlay (grid,
+// counts, labels, the darkening under them) fades (0 at the far right). `world` is the world
+// overlay's own default opacity (0..1); both results are opacities 0..1.
+globalThis.arnisBalance = (balance, world = 0.7) => ({
+    world: world * (balance < 0 ? (100 + balance) / 100 : 1),
+    cells: balance > 0 ? (100 - balance) / 100 : 1
+});
+
+// How long Clear selection is held, in ms (the fill in map-controls.css runs for the same time).
+globalThis.arnisClearHoldMs = 800;

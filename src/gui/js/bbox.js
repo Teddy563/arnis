@@ -948,12 +948,17 @@ $(document).ready(function () {
     var sliderControl = null;
     // One World: the user hid the areas, and the world they were hidden for.
     var oneWorldOverlayHidden = false;
-    // Slider positions; null is the layout's default: a One World's areas at 70 % on the
-    // map-first page, opaque in Classic (3.4.0).
-    var overlayOpacity = { world: 70, oneWorld: null };
+    // Balance slider positions (-100..100, 0 = both layers at their default), per kind.
+    var overlayOpacity = { world: 0, oneWorld: 0 };
     // On the map-first page the world's preview images draw under the selection and the piece
     // outlines (overlayPane is 400); Classic keeps them in overlayPane.
     map.createPane('arnisPreview').style.zIndex = 350;
+    // The cell overlay (its darkening, outlines and fills) and its numbers each get a pane, so the
+    // balance slider can fade them as one. The outlines sit just under the selection's pane.
+    var cellsPane = map.createPane('arnisCells');
+    cellsPane.style.zIndex = 399;
+    var cellLabelsPane = map.createPane('arnisCellLabels');
+    cellLabelsPane.style.zIndex = 640;
     var previewPane = function () { return window.arnisMapFirst ? 'arnisPreview' : 'overlayPane'; };
     var oneWorldFittedPath = null;
 
@@ -1019,26 +1024,65 @@ $(document).ready(function () {
         return bounds;
     }
 
-    // Create the opacity slider as a proper Leaflet control
+    // The world overlay's own default opacity: 70 %, or opaque for a One World in Classic (3.4.0).
+    function worldBaseOpacity() {
+        return worldOverlayData && worldOverlayData.areas && !window.arnisMapFirst ? 1 : 0.7;
+    }
+
+    function balanceValue() {
+        var slider = document.getElementById('world-preview-opacity');
+        return slider ? Number(slider.value) : 0;
+    }
+
+    // Fade the world overlay (left of centre) or the cell overlay (right of centre).
+    function applyBalance() {
+        var f = window.arnisBalance(balanceValue(), worldBaseOpacity());
+        setWorldOverlayOpacity(f.world);
+        cellsPane.style.opacity = cellLabelsPane.style.opacity = String(f.cells);
+        cellsPane.style.display = cellLabelsPane.style.display = f.cells <= 0 ? 'none' : '';
+    }
+
+    // The slider shows while either layer is on the map.
+    function updateSliderVisibility() {
+        var box = document.getElementById('world-preview-slider-container');
+        if (box) box.style.display = worldOverlay || lastPieces.length ? 'block' : 'none';
+    }
+
+    // Create the balance slider as a proper Leaflet control
     var SliderControl = L.Control.extend({
         options: { position: 'topleft' },
         onAdd: function(map) {
             var container = L.DomUtil.create('div', 'leaflet-bar world-preview-slider-container');
             container.id = 'world-preview-slider-container';
             container.style.display = 'none';
+            container.title = mapText('map_balance_tip', 'Left fades the world tiles, right fades the cells. Double-click to reset.');
 
-            var slider = L.DomUtil.create('input', 'world-preview-slider', container);
+            // Tiles on the left, the grid on the right: what each end fades.
+            var icon = function (paths) {
+                var span = L.DomUtil.create('span', 'world-preview-slider-icon', container);
+                span.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">' + paths + '</svg>';
+                return span;
+            };
+            icon('<rect x="2" y="2" width="5" height="5" fill="currentColor" stroke="none"/><rect x="9" y="2" width="5" height="5" fill="currentColor" stroke="none" opacity=".5"/><rect x="2" y="9" width="5" height="5" fill="currentColor" stroke="none" opacity=".5"/><rect x="9" y="9" width="5" height="5" fill="currentColor" stroke="none"/>');
+            var track = L.DomUtil.create('span', 'world-preview-slider-track', container);
+            var slider = L.DomUtil.create('input', 'world-preview-slider', track);
             slider.type = 'range';
-            slider.min = '0';
+            slider.min = '-100';
             slider.max = '100';
-            slider.value = '70';
+            slider.value = '0';
             slider.id = 'world-preview-opacity';
-            slider.title = mapText('map_overlay_opacity', 'Overlay Opacity');
+            L.DomUtil.create('i', 'world-preview-slider-tick', track);
+            icon('<rect x="2" y="2" width="12" height="12"/><path d="M8 2v12M2 8h12"/>');
 
             L.DomEvent.on(slider, 'input', function(e) {
                 var kind = worldOverlayData && worldOverlayData.areas ? 'oneWorld' : 'world';
                 overlayOpacity[kind] = Number(e.target.value);
-                setWorldOverlayOpacity(e.target.value / 100);
+                applyBalance();
+            });
+            // Double-click puts the thumb back at the centre.
+            L.DomEvent.on(slider, 'dblclick', function() {
+                slider.value = '0';
+                slider.dispatchEvent(new Event('input'));
             });
 
             // Prevent all map interactions
@@ -1096,7 +1140,6 @@ $(document).ready(function () {
 
         worldOverlayEnabled = !worldOverlayEnabled;
         var btn = document.getElementById('world-preview-btn');
-        var sliderContainer = document.getElementById('world-preview-slider-container');
 
         if (worldOverlayEnabled) {
             // Show overlay
@@ -1106,18 +1149,12 @@ $(document).ready(function () {
                 map.removeLayer(worldOverlay);
             }
 
-            var opacity = document.getElementById('world-preview-opacity');
-            var opacityValue = opacity ? opacity.value / 100 : 0.7;
-
-            worldOverlay = buildWorldOverlay(data, opacityValue);
+            worldOverlay = buildWorldOverlay(data, window.arnisBalance(balanceValue(), worldBaseOpacity()).world);
             worldOverlay.addTo(map);
 
             if (btn) {
                 btn.classList.add('active');
                 refreshToolLabel(btn);
-            }
-            if (sliderContainer) {
-                sliderContainer.style.display = 'block';
             }
         } else {
             // Hide overlay
@@ -1129,10 +1166,8 @@ $(document).ready(function () {
                 btn.classList.remove('active');
                 refreshToolLabel(btn);
             }
-            if (sliderContainer) {
-                sliderContainer.style.display = 'none';
-            }
         }
+        updateSliderVisibility();
     }
 
     // Enable the preview button when data is available
@@ -1147,7 +1182,7 @@ $(document).ready(function () {
         worldPreviewAvailable = true;
         var slider = document.getElementById('world-preview-opacity');
         var kept = overlayOpacity[data.areas ? 'oneWorld' : 'world'];
-        if (slider) slider.value = String(kept == null ? (window.arnisMapFirst ? 70 : 100) : kept);
+        if (slider) slider.value = String(kept || 0);
         var btn = document.getElementById('world-preview-btn');
         if (btn) {
             btn.classList.remove('disabled');
@@ -1167,15 +1202,12 @@ $(document).ready(function () {
         }
 
         var btn = document.getElementById('world-preview-btn');
-        var sliderContainer = document.getElementById('world-preview-slider-container');
         if (btn) {
             btn.classList.add('disabled');
             btn.classList.remove('active');
             refreshToolLabel(btn);
         }
-        if (sliderContainer) {
-            sliderContainer.style.display = 'none';
-        }
+        updateSliderVisibility();
     }
 
 
@@ -1589,6 +1621,7 @@ $(document).ready(function () {
     // only the job's outline is drawn; zooming in brings the cells back (moveend below).
     var CELL_CAP = 2000;
     var cellExtent = null;
+    var cellShade = null;
 
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
@@ -1600,8 +1633,18 @@ $(document).ready(function () {
         if (cellExtent) { pieceLayer.removeLayer(cellExtent); cellExtent = null; }
         if (extent) {
             cellExtent = L.rectangle([[extent[0], extent[1]], [extent[2], extent[3]]], {
-                color: PIECE_COLORS.planned, weight: 2, fill: false, interactive: false
+                color: PIECE_COLORS.planned, weight: 2, fill: false, interactive: false, pane: 'arnisCells'
             }).addTo(pieceLayer);
+        }
+        // One faint dark fill under the whole plan area, so the cells' colours and numbers read
+        // against the map. Below the outlines, gone with the grid.
+        var area = window.arnisCellsExtent(pieces);
+        if (cellShade) { pieceLayer.removeLayer(cellShade); cellShade = null; }
+        if (area) {
+            cellShade = L.rectangle([[area[0], area[1]], [area[2], area[3]]], {
+                stroke: false, fillColor: '#000', fillOpacity: 0.15, interactive: false, pane: 'arnisCells'
+            }).addTo(pieceLayer);
+            cellShade.bringToBack();
         }
         pieces = inView.cells;
         var seen = {};
@@ -1614,7 +1657,7 @@ $(document).ready(function () {
             var item = pieceLayers[p.i];
             if (!item) {
                 item = pieceLayers[p.i] = {};
-                item.rect = L.rectangle([[b[0], b[1]], [b[2], b[3]]], { interactive: true }).addTo(pieceLayer);
+                item.rect = L.rectangle([[b[0], b[1]], [b[2], b[3]]], { interactive: true, pane: 'arnisCells' }).addTo(pieceLayer);
                 // A failed piece's card holds an "Open log" button, so it must be reachable: it
                 // stays put (not sticky) and closes a moment after the pointer leaves both.
                 // Leaflet registers closeTooltip when binding, so the wrapper goes on first.
@@ -1647,7 +1690,7 @@ $(document).ready(function () {
                 item.rect.on('click', function() {
                     if (item.p.text.hint) window.parent.postMessage({ type: 'retryPiece', piece: item.p.i }, '*');
                 });
-                item.label = L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false })
+                item.label = L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false, pane: 'arnisCellLabels' })
                     .setLatLng(item.rect.getBounds().getCenter()).addTo(pieceLayer);
             }
             // A plan drawn again may give this number another place: a layer kept by number but
@@ -1673,7 +1716,7 @@ $(document).ready(function () {
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
             if (full > 0) {
                 var cup = [[b[0], b[1]], [b[0] + (b[2] - b[0]) * Math.min(1, full), b[3]]];
-                if (!item.fill) item.fill = L.rectangle(cup, { stroke: false, interactive: false, fillOpacity: 0.35 }).addTo(pieceLayer);
+                if (!item.fill) item.fill = L.rectangle(cup, { stroke: false, interactive: false, fillOpacity: 0.35, pane: 'arnisCells' }).addTo(pieceLayer);
                 else item.fill.setBounds(cup);
                 item.fill.setStyle({ fillColor: color });
             } else if (item.fill) {
@@ -1691,7 +1734,7 @@ $(document).ready(function () {
             if (item.halo) { pieceLayer.removeLayer(item.halo); item.halo = null; }
             if (pieceHalo && p.halo) {
                 item.halo = L.rectangle([[p.halo[0], p.halo[1]], [p.halo[2], p.halo[3]]], {
-                    color: color, weight: 1, opacity: 0.4, fill: false, dashArray: PIECE_DASH.halo, interactive: false
+                    color: color, weight: 1, opacity: 0.4, fill: false, dashArray: PIECE_DASH.halo, interactive: false, pane: 'arnisCells'
                 }).addTo(pieceLayer);
             }
         });
@@ -1703,6 +1746,8 @@ $(document).ready(function () {
             delete pieceLayers[i];
         });
         updatePieceLabels();
+        applyBalance();
+        updateSliderVisibility();
     }
 
     // A label stays out of a piece too small on screen to hold it (its shorter side counts).
@@ -2563,6 +2608,8 @@ $(document).ready(function () {
         drawnItems.on('layeradd layerremove', syncState);
         syncState();
 
+        // A click does nothing: clearing needs the button held (CLEAR_HOLD_MS), with a fill
+        // growing on it; letting go early cancels. Space or Enter held works too.
         L.DomEvent
             .on(btn, 'mousedown dblclick', L.DomEvent.stopPropagation)
             .on(btn, 'click', L.DomEvent.stop)

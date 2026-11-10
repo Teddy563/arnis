@@ -232,17 +232,73 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
+/* One balance slider: world tiles faded to the left, the cells to the right, both full at the
+   centre tick. */
+.world-preview-slider-container.leaflet-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .world-preview-slider-container a {
   display: none;
 }
 
-.world-preview-slider {
+.world-preview-slider-icon {
+  display: inline-flex;
+  color: var(--map-muted);
+}
+
+.world-preview-slider-track {
+  position: relative;
   display: block;
-  width: 96px;
+  width: 110px;
+}
+
+.world-preview-slider {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
   height: 8px;
   margin: 0;
   accent-color: var(--map-accent);
   cursor: pointer;
+}
+
+/* The centre mark, behind the thumb (the thumb's travel is inset by half its width) */
+.world-preview-slider-tick {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--map-muted);
+  pointer-events: none;
+}
+
+/* Clear selection: a fill rises while the button is held (arnisClearHoldMs in piece-style.js) */
+.leaflet-draw-toolbar a.leaflet-draw-edit-remove::before {
+  z-index: 1;
+}
+
+.leaflet-draw-toolbar a.leaflet-draw-edit-remove::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: rgba(250, 120, 120, 0.6);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+
+.leaflet-draw-toolbar a.leaflet-draw-edit-remove.is-holding::after {
+  transform: scaleY(1);
+  transition: transform 0.8s linear;
 }
 
 /* Search */
