@@ -1850,6 +1850,7 @@ const WINDOW_FLAGS: &[&str] = &[
     "osm-tiles-url",
     "overpass-url",
     "offline",
+    "prewarm",
 ];
 
 /// `flags` as the window may send them: `--name` or `--name=value`, the name one of
@@ -2177,6 +2178,18 @@ fn gui_cancel_bake() {
 
 /// Offline Mode stops a run the caches could not serve, naming what they lacked, rather than
 /// build flat or empty ground there.
+/// The end of a `--prewarm` run: the caches are filled and no world is kept.
+fn prewarmed() -> Result<(), String> {
+    emit_gui_progress_update(100.0, "Done! Inputs for this area are cached.");
+    println!(
+        "{}",
+        "Done! Inputs for this area are cached; no world was written."
+            .green()
+            .bold()
+    );
+    Ok(())
+}
+
 fn offline_complete() -> Result<(), String> {
     let missing = crate::net::offline_misses();
     if !crate::net::offline() || missing.is_empty() {
@@ -2351,6 +2364,7 @@ fn gui_start_generation(
     // Process-wide, so set every run: a run without them gets the network and Arnis's own
     // Overpass back.
     crate::net::set_offline(extra.offline);
+    crate::net::set_prewarm(extra.prewarm);
     crate::retrieve_data::set_overpass_urls(extra.overpass_url.clone());
     // The global pool was built at startup; a thread count asked for here gets its own.
     let pool = extra
@@ -2658,7 +2672,6 @@ fn gui_start_generation(
                 export_tree_packs: None,
                 loot_table: None,
                 dump_loot_table: None,
-                prewarm: false,
                 prewarm_first: false,
                 ..extra
             };
@@ -2889,7 +2902,7 @@ fn gui_start_generation(
             // downloads are the longest part of a run that uses it, so it starts
             // now and is collected just before the buildings.
             // Offline, as in run_cli, there is no street-level imagery to fetch.
-            if !crate::net::offline() {
+            if !crate::net::offline() && !args.prewarm {
                 generation_options.facades = crate::mapillary::FacadeJob::start(&args, bbox);
             }
             let generation_options = generation_options;
@@ -2928,6 +2941,9 @@ fn gui_start_generation(
                     bbox,
                     &crate::elevation::PeakSource::none(),
                 );
+                if args.prewarm {
+                    return prewarmed();
+                }
                 let mut args = args;
                 settle(&mut args, &ground)?;
                 let args = args;
@@ -3050,6 +3066,25 @@ fn gui_start_generation(
                 emit_gui_error(&error_msg);
                 return Err(error_msg);
             };
+            if args.prewarm && fetch_result.is_ok() {
+                // Same as run_cli: 3D models download while they are placed, so their prescan
+                // fetches them. The world guard stays armed, so a world made for this run goes.
+                if let (true, Ok(raw)) = (args.use_3d && !args.skip_objects(), fetch_result) {
+                    let (elements, ..) = osm_parser::parse_osm_data(
+                        raw,
+                        bbox,
+                        args.debug,
+                        &crate::projection::ProjectionSpec::from_args(&args),
+                    );
+                    crate::models_3d::Models3dPipeline::prescan(
+                        &elements,
+                        &args,
+                        &Default::default(),
+                    )
+                    .prewarm();
+                }
+                return prewarmed();
+            }
             // Nothing to settle when the fetch failed: the run ends below.
             let mut args = args;
             if fetch_result.is_ok() {

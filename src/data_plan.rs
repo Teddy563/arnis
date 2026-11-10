@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 /// One data source of the run.
 #[derive(serde::Serialize, Debug, PartialEq)]
 pub struct Item {
-    /// `osm`, `elevation`, `land_cover`, `canopy` or `overture`.
+    /// `osm`, `elevation`, `land_cover` or `overture`.
     pub source: &'static str,
     pub cached: usize,
     /// What the cached files take on disk.
@@ -21,6 +21,8 @@ pub struct Item {
 
 #[derive(serde::Serialize, Debug, Default)]
 pub struct DataPlan {
+    /// The folder every cache sits under.
+    pub cache_root: String,
     pub items: Vec<Item>,
     /// The `.pbf` extract, with Region Download or a `.pbf` file.
     pub extract: Option<crate::osm_pbf::ExtractPlan>,
@@ -99,7 +101,6 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
 const TYPICAL_OSM_TILE: u64 = 240_000;
 const TYPICAL_ELEVATION_TILE: u64 = 72_000;
 const TYPICAL_LAND_COVER_TILE: u64 = 38_000;
-const TYPICAL_CANOPY_BLOCK: u64 = 1_000_000;
 const TYPICAL_OVERTURE_TILE: u64 = 142_000;
 
 fn count(source: &'static str, files: Option<Vec<PathBuf>>, typical: u64) -> Item {
@@ -130,6 +131,7 @@ pub fn plan(root: &Path, args: &Args, bbox: LLBBox) -> DataPlan {
     let (_, _, grid_w, grid_h) = crate::elevation::compute_grid_dims(&bbox, args.scale);
     let earth = args.body.is_earth();
     let mut out = DataPlan {
+        cache_root: root.display().to_string(),
         free_bytes: free_bytes(root),
         ..DataPlan::default()
     };
@@ -197,10 +199,8 @@ pub fn plan(root: &Path, args: &Args, bbox: LLBBox) -> DataPlan {
         out.items
             .push(count("land_cover", Some(files), TYPICAL_LAND_COVER_TILE));
     }
-    if earth && args.canopy_height {
-        // ponytail: the strip table and row blocks are not listed, so canopy is not counted.
-        out.items.push(count("canopy", None, TYPICAL_CANOPY_BLOCK));
-    }
+    // ponytail: the canopy strip table and row blocks are not listed, so it has no item
+    // (an item with total 0 says nothing); list them to add one.
     if args.overture && !args.skip_objects() {
         let files = crate::overture::tile_cache_files(root, &bbox);
         out.items
@@ -245,7 +245,6 @@ mod tests {
             Some(TYPICAL_ELEVATION_TILE * elev.total as u64)
         );
         assert!(item(&empty, "land_cover").total >= 2, "header and a tile");
-        assert_eq!(item(&empty, "canopy").total, 0, "canopy is not counted");
         // No archive index on disk yet: nothing to count, nothing claimed.
         assert_eq!(item(&empty, "osm").total, 0);
         assert_eq!(item(&empty, "overture").total, 0, "no release on record");
@@ -322,6 +321,15 @@ mod tests {
         // Terrain-only builds no objects, so OSM is not part of the plan.
         let terrain_only = plan(root, &args(&["--mode=terrain-only"]), bbox);
         assert!(terrain_only.items.iter().all(|i| i.source != "osm"));
+    }
+
+    #[test]
+    fn plan_names_the_cache_root_and_skips_empty_canopy() {
+        let dir = tempfile::tempdir().unwrap();
+        let bbox = LLBBox::from_str(BBOX).unwrap();
+        let p = plan(dir.path(), &args(&["--canopy-height=true"]), bbox);
+        assert_eq!(p.cache_root, dir.path().display().to_string());
+        assert!(p.items.iter().all(|i| i.source != "canopy"));
     }
 
     #[test]
