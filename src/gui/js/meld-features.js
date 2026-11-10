@@ -880,7 +880,7 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
     if (!area()) return say(out, needArea());
     // Set before the run starts so its first lines are caught; cleared when Start refused.
     prefetching = true;
-    say(out, t('meld_downloading', 'Downloading: the progress is on the main bar.'));
+    say(out, t('meld_downloading', 'Downloading. Progress shows on the main bar.'));
     if (!(await prefetch())) {
       prefetching = false;
       check();

@@ -473,7 +473,7 @@
   "region_download_fallback": "この選択範囲ではリージョンダウンロードを利用できなかったため、既定のソースを使用しました。",
   "meld_open_folder": "フォルダーを開く",
   "meld_plan_download": "今すぐダウンロード",
-  "meld_downloading": "ダウンロード中: 進行状況はメインバーに表示されます。",
+  "meld_downloading": "ダウンロード中。進行状況はメインバーに表示されます。",
   "meld_ready_offline": "オフラインで生成できます。",
   "run_resume": "再開",
   "meld_select_area": "先に地図上で範囲を選択してください。",

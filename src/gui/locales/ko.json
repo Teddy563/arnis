@@ -473,7 +473,7 @@
   "region_download_fallback": "이 선택 영역에는 지역 다운로드를 사용할 수 없어 기본 소스를 사용했습니다.",
   "meld_open_folder": "폴더 열기",
   "meld_plan_download": "지금 다운로드",
-  "meld_downloading": "다운로드 중: 진행 상황은 메인 바에 표시됩니다.",
+  "meld_downloading": "다운로드 중. 진행 상황은 메인 바에 표시됩니다.",
   "meld_ready_offline": "오프라인으로 생성할 준비가 되었습니다.",
   "run_resume": "재개",
   "meld_select_area": "먼저 지도에서 영역을 선택하세요.",

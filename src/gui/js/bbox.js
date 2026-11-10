@@ -2720,7 +2720,7 @@ $(document).ready(function () {
             showRotationToast(mapText('map_shape_date_line', 'Draw the area on one side of the 180° meridian.'));
         } else if (tooFarApart(areas)) {
             // Moved apart by a handle: kept, but said.
-            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas: everything between them would be generated too. Make it a world of its own.'));
+            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas. Everything between them would be generated too. Make it a world of its own.'));
         }
         $('#boxbounds').text(formatBounds(bounds.getBounds(), '4326'));
         $('#boxboundsmerc').text(formatBounds(bounds.getBounds(), currentproj));
@@ -2995,7 +2995,7 @@ $(document).ready(function () {
             return;
         }
         if (adding && tooFarApart(together)) {
-            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas: everything between them would be generated too. Make it a world of its own.'));
+            showRotationToast(mapText('map_shape_too_far', 'Too far from the other areas. Everything between them would be generated too. Make it a world of its own.'));
             return;
         }
 
