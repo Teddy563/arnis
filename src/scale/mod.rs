@@ -22,7 +22,7 @@ use crate::work_units::{self, WorkUnit};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::ffi::OsString;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -292,7 +292,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         .map(|b| [b.min().lat(), b.min().lng(), b.max().lat(), b.max().lng()]);
         let mut body = json!({"piece": i, "of": of, "state": state,
                               "rect": corners(&units[i].rect), "bounds": bounds(&units[i]),
-                              "halo": halo});
+                              "halo": halo, "log": piece_log_path(&job.dir, i)});
         if let (Value::Object(body), Value::Object(extra)) = (&mut body, extra) {
             body.extend(extra);
         }
@@ -422,7 +422,8 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                 let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
                 crate::progress::emit_gui_progress_update(pct, "");
             };
-            run_piece_until(&warm_argv, &token, &STOP, report).map_err(|f| {
+            let log = piece_log_path(&job.dir, i);
+            run_piece_until(&warm_argv, &token, &STOP, Path::new(&log), report).map_err(|f| {
                 if STOP.load(Ordering::Acquire) {
                     STOPPED.to_string()
                 } else {
@@ -519,7 +520,13 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
                     piece_progress(i, state, slot, pct);
                 }
             };
-            match run_piece_until(&argv, &child_env, &STOP, seen) {
+            match run_piece_until(
+                &argv,
+                &child_env,
+                &STOP,
+                Path::new(&piece_log_path(&job.dir, i)),
+                seen,
+            ) {
                 Ok(r) => break r,
                 // Killed by Stop: not a failure, and built again on resume.
                 Err(_) if STOP.load(Ordering::Acquire) => {
@@ -673,6 +680,14 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
     let _ = std::fs::remove_dir_all(&job.dir);
     let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
     Ok(())
+}
+
+/// Where piece `i`'s output is kept (absolute), in the job folder.
+fn piece_log_path(job_dir: &Path, i: usize) -> String {
+    let dir = std::path::absolute(job_dir).unwrap_or_else(|_| job_dir.to_path_buf());
+    dir.join(format!("piece-{}.log", i + 1))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// What a job that kept going past failed pieces ends with: which, and how to retry them.
@@ -838,11 +853,12 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 }
 
 /// Runs one piece to the end, or kills it as soon as `cancel` is set. `progress` gets the
-/// piece's own fraction done.
+/// piece's own fraction done. Its output lines are also written to `log`.
 fn run_piece_until(
     argv: &[OsString],
     env: &[(&str, String)],
     cancel: &AtomicBool,
+    log: &Path,
     mut progress: impl FnMut(f64),
 ) -> Result<PieceResult, PieceFailure> {
     let fail = |message: String| PieceFailure {
@@ -871,18 +887,27 @@ fn run_piece_until(
     // Held open for the piece's life: on Unix it exits when this closes.
     let _stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_LINES)));
-    let push = |tail: &Mutex<VecDeque<String>>, line: String| {
-        let mut t = lock(tail);
-        if t.len() == TAIL_LINES {
-            t.pop_front();
-        }
-        t.push_back(line);
-    };
+    let log = Arc::new(Mutex::new(std::fs::File::create(log).ok()));
+    let push =
+        |tail: &Mutex<VecDeque<String>>, log: &Mutex<Option<std::fs::File>>, line: String| {
+            if let Some(f) = lock(log).as_mut() {
+                let _ = writeln!(f, "{line}");
+            }
+            let mut t = lock(tail);
+            if t.len() == TAIL_LINES {
+                t.pop_front();
+            }
+            t.push_back(line);
+        };
     let stderr = child.stderr.take().map(|err| {
-        let tail = Arc::clone(&tail);
+        let (tail, log) = (Arc::clone(&tail), Arc::clone(&log));
         std::thread::spawn(move || {
             for line in BufReader::new(err).split(b'\n').map_while(Result::ok) {
-                push(&tail, String::from_utf8_lossy(&line).trim_end().to_string());
+                push(
+                    &tail,
+                    &log,
+                    String::from_utf8_lossy(&line).trim_end().to_string(),
+                );
             }
         })
     });
@@ -912,7 +937,7 @@ fn run_piece_until(
                 .then(|| serde_json::from_str::<Value>(&line).ok())
                 .flatten()
             else {
-                push(&tail, line);
+                push(&tail, &log, line);
                 continue;
             };
             match record["type"].as_str() {
@@ -926,7 +951,7 @@ fn run_piece_until(
                     result.wall_s = record["wall_s"].as_f64();
                     result.chunks = record["chunks"].as_u64().unwrap_or(0);
                 }
-                Some("error") => push(&tail, line),
+                Some("error") => push(&tail, &log, line),
                 _ => {}
             }
         }
@@ -976,6 +1001,28 @@ mod tests {
         }
         let one = parse(&["arnis", "--live", "--one-world", "--one-world-workers", "1"]);
         assert!(!crate::args::validate_args(&one).is_err_and(|e| e.contains("--live")));
+    }
+
+    #[test]
+    fn piece_record_has_log_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = piece_log_path(tmp.path(), 2);
+        assert!(
+            Path::new(&p).is_absolute() && p.ends_with("piece-3.log"),
+            "{p}"
+        );
+        // A piece's output lands in that file.
+        let cancel = AtomicBool::new(false);
+        let _ = run_piece_until(
+            &["--no-such-flag".into()],
+            &[],
+            &cancel,
+            Path::new(&p),
+            |_| {},
+        );
+        assert!(std::fs::read_to_string(&p)
+            .unwrap()
+            .contains("no-such-flag"));
     }
 
     #[test]
