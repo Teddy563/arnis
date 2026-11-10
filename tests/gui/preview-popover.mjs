@@ -16,7 +16,7 @@ const node = (extra = {}) => ({
   dispatchEvent(e) { fire(this, e.type); },
   removeAttribute(k) { delete this.attrs[k]; },
   setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); },
-  getBoundingClientRect() { return this.rect || { left: 0, right: 0, top: 0, bottom: 0, height: 230 }; },
+  getBoundingClientRect() { return this.rect || { left: 0, right: 0, top: 0, bottom: 0, width: 362, height: 300 }; },
   ...extra,
 });
 function fire(n, t, e = {}) { (n.listeners[t] || []).forEach((f) => f(e)); }
@@ -37,7 +37,7 @@ const doc = node({
 });
 globalThis.document = doc;
 globalThis.window = { innerWidth: 1000, innerHeight: 650, localization: { preview_rocks_on: 'Rocks: on', preview_road_detail_clean: 'Road Detail: Clean' }, addEventListener() {} };
-const { previewName, captionKey, initPreviews } = await import('../../src/gui/js/preview-popover.js');
+const { previewName, captionKey, initPreviews, placePopover } = await import('../../src/gui/js/preview-popover.js');
 
 // names
 assert.equal(previewName(swIcon, null), 'rocks-off');
@@ -46,6 +46,24 @@ assert.equal(previewName(swIcon, null), 'rocks-on');
 assert.equal(previewName(segIcon, null), 'road-detail-max', 'the active button');
 assert.equal(previewName(segIcon, segs[1]), 'road-detail-clean', 'the hovered button');
 assert.equal(captionKey('post-apocalyptic-on'), 'preview_post_apocalyptic_on');
+
+// placement: beside the control, inside the window, never over it; RTL mirrors the side
+const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+for (const [vw, vh] of [[1000, 650], [1920, 1080]]) {
+  const col = vw === 1000 ? { left: 250, right: 1000 } : { left: 595, right: 1575 };
+  for (const rtl of [false, true]) {
+    for (const ctrl of [{ left: 880, right: 920, top: 300, bottom: 324 }, { left: 300, right: 340, top: 20, bottom: 44 }, { left: 700, right: 740, top: 620, bottom: 644 }]) {
+      const at = placePopover({ obstacle: ctrl, panel: col, vw, vh, w: 362, h: 300, rtl });
+      const r = { left: at.left, right: at.left + 362, top: at.top, bottom: at.top + 300 };
+      assert.ok(!hit(r, ctrl), `${vw} ${rtl} ${JSON.stringify(ctrl)}: covers the control`);
+      assert.ok(r.left >= 0 && r.top >= 0 && r.right <= vw && r.bottom <= vh, `${vw} ${rtl}: outside the window`);
+    }
+  }
+}
+const c1 = { left: 880, right: 920, top: 300, bottom: 324 };
+const ltr = placePopover({ obstacle: c1, panel: { left: 600, right: 1320 }, vw: 1920, vh: 1080, w: 362, h: 300, rtl: false });
+const rtl = placePopover({ obstacle: c1, panel: { left: 600, right: 1320 }, vw: 1920, vh: 1080, w: 362, h: 300, rtl: true });
+assert.ok(ltr.left < 600 && rtl.left > 1320, 'LTR takes the left of the panel, RTL the right');
 
 // switch, select, slider and number box rows, and a row that carries the data itself
 const sel = node({ value: 'x' });

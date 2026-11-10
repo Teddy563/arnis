@@ -563,13 +563,13 @@ label[for].setting-label {
   color: var(--primary-accent);
 }
 
-/* Picture of what a setting does (preview-popover.js): large, centred in the window, no shadow. The
-   image box has a fixed 4:3 size, so nothing moves when the picture loads, and the popover ignores the
-   pointer so it never steals the hover from the control under it. */
+/* Picture of what a setting does (preview-popover.js): small, placed beside the hovered control by
+   the script (left/top), no shadow. The image box has a fixed 4:3 size, so nothing moves when the picture
+   loads, and the popover ignores the pointer so it never steals the hover from the control. */
 .preview-popover {
   position: fixed;
-  inset: 0;
-  margin: auto;
+  left: 0;
+  top: 0;
   width: fit-content;
   height: fit-content;
   box-sizing: border-box;
@@ -591,7 +591,7 @@ label[for].setting-label {
 
 .preview-popover img {
   display: block;
-  width: min(720px, calc(100vw - 64px), calc((100vh - 110px) * 4 / 3));
+  width: min(340px, 45vw, calc((100vh - 110px) * 4 / 3));
   height: auto;
   aspect-ratio: 4 / 3;
 }

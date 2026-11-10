@@ -1,11 +1,11 @@
 // The picture that appears when the info icon of a setting, or one of its choice buttons, is
 // hovered or focused: an isometric block diorama of what the setting does (src/gui/images/previews3d,
-// made by scripts/previews3d), large and centred. Only settings that carry data-preview-on/-off (a
+// made by scripts/previews3d), small and beside the control, never over it. Only settings that carry data-preview-on/-off (a
 // switch), data-preview-seg (a segmented control, one picture per button value) or data-preview-sel (a
 // select, one per option) get one.
 
 const BASE = 'images/previews3d/';
-const W = 720, H = 540; // the pictures' pixel size; the page shows them as large as the window allows (settings.css)
+const W = 720, H = 540; // the pictures' pixel size; the page shows them small (settings.css)
 
 // File name (no extension) for a setting in its current state, or for `button`, a choice button the
 // pointer is on. `el` is the setting's ? icon or its row and carries data-preview-on/-off (a switch),
@@ -36,6 +36,26 @@ export function previewName(el, button) {
   return (sw && sw.checked ? el.dataset.previewOn : el.dataset.previewOff) || null;
 }
 
+const GAP = 12, MARGIN = 8;
+const hits = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+// Where the popover (w x h) goes: top-left corner, in a vw x vh window. `obstacle` is the control (and its
+// text tooltip) that must stay uncovered, `panel` the settings column. First room that fits wins: the free
+// side of the panel (left in LTR, right in RTL), the other side, beside the control, then above or below it.
+// Vertically it follows the control, clamped into the window.
+export function placePopover({ obstacle, panel, vw, vh, w, h, rtl }) {
+  const top = Math.max(MARGIN, Math.min((obstacle.top + obstacle.bottom) / 2 - h / 2, vh - h - MARGIN));
+  const lefts = (r) => [r.left - GAP - w, r.right + GAP]; // [before, after] a rect in LTR
+  const order = [lefts(panel), lefts(obstacle)].flatMap(([a, b]) => (rtl ? [b, a] : [a, b]));
+  for (const left of order) {
+    const r = { left, right: left + w, top, bottom: top + h };
+    if (left >= MARGIN && r.right <= vw - MARGIN && !hits(r, obstacle)) return { left, top };
+  }
+  const left = Math.max(MARGIN, Math.min((obstacle.left + obstacle.right) / 2 - w / 2, vw - w - MARGIN));
+  const above = obstacle.top - GAP - h;
+  return { left, top: above >= MARGIN ? above : Math.min(obstacle.bottom + GAP, vh - h - MARGIN) };
+}
+
 export const captionKey = (name) => `preview_${name.replace(/[^a-z0-9]+/gi, '_')}`;
 
 export function initPreviews() {
@@ -64,7 +84,21 @@ export function initPreviews() {
     pop.classList.remove('is-visible');
     pop.setAttribute('aria-hidden', 'true');
   };
-  const show = (icon, button) => {
+  let ctl = null; // the control the pointer or focus is on
+  // Beside the control, and clear of its text tooltip when one is up.
+  const place = () => {
+    const c = ctl.getBoundingClientRect();
+    const t = document.querySelector('.global-tooltip.is-visible');
+    const tr = t && t.getBoundingClientRect();
+    const obstacle = tr ? { left: Math.min(c.left, tr.left), right: Math.max(c.right, tr.right), top: Math.min(c.top, tr.top), bottom: Math.max(c.bottom, tr.bottom) } : c;
+    const panel = (document.querySelector('.settings-content') || ctl).getBoundingClientRect();
+    const p = pop.getBoundingClientRect();
+    const at = placePopover({ obstacle, panel, vw: window.innerWidth, vh: window.innerHeight, w: p.width, h: p.height, rtl: document.documentElement && document.documentElement.dir === 'rtl' });
+    pop.style.left = `${at.left}px`;
+    pop.style.top = `${at.top}px`;
+  };
+  const show = (icon, button, control) => {
+    if (control) ctl = control;
     const name = previewName(icon, button);
     if (!name) return hide();
     const text = (window.localization && window.localization[captionKey(name)]) || '';
@@ -78,6 +112,7 @@ export function initPreviews() {
     want = name;
     img.onload = () => {
       if (want === name) {
+        place();
         pop.classList.add('is-visible');
         pop.setAttribute('aria-hidden', 'false');
       }
@@ -91,25 +126,25 @@ export function initPreviews() {
 
   // Every control of the setting shows it: the ? icon, the switch, the select, each choice button.
   const on = (n, f) => {
-    for (const ev of ['mouseenter', 'focus']) n.addEventListener(ev, f);
+    for (const ev of ['mouseenter', 'focus']) n.addEventListener(ev, () => f(n));
     for (const ev of ['mouseleave', 'blur']) n.addEventListener(ev, hide);
   };
   document.querySelectorAll('[data-preview-on], [data-preview-seg], [data-preview-sel], [data-preview-num]').forEach((icon) => {
     const row = icon.closest('.settings-row');
-    if (icon !== row) on(icon, () => show(icon, null));
+    if (icon !== row) on(icon, (n) => show(icon, null, n));
     const sw = row.querySelector('input.switch');
-    if (sw) on(sw, () => show(icon, null));
+    if (sw) on(sw, (n) => show(icon, null, n));
     const sel = row.querySelector('select');
     if (sel && icon.dataset.previewSel) {
-      on(sel, () => show(icon, null));
+      on(sel, (n) => show(icon, null, n));
       sel.addEventListener('change', () => open && show(icon, null));
     }
     const num = row.querySelector('input[type=range], input[type=number]');
     if (num && icon.dataset.previewNum) {
-      on(num, () => show(icon, null));
+      on(num, (n) => show(icon, null, n));
       num.addEventListener('input', () => open && show(icon, null));
     }
-    if (icon.dataset.previewSeg) row.querySelectorAll('.segment').forEach((b) => on(b, () => show(icon, b)));
+    if (icon.dataset.previewSeg) row.querySelectorAll('.segment').forEach((b) => on(b, (n) => show(icon, b, n)));
   });
 
   // Capture phase: this runs before the document handler that closes the settings page, so Escape
