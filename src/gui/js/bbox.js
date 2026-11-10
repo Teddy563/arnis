@@ -1045,7 +1045,10 @@ $(document).ready(function () {
     // The slider shows while either layer is on the map.
     function updateSliderVisibility() {
         var box = document.getElementById('world-preview-slider-container');
-        if (box) box.style.display = worldOverlay || lastPieces.length ? 'flex' : 'none';
+        if (!box) return;
+        box.style.display = worldOverlay || lastPieces.length ? 'flex' : 'none';
+        // Read each time, so a language change reaches it.
+        box.title = mapText('map_balance_tip', 'Left fades the world tiles, right fades the cells. Double-click to reset.');
     }
 
     // Create the balance slider as a proper Leaflet control
