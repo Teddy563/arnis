@@ -360,10 +360,12 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         );
     }
     // `--mapillary-token` reads MAPILLARY_TOKEN, so a piece gets it without a command line.
+    // The Overture release listing too: asked once here instead of once per piece.
     let token: Vec<(&str, String)> = args
         .mapillary_api_token()
         .map(|t| ("MAPILLARY_TOKEN", t.to_string()))
         .into_iter()
+        .chain(args.overture.then(crate::overture::shared_releases_env).flatten())
         .collect();
     let child_env: Vec<(&str, String)> = sizing
         .child_env()
