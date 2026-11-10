@@ -73,6 +73,13 @@ fn remove_failed_new_world(
     created_by_this_job && areas_before == 0 && pieces_done == 0
 }
 
+/// Whether a pieces job that finished keeps its world: a `--prewarm` one only filled the
+/// caches (the coordinator warms each piece and drops its job folder), so a world made
+/// for it goes with the cleanup guard.
+fn pieces_job_keeps_world(prewarm: bool) -> bool {
+    !prewarm
+}
+
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -2769,6 +2776,9 @@ fn gui_start_generation(
                         }
                         return Err(e);
                     }
+                    if !pieces_job_keeps_world(args.prewarm) {
+                        return prewarmed();
+                    }
                     if let Some(g) = cleanup_guard.as_mut() {
                         g.disarm();
                     }
@@ -3573,6 +3583,7 @@ mod tests {
     fn new_one_world_removed_only_when_nothing_built() {
         assert!(remove_failed_new_world(true, 0, 0));
         assert!(!remove_failed_new_world(false, 0, 0));
+        assert!(pieces_job_keeps_world(false) && !pieces_job_keeps_world(true));
         assert!(!remove_failed_new_world(true, 1, 0));
         assert!(!remove_failed_new_world(true, 0, 1));
     }
