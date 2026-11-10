@@ -2,7 +2,7 @@
 // The Meld features switch off, and on with every control at its default, send no flags. The defaults are read from index.html itself.
 import assert from 'node:assert';
 import fs from 'node:fs';
-import { meldFlags } from '../../src/gui/js/meld-features.js';
+import { meldFlags, generationTarget } from '../../src/gui/js/meld-features.js';
 
 const html = fs.readFileSync(new URL('../../src/gui/index.html', import.meta.url), 'utf8');
 const state = new Map(); // id -> element, so a test can change one
@@ -61,4 +61,8 @@ document.getElementById('meld-stitch-map-toggle').checked = true;
 assert.deepStrictEqual(meldFlags(ctx), ['--one-world-workers=2', '--margin-regions=2', '--piece-order=west', '--skip-built', '--stitch-map', '--seed=7']);
 // Not without One World.
 assert.ok(!meldFlags({ ...ctx, oneWorld: false }).some((f) => f.includes('margin')));
+// A prewarm has no world: never the last built one, never a new-world run (the backend deletes those at the end).
+assert.deepStrictEqual(generationTarget({ prewarm: true, oneWorld: false, savePath: 's', worldPath: 'w' }), { selectedWorld: '', isNewWorld: false });
+assert.deepStrictEqual(generationTarget({ prewarm: false, oneWorld: false, savePath: 's', worldPath: 'w' }), { selectedWorld: 'w', isNewWorld: true });
+assert.deepStrictEqual(generationTarget({ prewarm: false, oneWorld: true, savePath: 's', worldPath: 'w' }), { selectedWorld: 's', isNewWorld: true });
 console.log('meld-flags: ok');

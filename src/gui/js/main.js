@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice, generationTarget } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -4417,10 +4417,9 @@ async function startGeneration(confirmed = false, prewarm = false) {
     await invoke("gui_start_generation", {
         ...settings,
         bboxText: selectedBBox,
-        selectedWorld: oneWorld ? savePath : worldPath,
+        ...generationTarget({ prewarm, oneWorld, savePath, worldPath }),
         bedrockSavePath: bedrockSavePath,
         luantiSavePath: luantiSavePath,
-        isNewWorld: true,
         spawnPoint: spawnPoint,
         telemetryConsent: telemetryConsent || false,
         worldFormat: getEffectiveWorldFormat(),

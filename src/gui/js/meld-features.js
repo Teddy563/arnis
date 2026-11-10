@@ -31,6 +31,11 @@ export const tn = (key, fallback, one, n) =>
 export const holdsNotice = (shown, message, since, now) =>
   !shown.notice && since > 0 && now - since < 8000 && !/^(Error!|Done!|Stopped)/.test(message);
 
+// Which world a run writes to. A prewarm only fills the caches: it has no world, so the backend
+// must never be handed the last built one (a new-world run deletes its world when it ends).
+export const generationTarget = ({ prewarm, oneWorld, savePath, worldPath }) =>
+  prewarm ? { selectedWorld: '', isNewWorld: false } : { selectedWorld: oneWorld ? savePath : worldPath, isNewWorld: true };
+
 export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
     return { text: t('region_download_fallback', 'Region Download was not available for this selection; the default source was used.'), title: '', log: message, notice: true };
