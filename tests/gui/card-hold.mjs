@@ -10,4 +10,11 @@ assert.equal(hold(false, null, 99999), true, 'on the piece');
 assert.equal(hold(false, 1000, 1500), true, 'just left, still travelling');
 assert.equal(hold(false, 1000, 2000), false, 'left a while ago');
 assert.equal(hold(false, undefined, 2000), false, 'never entered');
+// A layer removed with its card open: no poll left, no hold, and it is no longer the held card.
+const item = { leftAt: null, closing: setTimeout(() => assert.fail('poll still running'), 50) };
+assert.equal(globalThis.arnisCardDrop(item, item), null);
+assert.equal(item.leftAt, 0);
+assert.equal(hold(false, item.leftAt, 2000), false);
+const other = {};
+assert.equal(globalThis.arnisCardDrop({ leftAt: null }, other), other, 'another piece stays held');
 console.log('card-hold ok');

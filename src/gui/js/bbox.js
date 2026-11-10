@@ -1684,6 +1684,7 @@ $(document).ready(function () {
             if (seen[i]) return;
             var item = pieceLayers[i];
             [item.rect, item.label, item.halo, item.fill].forEach(function(l) { if (l) pieceLayer.removeLayer(l); });
+            heldCard = window.arnisCardDrop(item, heldCard);
             delete pieceLayers[i];
         });
         updatePieceLabels();

@@ -21,6 +21,14 @@ globalThis.arnisPieceStyle = {
 // the neighbouring piece, whose own card is held back meanwhile.
 globalThis.arnisCardHold = (overCard, leftAt, now, grace = 900) => overCard || leftAt === null || now - leftAt < grace;
 
+// A piece layer removed while its card is open gets no mouseout: stop its poll, make it let go,
+// and return the card now held (a dead piece must not keep holding back the others' cards).
+globalThis.arnisCardDrop = (item, held) => {
+    clearTimeout(item.closing);
+    item.leftAt = 0;
+    return held === item ? null : held;
+};
+
 // Snap to Pieces while a selection is dragged: lengths in degrees move in whole regions (`side`).
 // `span` is a size (at least one region, its sign kept); `shift` is a move.
 globalThis.arnisSnap = {
