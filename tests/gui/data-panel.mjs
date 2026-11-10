@@ -31,7 +31,7 @@ assert.deepEqual(calls.at(-1), ['gui_show_in_folder', { path: 'D:\arnis\cache' }
 await document.getElementById('meld-plan-download').listeners.click();
 assert.equal(prefetched, 1);
 // Nothing missing prints nothing; a little prints 1 MB; terabytes get a TB step.
-assert.deepEqual([mb(0), mb(1), mb(3e6), mb(4.5e12)], ['', '1 MB', '3 MB', '4.5 TB']);
+assert.deepEqual([mb(0), mb(1), mb(3e6), mb(4.5e12)], ['0 MB', '1 MB', '3 MB', '4.5 TB']);
 // Start refused (prefetch returns false): the panel goes back to the plan, not "Downloading".
 let started = false;
 initDataPanel({ invoke, area: () => '1 2 3 4', plan: () => ({}), prefetch: async () => started });

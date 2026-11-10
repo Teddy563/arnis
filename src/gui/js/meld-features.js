@@ -771,7 +771,7 @@ export function refreshStretch() {
 // ---- Data panel: Prepare Countries and the Download Plan ----
 
 // Sizes for the Download Plan; nothing missing prints nothing, anything missing at least 1 MB.
-export const mb = (b) => (b <= 0 ? '' : b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
+export const mb = (b) => (b <= 0 ? '0 MB' : b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
 
 function lines(box, rows) {
   box.replaceChildren(
