@@ -696,6 +696,7 @@
   "plan_legend_ring": "Ring (Rand)",
   "legend_title": "Was die Linien auf der Karte bedeuten",
   "legend_drawing": "Deine Auswahl, während du sie zeichnest",
+  "legend_shape_rect": "Das Rechteck, das Eine Welt um deine Formen baut",
   "legend_shape": "Die gezeichnete Form; Teile, die sie berührt, werden vollständig gebaut",
   "legend_overlap": "Überlappung, die zwei benachbarte Teile teilen",
   "legend_stretch_5": "Hinter dieser Linie ist die Karte gegenüber den echten Entfernungen um 5 % gestreckt",

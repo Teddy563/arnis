@@ -696,6 +696,7 @@
   "plan_legend_ring": "Obroč (rob)",
   "legend_title": "Kaj pomenijo črte na zemljevidu",
   "legend_drawing": "Tvoja izbira med risanjem",
+  "legend_shape_rect": "Pravokotnik, ki ga En svet zgradi okoli vaših oblik",
   "legend_shape": "Narisana oblika; deli, ki se jih dotika, se zgradijo v celoti",
   "legend_overlap": "Prekrivanje, ki si ga delita sosednja dela",
   "legend_stretch_5": "Za to črto je zemljevid raztegnjen za 5 % glede na dejanske razdalje",

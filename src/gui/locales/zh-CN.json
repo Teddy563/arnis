@@ -696,6 +696,7 @@
   "plan_legend_ring": "外圈（边距）",
   "legend_title": "地图上的线条含义",
   "legend_drawing": "绘制时的选区",
+  "legend_shape_rect": "单一世界围绕你所绘形状生成的矩形",
   "legend_shape": "你画的形状；它触及的区块会被整块生成",
   "legend_overlap": "两个相邻区块共享的重叠区域",
   "legend_stretch_5": "越过这条线，地图相对真实距离被拉伸 5%",

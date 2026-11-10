@@ -696,6 +696,7 @@
   "plan_legend_ring": "Anillo (margen)",
   "legend_title": "Qué significan las líneas del mapa",
   "legend_drawing": "Tu selección mientras la dibujas",
+  "legend_shape_rect": "El rectángulo que Un solo mundo construye alrededor de tus formas",
   "legend_shape": "La forma que dibujaste; las piezas que toca se construyen enteras",
   "legend_overlap": "Solapamiento que comparten dos piezas vecinas",
   "legend_stretch_5": "Más allá de esta línea el mapa se estira un 5 % respecto a las distancias reales",

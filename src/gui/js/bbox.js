@@ -1833,16 +1833,14 @@ $(document).ready(function () {
             if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 
-        // One World keeps rotation at 0, and its areas are rectangles.
+        // One World keeps rotation at 0.
         if (event.data && event.data.type === 'setRotationLocked') {
             setRotationLocked(!!event.data.locked);
-            _shapesInPieces = false;
-            setShapesLocked(!!event.data.locked);
         }
-        // A One World built in pieces takes shapes too: its pieces outside them are left out.
-        if (event.data && event.data.type === 'setShapesLocked') {
-            _shapesInPieces = !event.data.locked;
-            setShapesLocked(!!event.data.locked);
+        // One World not built in pieces builds the rectangle around the shapes; in pieces it keeps them.
+        if (event.data && event.data.type === 'setShapesMode') {
+            _shapesMode = event.data.mode || '';
+            refreshShapesRect();
         }
 
         // Handle rotation preview angle update (store it for preview-skip logic)
@@ -2049,13 +2047,11 @@ $(document).ready(function () {
         return {
             selection: drawnItems.getLayers().length > 0,
             drawing: _drawing,
+            rect: Boolean(shapesRectLayer),
             held: Boolean(worldOverlayEnabled && worldOverlayData && worldOverlayData.areas)
         };
     };
 
-    // One World and live mode generate rectangles only.
-    var _shapesLocked = false;
-    var _shapesInPieces = false; // One World built in pieces: the shape tool is open
 
     // Custom icon for drawn markers
     var customMarkerIcon = L.icon({
@@ -2181,17 +2177,16 @@ $(document).ready(function () {
         if (c.contains('leaflet-draw-draw-rectangle')) {
             return {
                 name: mapText('map_tool_area', 'Select area'),
-                desc: mapText('map_tool_area_desc', 'Drag over the map to choose what gets generated.') +
-                    (_shapesLocked ? '' : ' ' + addHint)
+                desc: mapText('map_tool_area_desc', 'Drag over the map to choose what gets generated.') + ' ' + addHint
             };
         }
         if (c.contains('leaflet-draw-draw-polygon')) {
             return {
                 name: mapText('map_tool_shape', 'Draw a shape'),
-                desc: (_shapesInPieces && !_shapesLocked
+                desc: (_shapesMode === 'rect' ? '' : (_shapesMode === 'pieces'
                     ? mapText('map_tool_shape_pieces_desc', 'A piece the shape touches is built in full.')
-                    : mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.')) + ' ' + addHint,
-                note: _shapesLocked ? mapText('map_tool_shape_one_world', 'One World generates rectangles only.') : ''
+                    : mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.')) + ' ') + addHint,
+                note: _shapesMode === 'rect' ? mapText('map_tool_shape_one_world', 'One World builds the rectangle around the shape. Building in pieces keeps the shape itself.') : ''
             };
         }
         if (c.contains('leaflet-draw-draw-polyline')) {
@@ -2465,32 +2460,6 @@ $(document).ready(function () {
     }
 
     var _rotationLocked = false;
-
-    function setShapesLocked(locked) {
-        _shapesLocked = locked;
-        var btn = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-polygon');
-        if (!btn) return;
-        if (locked && drawControl._toolbars.draw._activeMode &&
-            drawControl._toolbars.draw._activeMode.handler.type === 'polygon') {
-            drawControl._toolbars.draw._activeMode.handler.disable();
-        }
-        btn.classList.toggle('leaflet-disabled', locked);
-        btn.setAttribute('aria-disabled', locked ? 'true' : 'false');
-        refreshToolLabel(btn);
-        var rect = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-rectangle');
-        if (rect) refreshToolLabel(rect);
-    }
-
-    // Stops a locked tool before Leaflet.draw's own click handler starts it.
-    (function guardShapeTool() {
-        var btn = document.querySelector('.leaflet-draw-toolbar .leaflet-draw-draw-polygon');
-        if (!btn) return;
-        btn.addEventListener('click', function (e) {
-            if (!_shapesLocked) return;
-            e.preventDefault();
-            e.stopImmediatePropagation();
-        }, true);
-    })();
 
     function setRotationLocked(locked) {
         _rotationLocked = locked;
@@ -2986,7 +2955,7 @@ $(document).ready(function () {
 
     map.on('draw:created', function (e) {
         var area = isArea(e.layer);
-        var adding = area && _drawing && _addToSelection && !_shapesLocked && areaLayers().length > 0;
+        var adding = area && _drawing && _addToSelection && areaLayers().length > 0;
 
         // No map copy holds an area across the 180° meridian, nor areas on both sides of it.
         var together = adding ? areaLayers().concat([e.layer]) : [e.layer];
@@ -3159,17 +3128,26 @@ function notifyBboxUpdate() {
     if (planMask && planMask.bboxText !== bboxText) setPlanMask(null);
     // Shapes on another map copy move back into range, with their rectangle.
     if (shapes) {
-        var s = 90, w = 180, n = -90, e = -180;
-        shapes.forEach(function (ring) {
-            ring.forEach(function (p) {
-                s = Math.min(s, p[0]); n = Math.max(n, p[0]);
-                w = Math.min(w, p[1]); e = Math.max(e, p[1]);
-            });
-        });
-        bboxText = [s, w, n, e].map(function (v) { return v.toFixed(6); }).join(' ');
+        bboxText = window.arnisShapesRect(shapes).map(function (v) { return v.toFixed(6); }).join(' ');
     }
     window.parent.postMessage({ bboxText: bboxText, shapes: shapes }, '*');
+    refreshShapesRect();
     updateTerrainPreviewButton();
+}
+
+// One World not in pieces builds the rectangle around the shapes: shown dashed while it does.
+var shapesRectLayer = null;
+var _shapesMode = ''; // 'rect' (built as that rectangle) | 'pieces' | '' (One World off)
+function refreshShapesRect() {
+    if (shapesRectLayer) map.removeLayer(shapesRectLayer);
+    shapesRectLayer = null;
+    var shapes = typeof window.arnisSelectionShapes === 'function' ? window.arnisSelectionShapes() : null;
+    if (_shapesMode !== 'rect' || !shapes) return;
+    var r = window.arnisShapesRect(shapes);
+    shapesRectLayer = L.rectangle([[r[0], r[1]], [r[2], r[3]]], {
+        interactive: false, fill: false, weight: 2,
+        color: window.arnisPieceStyle.selection, dashArray: window.arnisPieceStyle.selectionDash
+    }).addTo(map);
 }
 
 // The outline the selection was made from, drawn on the map and sent to the window, which

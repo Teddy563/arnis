@@ -696,6 +696,7 @@
   "plan_legend_ring": "Pierścień (margines)",
   "legend_title": "Co oznaczają linie na mapie",
   "legend_drawing": "Twój zaznaczony obszar w trakcie rysowania",
+  "legend_shape_rect": "Prostokąt, który Jeden świat buduje wokół twoich kształtów",
   "legend_shape": "Narysowany kształt; części, których dotyka, są budowane w całości",
   "legend_overlap": "Zakładka wspólna dla dwóch sąsiednich części",
   "legend_stretch_5": "Za tą linią mapa jest rozciągnięta o 5% względem rzeczywistych odległości",

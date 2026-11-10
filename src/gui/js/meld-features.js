@@ -37,6 +37,10 @@ export const holdsNotice = (shown, message, since, now) =>
 export const generationTarget = ({ prewarm, oneWorld, savePath, worldPath }) =>
   prewarm ? { selectedWorld: oneWorld ? savePath : '', isNewWorld: false } : { selectedWorld: oneWorld ? savePath : worldPath, isNewWorld: true };
 
+// What a run is sent as `selectionShapes`: One World builds the rectangle around the shapes (the
+// bbox the map reports), in pieces they travel as the plan mask; only another run clips to them.
+export const generationShapes = ({ oneWorld, shapes }) => (oneWorld ? null : shapes);
+
 export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
     return { text: t('region_download_fallback', 'Region Download is not available for this selection, so Arnis used the default source.'), title: '', log: message, notice: true };
@@ -551,6 +555,7 @@ const LEGEND_TEXT = {
   legend_title: 'What the lines on the map mean',
   legend_drawing: 'Your selection while you draw it',
   plan_legend_selection: 'Selection',
+  legend_shape_rect: 'The rectangle One World builds around your shapes',
   legend_shape: 'The shape you drew; a piece it touches is built in full',
   plan_state: 'Planned',
   run_state_queued: 'Waiting',
@@ -576,7 +581,8 @@ export function legendRows(state) {
   const has = (...states) => state.cells.some((c) => states.includes(c.state));
   add(state.drawing, 'legend_drawing', selection, { weight: 3, fill: 0.1, dash: selectionDash });
   add(state.selection, 'plan_legend_selection', selection, { weight: 3, fill: 0.08 });
-  add(state.shape, 'legend_shape', mask, { fill: 0.05 });
+  add(state.shape && !state.rect, 'legend_shape', mask, { fill: 0.05 });
+  add(state.rect, 'legend_shape_rect', selection, { dash: selectionDash });
   add(state.cells.some((c) => c.state === 'planned' && !c.ring), 'plan_state', colors.planned, { weight: 1, fill: 0.08 });
   add(has('queued'), 'run_state_queued', colors.queued, { dash: dash.queued });
   add(has('start', 'retry'), 'run_state_running', colors.start, { dash: dash.start });
@@ -601,7 +607,7 @@ let legendOpen = false;
 function legendCard() {
   const map = mapWindow()?.arnisLegendState?.() || {};
   const rows = legendRows({
-    drawing: map.drawing, selection: map.selection, held: map.held, shape: hasPlanMask(),
+    drawing: map.drawing, selection: map.selection, held: map.held, rect: map.rect, shape: hasPlanMask(),
     cells: drawn, halo: Boolean(el('run-halo-toggle')?.checked), stretch: stretchShown,
   });
   const card = div('legend-card', '');

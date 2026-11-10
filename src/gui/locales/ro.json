@@ -696,6 +696,7 @@
   "plan_legend_ring": "Inel (margine)",
   "legend_title": "Ce înseamnă liniile de pe hartă",
   "legend_drawing": "Selecția ta cât timp o desenezi",
+  "legend_shape_rect": "Dreptunghiul pe care O singură lume îl construiește în jurul formelor tale",
   "legend_shape": "Forma desenată; o bucată pe care o atinge se construiește întreagă",
   "legend_overlap": "Zona comună a două bucăți vecine",
   "legend_stretch_5": "Dincolo de această linie harta este întinsă cu 5% față de distanțele reale",

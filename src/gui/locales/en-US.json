@@ -696,6 +696,7 @@
   "plan_legend_ring": "Ring (margin)",
   "legend_title": "What the lines on the map mean",
   "legend_drawing": "Your selection while you draw it",
+  "legend_shape_rect": "The rectangle One World builds around your shapes",
   "legend_shape": "The shape you drew; a piece it touches is built in full",
   "legend_overlap": "Overlap two neighbouring pieces share",
   "legend_stretch_5": "Past this line the map is stretched 5% against real distances",

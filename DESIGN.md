@@ -128,6 +128,7 @@ Every line on the map means one thing. The legend (the `?` after the plan's colo
 | Yellow dashed box | Your selection while you draw it | `legend_drawing` |
 | Yellow solid box | Your selection | `plan_legend_selection` |
 | Bright yellow outline | The shape you drew; a piece it touches is built in full | `legend_shape` |
+| Yellow dashed box around your shapes | The rectangle One World builds around them (not in pieces) | `legend_shape_rect` |
 | Blue solid cell, faint fill | Planned for this run | `plan_state` |
 | Grey short-dashed cell | Waiting | `run_state_queued` |
 | Yellow dashed cell | Running | `run_state_running` |

@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice, generationTarget } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -2890,6 +2890,8 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
     warned = true;
+  } else if (selectedShapes && isOneWorldEnabled()) {
+    setBboxSelectionInfo(bboxSelectionElement, "shapes_one_world", "#fecc44");
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
@@ -3507,7 +3509,7 @@ function applyOneWorldPins(info) {
   setSettingsRowAvailable('voxy-lod-toggle', false);
   setSettingsRowAvailable('dh-lod-toggle', false);
   postToMap({ type: 'setRotationLocked', locked: true });
-  syncShapesLock();
+  syncShapesRect();
 
   const exists = !!(info && info.exists);
   pinControl('scale-value-slider', exists && typeof info.scale === 'number' ? info.scale : null);
@@ -3535,15 +3537,18 @@ function releaseOneWorldPins() {
   setSettingsRowAvailable('rotation-angle-input', true);
   restoreNaturalRows();
   postToMap({ type: 'setRotationLocked', locked: false });
+  postToMap({ type: 'setShapesMode', mode: '' });
 }
 
-// A One World takes shapes only when it is built in pieces (Advanced features, workers set).
-function syncShapesLock() {
+// A One World not built in pieces (Advanced features, workers set) builds the rectangle around
+// the drawn shapes; the map outlines it. In pieces the shapes are the plan mask.
+function syncShapesRect() {
   const pieces = document.getElementById('advanced-meld-features-toggle').checked &&
     document.getElementById('meld-workers-select').value;
-  if (oneWorldPinned) postToMap({ type: 'setShapesLocked', locked: isLiveMode() || !pieces });
+  if (oneWorldPinned) postToMap({ type: 'setShapesMode', mode: pieces ? 'pieces' : 'rect' });
+  refreshBboxSelectionInfo();
 }
-document.addEventListener('change', syncShapesLock);
+document.addEventListener('change', syncShapesRect);
 
 // The areas of the One World on the map, which "Expand" rings.
 let builtAreas = [];
@@ -4333,12 +4338,6 @@ async function startGeneration(confirmed = false, prewarm = false) {
   if (generationButtonEnabled === false) {
     return;
   }
-  // One World and Live keep their areas as rectangles of whole chunks; a One World built in
-  // pieces takes the shapes as the outline of the pieces it builds.
-  if (selectedShapes && ((!prewarm && isLiveMode()) || (isOneWorldEnabled() && !isPiecesJob()))) {
-    setBboxSelectionInfo(document.getElementById('bbox-selection-info'), "shapes_one_world", "#fa7878");
-    return;
-  }
   if (!prewarm && isLiveMode()) {
     startLive();
     return;
@@ -4463,7 +4462,7 @@ async function startGeneration(confirmed = false, prewarm = false) {
           extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
           lods: settings.voxyLodEnabled || settings.dhLodEnabled
         }), ...(prewarm ? ["--prewarm"] : [])],
-        selectionShapes: oneWorld ? null : selectedShapes
+        selectionShapes: generationShapes({ oneWorld, shapes: selectedShapes })
     });
 
     console.log("Generation process started.");

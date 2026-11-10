@@ -696,6 +696,7 @@
   "plan_legend_ring": "Anneau (marge)",
   "legend_title": "Ce que signifient les lignes de la carte",
   "legend_drawing": "Votre sélection pendant que vous la tracez",
+  "legend_shape_rect": "Le rectangle que Monde unique construit autour de vos formes",
   "legend_shape": "La forme tracée ; les morceaux qu'elle touche sont construits en entier",
   "legend_overlap": "Chevauchement partagé par deux morceaux voisins",
   "legend_stretch_5": "Au-delà de cette ligne, la carte est étirée de 5 % par rapport aux distances réelles",

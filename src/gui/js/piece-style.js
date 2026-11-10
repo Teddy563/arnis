@@ -16,6 +16,14 @@ globalThis.arnisPieceStyle = {
     mask: '#ffea00'
 };
 
+// The rectangle around drawn shapes (rings of [lat, lng]) as [south, west, north, east]: the area
+// One World builds when it is not built in pieces.
+globalThis.arnisShapesRect = (shapes) => {
+  const lat = shapes.flat().map((p) => p[0]);
+  const lng = shapes.flat().map((p) => p[1]);
+  return [Math.min(...lat), Math.min(...lng), Math.max(...lat), Math.max(...lng)];
+};
+
 // A failed piece's card (with its Open log link) stays while the pointer is on the card, on the
 // piece (leftAt null), or left the piece less than `grace` ms ago: time to reach the card across
 // the neighbouring piece, whose own card is held back meanwhile.

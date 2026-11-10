@@ -696,6 +696,7 @@
   "plan_legend_ring": "Kehä (reunus)",
   "legend_title": "Mitä kartan viivat tarkoittavat",
   "legend_drawing": "Valintasi piirtämisen aikana",
+  "legend_shape_rect": "Suorakulmio, jonka Yksi maailma rakentaa muotojesi ympärille",
   "legend_shape": "Piirtämäsi muoto; osat, joihin se osuu, rakennetaan kokonaan",
   "legend_overlap": "Päällekkäisyys, jonka kaksi vierekkäistä osaa jakavat",
   "legend_stretch_5": "Tämän viivan jälkeen kartta on venynyt 5 % todellisiin etäisyyksiin nähden",

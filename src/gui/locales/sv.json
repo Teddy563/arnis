@@ -696,6 +696,7 @@
   "plan_legend_ring": "Ring (marginal)",
   "legend_title": "Vad linjerna på kartan betyder",
   "legend_drawing": "Ditt val medan du ritar det",
+  "legend_shape_rect": "Rektangeln som En värld bygger runt dina former",
   "legend_shape": "Formen du ritade; delar som den rör vid byggs hela",
   "legend_overlap": "Överlappning som två angränsande delar delar",
   "legend_stretch_5": "Bortom den här linjen är kartan sträckt 5 % mot verkliga avstånd",
