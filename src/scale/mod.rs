@@ -945,6 +945,12 @@ fn run_piece_until(
                     if let Some(p) = record["progress"].as_f64() {
                         progress(p / 100.0);
                     }
+                    if let Some(notice) = forwarded_notice(&record) {
+                        crate::progress::emit_gui_progress_update(
+                            crate::progress::MESSAGE_ONLY,
+                            notice,
+                        );
+                    }
                 }
                 Some("done") => {
                     result.peak_rss_mb = record["peak_rss_mb"].as_u64();
@@ -969,6 +975,13 @@ fn run_piece_until(
         transient: is_transient(status.code(), &tail),
         message: format!("{status}; last output:\n{}", tail.join("\n")),
     })
+}
+
+/// A piece's `phase` the job passes on as its own: a Region Download fallback notice.
+fn forwarded_notice(record: &Value) -> Option<&str> {
+    let name = record["name"].as_str()?;
+    (record["type"] == "phase" && name.starts_with(crate::retrieve_data::REGION_DOWNLOAD_FALLBACK))
+        .then_some(name)
 }
 
 /// The job's percentage: every piece is an equal share, so it reads n/N as "n/N done"
@@ -1105,6 +1118,24 @@ mod tests {
         assert!((job_percent(&d) - 2.75 / 16.0 * 100.0).abs() < 1e-9);
         assert_eq!(job_percent(&[1.0; 16]), 100.0);
         assert_eq!(job_percent(&[]), 0.0);
+    }
+
+    #[test]
+    fn a_piece_region_download_notice_is_forwarded() {
+        let rec = |line: &str| serde_json::from_str::<Value>(line).unwrap();
+        let notice = rec(
+            r#"{"v":1,"type":"phase","name":"region_download_fallback: network","progress":null}"#,
+        );
+        assert_eq!(
+            forwarded_notice(&notice),
+            Some("region_download_fallback: network")
+        );
+        let step = rec(r#"{"v":1,"type":"phase","name":"Generating area...","progress":20.0}"#);
+        assert_eq!(forwarded_notice(&step), None);
+        assert_eq!(
+            forwarded_notice(&rec(r#"{"v":1,"type":"progress","progress":3.0}"#)),
+            None
+        );
     }
 
     #[test]

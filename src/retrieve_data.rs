@@ -312,11 +312,19 @@ pub fn warn_region_download_fallback(e: &str) {
             .yellow()
             .bold()
     );
+    let notice = region_download_fallback_notice(e);
     #[cfg(feature = "gui")]
-    send_log(
-        LogLevel::Warning,
-        &format!("region_download_fallback: {}", fallback_reason(e)),
-    );
+    send_log(LogLevel::Warning, &notice);
+    // The window shows it as a notice; `--progress json` carries it as a `phase`, which a job
+    // forwards from its pieces.
+    emit_gui_progress_update(crate::progress::MESSAGE_ONLY, &notice);
+}
+
+/// The status message for a Region Download fallback; the window picks it out by this prefix.
+pub const REGION_DOWNLOAD_FALLBACK: &str = "region_download_fallback:";
+
+fn region_download_fallback_notice(e: &str) -> String {
+    format!("{REGION_DOWNLOAD_FALLBACK} {}", fallback_reason(e))
 }
 
 /// What a run shows for a box too large to fetch; the GUI's status line holds 35 characters.
@@ -1015,6 +1023,12 @@ mod tests {
         ] {
             assert_eq!(fallback_reason(err), want, "for {err:?}");
         }
+    }
+
+    #[test]
+    fn region_download_fallback_notice_has_the_window_prefix() {
+        let n = region_download_fallback_notice("http://127.0.0.1:9/x.osm.pbf: HTTP 503");
+        assert_eq!(n, "region_download_fallback: other/http_503");
     }
 
     // A bucket must never carry the tile coordinates the error text holds.
