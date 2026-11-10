@@ -63,6 +63,16 @@ impl Drop for NewWorldCleanup {
     }
 }
 
+/// Whether a One World job that failed takes its world with it: only one it
+/// created, that held no area before and finished no piece.
+fn remove_failed_new_world(
+    created_by_this_job: bool,
+    areas_before: usize,
+    pieces_done: usize,
+) -> bool {
+    created_by_this_job && areas_before == 0 && pieces_done == 0
+}
+
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -2673,11 +2683,22 @@ fn gui_start_generation(
                         argv.push(format!("--spawn-lng={lng}").into());
                     }
                     emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    // Unreadable counts as built, so a doubt keeps the world.
+                    let areas = || {
+                        crate::one_world::Manifest::load(&world_path)
+                            .ok()
+                            .flatten()
+                            .map_or(1, |m| m.areas.len())
+                    };
+                    let areas_before = areas();
                     if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
                         eprintln!("{e}");
                         // Finished pieces are kept: generating the same area again resumes.
-                        if let Some(g) = cleanup_guard.as_mut() {
-                            g.disarm();
+                        // A world this job made and nothing was built in goes with the guard.
+                        if !remove_failed_new_world(session.created, areas_before, areas()) {
+                            if let Some(g) = cleanup_guard.as_mut() {
+                                g.disarm();
+                            }
                         }
                         if e == crate::scale::STOPPED {
                             emit_gui_progress_update(
@@ -3470,6 +3491,14 @@ mod tests {
         assert!(!argv
             .iter()
             .any(|a| a.to_string_lossy().contains("MLY|secret")));
+    }
+
+    #[test]
+    fn new_one_world_removed_only_when_nothing_built() {
+        assert!(remove_failed_new_world(true, 0, 0));
+        assert!(!remove_failed_new_world(false, 0, 0));
+        assert!(!remove_failed_new_world(true, 1, 0));
+        assert!(!remove_failed_new_world(true, 0, 1));
     }
 
     #[test]
