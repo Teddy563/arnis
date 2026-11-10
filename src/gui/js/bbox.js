@@ -1583,6 +1583,7 @@ $(document).ready(function () {
     // One outline, label and tooltip per piece, kept between records and updated in place: a
     // progress record every second must not rebuild the map layers or close an open tooltip.
     var pieceLayers = {};
+    var heldCard = null;
 
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
@@ -1603,19 +1604,30 @@ $(document).ready(function () {
                 // stays put (not sticky) and closes a moment after the pointer leaves both.
                 // Leaflet registers closeTooltip when binding, so the wrapper goes on first.
                 var closeNow = item.rect.closeTooltip;
+                item.holds = function() {
+                    var tip = item.rect.getTooltip() && item.rect.getTooltip().getElement();
+                    return window.arnisCardHold(Boolean(tip && tip.matches(':hover')), item.leftAt, Date.now());
+                };
                 item.rect.closeTooltip = function() {
                     if (!item.p.text.openLog) return closeNow.call(item.rect);
                     clearTimeout(item.closing);
-                    item.closing = setTimeout(function() {
-                        var tip = item.rect.getTooltip() && item.rect.getTooltip().getElement();
-                        if (!(tip && tip.matches(':hover'))) closeNow.call(item.rect);
-                    }, 250);
+                    (function poll() {
+                        if (item.holds()) { item.closing = setTimeout(poll, 150); return; }
+                        if (heldCard === item) heldCard = null;
+                        closeNow.call(item.rect);
+                    })();
                     return item.rect;
                 };
+                item.rect.on('mouseover', function() { item.leftAt = null; });
+                item.rect.on('mouseout', function() { item.leftAt = Date.now(); });
                 item.rect.bindTooltip(pieceTip(p), { sticky: true, interactive: true, className: 'piece-tip' });
                 item.rect.on('tooltipopen', function(e) {
+                    // While the pointer travels to a failed piece's card, a neighbour's card
+                    // does not take its place.
+                    if (heldCard && heldCard !== item && heldCard.holds()) return closeNow.call(item.rect);
+                    if (item.p.text.openLog) heldCard = item;
                     e.tooltip.options.sticky = !item.p.text.openLog;
-                    e.tooltip.getElement().onmouseleave = function() { item.rect.closeTooltip(); };
+                    e.tooltip.getElement().onmouseleave = function() { item.leftAt = 0; item.rect.closeTooltip(); };
                 });
                 item.rect.on('click', function() {
                     if (item.p.text.hint) window.parent.postMessage({ type: 'retryPiece', piece: item.p.i }, '*');

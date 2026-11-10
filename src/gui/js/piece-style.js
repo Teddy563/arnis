@@ -16,6 +16,11 @@ globalThis.arnisPieceStyle = {
     mask: '#ffea00'
 };
 
+// A failed piece's card (with its Open log link) stays while the pointer is on the card, on the
+// piece (leftAt null), or left the piece less than `grace` ms ago: time to reach the card across
+// the neighbouring piece, whose own card is held back meanwhile.
+globalThis.arnisCardHold = (overCard, leftAt, now, grace = 900) => overCard || leftAt === null || now - leftAt < grace;
+
 // Snap to Pieces while a selection is dragged: lengths in degrees move in whole regions (`side`).
 // `span` is a size (at least one region, its sign kept); `shift` is a move.
 globalThis.arnisSnap = {
