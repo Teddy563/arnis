@@ -2136,8 +2136,7 @@ fn offline_complete() -> Result<(), String> {
         "Offline Mode: not downloaded yet: {}. Turn it off to fetch the area first.",
         what.join(", ")
     );
-    // In full, where emit_gui_error would cut the list short.
-    emit_gui_progress_update(0.0, &format!("Error! {msg}"));
+    progress::emit_gui_error(&msg);
     Err(msg)
 }
 
@@ -2639,7 +2638,6 @@ fn gui_start_generation(
                     Err(e) => {
                         eprintln!("{e}");
                         emit_gui_error(&e);
-                        emit_gui_progress_update(progress::MESSAGE_ONLY, &format!("Error! {e}"));
                         return Err(e);
                     }
                 };
