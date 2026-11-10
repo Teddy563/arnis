@@ -1638,8 +1638,8 @@ $(document).ready(function () {
             var room = p.state === 'room';
             var planned = p.state === 'planned' || excluded || room;
             item.rect.setStyle({
-                color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
-                opacity: room ? 0.6 : 1,
+                color: color, weight: room ? 1.5 : planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
+                opacity: room ? 0.9 : 1,
                 fillOpacity: excluded ? 0.3 : room ? 0 : planned ? (p.ring ? 0.03 : 0.08) : 0,
                 dashArray: room ? PIECE_DASH.room : planned && p.ring ? PIECE_DASH.ring : PIECE_DASH[p.state] || null
             });

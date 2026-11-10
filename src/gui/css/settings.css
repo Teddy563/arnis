@@ -1135,10 +1135,17 @@ body.meld-off .meld-only {
   color: var(--ui-muted);
 }
 
-.settings-page .meld-data-out .meld-data-line {
+.settings-page .meld-data-line {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.settings-page .meld-data-line[hidden] {
+  display: none;
 }
 
 /* Meld settings (and the switch that shows them) carry gold viewfinder corners: the tile's own

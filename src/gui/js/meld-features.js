@@ -18,6 +18,11 @@ export const t = (key, fallback, vars = {}) => {
   return s;
 };
 
+// The same, singular when n is 1: the language's `<key>_one` string, or English's own while no
+// language is loaded; a language with a plain string only keeps it.
+export const tn = (key, fallback, one, n) =>
+  n === 1 && (window.localization?.[`${key}_one`] || !window.localization?.[key]) ? t(`${key}_one`, one, { n }) : t(key, fallback, { n });
+
 // What the status line shows for a progress payload. An error that carries `detail` keeps the
 // short `message` on the line and the full text as its tooltip and in the log; a Region Download
 // fallback is a notice in the user's language rather than the raw log line.
@@ -569,7 +574,7 @@ export function legendRows(state) {
   add(has('failed'), 'run_state_failed', colors.failed, { weight: 3 });
   add(has('stopped'), 'run_state_stopped', colors.stopped, { dash: dash.stopped });
   add(has('excluded'), 'plan_state_excluded', colors.excluded, { weight: 1, fill: 0.3 });
-  add(has('room'), 'plan_state_room', colors.room, { weight: 1, dash: dash.room });
+  add(has('room'), 'plan_state_room', colors.room, { weight: 1.5, dash: dash.room });
   add(state.cells.some((c) => c.state === 'planned' && c.ring), 'plan_legend_ring', colors.planned, { weight: 1, fill: 0.03, dash: dash.ring });
   add(state.halo, 'legend_overlap', colors.queued, { weight: 1, dash: dash.halo });
   for (const [level, color] of STRETCH_LEVELS) {
@@ -655,11 +660,11 @@ async function updatePlan() {
     ['time', 'plan_time_tip', 'Time (estimate, warm caches)', range(e.time_min, minutes)],
   ]) stats.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
   showPlan([
-    div('plan-big', t('plan_pieces', '{n} pieces', { n: totals.pieces })),
+    div('plan-big', tn('plan_pieces', '{n} pieces', '{n} piece', totals.pieces)),
     div('plan-sub', [
       t('plan_regions', '{n} regions', { n: totals.regions }),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
-      t('plan_workers', '{n} workers', { n: e.workers }),
+      tn('plan_workers', '{n} workers', '{n} worker', e.workers),
     ].join(' · ')),
     stats,
     ...(units.length > MAX_DRAWN ? [div('', t('plan_too_many', 'Too many pieces to draw on the map.'))] : []),

@@ -5,10 +5,10 @@ globalThis.arnisPieceStyle = {
     colors: {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
         skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff',
-        excluded: '#8a8a8a', room: '#8a8a8a'
+        excluded: '#8a8a8a', room: '#5c5c5c'
     },
     // Line patterns: a piece's state, a margin piece (ring), room to grow, the halo, a stretch line.
-    dash: { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5', ring: '3 3', room: '1 4', halo: '2 6', stretch: '8 6' },
+    dash: { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5', ring: '3 3', room: '2 4', halo: '2 6', stretch: '8 6' },
     // The selection, while it is drawn (dashed) and once it is placed.
     selection: '#fecc44',
     selectionDash: '10, 10',
