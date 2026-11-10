@@ -154,6 +154,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_precompute_facades,
             gui_cancel_precompute,
             gui_one_world_info,
+            gui_list_one_worlds,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
@@ -1352,6 +1353,14 @@ struct WorldMapData {
 }
 
 #[derive(serde::Serialize)]
+struct OneWorldEntry {
+    name: String,
+    modified_ms: Option<u64>,
+    #[serde(flatten)]
+    info: OneWorldInfo,
+}
+
+#[derive(serde::Serialize)]
 struct OneWorldInfo {
     world_path: String,
     exists: bool,
@@ -1388,18 +1397,50 @@ fn one_world_dir(save_path: &str, world_name: &str) -> PathBuf {
 
 #[tauri::command(async)]
 fn gui_one_world_info(save_path: String, world_name: String) -> Result<OneWorldInfo, String> {
-    let world_path = one_world_dir(&save_path, &world_name);
-    let manifest = crate::one_world::Manifest::load(&world_path)?;
+    one_world_info_at(&one_world_dir(&save_path, &world_name))
+}
+
+/// Every One World directly under the save folder, newest first.
+#[tauri::command(async)]
+fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> {
+    let Ok(dir) = fs::read_dir(save_path.trim()) else {
+        return Ok(Vec::new());
+    };
+    let mut worlds: Vec<OneWorldEntry> = dir
+        .flatten()
+        .filter_map(|e| {
+            let manifest = crate::one_world::Manifest::path_in(&e.path());
+            let modified_ms = fs::metadata(manifest)
+                .ok()?
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64);
+            // A damaged manifest is skipped here; the info command reports it.
+            let info = one_world_info_at(&e.path()).ok()?;
+            Some(OneWorldEntry {
+                name: e.file_name().to_string_lossy().into_owned(),
+                modified_ms,
+                info,
+            })
+        })
+        .collect();
+    worlds.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(worlds)
+}
+
+fn one_world_info_at(world_path: &Path) -> Result<OneWorldInfo, String> {
+    let manifest = crate::one_world::Manifest::load(world_path)?;
     let foreign = manifest.is_none()
         && world_path.exists()
-        && fs::read_dir(&world_path)
+        && fs::read_dir(world_path)
             .map(|mut d| d.next().is_some())
             .unwrap_or(false);
     Ok(OneWorldInfo {
         world_path: world_path.display().to_string(),
         exists: manifest.is_some(),
         foreign,
-        locked: manifest.is_some() && crate::world_utils::world_is_locked(&world_path),
+        locked: manifest.is_some() && crate::world_utils::world_is_locked(world_path),
         area_count: manifest.as_ref().map(|m| m.areas.len()).unwrap_or(0),
         scale: manifest.as_ref().map(|m| m.scale),
         height_multiplier: manifest.as_ref().map(|m| m.height_multiplier),
@@ -3499,6 +3540,30 @@ mod tests {
         assert!(!remove_failed_new_world(false, 0, 0));
         assert!(!remove_failed_new_world(true, 1, 0));
         assert!(!remove_failed_new_world(true, 0, 1));
+    }
+
+    #[test]
+    fn lists_only_one_worlds_newest_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let save = tmp.path();
+        let manifest = |name: &str| {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&save.join(name), &mut args, 40.0, -74.0).unwrap();
+        };
+        manifest("old");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        manifest("new");
+        fs::create_dir_all(save.join("plain")).unwrap();
+        fs::write(save.join("file.txt"), "x").unwrap();
+        let names: Vec<_> = gui_list_one_worlds(save.display().to_string())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, ["new", "old"]);
+        let missing = save.join("nope").display().to_string();
+        assert!(gui_list_one_worlds(missing).unwrap().is_empty());
     }
 
     #[test]
