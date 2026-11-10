@@ -354,7 +354,7 @@
   "meld_props": "Props Override",
   "meld_props_desc": "Overrides which 3D props are placed.",
   "meld_rocks": "Rocks",
-  "meld_rocks_desc": "Scatter small rocks over open land.",
+  "meld_rocks_desc": "Scatter rocks and boulders over open land.",
   "meld_bushes": "Bushes",
   "meld_bushes_desc": "Scatter small bushes over open land.",
   "meld_tree_realm": "Tree Realm",

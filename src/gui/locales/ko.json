@@ -354,7 +354,7 @@
   "meld_props": "프롭 재정의",
   "meld_props_desc": "배치할 3D 프롭을 지정합니다.",
   "meld_rocks": "바위",
-  "meld_rocks_desc": "열린 땅에 작은 바위를 흩뿌립니다.",
+  "meld_rocks_desc": "열린 땅에 바위와 큰 돌을 흩뿌립니다.",
   "meld_bushes": "덤불",
   "meld_bushes_desc": "열린 땅에 작은 덤불을 흩뿌립니다.",
   "meld_tree_realm": "나무 지역",

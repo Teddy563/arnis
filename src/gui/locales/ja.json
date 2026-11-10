@@ -354,7 +354,7 @@
   "meld_props": "Props の上書き",
   "meld_props_desc": "配置する 3D Props を指定します。",
   "meld_rocks": "岩",
-  "meld_rocks_desc": "開けた土地に小さな岩を散らします。",
+  "meld_rocks_desc": "開けた土地に岩や巨石を散らします。",
   "meld_bushes": "低木",
   "meld_bushes_desc": "開けた土地に小さな低木を散らします。",
   "meld_tree_realm": "樹木の地域",

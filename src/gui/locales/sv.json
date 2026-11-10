@@ -354,7 +354,7 @@
   "meld_props": "Props-åsidosättning",
   "meld_props_desc": "Styr vilka 3D-props som placeras.",
   "meld_rocks": "Stenar",
-  "meld_rocks_desc": "Strö små stenar över öppen mark.",
+  "meld_rocks_desc": "Strö stenar och block över öppen mark.",
   "meld_bushes": "Buskar",
   "meld_bushes_desc": "Strö små buskar över öppen mark.",
   "meld_tree_realm": "Trädregion",

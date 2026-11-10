@@ -354,7 +354,7 @@
   "meld_props": "Remplacement des props",
   "meld_props_desc": "Définit quels props 3D sont placés.",
   "meld_rocks": "Rochers",
-  "meld_rocks_desc": "Disperser de petits rochers sur les terrains dégagés.",
+  "meld_rocks_desc": "Disperser des rochers et des blocs sur les terrains dégagés.",
   "meld_bushes": "Buissons",
   "meld_bushes_desc": "Disperser de petits buissons sur les terrains dégagés.",
   "meld_tree_realm": "Région d'arbres",
