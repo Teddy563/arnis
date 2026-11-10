@@ -1,12 +1,13 @@
 // Run: node tests/gui/plan-rows.mjs
-// Plan drawn before a run: a built piece reads "Already built" only with Skip Built on.
+// Plan drawn before a run: a built piece reads "Already built" only with Skip Built on;
+// the size warning waits while the plan is recomputed.
 import assert from 'node:assert';
 
 const nodes = new Map();
 const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, classList: { toggle() {} }, addEventListener() {}, append() {}, replaceChildren() {} });
 globalThis.document = { querySelector: () => null, addEventListener() {}, createElement: node, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 globalThis.window = { addEventListener() {} };
-const { initRunControls, initJobPlan, schedulePlan } = await import('../../src/gui/js/meld-features.js');
+const { initRunControls, initJobPlan, schedulePlan, planPending } = await import('../../src/gui/js/meld-features.js');
 
 const sent = [];
 const plan = { units: [{ index: 0, size: 4, regions: 16, chunks: 1024, existing_chunks: 1024, bbox: '1,2,3,4' }], estimate: { workers: 1, disk_mb: [1, 2], ram_mb: [1, 2], time_min: [1, 2] } };
@@ -24,5 +25,18 @@ const states = async (skip) => {
 };
 assert.deepStrictEqual(await states(false), ['planned'], 'a built piece is drawn as planned with Skip Built off');
 assert.deepStrictEqual(await states(true), ['skipped'], 'and as already built with it on');
+
+// A pending plan: asked for, not yet answered.
+let release;
+const slow = new Promise((r) => { release = r; });
+initRunControls({ key: () => 'k', map: () => ({}), invoke: () => slow, post: () => {}, start: async () => {}, localize: () => {} });
+document.getElementById('meld-workers-select').value = '4';
+schedulePlan(true);
+assert.ok(planPending(), 'pending as soon as the request changes');
+await new Promise((r) => setTimeout(r, 400));
+assert.ok(planPending(), 'still pending while the answer is on its way');
+release(plan);
+await new Promise((r) => setTimeout(r, 20));
+assert.ok(!planPending(), 'not pending once answered');
 console.log('plan-rows: ok');
 process.exit(0);

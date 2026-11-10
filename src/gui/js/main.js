@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -2817,7 +2817,10 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   // Meld features: built in pieces, the size is no longer a worry; say how instead.
   const pieces = planPieces();
   let warned = false;
-  if (pieces) {
+  if (planPending()) {
+    // The plan is being recomputed: neither warn nor offer pieces until it answers.
+    setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
+  } else if (pieces) {
     setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
   } else if (hasPlanMask() && !selectedShapes) {
     // An outline only leaves pieces out: a build in one go would build the whole box.

@@ -389,6 +389,10 @@ const MAX_DRAWN = 3000;
 // The last plan drawn, { n pieces, w workers, done }, while it is the current one; null otherwise.
 let lastPlan = null;
 export const planPieces = () => lastPlan;
+// The key of the request the plan last answered (or failed); a wanted plan with another key is
+// being recomputed, and the size warning waits for it.
+let planAnswered = '';
+export const planPending = () => { const { key } = planWanted(); return key !== '' && key !== planAnswered; };
 // Whether Start would run a job in pieces (it asks first: main.js, the hold to confirm).
 export const isPiecesJob = () => Boolean(planWanted().req);
 let onPlan = () => {};
@@ -413,11 +417,11 @@ function planWanted() {
 // request clears the old plan from the map at once and drops any answer still on its way.
 export function schedulePlan(fresh = false) {
   refreshStretch();
-  if (fresh) planKey = '';
+  if (fresh) planKey = planAnswered = '';
   if (planWanted().key !== planKey) {
     planSeq++;
     // A running job keeps its "Builds in n pieces" line.
-    if (lastPlan && !running) {
+    if ((lastPlan || planPending()) && !running) {
       lastPlan = null;
       onPlan();
     }
@@ -597,7 +601,9 @@ async function updatePlan() {
     plan = await call('gui_plan_job', { ...req, flags });
   } catch (e) {
     if (seq !== planSeq) return;
+    planAnswered = key;
     showPlan([div('', String(e))]);
+    onPlan();
     return;
   }
   if (seq !== planSeq) return;
@@ -608,6 +614,7 @@ async function updatePlan() {
   // `overlap`: pieces on land the world already has, which the run builds again (Skip Built
   // leaves those out, so then it is 0).
   const overlap = on('meld-skip-built-toggle') ? 0 : units.filter((u) => u.existing_chunks > 0).length;
+  planAnswered = key;
   lastPlan = { n: units.length, w: e.workers, done, overlap };
   onPlan();
   planSizes.clear();
