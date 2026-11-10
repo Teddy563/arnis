@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Yksinkertaisia proseduraalisia puita mukana tulevien puumallien sijaan. Nopeampia, mutta kulmikkaampia.",
   "max_tree_size_tip": "Korkein sallittu puu: Pieni 6, Keskikokoinen 12, Suuri 20 ja Korkea 28 lohkoa; Jättiläinen ei ole rajattu. Korkeammat puut muuttuvat pienemmäksi lajiksi, jos sellainen on.",
   "field_preset_tip": "Klassinen sekoittaa viljelykasvit lohko lohkolta. Muut antavat jokaiselle pellolle yhden kasvin ja jakavat suuret pellot kaistoihin: kapeita Pientilalle, keskileveitä Tilkkutäkille, leveitä ja enimmäkseen vehnää Preerialle.",
-  "meld_rocks_tip": "Siroittelee pieniä andesiitti- ja tuffikiviä avoimille nurmille ja pelloille. Vaatii maanpeitteen.",
+  "meld_rocks_tip": "Siroittelee kiviä ja lohkareita avoimelle maalle. Esikatselu näyttää tiheyden 0.2; oletus on 0.02.",
   "meld_bushes_tip": "Siroittelee pieniä kymmenen lajin pensaita avoimille nurmille ja pelloille. Vaatii maanpeitteen.",
   "meld_tree_realm_tip": "Auto valitsee puupaketin alueen sijainnin mukaan. Pakotettu valtakunta ohittaa paikalliset ekoalueiden sekoitukset ja säilyttää palmunsa.",
   "meld_tree_pack_dir_tip": "Rakenne on sama kuin mukana tulevissa paketeissa: valtakunta / yhteisö / puutyyppi / koko / mikä tahansa nimi.schem. Tiedosto, jota ei voi ladata, ohitetaan varoituksella. Kokeellinen.",

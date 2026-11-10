@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Preprosta proceduralna drevesa namesto priloženih modelov dreves. Hitreje, bolj kockasto.",
   "max_tree_size_tip": "Največje dovoljeno drevo: Majhna 6, Srednja 12, Velika 20 in Visoka 28 blokov; Orjaška nima omejitve. Višja drevesa postanejo manjša vrsta, če obstaja.",
   "field_preset_tip": "Klasično meša posevke blok za blokom. Ostali dajo vsaki njivi en posevek in velike njive razdelijo na pasove: ozke za Majhna kmetija, srednje za Krpanka, široke in večinoma pšenične za Prerija.",
-  "meld_rocks_tip": "Po odprtih travnikih in njivah raztrese majhne skale iz andezita in tufa. Potrebuje pokrovnost tal.",
+  "meld_rocks_tip": "Po odprtem terenu raztrese skale in balvane. Predogled prikazuje gostoto 0.2; privzeto je 0.02.",
   "meld_bushes_tip": "Po odprtih travnikih in njivah raztrese majhne grme desetih vrst. Potrebuje pokrovnost tal.",
   "meld_tree_realm_tip": "Samodejno izbere paket dreves glede na lego območja. Vsiljeno območje preskoči lokalne mešanice ekoregij in obdrži svoje palme.",
   "meld_tree_pack_dir_tip": "Urejena kot priloženi paketi: območje / združba / vrsta drevesa / velikost / poljubno ime.schem. Datoteka, ki se ne naloži, se preskoči z opozorilom. Eksperimentalno.",

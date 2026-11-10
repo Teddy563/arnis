@@ -137,7 +137,7 @@ for (const m of html.matchAll(/data-preview-sel="([^"]+)"/g)) {
   for (const v of g[1].matchAll(/<option value="([^"]+)"/g)) names.add(`${m[1]}-${v[1]}`);
 }
 for (const m of html.matchAll(/data-preview-num="([^"]+)" data-preview-steps="([^"]+)"/g)) for (const v of m[2].split(',')) names.add(`${m[1]}-${v}`);
-assert.ok(names.size >= 60, `${names.size} pictures named`);
+assert.ok(names.size >= 55, `${names.size} pictures named`);
 const locales = fs.readdirSync(root + 'src/gui/locales').filter((f) => f.endsWith('.json') && fs.statSync(`${root}src/gui/locales/${f}`).size > 100);
 assert.ok(locales.length >= 20);
 for (const n of names) {

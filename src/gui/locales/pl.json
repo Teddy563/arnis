@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Proste drzewa proceduralne zamiast dołączonych modeli drzew. Szybsze, bardziej kanciaste.",
   "max_tree_size_tip": "Najwyższe dozwolone drzewo: Małe 6, Średnie 12, Duże 20 i Wysokie 28 bloków; Olbrzymie nie ma limitu. Wyższe drzewa zmieniają się w mniejszy gatunek, jeśli taki istnieje.",
   "field_preset_tip": "Klasyczny miesza uprawy blok po bloku. Pozostałe dają każdemu polu jedną uprawę i dzielą duże pola na pasy: wąskie dla Gospodarstwa, średnie dla Mozaiki, szerokie i głównie pszenne dla Prerii.",
-  "meld_rocks_tip": "Rozrzuca małe skały z andezytu i tufu po otwartych łąkach i polach uprawnych. Wymaga pokrycia terenu.",
+  "meld_rocks_tip": "Rozrzuca skały i głazy na otwartym terenie. Podgląd pokazuje gęstość 0.2; domyślnie jest 0.02.",
   "meld_bushes_tip": "Rozrzuca małe krzaki dziesięciu gatunków po otwartych łąkach i polach uprawnych. Wymaga pokrycia terenu.",
   "meld_tree_realm_tip": "Auto wybiera pakiet drzew na podstawie lokalizacji obszaru. Wymuszony region pomija lokalne mieszanki ekoregionów i zachowuje swoje palmy.",
   "meld_tree_pack_dir_tip": "Ułożony tak jak dołączone pakiety: region / społeczność / typ drzewa / rozmiar / dowolna nazwa.schem. Plik, który się nie wczyta, jest pomijany z ostrzeżeniem. Eksperymentalne.",

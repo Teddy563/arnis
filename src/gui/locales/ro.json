@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Copaci procedurali simpli în locul modelelor de copaci incluse. Mai rapizi, mai colțuroși.",
   "max_tree_size_tip": "Cel mai înalt copac permis: Mic 6, Mediu 12, Mare 20 și Înalt 28 de blocuri; Uriaș nu are limită. Copacii mai înalți devin o specie mai mică, acolo unde există una.",
   "field_preset_tip": "Clasic amestecă culturile bloc cu bloc. Celelalte dau fiecărui câmp o singură cultură și împart câmpurile mari în fâșii: înguste pentru Gospodărie mică, medii pentru Mozaic, late și în mare parte cu grâu pentru Prerie.",
-  "meld_rocks_tip": "Împrăștie pietre mici de andezit și tuf pe pajiști și terenuri agricole deschise. Necesită acoperirea solului.",
+  "meld_rocks_tip": "Împrăștie pietre și bolovani pe teren deschis. Previzualizarea arată densitatea 0.2; implicit este 0.02.",
   "meld_bushes_tip": "Împrăștie tufișuri mici din zece specii pe pajiști și terenuri agricole deschise. Necesită acoperirea solului.",
   "meld_tree_realm_tip": "Automat alege pachetul de copaci după locația zonei. O regiune forțată omite amestecurile ecoregiunii locale și își păstrează palmierii.",
   "meld_tree_pack_dir_tip": "Organizat ca pachetele incluse: regiune / comunitate / tip de copac / mărime / orice nume.schem. Un fișier care nu se încarcă este omis cu un avertisment. Experimental.",

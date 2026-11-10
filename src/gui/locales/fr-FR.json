@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Arbres procéduraux simples au lieu des modèles d'arbres fournis. Plus rapide, plus anguleux.",
   "max_tree_size_tip": "Taille d'arbre maximale autorisée : Petit 6, Moyen 12, Grand 20 et Haut 28 blocs ; Géant n'a pas de limite. Les arbres plus hauts deviennent une espèce plus petite quand il en existe une.",
   "field_preset_tip": "Classique mélange les cultures bloc par bloc. Les autres donnent une seule culture par champ et découpent les grands champs en bandes : étroites pour Petite ferme, moyennes pour Damier, larges et surtout de blé pour Prairie.",
-  "meld_rocks_tip": "Disperse de petits rochers d'andésite et de tuf sur les prairies et terres cultivées ouvertes. Nécessite l'occupation du sol.",
+  "meld_rocks_tip": "Disperse des rochers et des blocs sur les terrains dégagés. L'aperçu montre une densité de 0.2 ; la valeur par défaut est 0.02.",
   "meld_bushes_tip": "Disperse de petits buissons de dix espèces sur les prairies et terres cultivées ouvertes. Nécessite l'occupation du sol.",
   "meld_tree_realm_tip": "Auto choisit le pack d'arbres selon l'emplacement de la zone. Un royaume forcé ignore les mélanges d'écorégion locaux et conserve ses palmiers.",
   "meld_tree_pack_dir_tip": "Organisé comme les packs fournis : royaume / communauté / type d'arbre / taille / nom_quelconque.schem. Un fichier qui ne se charge pas est ignoré avec un avertissement. Expérimental.",

@@ -871,13 +871,13 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_props">Props Override</span>
-                        <span class="tooltip-icon" data-preview-seg="props" data-tooltip-key="meld_props_tip" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
+                        <span class="tooltip-icon" data-preview-seg="props" data-preview-key="previewV" data-tooltip-key="meld_props_tip" data-tooltip="Auto follows the 3D Models &amp; Props setting. All places every prop and None places none, whatever that setting says.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_props_desc">Overrides which 3D props are placed.</span>
                     </span>
                   </label>
                   <div class="settings-control">
-                    <div class="segmented-control" id="meld-props-group"><button type="button" class="segment active" data-default data-v="auto" data-localize="meld_props_auto">Auto</button><button type="button" class="segment" data-v="all" data-localize="meld_props_all">All</button><button type="button" class="segment" data-v="none" data-localize="meld_props_none">None</button></div>
+                    <div class="segmented-control" id="meld-props-group"><button type="button" class="segment active" data-default data-v="auto" data-preview-v="all" data-localize="meld_props_auto">Auto</button><button type="button" class="segment" data-v="all" data-preview-v="all" data-localize="meld_props_all">All</button><button type="button" class="segment" data-v="none" data-preview-v="none" data-localize="meld_props_none">None</button></div>
                   </div>
                 </div>
               </div>
@@ -1026,7 +1026,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_rocks">Rocks</span>
-                        <span class="tooltip-icon" data-preview-on="rocks-on" data-preview-off="rocks-off" data-tooltip-key="meld_rocks_tip" data-tooltip="Scatters small andesite and tuff rocks over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="rock-density-0.2" data-preview-off="rocks-off" data-tooltip-key="meld_rocks_tip" data-tooltip="Scatters rocks and boulders on open ground. The preview shows density 0.2; the default is 0.02.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_rocks_desc">Scatter small rocks over open land.</span>
                     </span>
@@ -1041,7 +1041,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_bushes">Bushes</span>
-                        <span class="tooltip-icon" data-preview-on="bushes-on" data-preview-off="rocks-off" data-tooltip-key="meld_bushes_tip" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
+                        <span class="tooltip-icon" data-preview-on="bush-density-0.2" data-preview-off="rocks-off" data-tooltip-key="meld_bushes_tip" data-tooltip="Scatters small bushes of ten species over open grassland and cropland. Needs land cover.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_bushes_desc">Scatter small bushes over open land.</span>
                     </span>

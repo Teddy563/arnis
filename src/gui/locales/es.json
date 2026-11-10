@@ -576,7 +576,7 @@
   "legacy_trees_tip": "Árboles procedurales simples en lugar de los modelos de árbol incluidos. Más rápido, más cuadrado.",
   "max_tree_size_tip": "Tamaño máximo de árbol permitido: Pequeño 6, Mediano 12, Grande 20 y Alto 28 bloques; Gigante no tiene límite. Los árboles más altos pasan a una especie más pequeña cuando existe.",
   "field_preset_tip": "Clásico mezcla los cultivos bloque a bloque. Los demás dan un solo cultivo a cada campo y dividen los campos grandes en franjas: estrechas para Minifundio, medianas para Mosaico, anchas y mayormente de trigo para Pradera.",
-  "meld_rocks_tip": "Esparce pequeñas rocas de andesita y toba sobre pastizales y cultivos abiertos. Requiere cobertura del suelo.",
+  "meld_rocks_tip": "Esparce rocas y peñascos en terreno abierto. La vista previa muestra densidad 0.2; el valor predeterminado es 0.02.",
   "meld_bushes_tip": "Esparce pequeños arbustos de diez especies sobre pastizales y cultivos abiertos. Requiere cobertura del suelo.",
   "meld_tree_realm_tip": "Automático elige el paquete de árboles según la ubicación del área. Un reino forzado omite las mezclas de ecorregión locales y conserva sus palmeras.",
   "meld_tree_pack_dir_tip": "Organizada como los paquetes incluidos: reino / comunidad / tipo de árbol / tamaño / cualquier nombre.schem. Un archivo que no se carga se omite con una advertencia. Experimental.",
