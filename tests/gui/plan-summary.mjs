@@ -11,8 +11,8 @@ const { planHead } = await import('../../src/gui/js/meld-features.js');
 
 const huge = { disk_mb: [3.8 * 1048576, 4.6 * 1048576], ram_mb: [552, 704], time_min: [47 * 60 + 50, 139 * 60 + 10], workers: 4 };
 const stats = (e) => planHead(e, []).at(0).children.filter((c) => c.className.startsWith('plan-stat')).map((c) => c.textContent);
-assert.deepStrictEqual(stats(huge), ['≈ 48–139 h', '3.8–4.6 TB'], 'long jobs in hours, size as one range');
-assert.deepStrictEqual(stats({ ...huge, time_min: [3, 40], disk_mb: [300, 450] }), ['≈ 3–40 min', '300–450 MB']);
+assert.deepStrictEqual(stats(huge), ['≈ 94 h', '≈ 2.5 GB RAM', '≈ 4.2 TB'], 'one midpoint each, long jobs in hours');
+assert.deepStrictEqual(stats({ ...huge, time_min: [3, 40], disk_mb: [300, 450] }), ['≈ 22 min', '≈ 2.5 GB RAM', '≈ 375 MB']);
 
 // Disk line both ways.
 const disk = (e) => planHead(e, []).at(1);
@@ -24,9 +24,9 @@ assert.ok(!yes.className.includes('is-low') && !yes.hidden);
 assert.strictEqual(yes.textContent, 'Fits: 412.0 GB free');
 assert.ok(disk(huge).hidden, 'free space unknown: no line');
 
-// Fit model: 11px semibold ~7px a character, each stat + 16px (icon and gap), the "?" 16px,
-// 10px gaps. The panel is 250px wide at the narrowest (1000x650) with 20px padding.
-const row = (x) => x.reduce((w, t) => w + t.length * 7 + 16, 0) + 16 + 10 * x.length;
-assert.ok(row(stats(huge)) <= 230, 'the stats row and its "?" fit on one line');
+// Fit model: 11px semibold ~6.5px a character, each stat + 16px (icon and gap), the "?" 16px,
+// 8px gaps. The panel is 340px wide (1000x650 and up) with 20px padding.
+const row = (x) => x.reduce((w, t) => w + t.length * 6.5 + 16, 0) + 16 + 8 * x.length;
+assert.ok(row(stats(huge)) <= 320, 'the stats row and its "?" fit on one line');
 console.log('plan-summary: ok');
 process.exit(0);

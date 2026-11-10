@@ -512,12 +512,16 @@ const longTime = (hours) => (m) => (hours ? t('plan_hours_only', '{h} h', { h: M
 // `more` is the lines behind the "?". `disk` is null while the free space is unknown.
 export function planHead(e, more) {
   const head = div('plan-head', '');
+  // One small row, one value each: the midpoint of the estimate, never a range (the "?" keeps the ranges).
+  const mid = ([lo, hi]) => (lo + hi) / 2;
+  const ram = mid(e.ram_mb) * (e.workers || 1);
   for (const [kind, key, tip, text] of [
-    ['time', 'plan_time_tip', 'Time (estimate, warm caches)', `≈ ${range(e.time_min, longTime(e.time_min[1] >= 600))}`],
-    ['disk', 'plan_disk_tip', 'Disk space', range(e.disk_mb, gb)],
+    ['time', 'plan_time_tip', 'Time (estimate, warm caches)', `≈ ${longTime(e.time_min[1] >= 600)(mid(e.time_min))}`],
+    ['ram', 'plan_ram_tip', 'Memory per worker', `≈ ${gb(ram)} RAM`],
+    ['disk', 'plan_disk_tip', 'Disk space', `≈ ${gb(mid(e.disk_mb))}`],
   ]) head.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
   const tip = Object.assign(div('plan-tip', ''), { id: 'plan-tip', role: 'tooltip' });
-  tip.append(...more.map((x) => div('', x)));
+  tip.append(...[`${range(e.time_min, longTime(e.time_min[1] >= 600))} · ${range(e.disk_mb, gb)}`, ...more].map((x) => div('', x)));
   // The one "?": hover or focus shows the details; a click holds them open, with the legend card (showPlan).
   const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon plan-help', id: 'legend-help', textContent: '?', title: t('plan_more', 'Details') });
   help.setAttribute('aria-describedby', 'plan-tip');
