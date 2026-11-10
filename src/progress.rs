@@ -211,7 +211,9 @@ pub fn emit_gui_error(message: &str) {
     crate::progress_json::error(message);
     let payload = error_payload(message);
     let shown = payload["message"].as_str().unwrap_or_default();
-    if emits_suppressed(0.0, shown) {
+    // Judged on the full text, not the cut `shown`: two errors that differ only past
+    // the 35th character are two errors.
+    if emits_suppressed(0.0, &format!("Error! {message}")) {
         return;
     }
     remember_status(shown);
@@ -283,6 +285,16 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    #[test]
+    fn errors_sharing_a_prefix_both_pass_a_mute() {
+        set_progress_suppressed(true);
+        let (a, b) = ("x".repeat(40) + " one", "x".repeat(40) + " two");
+        for m in [&a, &b] {
+            assert!(!emits_suppressed(0.0, &format!("Error! {m}")));
+        }
+        set_progress_suppressed(false);
     }
 
     #[test]

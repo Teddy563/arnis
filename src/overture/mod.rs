@@ -1305,6 +1305,9 @@ fn discover_releases(client: &Client) -> Result<Vec<String>, Box<dyn std::error:
     if crate::net::offline() {
         return Err("offline".into());
     }
+    if let Some(releases) = shared_listing(std::env::var(SHARED_RELEASES_ENV).ok().as_deref()) {
+        return Ok(releases);
+    }
     stats::record_request();
     let body = client
         .get(OVERTURE_RELEASE_LIST_URL)
@@ -1313,6 +1316,26 @@ fn discover_releases(client: &Client) -> Result<Vec<String>, Box<dyn std::error:
         .text()?;
     stats::record_network(body.len() as u64);
     parse_release_listing(&body)
+}
+
+/// Set by a One World coordinator so its pieces skip the listing request.
+const SHARED_RELEASES_ENV: &str = "ARNIS_OVERTURE_RELEASES";
+
+/// The listing a coordinator handed down, or `None` to discover as usual.
+fn shared_listing(value: Option<&str>) -> Option<Vec<String>> {
+    let releases: Vec<String> = value?
+        .split(',')
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+        .collect();
+    (!releases.is_empty()).then_some(releases)
+}
+
+/// Discovers the releases once for a job's pieces, as an environment entry.
+/// `None` when discovery fails, which leaves each piece to discover for itself.
+pub(crate) fn shared_releases_env() -> Option<(&'static str, String)> {
+    let releases = discover_releases(&overture_client().ok()?).ok()?;
+    (!releases.is_empty()).then(|| (SHARED_RELEASES_ENV, releases.join(",")))
 }
 
 /// Releases to try, in order, newest first.
@@ -3179,6 +3202,19 @@ mod tests {
         );
 
         assert!(partition_cache_dir("../evil", "https://host/a/part-0.parquet").is_none());
+    }
+
+    #[test]
+    fn shared_listing_round_trips_and_falls_back_when_empty() {
+        let releases = vec!["2026-09-16.0".to_string(), "2026-08-19.0".to_string()];
+        assert_eq!(
+            shared_listing(Some(&releases.join(","))),
+            Some(releases.clone())
+        );
+        // Unset or empty: the piece discovers for itself.
+        assert_eq!(shared_listing(None), None);
+        assert_eq!(shared_listing(Some("")), None);
+        assert_eq!(shared_listing(Some(",")), None);
     }
 
     #[test]
