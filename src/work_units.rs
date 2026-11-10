@@ -431,20 +431,16 @@ pub fn plan(
     })
 }
 
-/// Whole lattice cells of `size` around `rect`, about one `rect` out, whose ground is
+/// Whole lattice cells of `n` regions around `rect`, about one `rect` out, whose ground is
 /// stretched at most `max_stretch` (blocks per metre are fixed at the origin's latitude):
 /// where a One World can grow next. At most `cap` cells; none when one ring would pass it.
 pub fn room(
     proj: &WebMercatorProjection,
     rect: &XZBBox,
-    size: UnitSize,
+    n: i32,
     max_stretch: f64,
     cap: usize,
 ) -> Vec<LLBBox> {
-    let n = match size {
-        UnitSize::N(n) => n,
-        UnitSize::Auto => AUTO_SIZES[2],
-    };
     let side = REGION_BLOCKS * n.max(1);
     let (gx0, gx1) = (rect.min_x().div_euclid(side), rect.max_x().div_euclid(side));
     let (gz0, gz1) = (rect.min_z().div_euclid(side), rect.max_z().div_euclid(side));
@@ -678,11 +674,11 @@ mod tests {
     fn room_rings_the_job_within_the_stretch_band() {
         let proj = WebMercatorProjection::new(44.43, 26.1, 1.0);
         let one = XZBBox::rect_from_min_max(0, 0, 511, 511).unwrap();
-        assert_eq!(room(&proj, &one, UnitSize::N(1), 0.05, 400).len(), 8);
-        assert!(room(&proj, &one, UnitSize::N(1), 0.05, 7).is_empty());
+        assert_eq!(room(&proj, &one, 1, 0.05, 400).len(), 8);
+        assert!(room(&proj, &one, 1, 0.05, 7).is_empty());
         // 1000 km north of the origin is past 5%: nothing there.
         let far = XZBBox::rect_from_min_max(0, -1_400_000, 511, -1_399_489).unwrap();
-        assert!(room(&proj, &far, UnitSize::N(1), 0.05, 400).is_empty());
+        assert!(room(&proj, &far, 1, 0.05, 400).is_empty());
     }
 
     #[test]

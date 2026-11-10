@@ -1488,8 +1488,13 @@ fn gui_plan_job(
     // without it, less the pieces the outline touches.
     let mask = args.units.plan_mask.take();
     let all = crate::work_units::plan(&proj, &bbox, &args, size)?;
-    // Pieces around the job still within 5% stretch, drawn faint: room to grow later.
-    line["room"] = crate::work_units::room(&proj, &all.rect, size, 0.05, 400)
+    // Pieces around the job still within 5% stretch, drawn faint: room to grow later. Auto
+    // sizes show the job's largest piece.
+    let n = match size {
+        crate::args::UnitSize::N(n) => n,
+        crate::args::UnitSize::Auto => all.units.iter().map(|u| u.size).max().unwrap_or(1),
+    };
+    line["room"] = crate::work_units::room(&proj, &all.rect, n, 0.05, 400)
         .iter()
         .map(|b| b.arg())
         .collect();
