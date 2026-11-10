@@ -21,6 +21,7 @@ assert.ok(holdsNotice(ord, 'Fetching', 1000, 5000));
 assert.ok(!holdsNotice(ord, 'Fetching', 1000, 9500) && !holdsNotice(ord, 'Fetching', 0, 5000));
 assert.ok(!holdsNotice(ord, 'Done! x', 1000, 5000) && !holdsNotice(progressText({ message: 'Error! x' }), 'Error! x', 1000, 5000));
 
+assert.ok(!holdsNotice(ord, 'The retried pieces are built', 1000, 5000));
 const dir = new URL('../../src/gui/locales/', import.meta.url);
 for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'en.json')) {
   assert.ok(JSON.parse(fs.readFileSync(new URL(f, dir), 'utf8')).region_download_fallback, `${f} lacks region_download_fallback`);

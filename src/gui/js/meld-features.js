@@ -27,9 +27,9 @@ export const tn = (key, fallback, one, n) =>
 // short `message` on the line and the full text as its tooltip and in the log; a Region Download
 // fallback is a notice in the user's language rather than the raw log line.
 // A fallback notice stays on the status line for 8 s: a following ordinary line then moves only
-// the bar. The end of a run (Error!, Done!, Stopped) always shows.
+// the bar. The end of a run (Error!, Done!, Stopped, a retry's "The retried pieces are built") always shows.
 export const holdsNotice = (shown, message, since, now) =>
-  !shown.notice && since > 0 && now - since < 8000 && !/^(Error!|Done!|Stopped)/.test(message);
+  !shown.notice && since > 0 && now - since < 8000 && !/^(Error!|Done!|Stopped|The retried pieces are built)/.test(message);
 
 // Which world a run writes to. A prewarm only fills the caches: it has no world, so the backend
 // must never be handed the last built one (a new-world run deletes its world when it ends).
