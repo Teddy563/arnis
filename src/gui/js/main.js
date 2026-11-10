@@ -2879,7 +2879,7 @@ function displayBboxInfoText(bboxText, shapes) {
   const hadShapes = Boolean(selectedShapes);
   selectedShapes = Array.isArray(shapes) && shapes.length ? shapes : null;
   // Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask).
-  if (selectedShapes) {
+  if (selectedShapes && isOneWorldEnabled()) {
     setPlanMask({
       type: 'MultiPolygon',
       coordinates: selectedShapes.map((ring) => [ring.concat([ring[0]]).map(([lat, lng]) => [lng, lat])])
