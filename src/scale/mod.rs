@@ -275,7 +275,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         match crate::osm_pbf::bake_for_job(&src, bake_area) {
             Err(e) if crate::osm_pbf::fallback_allowed(&src, crate::net::offline()) => {
                 crate::retrieve_data::warn_region_download_fallback(&e);
-                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"]);
+                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"], &[]);
             }
             r => r?,
         }
@@ -777,8 +777,8 @@ const PER_PIECE_SWITCHES: &[&str] = &[
 /// and a run refuses a spawn outside its area.
 const SPAWN: &[&str] = &["--spawn-lat", "--spawn-lng"];
 
-/// `argv` without the options `names` and their values.
-fn without_options(argv: Vec<OsString>, names: &[&str]) -> Vec<OsString> {
+/// `argv` without the options `names` and their values, and without the `switches`.
+fn without_options(argv: Vec<OsString>, names: &[&str], switches: &[&str]) -> Vec<OsString> {
     let mut skip_value = false;
     argv.into_iter()
         .filter(|arg| {
@@ -786,9 +786,10 @@ fn without_options(argv: Vec<OsString>, names: &[&str]) -> Vec<OsString> {
                 return false;
             }
             let text = arg.to_string_lossy();
-            let named = names.contains(&text.split('=').next().unwrap_or_default());
+            let name = text.split('=').next().unwrap_or_default();
+            let named = names.contains(&name);
             skip_value = named && !text.contains('=');
-            !named
+            !named && !switches.contains(&name)
         })
         .collect()
 }
@@ -801,23 +802,11 @@ fn child_args(
     lease: &Path,
     keep_spawn: bool,
 ) -> Vec<OsString> {
-    let mut out = Vec::new();
-    let mut skip_value = false;
-    for arg in argv {
-        if std::mem::take(&mut skip_value) {
-            continue;
-        }
-        let text = arg.to_string_lossy();
-        let name = text.split('=').next().unwrap_or_default();
-        if PER_PIECE_SWITCHES.contains(&name) {
-            continue;
-        }
-        if PER_PIECE.contains(&name) || (!keep_spawn && SPAWN.contains(&name)) {
-            skip_value = !text.contains('=');
-            continue;
-        }
-        out.push(arg);
+    let mut names = PER_PIECE.to_vec();
+    if !keep_spawn {
+        names.extend(SPAWN);
     }
+    let mut out = without_options(argv.collect(), &names, PER_PIECE_SWITCHES);
     out.extend([
         "--bbox".into(),
         bbox.into(),
@@ -1200,6 +1189,7 @@ second
         let got = without_options(
             argv.map(OsString::from).to_vec(),
             &["--osm-pbf", "--osm-pbf-url"],
+            &[],
         );
         assert_eq!(got, ["--scale", "1"].map(OsString::from));
     }
