@@ -4,7 +4,7 @@
 import assert from 'node:assert';
 
 const nodes = new Map();
-const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, classList: { toggle() {} }, addEventListener() {}, append() {}, replaceChildren() {} });
+const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, classList: { toggle() {}, remove() {}, contains: () => false }, setAttribute() {}, addEventListener() {}, append() {}, replaceChildren() {} });
 globalThis.document = { querySelector: () => null, addEventListener() {}, createElement: node, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 globalThis.window = { addEventListener() {} };
 const { initRunControls, initJobPlan, meldFlags, setPlanMask, hasPlanMask } = await import('../../src/gui/js/meld-features.js');

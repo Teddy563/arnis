@@ -4,7 +4,7 @@
 import assert from 'node:assert';
 
 const nodes = new Map();
-const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, listeners: {}, classList: { toggle() {} }, addEventListener(t, f) { this.listeners[t] = f; } });
+const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, listeners: {}, classList: { toggle() {}, remove() {}, contains: () => false }, setAttribute() {}, addEventListener(t, f) { this.listeners[t] = f; } });
 globalThis.document = { querySelector: () => null, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 const winListeners = [];
 globalThis.window = { addEventListener: (t, f) => winListeners.push([t, f]) };

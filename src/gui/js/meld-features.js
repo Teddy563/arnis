@@ -508,6 +508,35 @@ const minutes = (m) => {
   return t('plan_hours', '{h} h {m} min', { h: Math.floor(r / 60), m: r % 60 });
 };
 
+// A long job in whole hours ("48–139 h"); a shorter one as `minutes`.
+const longTime = (hours) => (m) => (hours ? t('plan_hours_only', '{h} h', { h: Math.max(1, Math.round(m / 60)) }) : minutes(m));
+
+// The plan's headline (time and size, large), the disk line, and a "?" with everything else.
+// `more` is the lines behind the "?". `disk` is null while the free space is unknown.
+export function planHead(e, more) {
+  const head = div('plan-head', '');
+  for (const [kind, key, tip, text] of [
+    ['time', 'plan_time_tip', 'Time (estimate, warm caches)', `≈ ${range(e.time_min, longTime(e.time_min[1] >= 600))}`],
+    ['disk', 'plan_disk_tip', 'Disk space', range(e.disk_mb, gb)],
+  ]) head.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
+  const tip = Object.assign(div('plan-tip', ''), { id: 'plan-tip', role: 'tooltip' });
+  tip.append(...more.map((x) => div('', x)));
+  const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon plan-help', textContent: '?', title: t('plan_more', 'Details') });
+  help.setAttribute('aria-describedby', 'plan-tip');
+  help.addEventListener('click', () => help.classList.toggle('is-open'));
+  help.addEventListener('blur', () => help.classList.remove('is-open'));
+  help.addEventListener('keydown', (ev) => ev.key === 'Escape' && help.classList.remove('is-open'));
+  head.append(help, tip);
+  head.tip = tip;
+  head.help = help;
+  const fits = e.free_disk_mb == null ? null : e.disk_mb[1] <= e.free_disk_mb;
+  const disk = div(`plan-disk${fits === false ? ' is-low' : ''}`, fits == null ? '' : fits
+    ? t('plan_disk_fits', 'Fits: {free} free', { free: gb(e.free_disk_mb) })
+    : t('plan_disk_short', 'Needs {need}, {free} free on this disk', { need: range(e.disk_mb, gb), free: gb(e.free_disk_mb) }));
+  disk.hidden = fits == null;
+  return [head, disk];
+}
+
 // "4 × 4 regions" for the piece numbered `i` in the last plan.
 const planSizes = new Map();
 const sizeText = (i) => (planSizes.has(i) ? t('plan_piece_size', '{n} × {m} regions', { n: planSizes.get(i), m: planSizes.get(i) }) : '');
@@ -520,8 +549,15 @@ function showPlan(rows, warn = '', ring = false) {
   shown = [rows, warn, ring];
   const box = el('job-plan');
   if (!box) return;
-  // The stretch line goes under the pieces and regions, or alone without a plan.
-  box.replaceChildren(...rows.slice(0, 2), ...stretchRows, ...rows.slice(2));
+  // With a plan the stretch lines sit behind its "?" (amber or red there too); alone they show as they are.
+  const head = rows[0]?.tip ? rows[0] : null;
+  if (head) {
+    head.tip.querySelectorAll?.('.plan-stretch').forEach((x) => x.remove());
+    head.tip.append(...stretchRows);
+    head.help.classList.toggle('is-warn', stretchRows.some((x) => x.classList.contains('is-warn')));
+    head.help.classList.toggle('is-error', stretchRows.some((x) => x.classList.contains('is-error')));
+  }
+  box.replaceChildren(...rows, ...(head ? [] : stretchRows));
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
@@ -668,24 +704,17 @@ async function updatePlan() {
   const regions = (list) => list.reduce((n, u) => n + u.regions, 0);
   const ring = regions(units.filter((u) => u.ring));
   const totals = { pieces: units.length, regions: regions(units), ring };
-  // "30 pieces", a muted line of what else it is, then what it costs: disk, RAM, time.
-  const stats = div('plan-stats', '');
-  for (const [kind, key, tip, text] of [
-    ['disk', 'plan_disk_tip', 'Disk space', range(e.disk_mb, gb)],
-    ['ram', 'plan_ram_tip', 'Memory per worker', t('plan_ram_worker', '{ram}/worker', { ram: range(e.ram_mb, gb) })],
-    ['time', 'plan_time_tip', 'Time (estimate, warm caches)', range(e.time_min, minutes)],
-  ]) stats.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
-  showPlan([
-    div('plan-big', tn('plan_pieces', '{n} pieces', '{n} piece', totals.pieces)),
-    div('plan-sub', [
+  // Time and size large, the disk line, the rest behind the "?".
+  showPlan(planHead(e, [
+    [
+      tn('plan_pieces', '{n} pieces', '{n} piece', totals.pieces),
       tn('plan_regions', '{n} regions', '{n} region', totals.regions),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
-    ].join(' · ')),
-    stats,
-    ...(units.length > MAX_DRAWN ? [div('', t('plan_too_many', 'Too many pieces to draw on the map.'))] : []),
-  ], e.free_disk_mb != null && e.disk_mb[1] > e.free_disk_mb ? t('plan_low_disk', 'Only {free} free on this disk.', { free: gb(e.free_disk_mb) }) : '',
-  units.some((u) => u.ring));
+    ].join(' · '),
+    `${t('plan_ram_tip', 'Memory per worker')}: ${range(e.ram_mb, gb)}`,
+    ...(units.length > MAX_DRAWN ? [t('plan_too_many', 'Too many pieces to draw on the map.')] : []),
+  ]), '', units.some((u) => u.ring));
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
   const planned = units.length > MAX_DRAWN ? [] : units.map((u) => {
