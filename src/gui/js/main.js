@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -954,16 +954,6 @@ function setEtaText(el, text) {
   for (const span of el.children) span.textContent = text;
 }
 
-function formatEtaDuration(sec) {
-  sec = Math.max(0, Math.round(sec));
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
 function renderEta() {
   const el = document.getElementById("progress-eta");
   if (!el) return;
@@ -974,9 +964,9 @@ function renderEta() {
     return;
   }
   // Floor at 1s so it never reads "0s" before Done.
-  const value = formatEtaDuration(Math.max(1, eta.shown));
+  const value = etaDuration(Math.max(1, eta.shown));
   // Only the estimate is on the bar; the elapsed time is in its tooltip (meld-features.js).
-  const tpl = (window.localization && window.localization.run_eta) || "about {time} left";
+  const tpl = (window.localization && window.localization.run_eta) || "≈{time} left";
   setEtaText(el, tpl.replace("{time}", value));
   el.classList.add("visible");
 }

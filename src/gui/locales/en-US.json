@@ -698,7 +698,7 @@
   "plan_disk_fits": "Fits: {free} free",
   "plan_disk_short": "Needs {need}, {free} free on this disk",
   "plan_minutes": "{m} min",
-  "run_eta": "about {time} left",
+  "run_eta": "≈{time} left",
   "map_select_area": "Select this area",
   "map_use_outline": "Use outline",
   "plan_error": "Could not plan this selection: {error}",
