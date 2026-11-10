@@ -864,8 +864,9 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 /// Runs one piece to the end, or kills it as soon as `cancel` is set. `progress` gets the
 /// piece's own fraction done. Its output lines are also written to `log`.
 /// A piece's log, appended to so a retry (or the build after a prewarm) keeps the
-/// first failure; each try opens with a `--- try N ---` line.
-fn open_piece_log(path: &Path) -> Option<std::fs::File> {
+/// first failure; each build try opens with a `--- try N ---` line, the warm step with
+/// `--- warm ---`, which is not a try.
+fn open_piece_log(path: &Path, warm: bool) -> Option<std::fs::File> {
     let tries = std::fs::read_to_string(path)
         .map(|t| t.lines().filter(|l| l.starts_with("--- try ")).count())
         .unwrap_or(0);
@@ -874,7 +875,11 @@ fn open_piece_log(path: &Path) -> Option<std::fs::File> {
         .append(true)
         .open(path)
         .ok()?;
-    writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    if warm {
+        writeln!(f, "--- warm ---").ok()?;
+    } else {
+        writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    }
     Some(f)
 }
 
@@ -911,7 +916,9 @@ fn run_piece_until(
     // Held open for the piece's life: on Unix it exits when this closes.
     let _stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_LINES)));
-    let log = Arc::new(Mutex::new(open_piece_log(log)));
+    // Only the warm step's command line carries `--prewarm`: the coordinator strips it.
+    let warm = argv.iter().any(|a| a == "--prewarm");
+    let log = Arc::new(Mutex::new(open_piece_log(log, warm)));
     let push =
         |tail: &Mutex<VecDeque<String>>, log: &Mutex<Option<std::fs::File>>, line: String| {
             if let Some(f) = lock(log).as_mut() {
@@ -1023,17 +1030,23 @@ mod tests {
     fn a_piece_log_keeps_every_try() {
         let p = std::env::temp_dir().join(format!("piece-log-{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&p);
-        for line in ["first failure", "second failure"] {
-            writeln!(open_piece_log(&p).unwrap(), "{line}").unwrap();
+        for (warm, line) in [
+            (true, "warmed"),
+            (false, "first failure"),
+            (false, "second"),
+        ] {
+            writeln!(open_piece_log(&p, warm).unwrap(), "{line}").unwrap();
         }
         let t = std::fs::read_to_string(&p).unwrap();
         let _ = std::fs::remove_file(&p);
         assert_eq!(
             t,
-            "--- try 1 ---
+            "--- warm ---
+warmed
+--- try 1 ---
 first failure
 --- try 2 ---
-second failure
+second
 "
         );
     }
