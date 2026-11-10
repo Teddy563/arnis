@@ -119,6 +119,11 @@ fn anchor_span(offsets: &[(i32, i32, i32)], pick: impl Fn(&(i32, i32, i32)) -> i
     (-lo, 15 - hi)
 }
 
+/// Rocks 8 blocks or more across.
+fn is_large(schem: &StructureSchematic) -> bool {
+    schem.width.max(schem.length) >= 8
+}
+
 /// What one chunk holds: the piece, its rotation and its anchor in world blocks.
 fn chunk_piece(
     chunk_x: i32,
@@ -135,7 +140,21 @@ fn chunk_piece(
         (false, true) => bushes(),
         (false, false) => return None,
     };
-    let schem = &pool[rng.random_range(0..pool.len())];
+    let schem = if rock_hit {
+        // Big rocks weigh 1 against 6 for small ones: about one rock in ten.
+        let weight = |s: &StructureSchematic| if is_large(s) { 1 } else { 6 };
+        let mut roll = rng.random_range(0..pool.iter().map(weight).sum::<u32>());
+        pool.iter()
+            .find(|s| {
+                let w = weight(s);
+                let hit = roll < w;
+                roll = roll.saturating_sub(w);
+                hit
+            })
+            .unwrap_or(&pool[0])
+    } else {
+        &pool[rng.random_range(0..pool.len())]
+    };
     let rot = rng.random_range(0..4u8);
     let offsets = rotated_offsets(schem, rot);
     let (lo_x, hi_x) = anchor_span(&offsets, |o| o.0);
@@ -429,6 +448,24 @@ mod tests {
             "rocks should have been placed"
         );
         assert!(whole == split, "a tile seam changed the scatter");
+    }
+
+    #[test]
+    fn large_rocks_are_rare() {
+        let (mut rocks, mut large) = (0, 0);
+        for cx in 0..100 {
+            for cz in 0..100 {
+                if let Some((schem, true, ..)) = chunk_piece(cx, cz, 1.0, 0.0) {
+                    rocks += 1;
+                    large += is_large(schem) as u32;
+                }
+            }
+        }
+        assert_eq!(rocks, 10_000);
+        assert!(
+            (500..=1500).contains(&large),
+            "{large} large of {rocks} rock picks"
+        );
     }
 
     #[test]
