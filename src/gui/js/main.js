@@ -1285,6 +1285,8 @@ function initSettings() {
   let focusBeforeSettings = null;
 
   let refreshProjects = null;
+  // Open and Expand follow the format, the body and Live while the page is open.
+  redrawProjects = () => { if (refreshProjects && settingsModal.style.display === "flex") refreshProjects(); };
 
   // Open the settings page
   function openSettings() {
@@ -1464,7 +1466,7 @@ function initSettings() {
     invoke,
     savePath: () => savePath,
     scale: () => readGenerationSettings(true).worldScale,
-    available: isOneWorldAvailable,
+    available: () => isOneWorldAvailable() && !liveActive(),
     open: async (name, expand) => {
       oneWorldName = name;
       oneWorldPicked = true;
@@ -3556,12 +3558,14 @@ async function fetchOneWorldInfo() {
 // Re-reads the world the next area joins. Call whenever something that picks
 // the world changes: toggle, name, save path, format, body, window focus.
 let oneWorldRefreshSeq = 0;
+let redrawProjects = () => {};
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
   // An outline picked while One World was off is written once it is on.
   if (outline && isOneWorldEnabled() !== outlineWritten) noteOutline(outline);
   refreshLuantiAvailability();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
+  redrawProjects();
   refreshLiveRows();
   refreshStartButton();
   if (!isOneWorldEnabled()) {
@@ -4052,6 +4056,7 @@ function onLiveStatus() {
   if (!isWorldNameEditing()) refreshWorldNameEditUI();
   refreshLiveRows();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
+  redrawProjects();
   const bedrockBtn = document.getElementById('format-bedrock');
   if (bedrockBtn) bedrockBtn.disabled = liveActive();
   renderOneWorldStatus();
