@@ -1437,7 +1437,7 @@ function initSettings() {
   const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, snap: Boolean(document.querySelector('#meld-snap-group .segment.active:not([data-v="off"])')), mapFirst: document.body.classList.contains('map-first') });
   document.addEventListener('change', pushMeldToMap);
   // Advanced off: a finished One World's name is no longer the world under Start.
-  meldToggle.addEventListener('change', () => { if (!meldToggle.checked && lastRunOneWorld) setWorldNameLabel(""); });
+  meldToggle.addEventListener('change', () => { if (!meldToggle.checked && (lastRunOneWorld || oneWorldPicked)) setWorldNameLabel(""); });
   document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
