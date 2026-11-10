@@ -636,7 +636,7 @@ async function updatePlan() {
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
   const planned = units.length > MAX_DRAWN ? [] : units.map((u) => {
-    const state = u.done ? 'done' : u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
+    const state = u.done ? 'done' : on('meld-skip-built-toggle') && u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
     const [key, fallback] = state === 'planned' ? ['plan_state', 'Planned'] : STATE_TEXT[state];
     return {
       i: u.index, n: u.index + 1, state, ring: u.ring, bounds: u.bbox.split(',').map(Number),
