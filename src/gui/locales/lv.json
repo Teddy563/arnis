@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} daļas pārklājas ar jau uzbūvētu zemi un tiks uzbūvētas no jauna.",
   "layout_about": "Galvenās lapas izkārtojums",
   "about_meld_credit": "Papildu funkcijas ir pārņemtas no Teddy563 Meld projekta: mērogs, ātrums un uzticamība.",
-  "layout_about_map": "Karte"
+  "layout_about_map": "Karte",
+  "settings_section_projects": "Projekti",
+  "settings_nav_projects": "Jūsu izveidotās pasaules",
+  "settings_section_projects_desc": "One World pasaules jūsu saglabāšanas mapē.",
+  "projects_areas": "Apgabali: {n}",
+  "projects_scale": "Mērogs {scale}",
+  "projects_in_use": "Lietošanā",
+  "projects_open": "Atvērt",
+  "projects_expand": "Paplašināt",
+  "projects_empty": "Pasauļu vēl nav. Izveidojiet vienu ar ieslēgtu One World."
 }

@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "Części nakładające się na już zbudowany teren: {n}. Zostaną zbudowane ponownie.",
   "layout_about": "Układ strony głównej",
   "about_meld_credit": "Funkcje zaawansowane pochodzą z projektu Meld autorstwa Teddy563: skalowanie, szybkość i niezawodność.",
-  "layout_about_map": "Mapa"
+  "layout_about_map": "Mapa",
+  "settings_section_projects": "Projekty",
+  "settings_nav_projects": "Zbudowane przez ciebie światy",
+  "settings_section_projects_desc": "Światy One World w folderze zapisu.",
+  "projects_areas": "Obszary: {n}",
+  "projects_scale": "Skala {scale}",
+  "projects_in_use": "W użyciu",
+  "projects_open": "Otwórz",
+  "projects_expand": "Rozszerz",
+  "projects_empty": "Brak światów. Zbuduj jeden z włączonym One World."
 }

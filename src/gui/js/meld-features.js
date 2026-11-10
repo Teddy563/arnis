@@ -856,3 +856,52 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
     await prefetch();
   });
 }
+
+// Settings > Projects: the One Worlds in the save folder. `open(name, expand)` makes one the
+// target; the name is stored here so the choice outlives the session. Returns a refresh function.
+export function initProjects({ invoke, savePath, scale, open }) {
+  const list = el('projects-list');
+  const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
+  const button = (key, fallback, disabled, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'settings-action-button';
+    b.disabled = disabled;
+    b.textContent = t(key, fallback);
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const text = (cls, s) => {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = s;
+    return span;
+  };
+  const pick = async (name, expand) => {
+    localStorage.setItem('arnis-one-world-name', name);
+    localStorage.setItem('arnis-one-world-picked', '1');
+    await open(name, expand);
+  };
+  return async function refresh() {
+    let worlds = [];
+    try { worlds = (await invoke('gui_list_one_worlds', { savePath: savePath() })) || []; } catch (e) { console.error(e); }
+    const rows = worlds.map((w) => {
+      const row = document.createElement('div');
+      row.className = 'projects-row';
+      const odd = w.scale != null && scale() != null && Math.abs(w.scale - scale()) > 1e-6;
+      const kids = [
+        text('projects-name', w.name),
+        text('projects-meta', t('projects_areas', 'Areas: {n}', { n: w.area_count })),
+        text(odd ? 'projects-meta is-warn' : 'projects-meta', t('projects_scale', 'Scale {scale}', { scale: w.scale ? ratio(w.scale) : '-' })),
+      ];
+      if (w.modified_ms) kids.push(text('projects-meta', new Date(w.modified_ms).toLocaleDateString()));
+      if (w.locked) kids.push(text('projects-meta is-warn', t('projects_in_use', 'In use')));
+      kids.push(button('projects_open', 'Open', w.locked, () => pick(w.name, false)));
+      kids.push(button('projects_expand', 'Expand', w.locked, () => pick(w.name, true)));
+      row.append(...kids);
+      return row;
+    });
+    if (!rows.length) rows.push(text('projects-empty', t('projects_empty', 'No worlds yet. Build one with One World on.')));
+    list.replaceChildren(...rows);
+  };
+}

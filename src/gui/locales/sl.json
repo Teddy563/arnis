@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "Kosi, ki prekrivajo že zgrajeno ozemlje: {n}. Zgrajeni bodo znova.",
   "layout_about": "Postavitev glavne strani",
   "about_meld_credit": "Napredne funkcije izvirajo iz projekta Meld avtorja Teddy563: merilo, hitrost in zanesljivost.",
-  "layout_about_map": "Zemljevid"
+  "layout_about_map": "Zemljevid",
+  "settings_section_projects": "Projekti",
+  "settings_nav_projects": "Svetovi, ki ste jih zgradili",
+  "settings_section_projects_desc": "Svetovi One World v vaši mapi za shranjevanje.",
+  "projects_areas": "Območja: {n}",
+  "projects_scale": "Merilo {scale}",
+  "projects_in_use": "V uporabi",
+  "projects_open": "Odpri",
+  "projects_expand": "Razširi",
+  "projects_empty": "Svetov še ni. Zgradite enega z vklopljenim One World."
 }

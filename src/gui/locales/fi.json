@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} palaa osuu jo rakennetulle maalle, ja ne rakennetaan uudelleen.",
   "layout_about": "Pääsivun asettelu",
   "about_meld_credit": "Lisäominaisuudet ovat peräisin Teddy563:n Meld-projektista: skaalaus, nopeus ja luotettavuus.",
-  "layout_about_map": "Kartta"
+  "layout_about_map": "Kartta",
+  "settings_section_projects": "Projektit",
+  "settings_nav_projects": "Rakentamasi maailmat",
+  "settings_section_projects_desc": "Tallennuskansion One World -maailmat.",
+  "projects_areas": "Alueita: {n}",
+  "projects_scale": "Mittakaava {scale}",
+  "projects_in_use": "Käytössä",
+  "projects_open": "Avaa",
+  "projects_expand": "Laajenna",
+  "projects_empty": "Ei vielä maailmoja. Rakenna yksi One World päällä."
 }

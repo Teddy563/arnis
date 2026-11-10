@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} delar överlappar redan byggt land och byggs om.",
   "layout_about": "Huvudsidans layout",
   "about_meld_credit": "De avancerade funktionerna kommer från Meld-projektet av Teddy563: skalning, hastighet och tillförlitlighet.",
-  "layout_about_map": "Karta"
+  "layout_about_map": "Karta",
+  "settings_section_projects": "Projekt",
+  "settings_nav_projects": "Världar du har byggt",
+  "settings_section_projects_desc": "One World-världarna i din sparmapp.",
+  "projects_areas": "Områden: {n}",
+  "projects_scale": "Skala {scale}",
+  "projects_in_use": "Används",
+  "projects_open": "Öppna",
+  "projects_expand": "Utöka",
+  "projects_empty": "Inga världar än. Bygg en med One World på."
 }

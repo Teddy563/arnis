@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} partes se sobrepõem a terreno já construído e serão reconstruídas.",
   "layout_about": "Layout da página principal",
   "about_meld_credit": "Os recursos avançados vêm do projeto Meld, de Teddy563: escala, velocidade e confiabilidade.",
-  "layout_about_map": "Mapa"
+  "layout_about_map": "Mapa",
+  "settings_section_projects": "Projetos",
+  "settings_nav_projects": "Mundos que você construiu",
+  "settings_section_projects_desc": "Os One Worlds da sua pasta de salvamento.",
+  "projects_areas": "Áreas: {n}",
+  "projects_scale": "Escala {scale}",
+  "projects_in_use": "Em uso",
+  "projects_open": "Abrir",
+  "projects_expand": "Expandir",
+  "projects_empty": "Nenhum mundo ainda. Crie um com One World ativado."
 }

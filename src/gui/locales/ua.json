@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "Частин, що перекривають уже побудовану землю: {n}. Їх буде побудовано заново.",
   "layout_about": "Макет головної сторінки",
   "about_meld_credit": "Розширені функції перенесено з проєкту Meld від Teddy563: масштаб, швидкість і надійність.",
-  "layout_about_map": "Мапа"
+  "layout_about_map": "Мапа",
+  "settings_section_projects": "Проєкти",
+  "settings_nav_projects": "Світи, які ви побудували",
+  "settings_section_projects_desc": "Світи One World у вашій теці збереження.",
+  "projects_areas": "Ділянки: {n}",
+  "projects_scale": "Масштаб {scale}",
+  "projects_in_use": "Використовується",
+  "projects_open": "Відкрити",
+  "projects_expand": "Розширити",
+  "projects_empty": "Світів ще немає. Побудуйте один із увімкненим One World."
 }

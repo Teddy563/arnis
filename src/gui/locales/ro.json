@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} bucăți se suprapun cu teren deja construit și vor fi reconstruite.",
   "layout_about": "Aspectul paginii principale",
   "about_meld_credit": "Funcțiile avansate sunt preluate din proiectul Meld de Teddy563: scalare, viteză și fiabilitate.",
-  "layout_about_map": "Hartă"
+  "layout_about_map": "Hartă",
+  "settings_section_projects": "Proiecte",
+  "settings_nav_projects": "Lumile pe care le-ai construit",
+  "settings_section_projects_desc": "Lumile One World din folderul tău de salvare.",
+  "projects_areas": "Zone: {n}",
+  "projects_scale": "Scară {scale}",
+  "projects_in_use": "În uz",
+  "projects_open": "Deschide",
+  "projects_expand": "Extinde",
+  "projects_empty": "Nu există încă lumi. Construiește una cu One World activat."
 }

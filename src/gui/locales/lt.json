@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} dalių persidengia su jau sukurta žeme ir bus sukurtos iš naujo.",
   "layout_about": "Pagrindinio puslapio išdėstymas",
   "about_meld_credit": "Išplėstinės funkcijos perkeltos iš Teddy563 Meld projekto: mastelis, greitis ir patikimumas.",
-  "layout_about_map": "Žemėlapis"
+  "layout_about_map": "Žemėlapis",
+  "settings_section_projects": "Projektai",
+  "settings_nav_projects": "Jūsų sukurti pasauliai",
+  "settings_section_projects_desc": "One World pasauliai jūsų išsaugojimo aplanke.",
+  "projects_areas": "Plotai: {n}",
+  "projects_scale": "Mastelis {scale}",
+  "projects_in_use": "Naudojamas",
+  "projects_open": "Atidaryti",
+  "projects_expand": "Išplėsti",
+  "projects_empty": "Pasaulių dar nėra. Sukurkite įjungę One World."
 }

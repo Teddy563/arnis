@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} ピースが構築済みの土地と重なっており、再構築されます。",
   "layout_about": "メイン画面のレイアウト",
   "about_meld_credit": "高度な機能は Teddy563 の Meld プロジェクトから移植されました：スケーリング、速度、信頼性。",
-  "layout_about_map": "地図"
+  "layout_about_map": "地図",
+  "settings_section_projects": "プロジェクト",
+  "settings_nav_projects": "作成したワールド",
+  "settings_section_projects_desc": "保存フォルダ内の One World。",
+  "projects_areas": "エリア: {n}",
+  "projects_scale": "縮尺 {scale}",
+  "projects_in_use": "使用中",
+  "projects_open": "開く",
+  "projects_expand": "拡張",
+  "projects_empty": "ワールドはまだありません。One World をオンにして作成してください。"
 }

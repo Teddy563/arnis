@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} darab átfed már megépített területet, és újra fog épülni.",
   "layout_about": "Főoldal elrendezése",
   "about_meld_credit": "A haladó funkciók Teddy563 Meld projektjéből származnak: méretezés, sebesség és megbízhatóság.",
-  "layout_about_map": "Térkép"
+  "layout_about_map": "Térkép",
+  "settings_section_projects": "Projektek",
+  "settings_nav_projects": "Az általad épített világok",
+  "settings_section_projects_desc": "A mentési mappában lévő One World-ök.",
+  "projects_areas": "Területek: {n}",
+  "projects_scale": "Méretarány {scale}",
+  "projects_in_use": "Használatban",
+  "projects_open": "Megnyitás",
+  "projects_expand": "Bővítés",
+  "projects_empty": "Még nincs világ. Építs egyet bekapcsolt One World mellett."
 }

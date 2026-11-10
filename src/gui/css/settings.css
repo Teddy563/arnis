@@ -1165,3 +1165,50 @@ body.meld-off .meld-only {
     radial-gradient(circle at 0 100%, #000 9px, transparent 22px),
     radial-gradient(circle at 100% 100%, #000 9px, transparent 22px);
 }
+
+/* Projects: one row per One World in the save folder */
+.settings-page .projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-page .projects-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--ui-tile-border);
+  border-radius: 12px;
+}
+
+.settings-page .projects-name {
+  flex: 1 1 160px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .projects-meta {
+  font-size: 12.5px;
+  opacity: 0.75;
+}
+
+.settings-page .projects-meta.is-warn {
+  color: var(--ui-accent);
+  opacity: 1;
+}
+
+.settings-page .projects-row .settings-action-button {
+  height: 32px;
+  padding: 0 12px;
+}
+
+.settings-page .projects-row .settings-action-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.settings-page .projects-empty {
+  opacity: 0.75;
+}

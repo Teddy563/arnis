@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} 个分块与已构建的土地重叠，将被重新构建。",
   "layout_about": "主页面布局",
   "about_meld_credit": "高级功能移植自 Teddy563 的 Meld 项目：缩放、速度与可靠性。",
-  "layout_about_map": "地图"
+  "layout_about_map": "地图",
+  "settings_section_projects": "项目",
+  "settings_nav_projects": "你建造的世界",
+  "settings_section_projects_desc": "保存文件夹中的 One World。",
+  "projects_areas": "区域：{n}",
+  "projects_scale": "比例 {scale}",
+  "projects_in_use": "使用中",
+  "projects_open": "打开",
+  "projects_expand": "扩展",
+  "projects_empty": "还没有世界。开启 One World 后创建一个。"
 }

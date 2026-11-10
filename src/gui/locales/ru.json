@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "Частей, перекрывающих уже построенную землю: {n}. Они будут построены заново.",
   "layout_about": "Макет главной страницы",
   "about_meld_credit": "Расширенные функции перенесены из проекта Meld от Teddy563: масштаб, скорость и надёжность.",
-  "layout_about_map": "Карта"
+  "layout_about_map": "Карта",
+  "settings_section_projects": "Проекты",
+  "settings_nav_projects": "Построенные вами миры",
+  "settings_section_projects_desc": "Миры One World в вашей папке сохранения.",
+  "projects_areas": "Области: {n}",
+  "projects_scale": "Масштаб {scale}",
+  "projects_in_use": "Используется",
+  "projects_open": "Открыть",
+  "projects_expand": "Расширить",
+  "projects_empty": "Миров пока нет. Постройте один с включённым One World."
 }

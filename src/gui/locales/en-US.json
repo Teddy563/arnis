@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} pieces overlap land already built and will be rebuilt.",
   "layout_about": "Main page layout",
   "about_meld_credit": "Advanced features are ported from the Meld project by Teddy563: scaling, speed and reliability.",
-  "layout_about_map": "Map"
+  "layout_about_map": "Map",
+  "settings_section_projects": "Projects",
+  "settings_nav_projects": "Worlds you have built",
+  "settings_section_projects_desc": "The One Worlds in your save folder.",
+  "projects_areas": "Areas: {n}",
+  "projects_scale": "Scale {scale}",
+  "projects_in_use": "In use",
+  "projects_open": "Open",
+  "projects_expand": "Expand",
+  "projects_empty": "No worlds yet. Build one with One World on."
 }

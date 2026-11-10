@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1264,8 +1264,11 @@ function initSettings() {
   // Where focus goes back to once the page closes.
   let focusBeforeSettings = null;
 
+  let refreshProjects = null;
+
   // Open the settings page
   function openSettings() {
+    if (refreshProjects) refreshProjects();
     focusBeforeSettings = document.activeElement;
     settingsModal.style.display = "flex";
     syncSettingsLayout();
@@ -1434,6 +1437,19 @@ function initSettings() {
   holdToConfirm(document.getElementById('run-confirm-hold'), () => {
     document.getElementById('run-confirm').hidden = true;
     startGeneration(true);
+  });
+  refreshProjects = initProjects({
+    invoke,
+    savePath: () => savePath,
+    scale: () => readGenerationSettings(true).worldScale,
+    open: async (name, expand) => {
+      oneWorldName = name;
+      oneWorldPicked = true;
+      if (oneWorldMode() === 'off') document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+      await refreshOneWorldState();
+      closeSettings();
+      if (expand) document.getElementById('plan-expand-button').click();
+    },
   });
   initDataPanel({
     invoke,
@@ -3214,6 +3230,8 @@ let oneWorldOverlayKey = null;
 // Whether the running (or last) generation was a One World run.
 let lastRunOneWorld = false;
 let oneWorldName = localStorage.getItem(ONE_WORLD_NAME_KEY) || '';
+// Set by Settings > Projects > Open: the name above is then used with or without Custom World Name.
+let oneWorldPicked = localStorage.getItem('arnis-one-world-picked') === '1';
 
 function isOneWorldAvailable() {
   return selectedWorldFormat === 'java' && selectedCelestialBody === 'earth';
@@ -3276,7 +3294,7 @@ function refreshWorldRulesRows() {
 
 // The name picks the world; it never renames one on disk.
 function oneWorldFolderName() {
-  if (isCustomWorldNameFeatureEnabled() && oneWorldName) return oneWorldName;
+  if (oneWorldName && (isCustomWorldNameFeatureEnabled() || (oneWorldPicked && !document.body.classList.contains('meld-off')))) return oneWorldName;
   return ONE_WORLD_DEFAULT_NAME;
 }
 
@@ -3287,6 +3305,8 @@ function oneWorldDisplayName() {
 
 function setOneWorldName(name) {
   oneWorldName = name;
+  oneWorldPicked = false;
+  localStorage.removeItem('arnis-one-world-picked');
   if (name) localStorage.setItem(ONE_WORLD_NAME_KEY, name);
   else localStorage.removeItem(ONE_WORLD_NAME_KEY);
 }

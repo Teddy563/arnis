@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n}개 조각이 이미 생성된 땅과 겹치며 다시 생성됩니다.",
   "layout_about": "메인 화면 레이아웃",
   "about_meld_credit": "고급 기능은 Teddy563의 Meld 프로젝트에서 가져왔습니다: 확장, 속도, 안정성.",
-  "layout_about_map": "지도"
+  "layout_about_map": "지도",
+  "settings_section_projects": "프로젝트",
+  "settings_nav_projects": "만든 월드",
+  "settings_section_projects_desc": "저장 폴더에 있는 One World 목록입니다.",
+  "projects_areas": "구역: {n}",
+  "projects_scale": "축척 {scale}",
+  "projects_in_use": "사용 중",
+  "projects_open": "열기",
+  "projects_expand": "확장",
+  "projects_empty": "아직 월드가 없습니다. One World를 켜고 만들어 보세요."
 }

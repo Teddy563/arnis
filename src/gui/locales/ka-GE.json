@@ -728,5 +728,14 @@
   "plan_confirm_overlap": "{n} ნაწილი ფარავს უკვე აგებულ მიწას და ხელახლა აიგება.",
   "layout_about": "მთავარი გვერდის განლაგება",
   "about_meld_credit": "გაფართოებული ფუნქციები გადმოტანილია Teddy563-ის Meld პროექტიდან: მასშტაბი, სიჩქარე და საიმედოობა.",
-  "layout_about_map": "რუკა"
+  "layout_about_map": "რუკა",
+  "settings_section_projects": "პროექტები",
+  "settings_nav_projects": "თქვენ შექმნილი სამყაროები",
+  "settings_section_projects_desc": "თქვენს შენახვის საქაღალდეში არსებული One World-ები.",
+  "projects_areas": "უბნები: {n}",
+  "projects_scale": "მასშტაბი {scale}",
+  "projects_in_use": "გამოიყენება",
+  "projects_open": "გახსნა",
+  "projects_expand": "გაფართოება",
+  "projects_empty": "სამყაროები ჯერ არ არის. შექმენით One World-ის ჩართვით."
 }
