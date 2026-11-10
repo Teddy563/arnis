@@ -65,4 +65,6 @@ assert.ok(!meldFlags({ ...ctx, oneWorld: false }).some((f) => f.includes('margin
 assert.deepStrictEqual(generationTarget({ prewarm: true, oneWorld: false, savePath: 's', worldPath: 'w' }), { selectedWorld: '', isNewWorld: false });
 assert.deepStrictEqual(generationTarget({ prewarm: false, oneWorld: false, savePath: 's', worldPath: 'w' }), { selectedWorld: 'w', isNewWorld: true });
 assert.deepStrictEqual(generationTarget({ prewarm: false, oneWorld: true, savePath: 's', worldPath: 'w' }), { selectedWorld: 's', isNewWorld: true });
+// A prewarm with One World on still names the save folder (the backend resolves the world from it), never a new world.
+assert.deepStrictEqual(generationTarget({ prewarm: true, oneWorld: true, savePath: 's', worldPath: 'w' }), { selectedWorld: 's', isNewWorld: false });
 console.log('meld-flags: ok');

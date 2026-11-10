@@ -33,8 +33,9 @@ export const holdsNotice = (shown, message, since, now) =>
 
 // Which world a run writes to. A prewarm only fills the caches: it has no world, so the backend
 // must never be handed the last built one (a new-world run deletes its world when it ends).
+// A One World is resolved from the save folder, so a prewarm with One World on still sends it.
 export const generationTarget = ({ prewarm, oneWorld, savePath, worldPath }) =>
-  prewarm ? { selectedWorld: '', isNewWorld: false } : { selectedWorld: oneWorld ? savePath : worldPath, isNewWorld: true };
+  prewarm ? { selectedWorld: oneWorld ? savePath : '', isNewWorld: false } : { selectedWorld: oneWorld ? savePath : worldPath, isNewWorld: true };
 
 export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
@@ -327,6 +328,7 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   // The faint border around each piece showing what it builds beyond its own area.
   el('run-halo-toggle').addEventListener('change', (e) => {
     postToMap({ type: 'pieceHalo', on: e.target.checked });
+    if (legendOpen) showPlan(...shown); // the card's overlap row follows the toggle
   });
 }
 
@@ -839,6 +841,12 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
 
   const where = el('meld-plan-where');
   let cacheRoot = '';
+  const showPath = () => {
+    el('meld-plan-path').textContent = cacheRoot ? t('meld_cache_path', 'Files are kept in {path}', { path: cacheRoot }) : '';
+    where.hidden = !cacheRoot;
+  };
+  // The path line is built from a stored path, so a language switch only redraws it.
+  window.addEventListener('arnis-localized', showPath);
   const check = async (ready = false) => {
     if (!area()) return say(out, needArea());
     try {
@@ -852,8 +860,7 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
       if (ready) rows.unshift([t('meld_ready_offline', 'Ready to build offline.'), '']);
       lines(out, rows.length ? rows : [[t('meld_nothing_to_download', 'Nothing to download.'), '']]);
       cacheRoot = p.cache_root || '';
-      el('meld-plan-path').textContent = cacheRoot ? t('meld_cache_path', 'Files are kept in {path}', { path: cacheRoot }) : '';
-      where.hidden = !cacheRoot;
+      showPath();
     } catch (e) {
       say(out, t('plan_error', 'Could not plan this selection: {error}', { error: e }));
     }
@@ -918,7 +925,7 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
   };
   return async function refresh() {
     let worlds = [];
-    try { worlds = (await invoke('gui_list_one_worlds', { savePath: savePath() })) || []; } catch (e) { console.error(e); }
+    try { worlds = savePath() ? (await invoke('gui_list_one_worlds', { savePath: savePath() })) || [] : []; } catch (e) { console.error(e); }
     const rows = worlds.map((w) => {
       const row = document.createElement('div');
       row.className = 'projects-row';

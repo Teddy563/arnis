@@ -201,6 +201,7 @@ async function applyLocalization(localization) {
   window.localization = localization;
   renderOneWorldStatus();
   refreshStartButton();
+  window.dispatchEvent(new Event('arnis-localized'));
   // The plan block is built in the language it was drawn in.
   schedulePlan(true);
   labelLiveViewDistances();
@@ -1159,7 +1160,7 @@ function setupProgressListener() {
           // The world keeps its name; the status line carries the reason.
           setWorldNameLabel(oneWorldDisplayName());
           if (isOneWorldEnabled()) setOneWorldStatus(message.replace(/^Error!\s*/, ''), 'error');
-        } else {
+        } else if (!lastRunPrewarm) {
           setWorldNameLabel("");
         }
         resetEta();
@@ -2953,20 +2954,27 @@ async function noteOutline(geojson) {
   refreshBboxSelectionInfo();
 }
 
+// Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask); written when
+// One World is on, cleared when it is off. Called on a new selection and when One World changes.
+let shapesWritten = false;
+function writeShapesMask() {
+  shapesWritten = Boolean(selectedShapes) && isOneWorldEnabled();
+  if (shapesWritten) {
+    setPlanMask({
+      type: 'MultiPolygon',
+      coordinates: selectedShapes.map((ring) => [ring.concat([ring[0]]).map(([lat, lng]) => [lng, lat])])
+    });
+  } else {
+    setPlanMask(null);
+  }
+}
+
 // Function to handle incoming bbox data
 function displayBboxInfoText(bboxText, shapes) {
   clearPrefetchDone();
   const hadShapes = Boolean(selectedShapes);
   selectedShapes = Array.isArray(shapes) && shapes.length ? shapes : null;
-  // Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask).
-  if (selectedShapes && isOneWorldEnabled()) {
-    setPlanMask({
-      type: 'MultiPolygon',
-      coordinates: selectedShapes.map((ring) => [ring.concat([ring[0]]).map(([lat, lng]) => [lng, lat])])
-    });
-  } else if (hadShapes) {
-    setPlanMask(null);
-  }
+  if (selectedShapes || hadShapes) writeShapesMask();
   // Two producers, two separators: the map posts formatBounds output, which is
   // space separated, while manual coordinate entry synthesizes a comma
   // separated string. Splitting on " " alone turned the manual one into a
@@ -3569,6 +3577,7 @@ async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
   // An outline picked while One World was off is written once it is on.
   if (outline && isOneWorldEnabled() !== outlineWritten) noteOutline(outline);
+  if (!outline && selectedShapes && isOneWorldEnabled() !== shapesWritten) writeShapesMask();
   refreshLuantiAvailability();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
   redrawProjects();
@@ -4364,12 +4373,12 @@ async function startGeneration(confirmed = false, prewarm = false) {
 
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
-    clearPieces();
+    if (!prewarm) clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
     // The overlap dialog leaves the page live, so the body, format or area may have changed under it.
-    if (oneWorld && (!(await prepareOneWorldRun(confirmed === true)) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
+    if (oneWorld && (!(await prepareOneWorldRun(confirmed === true || prewarm)) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
