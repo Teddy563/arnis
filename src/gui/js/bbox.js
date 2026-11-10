@@ -1793,10 +1793,12 @@ $(document).ready(function () {
         // One World keeps rotation at 0, and its areas are rectangles.
         if (event.data && event.data.type === 'setRotationLocked') {
             setRotationLocked(!!event.data.locked);
+            _shapesInPieces = false;
             setShapesLocked(!!event.data.locked);
         }
         // A One World built in pieces takes shapes too: its pieces outside them are left out.
         if (event.data && event.data.type === 'setShapesLocked') {
+            _shapesInPieces = !event.data.locked;
             setShapesLocked(!!event.data.locked);
         }
 
@@ -2004,6 +2006,7 @@ $(document).ready(function () {
 
     // One World and live mode generate rectangles only.
     var _shapesLocked = false;
+    var _shapesInPieces = false; // One World built in pieces: the shape tool is open
 
     // Custom icon for drawn markers
     var customMarkerIcon = L.icon({
@@ -2136,7 +2139,9 @@ $(document).ready(function () {
         if (c.contains('leaflet-draw-draw-polygon')) {
             return {
                 name: mapText('map_tool_shape', 'Draw a shape'),
-                desc: mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.') + ' ' + addHint,
+                desc: (_shapesInPieces && !_shapesLocked
+                    ? mapText('map_tool_shape_pieces_desc', 'Pieces the shape touches are built whole.')
+                    : mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.')) + ' ' + addHint,
                 note: _shapesLocked ? mapText('map_tool_shape_one_world', 'One World generates rectangles only.') : ''
             };
         }
