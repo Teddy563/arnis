@@ -2267,7 +2267,7 @@ $(document).ready(function () {
             return {
                 name: mapText('map_tool_clear', 'Clear selection'),
                 desc: mapText('map_tool_clear_desc', 'Removes the selected area and the spawn point.'),
-                note: drawnItems.getLayers().length ? '' : mapText('map_tool_clear_empty', 'Nothing is selected yet.')
+                note: drawnItems.getLayers().length ? mapText('map_tool_clear_hold', 'Hold to clear') : mapText('map_tool_clear_empty', 'Nothing is selected yet.')
             };
         }
         if (btn.id === 'world-preview-btn') {
@@ -2612,15 +2612,15 @@ $(document).ready(function () {
         // growing on it; letting go early cancels. Space or Enter held works too.
         L.DomEvent
             .on(btn, 'mousedown dblclick', L.DomEvent.stopPropagation)
-            .on(btn, 'click', L.DomEvent.stop)
-            .on(btn, 'click', function () {
-                var removed = L.layerGroup();
-                drawnItems.eachLayer(function (l) { removed.addLayer(l); });
-                if (removed.getLayers().length === 0) return;
-                // The existing draw:deleted handler removes the layers, resets
-                // the bounds, notifies the parent and refreshes the handles.
-                map.fire('draw:deleted', { layers: removed });
-            });
+            .on(btn, 'click', L.DomEvent.stop);
+        window.arnisHold(btn, function () {
+            var removed = L.layerGroup();
+            drawnItems.eachLayer(function (l) { removed.addLayer(l); });
+            if (removed.getLayers().length === 0) return;
+            // The existing draw:deleted handler removes the layers, resets
+            // the bounds, notifies the parent and refreshes the handles.
+            map.fire('draw:deleted', { layers: removed });
+        }, window.arnisClearHoldMs, function () { return btn.classList.contains('leaflet-disabled'); });
     })();
 
     // Terrain preview button: usable once the selected bbox fits the 3D

@@ -4293,37 +4293,10 @@ function askRunConfirm() {
 }
 
 // Calls `done` once the button has been held for HOLD_MS (pointer, or Space/Enter); letting go
-// earlier cancels. The fill is CSS (.run-hold.is-holding), timed to the same HOLD_MS.
+// earlier cancels (arnisHold, piece-style.js). The fill is CSS (.run-hold.is-holding), timed to the same HOLD_MS.
 const HOLD_MS = 1500;
 function holdToConfirm(button, done) {
-  let timer = 0;
-  // Only the primary button holds; a button disabled or a panel hidden meanwhile starts nothing.
-  const start = (e) => {
-    if (button.disabled || timer || (e && e.button)) return;
-    button.classList.add('is-holding');
-    timer = setTimeout(() => {
-      stop();
-      if (!button.disabled && !button.closest('[hidden]')) done();
-    }, HOLD_MS);
-  };
-  const stop = () => {
-    clearTimeout(timer);
-    timer = 0;
-    button.classList.remove('is-holding');
-  };
-  const isKey = (e) => e.key === ' ' || e.key === 'Enter';
-  button.addEventListener('pointerdown', start);
-  ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach((type) => button.addEventListener(type, stop));
-  button.addEventListener('keydown', (e) => {
-    if (!isKey(e)) return;
-    e.preventDefault();
-    if (!e.repeat) start();
-  });
-  button.addEventListener('keyup', (e) => {
-    if (!isKey(e)) return;
-    e.preventDefault();
-    stop();
-  });
+  globalThis.arnisHold(button, done, HOLD_MS);
 }
 
 // `confirmed`: the hold (or a retry) already said yes to a job in pieces.
