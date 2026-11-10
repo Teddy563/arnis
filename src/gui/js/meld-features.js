@@ -772,7 +772,8 @@ let stretchShown = [];
 const STRETCH_LEVELS = [[0.05, '#fecc44'], [0.1, '#fa7878']];
 
 export function refreshStretch() {
-  const s = on('advanced-meld-features-toggle') ? stretchSource() : null;
+  // Off by default: no row in the plan, no lines or labels on the map, no legend rows.
+  const s = on('advanced-meld-features-toggle') && on('meld-stretch-toggle') ? stretchSource() : null;
   const key = JSON.stringify(s);
   if (key === stretchKey) return;
   stretchKey = key;

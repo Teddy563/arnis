@@ -89,6 +89,7 @@ const SETTINGS = [
   { id: 'meld-piece-order-select', kind: 'select', store: OWN },
   { id: 'meld-skip-built-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-stitch-map-toggle', kind: 'checkbox', store: OWN },
+  { id: 'meld-stretch-toggle', kind: 'checkbox', store: OWN },
   { id: 'meld-ram-budget-input', kind: 'text', store: OWN },
   { id: 'meld-threads-input', kind: 'text', store: OWN },
   { id: 'meld-seed-input', kind: 'text', store: OWN },

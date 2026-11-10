@@ -150,6 +150,7 @@ Rules:
 - Do not change a colour or dash in `bbox.js` alone. Change `piece-style.js`.
 - Cell hovers and other map tooltips use the window's UI font, a state dot and the state word on line one, the size on line two (`bbox.css`, `.map-first .leaflet-tooltip`).
 - The grid always draws, by zoom: zoomed in, only the cells inside the visible map (at most 2,000 rectangles, redrawn on `moveend`), each filling from the bottom with its progress; zoomed out past that, the job's outline alone. Labels show only when a cell is large enough on screen.
+- The stretch readout (the plan's "Stretch here" line, the 5% and 10% lines and labels on the map, their legend rows) shows only with "Show Map Stretch" in Advanced settings (`meld-stretch-toggle`, off by default). It is the Mercator scale at the selection's latitude against the One World's origin, `cos(origin) / cos(lat) - 1`, the same ratio `one_world.rs` uses.
 
 ## 7. Advanced features gating
 
