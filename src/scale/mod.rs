@@ -360,13 +360,16 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         );
     }
     // `--mapillary-token` reads MAPILLARY_TOKEN, so a piece gets it without a command line.
-    // The Overture release listing too: asked once here instead of once per piece.
+    // The Overture release listing too: asked once here instead of once per piece, and only
+    // when a piece is left to build and reads Overture.
+    let reads_overture =
+        args.overture && !args.skip_objects() && (!queue.is_empty() || head.is_some());
     let token: Vec<(&str, String)> = args
         .mapillary_api_token()
         .map(|t| ("MAPILLARY_TOKEN", t.to_string()))
         .into_iter()
         .chain(
-            args.overture
+            reads_overture
                 .then(crate::overture::shared_releases_env)
                 .flatten(),
         )
