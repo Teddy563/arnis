@@ -546,7 +546,7 @@ const LEGEND_TEXT = {
   legend_title: 'What the lines on the map mean',
   legend_drawing: 'Your selection while you draw it',
   plan_legend_selection: 'Selection',
-  legend_shape: 'The shape you drew; pieces it touches are built whole',
+  legend_shape: 'The shape you drew; a piece it touches is built in full',
   plan_state: 'Planned',
   run_state_queued: 'Waiting',
   run_state_running: 'Running',

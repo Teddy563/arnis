@@ -2189,7 +2189,7 @@ $(document).ready(function () {
             return {
                 name: mapText('map_tool_shape', 'Draw a shape'),
                 desc: (_shapesInPieces && !_shapesLocked
-                    ? mapText('map_tool_shape_pieces_desc', 'Pieces the shape touches are built whole.')
+                    ? mapText('map_tool_shape_pieces_desc', 'A piece the shape touches is built in full.')
                     : mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.')) + ' ' + addHint,
                 note: _shapesLocked ? mapText('map_tool_shape_one_world', 'One World generates rectangles only.') : ''
             };
