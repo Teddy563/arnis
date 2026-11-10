@@ -87,6 +87,36 @@ fn owns_selected_world(is_new_world: bool, one_world: bool, flags: &[String]) ->
     is_new_world && !one_world && !flags.iter().any(|f| f == "--prewarm")
 }
 
+/// Whether a run names and places its output. A prewarm writes none, so it asks Nominatim for
+/// no Bedrock place name and creates no Luanti worlds folder.
+fn names_output(prewarm: bool) -> bool {
+    !prewarm
+}
+
+/// The folder a run works in: the selected world, or the One World named in its saves folder.
+/// A prewarm writes no world, so its path never comes from `selected_world` (the window sends
+/// none): it works in `scratch`, a folder under the OS temp directory that the run removes.
+fn run_world_path(
+    selected_world: &str,
+    one_world_name: Option<&str>,
+    scratch: Option<&Path>,
+) -> PathBuf {
+    match (scratch, one_world_name) {
+        (Some(dir), Some(name)) => dir.join(one_world_dir("", name)),
+        (Some(dir), None) => dir.to_path_buf(),
+        (None, Some(name)) => one_world_dir(selected_world, name),
+        (None, None) => PathBuf::from(selected_world),
+    }
+}
+
+/// A prewarm's scratch folder, removed with the guard.
+fn prewarm_scratch() -> Result<NewWorldCleanup, String> {
+    let dir = env::temp_dir().join(format!("arnis-prewarm-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    Ok(NewWorldCleanup::new(dir))
+}
+
 pub fn run_gui() -> Result<(), String> {
     // Configure thread pool with 90% CPU cap to keep system responsive
     crate::floodfill_cache::configure_rayon_thread_pool(0.9);
@@ -2373,7 +2403,9 @@ fn gui_start_generation(
         emit_gui_error(&e);
         return Err(e);
     }
-    if one_world && live_plays(&one_world_dir(&selected_world, &one_world_name)) {
+    // A prewarm works in a scratch folder, so live mode cannot be playing its world.
+    let prewarm = flags.iter().any(|f| f == "--prewarm");
+    if one_world && !prewarm && live_plays(&one_world_dir(&selected_world, &one_world_name)) {
         let e = "Live mode is playing this world. Stop it first.".to_string();
         emit_gui_error(&e);
         return Err(e);
@@ -2496,11 +2528,19 @@ fn gui_start_generation(
         let _generation_slot = generation_slot;
         let _presence = presence;
         let work = move || -> Result<(), String> {
-            let world_path = if one_world {
-                one_world_dir(&selected_world, &one_world_name)
-            } else {
-                PathBuf::from(&selected_world)
+            // Declared first, so it is removed last: after the lock and the cleanup guard.
+            let scratch = match extra.prewarm.then(prewarm_scratch).transpose() {
+                Ok(scratch) => scratch,
+                Err(e) => {
+                    emit_gui_error(&e);
+                    return Err(e);
+                }
             };
+            let world_path = run_world_path(
+                &selected_world,
+                one_world.then_some(one_world_name.as_str()),
+                scratch.as_ref().map(|g| g.path.as_path()),
+            );
 
             // Determine world format from UI selection first (needed for session lock decision)
 
@@ -2847,6 +2887,7 @@ fn gui_start_generation(
 
             // Determine output path and level name based on format
             let (generation_path, level_name) = match world_format {
+                _ if !names_output(args.prewarm) => (world_path.clone(), None),
                 WorldFormat::JavaAnvil => {
                     // Java: use the selected world path, add localized name if new
                     let updated_path = if is_new_world {
@@ -3484,6 +3525,55 @@ mod tests {
                 .unwrap()
                 .prewarm
         );
+    }
+
+    /// A One World prewarm, sent with no selected world, opens its world in the scratch folder:
+    /// never a path made from the empty selection, so a One World of that name in the current
+    /// directory is left as it is.
+    #[test]
+    fn prewarm_one_world_stays_in_its_scratch_folder() {
+        use clap::Parser;
+        let name = format!("arnis-prewarm-test-{}", std::process::id());
+        let in_cwd = one_world_dir("", &name);
+        assert!(in_cwd.is_relative());
+        fs::create_dir(&in_cwd).unwrap();
+        // Removes the stand-in even if an assert fails.
+        let _remove = NewWorldCleanup::new(in_cwd.clone());
+        fs::write(in_cwd.join("level.dat"), b"kept").unwrap();
+
+        let scratch = tempfile::tempdir().unwrap();
+        let world = run_world_path("", Some(&name), Some(scratch.path()));
+        assert!(world.starts_with(scratch.path()) && world != in_cwd);
+        assert_eq!(
+            run_world_path("", None, Some(scratch.path())),
+            scratch.path()
+        );
+        let bbox = "48.130,11.560,48.145,11.590";
+        let mut args = Args::parse_from(["arnis", "--output-dir", ".", "--bbox", bbox]);
+        let session =
+            crate::one_world::prepare(&world, &LLBBox::from_str(bbox).unwrap(), &mut args).unwrap();
+        assert!(session.created);
+        drop(session);
+
+        let names: Vec<_> = fs::read_dir(&in_cwd)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["level.dat"]);
+        assert_eq!(fs::read(in_cwd.join("level.dat")).unwrap(), b"kept");
+        // Without a prewarm a run still goes to the selected world.
+        assert_eq!(
+            run_world_path("saves", Some(&name), None),
+            one_world_dir("saves", &name)
+        );
+        assert_eq!(run_world_path("w", None, None), PathBuf::from("w"));
+    }
+
+    /// A Bedrock or Luanti prewarm names no output: no place-name request, no worlds folder.
+    #[test]
+    fn prewarm_names_no_output() {
+        assert!(!names_output(true));
+        assert!(names_output(false));
     }
 
     /// The switch off sends no flags, and no flags leave every setting at the stock run's.
