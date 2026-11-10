@@ -17,4 +17,9 @@ assert.equal(item.leftAt, 0);
 assert.equal(hold(false, item.leftAt, 2000), false);
 const other = {};
 assert.equal(globalThis.arnisCardDrop({ leftAt: null }, other), other, 'another piece stays held');
+// Projects Open on the world already shown refits the map; the same overlays posted again do not.
+const fit = globalThis.arnisShouldFit;
+assert.equal(fit('w', 'w', false), false, 'same world, plain refresh');
+assert.equal(fit('w', 'w', true), true, 'same world, Open');
+assert.equal(fit('v', 'w', false), true, 'another world');
 console.log('card-hold ok');

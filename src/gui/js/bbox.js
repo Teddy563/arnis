@@ -1808,7 +1808,7 @@ $(document).ready(function () {
                 if (worldPreviewAvailable && !oneWorldOverlayHidden) {
                     toggleWorldOverlay();
                 }
-                if (worldPath !== oneWorldFittedPath) {
+                if (globalThis.arnisShouldFit(worldPath, oneWorldFittedPath, event.data.refit)) {
                     var bounds = oneWorldBounds(areas);
                     if (bounds) map.fitBounds(bounds, { padding: [50, 50] });
                 }

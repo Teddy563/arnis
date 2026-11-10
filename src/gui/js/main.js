@@ -1472,8 +1472,10 @@ function initSettings() {
       oneWorldPicked = true;
       clearPrefetchDone();
       if (oneWorldMode() === 'off') document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
-      oneWorldOverlayKey = null; // Open on the world already shown refits the map too
+      oneWorldOverlayKey = null;
+      oneWorldRefit = true; // Open on the world already shown refits the map too
       await refreshOneWorldState();
+      oneWorldRefit = false;
       closeSettings();
       if (expand) document.getElementById('plan-expand-button').click();
     },
@@ -3558,6 +3560,7 @@ async function fetchOneWorldInfo() {
 // Re-reads the world the next area joins. Call whenever something that picks
 // the world changes: toggle, name, save path, format, body, window focus.
 let oneWorldRefreshSeq = 0;
+let oneWorldRefit = false;
 let redrawProjects = () => {};
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
@@ -3617,6 +3620,7 @@ async function refreshOneWorldState() {
     postToMap({
       type: 'oneWorldOverlays',
       world_path: info.world_path,
+      refit: oneWorldRefit,
       areas: (overlays && overlays.areas) || [],
       origin_lat: overlays ? overlays.origin_lat : 0,
       origin_lon: overlays ? overlays.origin_lon : 0,

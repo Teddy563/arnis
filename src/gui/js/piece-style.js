@@ -29,6 +29,9 @@ globalThis.arnisCardDrop = (item, held) => {
     return held === item ? null : held;
 };
 
+// Whether a One World's overlays refit the map: another world, or an Open that asked for it.
+globalThis.arnisShouldFit = (path, fittedPath, refit) => path !== fittedPath || Boolean(refit);
+
 // Snap to Pieces while a selection is dragged: lengths in degrees move in whole regions (`side`).
 // `span` is a size (at least one region, its sign kept); `shift` is a move.
 globalThis.arnisSnap = {
