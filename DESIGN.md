@@ -10,7 +10,7 @@ Rules that follow from it:
 
 - The map comes first. Nothing sits on it that does not help to choose an area or to watch a build.
 - A person who never opens Settings still gets a good world. Defaults should give a good world without opening Settings.
-- Advanced features (big worlds in pieces, offline data, finer control) are off by default. Off, the window matches stock Arnis (section 7).
+- Advanced features (big worlds in cells, offline data, finer control) are off by default. Off, the window matches stock Arnis (section 7).
 - The window is at least 1000 x 650 and always dark (`tauri.conf.json`: `minWidth`, `minHeight`, `theme`).
 
 ## 2. Colour tokens
@@ -38,7 +38,7 @@ Things that float over the map use their own set, in `src/gui/css/map-controls.c
 
 Use a token. A new literal colour needs a reason in the commit message.
 
-The colours of the pieces on the map are not tokens. They live in one table, `arnisPieceStyle` in `src/gui/js/piece-style.js`, because the map and the legend must read the same values (section 6).
+The colours of the cells on the map are not tokens. They live in one table, `arnisPieceStyle` in `src/gui/js/piece-style.js`, because the map and the legend must read the same values (section 6).
 
 ## 3. Type and spacing
 
@@ -58,7 +58,7 @@ The colours of the pieces on the map are not tokens. They live in one table, `ar
 - Radius: 12px section card; 10px tiles, choice cards, dialogs; 8px nav items, fields, buttons; 6px segments and tooltip boxes; 50% round icon buttons.
 - Spacing: 10px gap between tiles (`.setting-grid`), 18px section padding (`.settings-section`), content column at most 980px wide. The sidebar is 250px, 232px under 1100px. The grid keeps two tile columns at 1000px.
 - Shadows are rare: dialogs and floating cards on the map only. The settings page is flat surfaces with 1px borders.
-- Motion is short (0.15s to 0.2s) and every animation stops under `prefers-reduced-motion` (`settings.css`, `styles.css`, `bbox.css`). A running piece's dash animation is no exception.
+- Motion is short (0.15s to 0.2s) and every animation stops under `prefers-reduced-motion` (`settings.css`, `styles.css`, `bbox.css`). A running cell's dash animation is no exception.
 - Focus: `:focus-visible` gets a 2px yellow outline. Keep it.
 - Icons: one stroke sprite at the top of `src/gui/index.html` (`<symbol id="i-*">`, 24px viewBox, Lucide paths). Use `<svg class="icon"><use href="#i-NAME"></use></svg>`; stroke and size come from `.icon` in `styles.css`. To add one, copy the 24px path into the sprite. No icon font, no filled icons, no second source.
 - Copy: Title Case for section and setting names (`Terrain &amp; Nature`; the legend heading is a plain caption), one plain sentence with a full stop for a description, a single verb on a button. Say why a control is unavailable instead of only greying it. Never write "Meld" in text a person reads; the switch is called Advanced features. (The exception is two credit strings: `advanced_meld_features_desc` and `about_meld_credit`.)
@@ -83,7 +83,7 @@ Classic is the stock Arnis 3.4.0 page: map left, panel right, footer under. Ever
 Rules for both:
 
 - Nothing may cover the map tools or Leaflet's attribution.
-- A plan and a selection never draw on top of each other unreadably: the selection is one outline, pieces are thin outlines with a faint fill, the selection fades while a build runs.
+- A plan and a selection never draw on top of each other unreadably: the selection is one outline, cells are thin outlines with a faint fill, the selection fades while a build runs.
 - On a selection change, clear the old plan before drawing the new one, and drop a plan reply that belongs to an older selection (`planSeq` in `meld-features.js`).
 - Real screenshots are in `docs/images/3.5.0/` (for example `gui-main-default.png`, `gui-main-classic.png`, `gui-main-plan.png`, `gui-card-plan-idle.png`). Do not add mock-ups.
 
@@ -127,8 +127,8 @@ Every line on the map means one thing. The legend (the `?` after the plan's colo
 |---|---|---|
 | Yellow dashed box | Your selection while you draw it | `legend_drawing` |
 | Yellow solid box | Your selection | `plan_legend_selection` |
-| Bright yellow outline | The shape you drew; a piece it touches is built in full | `legend_shape` |
-| Yellow dashed box around your shapes | The rectangle One World builds around them (not in pieces) | `legend_shape_rect` |
+| Bright yellow outline | The shape you drew; a cell it touches is built in full | `legend_shape` |
+| Yellow dashed box around your shapes | The rectangle One World builds around them (not in cells) | `legend_shape_rect` |
 | Blue solid cell, faint fill | Planned for this run | `plan_state` |
 | Grey short-dashed cell | Waiting | `run_state_queued` |
 | Yellow dashed cell | Running | `run_state_running` |
@@ -138,17 +138,17 @@ Every line on the map means one thing. The legend (the `?` after the plan's colo
 | Grey filled cell | Outside the outline, not built | `plan_state_excluded` |
 | Grey dotted cell | Room to grow: you can build here later | `plan_state_room` |
 | Blue dotted cell | Ring (margin) around the selection | `plan_legend_ring` |
-| Wide-dotted band | Overlap two neighbouring pieces share | `legend_overlap` |
+| Wide-dotted band | Overlap two neighbouring cells share | `legend_overlap` |
 | Yellow dashed line | Past it the map is stretched 5% against real distances | `legend_stretch_5` |
 | Red dashed line | Past it the stretch is 10%; start a new world | `legend_stretch_10` |
 | Boxes under the selection | Land this world already holds | `legend_held` |
 
 Rules:
 
-- State is never colour alone: a line pattern, a label or an icon says it too (a piece shows a check, a cross or a pause mark; the hover card names the state).
+- State is never colour alone: a line pattern, a label or an icon says it too (a cell shows a check, a cross or a pause mark; the hover card names the state).
 - A new kind of line gets a row in `legendRows`, a swatch from the same table, and a test in `tests/gui/map-legend.mjs`.
 - Do not change a colour or dash in `bbox.js` alone. Change `piece-style.js`.
-- Piece hovers and other map tooltips use the window's UI font, a state dot and the state word on line one, the size on line two (`bbox.css`, `.map-first .leaflet-tooltip`).
+- Cell hovers and other map tooltips use the window's UI font, a state dot and the state word on line one, the size on line two (`bbox.css`, `.map-first .leaflet-tooltip`).
 - The grid always draws, by zoom: zoomed in, only the cells inside the visible map (at most 2,000 rectangles, redrawn on `moveend`), each filling from the bottom with its progress; zoomed out past that, the job's outline alone. Labels show only when a cell is large enough on screen.
 
 ## 7. Advanced features gating
@@ -211,7 +211,7 @@ A preview must show what the setting does at its default and at the other value,
 - Do not edit `piece-style.js` colours without checking the legend and `tests/gui/map-legend.mjs`.
 - Do not draw a plan over an old one, or accept a plan reply for an older selection.
 - Do not signal state with colour alone, and do not drop `prefers-reduced-motion`.
-- Do not start a big build on one click. A plan in pieces asks first (hold to start).
+- Do not start a big build on one click. A plan in cells asks first (hold to start).
 - Do not change the Classic layout to fix the map-first one; scope the rule with `body.map-first`.
 - Do not put a mock-up screenshot in the repo. Use real captures in `docs/images/`.
 - Do not hide a failure. An error says what failed and what to try, in the person's language.

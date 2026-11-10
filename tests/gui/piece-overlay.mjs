@@ -52,7 +52,7 @@ showRunControls(true);
 message({ type: 'retryPiece', piece: 1 });
 assert.equal(starts, 0);
 showRunControls(false);
-assert.equal(last()[1].text.hint, 'Click to retry this piece');
+assert.equal(last()[1].text.hint, 'Click to retry this cell');
 assert.equal(last()[0].text.hint, '', 'a done piece is not retried by a click');
 message({ type: 'retryPiece', piece: 0 });
 assert.equal(starts, 0);

@@ -227,13 +227,13 @@ const outlines = () =>
     return {
       i, n: i + 1, state: p.state, bounds: p.bounds, halo: p.halo, pct: p.pct, since: p.since, end: p.end,
       text: {
-        piece: t('run_piece', 'Piece {n}', { n: i + 1 }),
+        piece: t('run_piece', 'Cell {n}', { n: i + 1 }),
         state: t(key, fallback),
         size: sizeText(i),
         worker: p.worker ? t('run_worker', 'Worker {n}', { n: p.worker }) : '',
         // The first line is the failure; the child's output after it stays in the log.
         error: (p.error || '').split('\n')[0],
-        hint: canRetry(p) ? t('run_retry_hint', 'Click to retry this piece') : '',
+        hint: canRetry(p) ? t('run_retry_hint', 'Click to retry this cell') : '',
         openLog: p.state === 'failed' && p.log ? t('run_open_log', 'Open log') : '',
       },
       log: p.state === 'failed' ? p.log : undefined,
@@ -558,7 +558,7 @@ function showPlan(rows, warn = '', ring = false) {
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
-    const keys = [['selection', 'plan_legend_selection', 'Selection'], ['pieces', 'plan_legend_pieces', 'Pieces to build']];
+    const keys = [['selection', 'plan_legend_selection', 'Selection'], ['pieces', 'plan_legend_pieces', 'Cells to build']];
     if (ring) keys.push(['ring', 'plan_legend_ring', 'Ring (margin)']);
     for (const [kind, key, fallback] of keys) {
       const item = document.createElement('span');
@@ -589,7 +589,7 @@ const LEGEND_TEXT = {
   legend_drawing: 'Your selection while you draw it',
   plan_legend_selection: 'Selection',
   legend_shape_rect: 'The rectangle One World builds around your shapes',
-  legend_shape: 'The shape you drew; a piece it touches is built in full',
+  legend_shape: 'The shape you drew; a cell it touches is built in full',
   plan_state: 'Planned',
   run_state_queued: 'Waiting',
   run_state_running: 'Running',
@@ -599,7 +599,7 @@ const LEGEND_TEXT = {
   plan_state_excluded: 'Outside the outline: not built',
   plan_state_room: 'Room to grow: you can build here later',
   plan_legend_ring: 'Ring (margin)',
-  legend_overlap: 'Overlap two neighbouring pieces share',
+  legend_overlap: 'Overlap two neighbouring cells share',
   legend_stretch_5: 'Past this line the map is stretched 5% against real distances',
   legend_stretch_10: 'Past this line the stretch is 10%; start a new world instead',
   legend_held: 'Land this world already holds',
@@ -704,7 +704,7 @@ async function updatePlan() {
   // Time and size large, the disk line, the rest behind the "?".
   showPlan(planHead(e, [
     [
-      tn('plan_pieces', '{n} pieces', '{n} piece', totals.pieces),
+      tn('plan_pieces', '{n} cells', '{n} cell', totals.pieces),
       tn('plan_regions', '{n} regions', '{n} region', totals.regions),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
@@ -718,7 +718,7 @@ async function updatePlan() {
     const [key, fallback] = state === 'planned' ? ['plan_state', 'Planned'] : STATE_TEXT[state];
     return {
       i: u.index, n: u.index + 1, state, ring: u.ring, bounds: u.bbox.split(',').map(Number),
-      text: { piece: t('run_piece', 'Piece {n}', { n: u.index + 1 }), state: t(key, fallback), size: sizeText(u.index), worker: '', error: '', hint: '' },
+      text: { piece: t('run_piece', 'Cell {n}', { n: u.index + 1 }), state: t(key, fallback), size: sizeText(u.index), worker: '', error: '', hint: '' },
     };
   });
   // Outside the outline: grey, unnumbered, not built (numbered after the plan's own, as ids).

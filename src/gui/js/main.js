@@ -1411,7 +1411,7 @@ function initSettings() {
       // The hold is the one question: it says what the replace dialog would have asked.
       const overlap = document.getElementById('run-confirm-overlap');
       overlap.hidden = !plan?.overlap;
-      overlap.textContent = plan?.overlap ? oneWorldText('plan_confirm_overlap', '{n} pieces overlap land already built and will be rebuilt.', { n: plan.overlap }) : '';
+      overlap.textContent = plan?.overlap ? oneWorldText('plan_confirm_overlap', '{n} cells overlap land already built and will be rebuilt.', { n: plan.overlap }) : '';
       if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
     },
     // A job in pieces of a One World with a selection, as the run decides it: Live, Bedrock,

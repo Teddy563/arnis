@@ -2200,9 +2200,9 @@ $(document).ready(function () {
             return {
                 name: mapText('map_tool_shape', 'Draw a shape'),
                 desc: (_shapesMode === 'rect' ? '' : (_shapesMode === 'pieces'
-                    ? mapText('map_tool_shape_pieces_desc', 'A piece the shape touches is built in full.')
+                    ? mapText('map_tool_shape_pieces_desc', 'A cell the shape touches is built in full.')
                     : mapText('map_tool_shape_desc', 'Click around the area to generate exactly that outline.')) + ' ') + addHint,
-                note: _shapesMode === 'rect' ? mapText('map_tool_shape_one_world', 'One World builds the rectangle around the shape. Building in pieces keeps the shape itself.') : ''
+                note: _shapesMode === 'rect' ? mapText('map_tool_shape_one_world', 'One World builds the rectangle around the shape. Building in cells keeps the shape itself.') : ''
             };
         }
         if (c.contains('leaflet-draw-draw-polyline')) {

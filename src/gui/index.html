@@ -154,7 +154,7 @@
             </div>
             <span id="bbox-selection-info" class="bbox-selection-text" data-localize="select_area_prompt">Select an area on the map using the tools.</span>
             <!-- Under a size warning: the way to build it in pieces (Meld features) -->
-            <button type="button" id="bbox-features-cta" hidden data-localize="meld_use_pieces">Use Advanced features to build it in pieces</button>
+            <button type="button" id="bbox-features-cta" hidden data-localize="meld_use_pieces">Use Advanced features to build it in cells</button>
 
             <!-- Mini 3D terrain preview (rendered via the map's terrain button, click to expand) -->
             <div id="preview3d-mini" class="preview3d-mini" style="display: none;" title="Click to expand 3D preview" data-localize-title="preview3d_expand">
@@ -194,7 +194,7 @@
               <div id="run-summary" class="run-summary" role="status" aria-live="polite"></div>
               <button type="button" id="run-pause-button" class="run-button" data-localize="run_pause">Pause</button>
               <button type="button" id="run-stop-button" class="run-button" data-localize="run_stop">Stop</button>
-              <button type="button" id="run-retry-button" class="run-button" hidden data-localize="run_retry">Retry pieces</button>
+              <button type="button" id="run-retry-button" class="run-button" hidden data-localize="run_retry">Retry cells</button>
               <label class="run-halo"><input type="checkbox" id="run-halo-toggle" /> <span data-localize="run_halo">Show overlap</span></label>
             </div>
           </div>
@@ -1810,10 +1810,10 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-layers"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_workers">Parallel pieces</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_workers_tip" data-tooltip="Splits a One World selection into pieces of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.">?</span>
+                        <span data-localize="meld_workers">Parallel cells</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_workers_tip" data-tooltip="Splits a One World selection into cells of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_workers_desc">Build a One World in pieces, several at a time.</span>
+                      <span class="setting-desc" data-localize="meld_workers_desc">Build a One World in cells, several at a time.</span>
                     </span>
                   </label>
                   <div class="settings-control">
@@ -1825,10 +1825,10 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-frame"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_snap">Snap to Pieces</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_snap_tip" data-tooltip="Off builds the selection as drawn. Cover grows it to whole pieces, Fit shrinks it to the whole pieces inside, Merge keeps its edges but folds a strip thinner than a quarter region into its neighbour. Parallel pieces only.">?</span>
+                        <span data-localize="meld_snap">Snap to Cells</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_snap_tip" data-tooltip="Off builds the selection as drawn. Cover grows it to whole cells, Fit shrinks it to the whole cells inside, Merge keeps its edges but folds a strip thinner than a quarter region into its neighbour. Parallel cells only.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_snap_desc">How the selection meets the piece grid.</span>
+                      <span class="setting-desc" data-localize="meld_snap_desc">How the selection meets the cell grid.</span>
                     </span>
                   </label>
                   <div class="settings-control">
@@ -1841,7 +1841,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_margin">Margin Regions</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_margin_tip" data-tooltip="Regions of 512 × 512 blocks added on every side of the selection, after snapping. Parallel pieces only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_margin_tip" data-tooltip="Regions of 512 × 512 blocks added on every side of the selection, after snapping. Parallel cells only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_margin_desc">A ring of regions around the selection, from 0 to 4.</span>
                     </span>
@@ -1855,10 +1855,10 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-blocks"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_piece_size">Piece Size</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_piece_size_tip" data-tooltip="Largest piece, in regions per side. Auto mixes 8 × 8, 4 × 4 and 2 × 2 pieces, as large as fit the selection and the memory. Parallel pieces only.">?</span>
+                        <span data-localize="meld_piece_size">Cell Size</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_piece_size_tip" data-tooltip="Largest cell, in regions per side. Auto mixes 8 × 8, 4 × 4 and 2 × 2 cells, as large as fit the selection and the memory. Parallel cells only.">?</span>
                       </span>
-                      <span class="setting-desc" data-localize="meld_piece_size_desc">Regions per side of each piece.</span>
+                      <span class="setting-desc" data-localize="meld_piece_size_desc">Regions per side of each cell.</span>
                     </span>
                   </label>
                   <div class="settings-control">
@@ -1871,7 +1871,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_piece_order">Build Order</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_piece_order_tip" data-tooltip="Which pieces are built first. Piece numbers stay the same, so a retry still names the same pieces. Parallel pieces only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_piece_order_tip" data-tooltip="Which cells are built first. Cell numbers stay the same, so a retry still names the same cells. Parallel cells only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_piece_order_desc">Where the job starts building.</span>
                     </span>
@@ -1885,8 +1885,8 @@
                     <svg class="icon setting-icon" aria-hidden="true"><use href="#i-history"></use></svg>
                     <span class="setting-text">
                       <span class="setting-heading">
-                        <span data-localize="meld_skip_built">Skip Built Pieces</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_skip_built_tip" data-tooltip="Leaves out the pieces whose every chunk is already in the world, say from an earlier job over part of this one. Off rebuilds them. Parallel pieces only.">?</span>
+                        <span data-localize="meld_skip_built">Skip Built Cells</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_skip_built_tip" data-tooltip="Leaves out the cells whose every chunk is already in the world, say from an earlier job over part of this one. Off rebuilds them. Parallel cells only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_skip_built_desc">Build only what the world is missing.</span>
                     </span>
@@ -1901,7 +1901,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_stitch_map">Stitch Map Item</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_stitch_map_tip" data-tooltip="Once every piece is built, redraws the map item in the hotbar over all of them. Off, it shows the first piece only. Needs the map item. Parallel pieces only.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_stitch_map_tip" data-tooltip="Once every cell is built, redraws the map item in the hotbar over all of them. Off, it shows the first cell only. Needs the map item. Parallel cells only.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_stitch_map_desc">One map item over the whole job.</span>
                     </span>
@@ -1931,7 +1931,7 @@
                     <span class="setting-text">
                       <span class="setting-heading">
                         <span data-localize="meld_threads">Threads</span>
-                        <span class="tooltip-icon" data-tooltip-key="meld_threads_tip" data-tooltip="Left empty, it uses 90% of the cores. A job in pieces splits it between the pieces.">?</span>
+                        <span class="tooltip-icon" data-tooltip-key="meld_threads_tip" data-tooltip="Left empty, it uses 90% of the cores. A job in cells splits it between the cells.">?</span>
                       </span>
                       <span class="setting-desc" data-localize="meld_threads_desc">Exact number of worker threads.</span>
                     </span>
