@@ -1167,11 +1167,12 @@ body.map-first .map-box {
   min-height: 0;
 }
 
-/* The logo is the title: centred at the top over the map, no box behind it. A click opens
-   the Arnis site (its link); on hover the version shows under it (main.js sets data-version). */
+/* The logo is the title: centred on the window at the top, level with the control card, no box
+   behind it. A click opens the Arnis site (its link); on hover the version shows under it
+   (main.js sets data-version). */
 body.map-first .row {
   position: absolute;
-  top: 12px;
+  top: 18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -1185,7 +1186,7 @@ body.map-first .row a {
 /* !important: the img's inline style sizes it for the 3.4.0 page. */
 body.map-first #arnis-logo {
   width: auto !important;
-  height: 38px !important;
+  height: 32px !important;
   padding: 0;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
 }
@@ -1215,11 +1216,11 @@ body.map-first .row a:hover::after {
 /* The controls: one stack of cards on the map's right, under the city search */
 body.map-first .controls-box {
   position: absolute;
-  top: 58px;
+  top: 12px;
   right: 12px;
   z-index: 5;
   width: min(340px, 40vw);
-  max-height: calc(100% - 100px);
+  max-height: calc(100% - 54px);
   overflow-y: auto;
 }
 
@@ -1267,17 +1268,21 @@ body.map-first .preview3d-mini > * {
   direction: ltr;
 }
 
-/* The footer: one small line bottom centre over the map */
+/* The footer: one quiet line bottom centre over the map, level with the search bar */
 body.map-first .footer {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 12px;
+  bottom: 27px;
   z-index: 5;
   margin: 0;
-  padding: 1px 8px;
-  border-radius: 4px;
-  background: rgba(30, 30, 30, 0.8);
-  font-size: 11px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: rgba(30, 30, 30, 0.55);
+  font-size: 10.5px;
   line-height: 18px;
+}
+
+body.map-first .footer a {
+  color: rgba(255, 255, 255, 0.72);
 }
