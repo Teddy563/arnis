@@ -910,6 +910,9 @@ input[type="range"] {
   position: absolute;
   top: 2px;
   right: 0;
+  width: 16px;
+  height: 16px;
+  min-width: 0;
   border: 0;
   padding: 0;
   cursor: help;
@@ -925,12 +928,7 @@ input[type="range"] {
 
 .plan-tip {
   display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 20;
-  margin-top: 4px;
+  margin: 4px -22px 0;
   padding: 8px 10px;
   border: 1px solid var(--ui-card-border);
   border-radius: 6px;
