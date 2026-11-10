@@ -1111,8 +1111,10 @@ function resetProgressUi(message) {
 
 // A finished Download now leaves "Done!" and a full bar; they go once the plan underneath changes.
 let prefetchDone = false;
+// A finished Download now or a failed run says nothing about a new selection or plan.
 function clearPrefetchDone() {
-  if (prefetchDone && generationButtonEnabled) resetProgressUi("");
+  const info = document.getElementById("progress-info");
+  if ((prefetchDone || info?.style.color === "rgb(250, 120, 120)") && generationButtonEnabled) resetProgressUi("");
 }
 
 // When the status line last showed a fallback notice (0: none).
@@ -1400,6 +1402,7 @@ function initSettings() {
     // A new plan, or none: the line under the buttons says how the selection is built, and
     // the hold to start waits for the plan it starts.
     changed: () => {
+      clearPrefetchDone();
       refreshBboxSelectionInfo();
       refreshStartButton();
       const plan = planPieces();
