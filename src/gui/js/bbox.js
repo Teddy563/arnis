@@ -1945,8 +1945,8 @@ $(document).ready(function () {
     // [lat, lng] points on the map copy around longitude 0; null across the 180° meridian.
     function normalizedRing(layer) {
         var ring = ringOf(layer);
-        var west = Infinity, east = -Infinity;
-        ring.forEach(function (p) { west = Math.min(west, p.lng); east = Math.max(east, p.lng); });
+        var box = L.latLngBounds(ring);
+        var west = box.getWest(), east = box.getEast();
         var shift = -360 * Math.round((west + east) / 720);
         if (west + shift < -180 || east + shift > 180) return null;
         return ring.map(function (p) { return [p.lat, p.lng + shift]; });
@@ -1954,13 +1954,13 @@ $(document).ready(function () {
 
     // Whether these areas, moved onto the copy around longitude 0, span at most 180° together.
     function fitOneSide(areas) {
-        var west = Infinity, east = -Infinity;
+        var all = L.latLngBounds([]);
         for (var i = 0; i < areas.length; i++) {
             var ring = normalizedRing(areas[i]);
             if (!ring) return false;
-            ring.forEach(function (p) { west = Math.min(west, p[1]); east = Math.max(east, p[1]); });
+            all.extend(L.latLngBounds(ring));
         }
-        return east - west <= 180;
+        return !all.isValid() || all.getEast() - all.getWest() <= 180;
     }
 
     // Earth's "extensive" size tier at scale 1, in m²: past it, a mostly empty rectangle is refused.
@@ -1971,21 +1971,18 @@ $(document).ready(function () {
     function tooFarApart(areas) {
         if (areas.length < 2 || currentBody !== 'earth') return false;
         var rad = Math.PI / 180, R = 6371000;
-        var size = function (s, w, n, e) {
-            return R * R * (n - s) * rad * (e - w) * rad * Math.cos((s + n) / 2 * rad);
+        var size = function (b) {
+            return R * R * (b.getNorth() - b.getSouth()) * rad * (b.getEast() - b.getWest()) * rad * Math.cos((b.getSouth() + b.getNorth()) / 2 * rad);
         };
-        var own = 0, all = [90, 180, -90, -180];
+        var own = 0, all = L.latLngBounds([]);
         for (var i = 0; i < areas.length; i++) {
             var ring = normalizedRing(areas[i]);
             if (!ring) return false;
-            var b = [90, 180, -90, -180];
-            ring.forEach(function (p) {
-                b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])];
-            });
-            own += size(b[0], b[1], b[2], b[3]);
-            all = [Math.min(all[0], b[0]), Math.min(all[1], b[1]), Math.max(all[2], b[2]), Math.max(all[3], b[3])];
+            var b = L.latLngBounds(ring);
+            own += size(b);
+            all.extend(b);
         }
-        var total = size(all[0], all[1], all[2], all[3]);
+        var total = size(all);
         return total > FAR_APART_M2 && total > 2 * own;
     }
 
