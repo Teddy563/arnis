@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis n’a pas pu générer le lieu choisi.",
   "map_copy_coordinates": "Copier les coordonnées",
   "advanced_meld_features": "Fonctions avancées",
-  "advanced_meld_features_desc": "Réglages supplémentaires pour les grands mondes et un contrôle plus fin. Désactivé, Arnis se comporte comme avant.",
+  "advanced_meld_features_desc": "Réglages supplémentaires pour les grands mondes et un contrôle plus fin. Désactivé, Arnis se comporte comme avant. Repris du projet Meld.",
   "meld_workers": "Parties en parallèle",
   "meld_workers_desc": "Construire un One World par morceaux, plusieurs à la fois.",
   "meld_ram_budget": "Budget mémoire",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Maintenir pour démarrer",
   "plan_confirm_overlap": "{n} morceaux chevauchent un terrain déjà construit et seront reconstruits.",
   "layout_about": "Disposition de la page principale",
+  "about_meld_credit": "Les fonctions avancées viennent du projet Meld de Teddy563 : échelle, vitesse et fiabilité.",
   "layout_about_map": "Carte"
 }

@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis nepavyko sugeneruoti pasirinktos vietos.",
   "map_copy_coordinates": "Kopijuoti koordinates",
   "advanced_meld_features": "Išplėstinės funkcijos",
-  "advanced_meld_features_desc": "Papildomi nustatymai dideliems pasauliams ir tikslesniam valdymui. Išjungta: Arnis veikia kaip anksčiau.",
+  "advanced_meld_features_desc": "Papildomi nustatymai dideliems pasauliams ir tikslesniam valdymui. Išjungta: Arnis veikia kaip anksčiau. Perkelta iš Meld projekto.",
   "meld_workers": "Lygiagrečios dalys",
   "meld_workers_desc": "Kurti One World dalimis, kelias vienu metu.",
   "meld_ram_budget": "Atminties biudžetas",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Laikykite nuspaudę, kad pradėtumėte",
   "plan_confirm_overlap": "{n} dalių persidengia su jau sukurta žeme ir bus sukurtos iš naujo.",
   "layout_about": "Pagrindinio puslapio išdėstymas",
+  "about_meld_credit": "Išplėstinės funkcijos perkeltos iš Teddy563 Meld projekto: mastelis, greitis ir patikimumas.",
   "layout_about_map": "Žemėlapis"
 }

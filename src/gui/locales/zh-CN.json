@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis 无法生成你选择的地点。",
   "map_copy_coordinates": "复制坐标",
   "advanced_meld_features": "高级功能",
-  "advanced_meld_features_desc": "为大型世界和更精细的控制提供额外设置。关闭时，Arnis 保持原有行为。",
+  "advanced_meld_features_desc": "为大型世界和更精细的控制提供额外设置。关闭时，Arnis 保持原有行为。移植自 Meld 项目。",
   "meld_workers": "并行分块",
   "meld_workers_desc": "将 One World 分块生成，同时进行多块。",
   "meld_ram_budget": "内存预算",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "长按开始",
   "plan_confirm_overlap": "{n} 个分块与已构建的土地重叠，将被重新构建。",
   "layout_about": "主页面布局",
+  "about_meld_credit": "高级功能移植自 Teddy563 的 Meld 项目：缩放、速度与可靠性。",
   "layout_about_map": "地图"
 }

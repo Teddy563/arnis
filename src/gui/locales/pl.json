@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis nie mógł wygenerować wybranego miejsca.",
   "map_copy_coordinates": "Kopiuj współrzędne",
   "advanced_meld_features": "Funkcje zaawansowane",
-  "advanced_meld_features_desc": "Dodatkowe ustawienia dla dużych światów i dokładniejszej kontroli. Wyłączone: Arnis działa jak dotąd.",
+  "advanced_meld_features_desc": "Dodatkowe ustawienia dla dużych światów i dokładniejszej kontroli. Wyłączone: Arnis działa jak dotąd. Przeniesione z projektu Meld.",
   "meld_workers": "Równoległe części",
   "meld_workers_desc": "Buduj One World w częściach, kilka naraz.",
   "meld_ram_budget": "Budżet pamięci",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Przytrzymaj, aby rozpocząć",
   "plan_confirm_overlap": "Części nakładające się na już zbudowany teren: {n}. Zostaną zbudowane ponownie.",
   "layout_about": "Układ strony głównej",
+  "about_meld_credit": "Funkcje zaawansowane pochodzą z projektu Meld autorstwa Teddy563: skalowanie, szybkość i niezawodność.",
   "layout_about_map": "Mapa"
 }

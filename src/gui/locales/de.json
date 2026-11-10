@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis konnte den gewählten Ort nicht generieren.",
   "map_copy_coordinates": "Koordinaten kopieren",
   "advanced_meld_features": "Erweiterte Funktionen",
-  "advanced_meld_features_desc": "Zusätzliche Einstellungen für große Welten und feinere Kontrolle. Aus: Arnis verhält sich wie bisher.",
+  "advanced_meld_features_desc": "Zusätzliche Einstellungen für große Welten und feinere Kontrolle. Aus: Arnis verhält sich wie bisher. Aus dem Meld-Projekt übernommen.",
   "meld_workers": "Parallele Teile",
   "meld_workers_desc": "Eine One World in Teilen erstellen, mehrere gleichzeitig.",
   "meld_ram_budget": "Speicherbudget",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Zum Starten gedrückt halten",
   "plan_confirm_overlap": "{n} Teile überlappen bereits gebautes Land und werden neu gebaut.",
   "layout_about": "Layout der Startseite",
+  "about_meld_credit": "Die erweiterten Funktionen stammen aus dem Meld-Projekt von Teddy563: Skalierung, Geschwindigkeit und Zuverlässigkeit.",
   "layout_about_map": "Karte"
 }

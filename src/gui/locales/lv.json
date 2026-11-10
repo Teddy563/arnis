@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis neizdevās ģenerēt izvēlēto vietu.",
   "map_copy_coordinates": "Kopēt koordinātas",
   "advanced_meld_features": "Papildu funkcijas",
-  "advanced_meld_features_desc": "Papildu iestatījumi lielām pasaulēm un precīzākai vadībai. Izslēgts: Arnis darbojas kā iepriekš.",
+  "advanced_meld_features_desc": "Papildu iestatījumi lielām pasaulēm un precīzākai vadībai. Izslēgts: Arnis darbojas kā iepriekš. Pārņemts no Meld projekta.",
   "meld_workers": "Paralēlās daļas",
   "meld_workers_desc": "Veidot One World pa daļām, vairākas vienlaikus.",
   "meld_ram_budget": "Atmiņas budžets",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Turi nospiestu, lai sāktu",
   "plan_confirm_overlap": "{n} daļas pārklājas ar jau uzbūvētu zemi un tiks uzbūvētas no jauna.",
   "layout_about": "Galvenās lapas izkārtojums",
+  "about_meld_credit": "Papildu funkcijas ir pārņemtas no Teddy563 Meld projekta: mērogs, ātrums un uzticamība.",
   "layout_about_map": "Karte"
 }

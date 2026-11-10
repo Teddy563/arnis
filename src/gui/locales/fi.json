@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis ei voinut luoda valitsemaasi paikkaa.",
   "map_copy_coordinates": "Kopioi koordinaatit",
   "advanced_meld_features": "Lisäominaisuudet",
-  "advanced_meld_features_desc": "Lisäasetuksia suurille maailmoille ja tarkempaan hallintaan. Pois päältä: Arnis toimii kuten ennen.",
+  "advanced_meld_features_desc": "Lisäasetuksia suurille maailmoille ja tarkempaan hallintaan. Pois päältä: Arnis toimii kuten ennen. Siirretty Meld-projektista.",
   "meld_workers": "Rinnakkaiset osat",
   "meld_workers_desc": "Rakenna One World osina, useita kerralla.",
   "meld_ram_budget": "Muistibudjetti",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Pidä painettuna aloittaaksesi",
   "plan_confirm_overlap": "{n} palaa osuu jo rakennetulle maalle, ja ne rakennetaan uudelleen.",
   "layout_about": "Pääsivun asettelu",
+  "about_meld_credit": "Lisäominaisuudet ovat peräisin Teddy563:n Meld-projektista: skaalaus, nopeus ja luotettavuus.",
   "layout_about_map": "Kartta"
 }

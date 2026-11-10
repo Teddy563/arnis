@@ -315,7 +315,7 @@
   "live_game_teleport_failed": "Arnis ni mogel ustvariti izbranega kraja.",
   "map_copy_coordinates": "Kopiraj koordinate",
   "advanced_meld_features": "Napredne funkcije",
-  "advanced_meld_features_desc": "Dodatne nastavitve za velike svetove in natančnejši nadzor. Izklopljeno: Arnis deluje kot prej.",
+  "advanced_meld_features_desc": "Dodatne nastavitve za velike svetove in natančnejši nadzor. Izklopljeno: Arnis deluje kot prej. Preneseno iz projekta Meld.",
   "meld_workers": "Vzporedni deli",
   "meld_workers_desc": "Gradi One World po delih, več hkrati.",
   "meld_ram_budget": "Proračun pomnilnika",
@@ -693,5 +693,6 @@
   "plan_confirm_hold": "Pridržite za začetek",
   "plan_confirm_overlap": "Kosi, ki prekrivajo že zgrajeno ozemlje: {n}. Zgrajeni bodo znova.",
   "layout_about": "Postavitev glavne strani",
+  "about_meld_credit": "Napredne funkcije izvirajo iz projekta Meld avtorja Teddy563: merilo, hitrost in zanesljivost.",
   "layout_about_map": "Zemljevid"
 }
