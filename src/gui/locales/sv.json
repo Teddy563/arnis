@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Enkla procedurella träd i stället för de medföljande trädmodellerna. Snabbare, men blockigare.",
   "max_tree_size_tip": "Högsta tillåtna träd: Liten 6, Mellan 12, Stor 20 och Hög 28 block; Jättelik har ingen gräns. Högre träd blir en mindre art där det finns någon.",
   "field_preset_tip": "Klassisk blandar grödor block för block. De andra ger varje fält en gröda och delar stora fält i remsor: smala för Småbruk, medelbreda för Lapptäcke, breda och mestadels vete för Prärie.",
-  "meld_rocks_tip": "Sprider stenar och block på öppen mark. Förhandsvisningen visar densitet 0.2; standard är 0.02.",
+  "meld_rocks_tip": "Sprider stenar och block på öppen mark. Förhandsvisningen använder tio gånger standardtätheten så att stenarna syns.",
   "meld_bushes_tip": "Sprider små buskar av tio arter över öppna gräsmarker och åkermark. Kräver marktäcke.",
   "meld_tree_realm_tip": "Auto väljer trädpaketet utifrån områdets läge. Ett påtvingat rike hoppar över de lokala ekoregionernas blandningar och behåller sina palmer.",
   "meld_tree_pack_dir_tip": "Uppbyggd som de medföljande paketen: rike / gemenskap / trädtyp / storlek / valfritt namn.schem. En fil som inte går att läsa in hoppas över med en varning. Experimentell.",

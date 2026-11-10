@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Egyszerű procedurális fák a mellékelt famodellek helyett. Gyorsabb, de szögletesebb.",
   "max_tree_size_tip": "A legmagasabb engedélyezett fa: Kicsi 6, Közepes 12, Nagy 20 és Magas 28 blokk; az Óriási nincs korlátozva. A magasabb fák kisebb fajjá válnak, ahol van ilyen.",
   "field_preset_tip": "A Klasszikus blokkonként keveri a növényeket. A többi minden mezőnek egy növényt ad, és a nagy mezőket sávokra osztja: keskenyeket a Kisbirtoknak, közepeseket a Foltvarrásnak, szélesek és többnyire búza a Prérinek.",
-  "meld_rocks_tip": "Köveket és sziklatömböket szór a nyílt terepre. Az előnézet a 0.2-es sűrűséget mutatja; az alapérték 0.02.",
+  "meld_rocks_tip": "Köveket és sziklatömböket szór a nyílt terepre. Az előnézet az alapértelmezett sűrűség tízszeresét használja, hogy a sziklák látszódjanak.",
   "meld_bushes_tip": "Tíz faj kis bokrait szórja nyílt gyepekre és szántókra. Felszínborítás szükséges.",
   "meld_tree_realm_tip": "Az Automatikus a terület elhelyezkedése alapján választ fakészletet. Egy kényszerített birodalom kihagyja a helyi ökorégiók keverékeit, és megtartja a pálmáit.",
   "meld_tree_pack_dir_tip": "A mellékelt csomagokhoz hasonlóan felépítve: birodalom / közösség / fatípus / méret / bármilyen név.schem. A be nem tölthető fájl figyelmeztetéssel kimarad. Kísérleti.",

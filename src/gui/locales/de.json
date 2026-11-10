@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Einfache prozedurale Bäume statt der mitgelieferten Baummodelle. Schneller, blockiger.",
   "max_tree_size_tip": "Höchste erlaubte Baumgröße: Klein 6, Mittel 12, Groß 20 und Hoch 28 Blöcke; Riesig hat keine Obergrenze. Höhere Bäume werden zu einer kleineren Art, wo es eine gibt.",
   "field_preset_tip": "Klassisch mischt Feldfrüchte Block für Block. Die anderen geben jedem Feld eine Frucht und teilen große Felder in Streifen: schmal bei Kleinbetrieb, mittel bei Flickenteppich, breit und überwiegend Weizen bei Prärie.",
-  "meld_rocks_tip": "Streut Steine und Felsbrocken auf offenes Gelände. Die Vorschau zeigt Dichte 0.2; der Standard ist 0.02.",
+  "meld_rocks_tip": "Streut Steine und Felsbrocken auf offenes Gelände. Die Vorschau nutzt die zehnfache Standarddichte, damit die Steine zu sehen sind.",
   "meld_bushes_tip": "Streut kleine Büsche von zehn Arten über offenes Grasland und Ackerland. Benötigt Bodenbedeckung.",
   "meld_tree_realm_tip": "Automatisch wählt das Baumpaket anhand des Standorts des Gebiets. Ein erzwungenes Reich überspringt die lokalen Ökoregion-Mischungen und behält seine Palmen.",
   "meld_tree_pack_dir_tip": "Aufgebaut wie die mitgelieferten Pakete: Reich / Gemeinschaft / Baumart / Größe / beliebigerName.schem. Eine Datei, die sich nicht laden lässt, wird mit einer Warnung übersprungen. Experimentell.",

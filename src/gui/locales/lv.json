@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Vienkārši procedurāli koki iekļauto koku modeļu vietā. Ātrāk, bet kantaināk.",
   "max_tree_size_tip": "Augstākais atļautais koks: Mazi 6, Vidēji 12, Lieli 20 un Augsti 28 bloki; Milzīgi nav ierobežoti. Augstāki koki kļūst par mazāku sugu, ja tāda ir.",
   "field_preset_tip": "Klasisks jauc kultūras pa blokam. Pārējie katram laukam piešķir vienu kultūru un sadala lielus laukus joslās: šauras Sīksaimniecībai, vidējas Lāpījumam, platas un galvenokārt kvieši Prērijai.",
-  "meld_rocks_tip": "Izkaisa akmeņus un laukakmeņus atklātā vietā. Priekšskatījumā redzams blīvums 0.2; noklusējums ir 0.02.",
+  "meld_rocks_tip": "Izkaisa akmeņus un laukakmeņus atklātā vietā. Priekšskatījumā izmantots desmit reižu lielāks blīvums par noklusējuma, lai akmeņi būtu redzami.",
   "meld_bushes_tip": "Izkaisa nelielus desmit sugu krūmus pa atklātiem zālājiem un aramzemi. Nepieciešams zemes segums.",
   "meld_tree_realm_tip": "Auto izvēlas koku komplektu pēc apgabala atrašanās vietas. Piespiedu valstība izlaiž vietējo ekoreģionu maisījumus un saglabā savas palmas.",
   "meld_tree_pack_dir_tip": "Izkārtota kā iekļautie komplekti: valstība / kopiena / koka veids / izmērs / jebkurš nosaukums.schem. Fails, kas neielādējas, tiek izlaists ar brīdinājumu. Eksperimentāls.",

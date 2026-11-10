@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Paprasti procedūriniai medžiai vietoje įtrauktų medžių modelių. Greičiau, kampuočiau.",
   "max_tree_size_tip": "Aukščiausias leidžiamas medis: Maži 6, Vidutiniai 12, Dideli 20 ir Aukšti 28 blokai; Milžiniški neturi ribos. Aukštesni medžiai tampa mažesne rūšimi, jei tokia yra.",
   "field_preset_tip": "Klasikinis maišo pasėlius blokas po bloko. Kiti kiekvienam laukui skiria vieną pasėlį ir didelius laukus dalija juostomis: siauromis Ūkelis, vidutinėmis Skiautinys, plačiomis ir daugiausia kviečių Prerija.",
-  "meld_rocks_tip": "Išbarsto uolas ir riedulius atviroje vietovėje. Peržiūroje rodomas tankis 0.2; numatytasis yra 0.02.",
+  "meld_rocks_tip": "Išbarsto uolas ir riedulius atviroje vietovėje. Peržiūroje naudojamas dešimteriopai didesnis už numatytąjį tankis, kad uolos matytųsi.",
   "meld_bushes_tip": "Išbarsto mažus dešimties rūšių krūmus po atviras pievas ir dirbamą žemę. Reikia žemės dangos.",
   "meld_tree_realm_tip": "Automatinis parenka medžių rinkinį pagal srities vietą. Priverstinė sritis praleidžia vietinius ekoregionų mišinius ir išlaiko savo palmes.",
   "meld_tree_pack_dir_tip": "Sudėliotas kaip įtraukti rinkiniai: sritis / bendrija / medžio tipas / dydis / bet koks pavadinimas.schem. Failas, kuris neįkeliamas, praleidžiamas su įspėjimu. Eksperimentinė.",

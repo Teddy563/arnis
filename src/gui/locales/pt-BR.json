@@ -583,7 +583,7 @@
   "legacy_trees_tip": "Árvores procedurais simples em vez dos modelos de árvore incluídos. Mais rápido, mais quadrado.",
   "max_tree_size_tip": "Maior tamanho de árvore permitido: Pequena 6, Média 12, Grande 20 e Alta 28 blocos; Gigante não tem limite. Árvores mais altas viram uma espécie menor quando existe uma.",
   "field_preset_tip": "Clássico mistura as plantações bloco a bloco. Os outros dão uma única cultura a cada campo e dividem campos grandes em faixas: estreitas para Minifúndio, médias para Mosaico, largas e na maioria de trigo para Pradaria.",
-  "meld_rocks_tip": "Espalha pedras e rochedos em terreno aberto. A prévia mostra densidade 0.2; o padrão é 0.02.",
+  "meld_rocks_tip": "Espalha pedras e rochedos em terreno aberto. A prévia usa dez vezes a densidade padrão para que as pedras apareçam.",
   "meld_bushes_tip": "Espalha pequenos arbustos de dez espécies sobre campos abertos de grama e plantações. Requer cobertura do solo.",
   "meld_tree_realm_tip": "Automático escolhe o pacote de árvores pela localização da área. Um reino forçado ignora as misturas de ecorregião locais e mantém suas palmeiras.",
   "meld_tree_pack_dir_tip": "Organizada como os pacotes incluídos: reino / comunidade / tipo de árvore / tamanho / qualquer nome.schem. Um arquivo que não carrega é ignorado com um aviso. Experimental.",
