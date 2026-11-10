@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, holdsNotice } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -834,7 +834,7 @@ function registerMessageEvent() {
 
     // The outline the selection was made from (shape tool or "Use outline"), or null.
     if (event.data && event.data.type === 'planMask' && event.source === getMapFrame()?.contentWindow) {
-      setPlanMask(event.data.geojson).then(refreshBboxSelectionInfo);
+      noteOutline(event.data.geojson);
     }
 
     // World toggled on the map toolbar
@@ -1102,9 +1102,21 @@ function resetProgressUi(message) {
   if (info) {
     info.textContent = message;
     info.style.color = "#ececec";
+    info.classList.remove("is-notice");
   }
+  noticeSince = 0;
+  prefetchDone = false;
   resetEta();
 }
+
+// A finished Download now leaves "Done!" and a full bar; they go once the plan underneath changes.
+let prefetchDone = false;
+function clearPrefetchDone() {
+  if (prefetchDone && generationButtonEnabled) resetProgressUi("");
+}
+
+// When the status line last showed a fallback notice (0: none).
+let noticeSince = 0;
 
 // Function to set up the progress bar listener
 function setupProgressListener() {
@@ -1128,9 +1140,13 @@ function setupProgressListener() {
 
     if (message != "") {
       const shown = progressText(event.payload);
-      progressInfo.textContent = shown.text;
-      progressInfo.title = shown.title;
-      progressInfo.classList.toggle("is-notice", shown.notice);
+      // A fallback notice outlasts the stage lines that follow it.
+      if (!holdsNotice(shown, message, noticeSince, Date.now())) {
+        progressInfo.textContent = shown.text;
+        progressInfo.title = shown.title;
+        progressInfo.classList.toggle("is-notice", shown.notice);
+        noticeSince = shown.notice ? Date.now() : 0;
+      }
       if (shown.log) window.arnisLog?.(shown.notice ? "warn" : "error", shown.log);
 
       if (message.startsWith("Error!")) {
@@ -1157,8 +1173,12 @@ function setupProgressListener() {
         }
         // A generation just built facades into the same cache, so the preview
         // has something new to say.
-        window.arnisPreview3D?.refreshFacades();
-        noteGenerationDone();
+        if (lastRunPrewarm) {
+          prefetchDone = true;
+        } else {
+          window.arnisPreview3D?.refreshFacades();
+          noteGenerationDone();
+        }
       } else if (message.startsWith("Stopped.") || message.startsWith("The retried pieces are built")) {
         // A job in pieces ends here when stopped or when only some pieces were asked for.
         progressInfo.style.color = "#ececec";
@@ -1411,6 +1431,8 @@ function initSettings() {
   const meldToggle = document.getElementById('advanced-meld-features-toggle');
   const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, snap: Boolean(document.querySelector('#meld-snap-group .segment.active:not([data-v="off"])')), mapFirst: document.body.classList.contains('map-first') });
   document.addEventListener('change', pushMeldToMap);
+  // Advanced off: a finished One World's name is no longer the world under Start.
+  meldToggle.addEventListener('change', () => { if (!meldToggle.checked && lastRunOneWorld) setWorldNameLabel(""); });
   document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
@@ -1442,10 +1464,13 @@ function initSettings() {
     invoke,
     savePath: () => savePath,
     scale: () => readGenerationSettings(true).worldScale,
+    available: isOneWorldAvailable,
     open: async (name, expand) => {
       oneWorldName = name;
       oneWorldPicked = true;
+      clearPrefetchDone();
       if (oneWorldMode() === 'off') document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+      oneWorldOverlayKey = null; // Open on the world already shown refits the map too
       await refreshOneWorldState();
       closeSettings();
       if (expand) document.getElementById('plan-expand-button').click();
@@ -2899,8 +2924,31 @@ function refreshBboxSelectionInfo() {
   );
 }
 
+// The outline the map reports (Use outline, a drawn shape). Only a One World job in pieces reads
+// it, so the file is written for that alone; when the backend cannot write it the map drops it.
+let outline = null;
+let outlineWritten = false;
+let outlineFailed = false;
+async function noteOutline(geojson) {
+  outline = geojson;
+  // The map answers a dropped outline with null: that must not wipe the reason.
+  if (!geojson && outlineFailed) { outlineFailed = false; return; }
+  outlineWritten = Boolean(geojson) && isOneWorldEnabled();
+  const error = outlineWritten ? await setPlanMask(geojson) : (await setPlanMask(null), '');
+  if (error) {
+    outlineFailed = true;
+    postToMap({ type: 'planMask', geojson: null });
+    const info = document.getElementById('bbox-selection-info');
+    info.textContent = error;
+    info.style.color = "#fa7878";
+    return;
+  }
+  refreshBboxSelectionInfo();
+}
+
 // Function to handle incoming bbox data
 function displayBboxInfoText(bboxText, shapes) {
+  clearPrefetchDone();
   const hadShapes = Boolean(selectedShapes);
   selectedShapes = Array.isArray(shapes) && shapes.length ? shapes : null;
   // Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask).
@@ -3229,6 +3277,8 @@ let oneWorldPinned = false;
 let oneWorldOverlayKey = null;
 // Whether the running (or last) generation was a One World run.
 let lastRunOneWorld = false;
+// Whether it only filled the caches (Download now).
+let lastRunPrewarm = false;
 let oneWorldName = localStorage.getItem(ONE_WORLD_NAME_KEY) || '';
 // Set by Settings > Projects > Open: the name above is then used with or without Custom World Name.
 let oneWorldPicked = localStorage.getItem('arnis-one-world-picked') === '1';
@@ -3508,6 +3558,8 @@ async function fetchOneWorldInfo() {
 let oneWorldRefreshSeq = 0;
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
+  // An outline picked while One World was off is written once it is on.
+  if (outline && isOneWorldEnabled() !== outlineWritten) noteOutline(outline);
   refreshLuantiAvailability();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
   refreshLiveRows();
@@ -4250,9 +4302,10 @@ function holdToConfirm(button, done) {
 
 // `confirmed`: the hold (or a retry) already said yes to a job in pieces.
 // `prewarm`: Download Plan's "Download now", a run that only fills the caches.
+// Returns whether a run started.
 async function startGeneration(confirmed = false, prewarm = false) {
-  // In Live the button starts and stops the session instead.
-  if (liveActive()) {
+  // In Live the button starts and stops the session instead; a prewarm is never a Live session.
+  if (!prewarm && liveActive()) {
     stopLive();
     return;
   }
@@ -4261,11 +4314,11 @@ async function startGeneration(confirmed = false, prewarm = false) {
   }
   // One World and Live keep their areas as rectangles of whole chunks; a One World built in
   // pieces takes the shapes as the outline of the pieces it builds.
-  if (selectedShapes && (isLiveMode() || (isOneWorldEnabled() && !isPiecesJob()))) {
+  if (selectedShapes && ((!prewarm && isLiveMode()) || (isOneWorldEnabled() && !isPiecesJob()))) {
     setBboxSelectionInfo(document.getElementById('bbox-selection-info'), "shapes_one_world", "#fa7878");
     return;
   }
-  if (isLiveMode()) {
+  if (!prewarm && isLiveMode()) {
     startLive();
     return;
   }
@@ -4310,9 +4363,10 @@ async function startGeneration(confirmed = false, prewarm = false) {
       return;
     }
     lastRunOneWorld = oneWorld;
+    lastRunPrewarm = prewarm;
 
     // Auto-create world for Java format (a One World is resolved by the backend)
-    if (selectedWorldFormat === 'java' && !oneWorld) {
+    if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {
       if (!savePath) {
         console.warn("Cannot create world: save path not set");
         return;
@@ -4335,7 +4389,7 @@ async function startGeneration(confirmed = false, prewarm = false) {
 
     // Clear any existing world preview since we're generating a new one.
     // A One World keeps its areas on the map; the new one joins them at the end.
-    if (!oneWorld) notifyWorldChanged();
+    if (!oneWorld && !prewarm) notifyWorldChanged();
     if (oneWorld) setWorldNameLabel(oneWorldFolderName());
 
     // Get the map iframe reference
@@ -4413,6 +4467,7 @@ async function startGeneration(confirmed = false, prewarm = false) {
     }
     refreshPrecomputeButton();
   }
+  return started;
 }
 
 // World preview overlay state

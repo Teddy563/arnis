@@ -21,6 +21,11 @@ export const t = (key, fallback, vars = {}) => {
 // What the status line shows for a progress payload. An error that carries `detail` keeps the
 // short `message` on the line and the full text as its tooltip and in the log; a Region Download
 // fallback is a notice in the user's language rather than the raw log line.
+// A fallback notice stays on the status line for 8 s: a following ordinary line then moves only
+// the bar. The end of a run (Error!, Done!, Stopped) always shows.
+export const holdsNotice = (shown, message, since, now) =>
+  !shown.notice && since > 0 && now - since < 8000 && !/^(Error!|Done!|Stopped)/.test(message);
+
 export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
     return { text: t('region_download_fallback', 'Region Download was not available for this selection; the default source was used.'), title: '', log: message, notice: true };
@@ -161,16 +166,19 @@ export const hasPlanMask = () => Boolean(maskPath);
 export async function setPlanMask(geojson) {
   const seq = ++maskSeq;
   let path = '';
+  let error = '';
   if (geojson) {
     try {
       path = await call('gui_write_plan_mask', { geojson: JSON.stringify(geojson) });
     } catch (e) {
+      error = String(e);
       window.arnisLog?.('warn', `Outline not used: ${e}`);
     }
   }
-  if (seq !== maskSeq) return;
+  if (seq !== maskSeq) return '';
   maskPath = path || '';
   schedulePlan();
+  return error;
 }
 
 // ---- A job built in pieces: outlines on the map, Pause, Stop and Retry ----
@@ -752,7 +760,8 @@ export function refreshStretch() {
 
 // ---- Data panel: Prepare Countries and the Download Plan ----
 
-const mb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
+// Sizes for the Download Plan; nothing missing prints nothing, anything missing at least 1 MB.
+export const mb = (b) => (b <= 0 ? '' : b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
 
 function lines(box, rows) {
   box.replaceChildren(
@@ -824,7 +833,7 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
       const rows = p.items.map((i) => {
         const name = t(`data_source_${i.source}`, SOURCE_NAMES[i.source] || i.source);
         if (!i.total) return [name, t('meld_size_unknown', 'size unknown')];
-        return [t('meld_cached', '{source}: {cached} of {total} cached', { source: name, cached: i.cached, total: i.total }), i.missing_bytes != null ? t('meld_to_download', '{size} to download', { size: mb(i.missing_bytes) }) : t('meld_size_unknown', 'size unknown')];
+        return [t('meld_cached', '{source}: {cached} of {total} cached', { source: name, cached: i.cached, total: i.total }), i.missing_bytes != null ? (i.missing_bytes > 0 ? t('meld_to_download', '{size} to download', { size: mb(i.missing_bytes) }) : '') : t('meld_size_unknown', 'size unknown')];
       });
       if (p.free_bytes != null) rows.push([t('meld_free_space', 'Free space'), mb(p.free_bytes)]);
       if (ready) rows.unshift([t('meld_ready_offline', 'Ready to build offline.'), '']);
@@ -847,26 +856,31 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
     listen('progress-update', (e) => {
       const m = e.payload && e.payload.message;
       if (!prefetching || !m || e.payload.piece) return;
+      // Same text as the main status line (a fallback notice is translated).
       if (m.startsWith('Done!')) {
         prefetching = false;
         check(true);
       } else {
         if (/^(Error!|Stopped)/.test(m)) prefetching = false;
-        say(out, m);
+        say(out, progressText(e.payload).text);
       }
     });
   }
   el('meld-plan-download').addEventListener('click', async () => {
     if (!area()) return say(out, needArea());
+    // Set before the run starts so its first lines are caught; cleared when Start refused.
     prefetching = true;
     say(out, t('meld_downloading', 'Downloading: the progress is on the main bar.'));
-    await prefetch();
+    if (!(await prefetch())) {
+      prefetching = false;
+      check();
+    }
   });
 }
 
 // Settings > Projects: the One Worlds in the save folder. `open(name, expand)` makes one the
 // target; the name is stored here so the choice outlives the session. Returns a refresh function.
-export function initProjects({ invoke, savePath, scale, open }) {
+export function initProjects({ invoke, savePath, scale, open, available = () => true }) {
   const list = el('projects-list');
   const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
   const button = (key, fallback, disabled, onClick) => {
@@ -903,8 +917,11 @@ export function initProjects({ invoke, savePath, scale, open }) {
       ];
       if (w.modified_ms) kids.push(text('projects-meta', new Date(w.modified_ms).toLocaleDateString()));
       if (w.locked) kids.push(text('projects-meta is-warn', t('projects_in_use', 'In use')));
-      kids.push(button('projects_open', 'Open', w.locked, () => pick(w.name, false)));
-      kids.push(button('projects_expand', 'Expand', w.locked, () => pick(w.name, true)));
+      // One World needs Java on Earth: without it the buttons would do nothing.
+      const off = !available();
+      kids.push(button('projects_open', 'Open', w.locked || off, () => pick(w.name, false)));
+      kids.push(button('projects_expand', 'Expand', w.locked || off, () => pick(w.name, true)));
+      if (off) kids.slice(-2).forEach((b) => { b.title = t('one_world_desc_on', 'Each area joins one growing world at its real position. Java only.'); });
       row.append(...kids);
       return row;
     });

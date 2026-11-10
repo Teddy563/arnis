@@ -36,5 +36,9 @@ assert.deepStrictEqual(pieces[1].bounds, [5, 6, 7, 8]);
 await setPlanMask(null);
 assert.ok(!hasPlanMask());
 assert.ok(!meldFlags({ oneWorld: true, java: true }).some((f) => f.startsWith('--plan-mask')));
+// A write that fails returns the reason and leaves no mask.
+initRunControls({ key: () => 'k', map: () => ({}), invoke: async () => { throw new Error('too big'); }, post() {}, start: async () => {}, localize: () => {} });
+assert.match(await setPlanMask(square), /too big/);
+assert.ok(!hasPlanMask());
 console.log('plan-mask: ok');
 process.exit(0);

@@ -1749,6 +1749,11 @@ $(document).ready(function () {
         }
 
         // A job built in pieces: one outline per piece, coloured by its state.
+        // The window could not use the outline: take it off the map.
+        if (event.data && event.data.type === 'planMask' && !event.data.geojson) {
+            setPlanMask(null);
+        }
+
         if (event.data && event.data.type === 'pieceOutlines') {
             drawPieceOutlines(event.data.pieces || []);
         }

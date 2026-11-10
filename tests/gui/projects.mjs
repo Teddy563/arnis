@@ -33,6 +33,11 @@ assert.deepStrictEqual(opened.at(-1), ['Paris', false]);
 await rows[0].children.at(-1).listeners.click();
 assert.deepStrictEqual(opened.at(-1), ['Arnis One World', true], 'Expand opens then expands');
 
+let ok = false;
+const off = initProjects({ invoke: async () => worlds, savePath: () => 's', scale: () => 1, open: async () => {}, available: () => ok });
+await off();
+assert.ok(document.getElementById('projects-list').children[0].children.at(-1).disabled, 'no One World here: Open is disabled');
+
 worlds.length = 0;
 await refresh();
 assert.strictEqual(document.getElementById('projects-list').children[0].textContent, 'No worlds yet. Build one with One World on.');

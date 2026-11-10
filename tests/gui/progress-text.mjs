@@ -6,7 +6,7 @@ import fs from 'node:fs';
 
 globalThis.document = { querySelector: () => null, addEventListener() {}, getElementById: () => null };
 globalThis.window = { addEventListener() {}, localization: { region_download_fallback: 'Notice' } };
-const { progressText } = await import('../../src/gui/js/meld-features.js');
+const { progressText, holdsNotice } = await import('../../src/gui/js/meld-features.js');
 
 const full = 'Error! Could not reach the server after 3 tries: connection refused';
 assert.deepEqual(progressText({ message: 'Error! Could not reach', detail: full }), { text: 'Error! Could not reach', title: full, log: full, notice: false });
@@ -14,6 +14,12 @@ assert.deepEqual(progressText({ message: 'Done!' }), { text: 'Done!', title: '',
 const n = progressText({ message: 'region_download_fallback: http_503' });
 assert.equal(n.text, 'Notice');
 assert.ok(n.notice);
+
+// A notice outlasts the next stage line for 8 s, not an error or the end of a run.
+const ord = progressText({ message: 'Fetching' });
+assert.ok(holdsNotice(ord, 'Fetching', 1000, 5000));
+assert.ok(!holdsNotice(ord, 'Fetching', 1000, 9500) && !holdsNotice(ord, 'Fetching', 0, 5000));
+assert.ok(!holdsNotice(ord, 'Done! x', 1000, 5000) && !holdsNotice(progressText({ message: 'Error! x' }), 'Error! x', 1000, 5000));
 
 const dir = new URL('../../src/gui/locales/', import.meta.url);
 for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'en.json')) {
