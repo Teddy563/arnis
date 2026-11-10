@@ -1,14 +1,14 @@
 // Run: node tests/gui/piece-overlay.mjs
 // The piece overlay's state, with a stub window and map (no browser): what the map is sent for
-// each state, the summary line, the retry of one piece, and stale pieces dropped.
+// each state, the failed line under the bar, the Show overlap button, the retry of one piece, and stale pieces dropped.
 import assert from 'node:assert';
 
 const nodes = new Map();
-const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, listeners: {}, classList: { toggle() {}, remove() {}, contains: () => false }, setAttribute() {}, addEventListener(t, f) { this.listeners[t] = f; } });
+const node = () => ({ value: '', checked: false, hidden: false, textContent: '', dataset: {}, listeners: {}, classList: { toggle() {}, remove() {}, contains: () => false }, replaceChildren() {}, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, addEventListener(t, f) { this.listeners[t] = f; } });
 globalThis.document = { querySelector: () => null, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 const winListeners = [];
 globalThis.window = { addEventListener: (t, f) => winListeners.push([t, f]) };
-const { notePiece, clearPieces, dropStalePieces, showRunControls, initRunControls, summary, meldFlags } =
+const { notePiece, clearPieces, dropStalePieces, showRunControls, initRunControls, failedLine, meldFlags } =
   await import('../../src/gui/js/meld-features.js');
 
 const sent = [];
@@ -25,6 +25,9 @@ document.getElementById('advanced-meld-features-toggle').checked = true;
 
 clearPieces();
 for (let i = 0; i < 4; i++) rec(i, 'queued');
+showRunControls(true);
+assert.equal(failedLine(), '', 'no failed cell: no line');
+assert.equal(document.getElementById('run-failed').textContent, '');
 rec(0, 'start', { worker: 1, pct: 0 });
 rec(0, 'start', { worker: 1, pct: 40 });
 rec(1, 'start', { worker: 2, pct: 0 });
@@ -36,7 +39,9 @@ assert.equal(last()[0].text.hint, '', 'no retry hint while running');
 rec(0, 'done', { pct: 100 });
 rec(1, 'failed', { worker: 2, error: 'exit 1; last output:\nline one\nline two' });
 rec(2, 'stopped');
-assert.equal(summary(), '1/4 done · 0 running · 1 failed');
+showRunControls(true); // main.js does this after every piece record
+assert.equal(failedLine(), '1 failed');
+assert.equal(document.getElementById('run-failed').textContent, '1 failed', 'the red line under the bar');
 assert.equal(last()[1].text.error, 'exit 1; last output:'.replace('; last output:', '; last output:'), 'first line only');
 assert.equal(last()[1].text.state, 'Failed');
 assert.ok(last()[1].end, 'a finished piece has an end');
@@ -106,8 +111,13 @@ assert.equal(document.getElementById('run-controls').hidden, true);
 
 // The halo toggle is passed on to the map.
 const halo = document.getElementById('run-halo-toggle');
-halo.listeners.change({ target: { checked: true } });
+const press = () => halo.listeners.click({ currentTarget: halo });
+press();
 assert.deepEqual(sent.at(-1), { type: 'pieceHalo', on: true });
+assert.equal(halo.attrs['aria-pressed'], 'true');
+press();
+assert.deepEqual(sent.at(-1), { type: 'pieceHalo', on: false });
+assert.equal(halo.attrs['aria-pressed'], 'false');
 // G8: a failed piece's card offers "Open log"; the map's openLog message shows that file.
 {
   const shown = [];

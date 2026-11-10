@@ -15,6 +15,8 @@ const n = progressText({ message: 'region_download_fallback: http_503' });
 assert.equal(n.text, 'Notice');
 assert.ok(n.notice);
 
+assert.equal(progressText({ message: 'Building pieces... 23/100 done' }).text, 'Building cells… 23/100', 'the title counts cells');
+
 // A notice outlasts the next stage line for 8 s, not an error or the end of a run.
 const ord = progressText({ message: 'Fetching' });
 assert.ok(holdsNotice(ord, 'Fetching', 1000, 5000));

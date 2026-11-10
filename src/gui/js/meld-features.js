@@ -45,6 +45,9 @@ export function progressText({ message = '', detail = '' }) {
   if (message.startsWith('region_download_fallback')) {
     return { text: t('region_download_fallback', 'Region Download is not available for this selection, so Arnis used the default source.'), title: '', log: message, notice: true };
   }
+  // The backend counts "pieces"; the window says cells.
+  const built = /^Building pieces\.\.\. (\d+)\/(\d+) done$/.exec(message);
+  if (built) return { text: t('run_building', 'Building cells… {done}/{total}', { done: built[1], total: built[2] }), title: detail, log: detail || null, notice: false };
   return { text: message, title: detail, log: detail || null, notice: false };
 }
 
@@ -203,6 +206,8 @@ export async function setPlanMask(geojson) {
 const pieces = new Map();
 let paused = false;
 let running = false;
+// Whether the overlap border is drawn (the Show overlap button).
+let halo = false;
 // What the pieces belong to (selection and world): a different one makes them, and Retry, stale.
 let jobKey = '';
 let keyOf = () => '';
@@ -243,39 +248,34 @@ const outlines = () =>
 // A finished job's failed or stopped piece can be rebuilt alone.
 const canRetry = (p) => !running && (p.state === 'failed' || p.state === 'stopped');
 
-// "3/8 done · 2 running · 1 failed"
-export function summary() {
-  const all = [...pieces.values()];
-  const count = (f) => all.filter(f).length;
-  return t('run_summary', '{done}/{total} done · {running} running · {failed} failed', {
-    done: count((p) => p.state === 'done' || p.state === 'skipped'),
-    total: all.length,
-    running: count((p) => RUNNING.has(p.state)),
-    failed: count((p) => p.state === 'failed'),
-  });
+// Under the bar: "2 failed", only above 0 (the title and the bar say the rest).
+export function failedLine() {
+  const n = [...pieces.values()].filter((p) => p.state === 'failed').length;
+  return n ? t('run_failed', '{n} failed', { n }) : '';
 }
 
 // When this run's first piece record came, so after any dialog: the clock and the ETA count
 // only what it built. 0 until then.
 let runStart = 0;
 
-// " · 3:12 · about 12 min left": time since this run started, then the rate of this run so far
-// (its finished pieces and the running ones' share) carried over what is left. No ETA until a
-// piece has finished.
-function eta() {
+// The bar's tooltip: "3:12 elapsed · 4 running" (the estimate is on the bar itself).
+function barTip() {
   if (!running || !runStart) return '';
-  const ms = Date.now() - runStart;
-  const s = Math.floor(ms / 1000);
-  let out = ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  const all = [...pieces.values()];
-  const built = all.filter((p) => p.state === 'done' && p.end >= runStart).length;
-  const share = all.filter((p) => RUNNING.has(p.state)).reduce((sum, p) => sum + (p.pct || 0) / 100, 0);
-  const left = all.filter((p) => p.state === 'queued' || RUNNING.has(p.state)).length - share;
-  if (!built || left <= 0) return out;
-  // minutes() rounds it, which keeps it steady enough; the progress bar has its own smoothed ETA.
-  return out + ' · ' + t('run_eta', 'about {time} left', { time: minutes((ms / (built + share)) * left / 60000) });
+  const s = Math.floor((Date.now() - runStart) / 1000);
+  const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return t('run_tip', '{elapsed} elapsed · {running} running', { elapsed: clock, running: [...pieces.values()].filter((p) => RUNNING.has(p.state)).length });
 }
 
+function showRunLine() {
+  el('run-failed').textContent = pieces.size ? failedLine() : '';
+  const bar = el('progress-bar')?.parentElement;
+  if (bar) {
+    const tip = barTip();
+    bar.title = tip;
+    bar.tabIndex = tip ? 0 : -1; // focus shows it to a screen reader too
+    if (tip) bar.setAttribute?.('aria-label', tip); else bar.removeAttribute?.('aria-label');
+  }
+}
 
 // One run of the job over the given pieces (1-based, as --only-pieces takes them). The run's
 // flags (meldFlags) take them; one a refused start leaves behind is dropped here.
@@ -302,10 +302,8 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
     post(m);
   };
   restart = start;
-  // The run line ticks once a second while a job runs.
-  setInterval(() => {
-    if (running && pieces.size) el('run-summary').textContent = summary() + eta();
-  }, 1000);
+  // The bar's tooltip ticks once a second while a job runs.
+  setInterval(() => running && showRunLine(), 1000);
   el('run-pause-button').addEventListener('click', async () => {
     setPaused(!paused);
     await call('gui_pause_generation', { paused });
@@ -330,8 +328,10 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
     if (m.type === 'retryPiece' && p && canRetry(p)) retry([m.piece + 1]);
   });
   // The faint border around each piece showing what it builds beyond its own area.
-  el('run-halo-toggle').addEventListener('change', (e) => {
-    postToMap({ type: 'pieceHalo', on: e.target.checked });
+  el('run-halo-toggle').addEventListener('click', (e) => {
+    halo = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+    e.currentTarget.setAttribute('aria-pressed', String(halo));
+    postToMap({ type: 'pieceHalo', on: halo });
     if (legendOpen) showPlan(...shown); // the card's overlap row follows the toggle
   });
 }
@@ -400,9 +400,10 @@ export function showRunControls(isRunning) {
   running = isRunning;
   // The hint to click a failed piece comes and goes with the run.
   if (wasRunning !== running && pieces.size) postToMap({ type: 'pieceOutlines', pieces: outlines() });
-  el('run-summary').textContent = pieces.size ? summary() + eta() : '';
+  showRunLine();
   // A run that starts puts its own line in place of the plan; one that ended built pieces,
   // so the plan's states are read again.
+  if (wasRunning !== running) showPlan(...shown); // the stretch line goes with the run
   if (!wasRunning && running) schedulePlan();
   if (wasRunning && !running) schedulePlan(true);
   // Expand is for between runs.
@@ -557,17 +558,18 @@ function showPlan(rows, warn = '', ring = false) {
   if (!box) return;
   // With a plan the stretch lines sit behind its "?" (amber or red there too); alone they show as they are.
   const head = rows[0]?.tip ? rows[0] : null;
+  const stretch = running ? [] : stretchRows; // the stretch readout is for planning, not for a run
   if (head) {
     head.tip.querySelectorAll?.('.plan-stretch, .legend-card').forEach((x) => x.remove());
-    head.tip.append(...stretchRows);
+    head.tip.append(...stretch);
     head.help.classList.toggle('is-open', legendOpen);
     head.help.ariaExpanded = String(legendOpen);
     // The "?" opens the card of every line the map can show right now, inside the details.
     if (legendOpen && rows.length > 1) head.tip.append(legendCard());
-    head.help.classList.toggle('is-warn', stretchRows.some((x) => x.classList.contains('is-warn')));
-    head.help.classList.toggle('is-error', stretchRows.some((x) => x.classList.contains('is-error')));
+    head.help.classList.toggle('is-warn', stretch.some((x) => x.classList.contains('is-warn')));
+    head.help.classList.toggle('is-error', stretch.some((x) => x.classList.contains('is-error')));
   }
-  box.replaceChildren(...rows, ...(head ? [] : stretchRows));
+  box.replaceChildren(...rows, ...(head ? [] : stretch));
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
@@ -580,7 +582,7 @@ function showPlan(rows, warn = '', ring = false) {
     }
     box.append(legend);
   }
-  box.hidden = !rows.length && !stretchRows.length;
+  box.hidden = !rows.length && !stretch.length;
 }
 
 // ---- What the lines on the map mean ----
@@ -644,7 +646,7 @@ function legendCard() {
   const map = mapWindow()?.arnisLegendState?.() || {};
   const rows = legendRows({
     drawing: map.drawing, selection: map.selection, held: map.held, rect: map.rect, shape: hasPlanMask(),
-    cells: drawn, halo: Boolean(el('run-halo-toggle')?.checked), stretch: stretchShown,
+    cells: drawn, halo, stretch: stretchShown,
   });
   const card = div('legend-card', '');
   Object.assign(card, { role: 'group', ariaLabel: t('legend_title', LEGEND_TEXT.legend_title) });

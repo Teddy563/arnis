@@ -228,23 +228,38 @@ a:hover {
   color: #fecc44 !important; /* the listener sets an inline colour */
 }
 
-/* Time-remaining centered on the bar. White to match the percentage label; a
-   text-shadow keeps it legible over the green fill and the lighter track. */
+/* The estimate on the bar, in two tones: a white copy clipped to the green fill and a dark copy clipped
+   to the grey track, so a glyph the fill edge cuts shows both. --p is the fill's width in px
+   (main.js follows the fill's size); no shadow. */
 .progress-eta-overlay {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   z-index: 1;
-  color: #ffffff;
   font-size: 0.85em;
-  line-height: 1;
+  line-height: 20px;
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.7);
   opacity: 0;
   transition: opacity 0.3s ease;
+}
+
+.progress-eta-overlay > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-eta-overlay .eta-on {
+  color: #ffffff;
+  clip-path: inset(0 calc(100% - var(--p, 0px)) 0 0);
+}
+
+.progress-eta-overlay .eta-off {
+  color: #2a2a2a;
+  clip-path: inset(0 0 0 var(--p, 0px));
 }
 
 .progress-eta-overlay.visible {
@@ -1142,23 +1157,14 @@ input[type="range"] {
   display: none;
 }
 
-.run-summary {
+.run-failed {
   flex-basis: 100%;
   font-size: 12px;
-  opacity: 0.85;
+  color: #fa7878;
 }
 
-.run-summary:empty {
+.run-failed:empty {
   display: none;
-}
-
-.run-halo {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 .run-button {
@@ -1175,6 +1181,25 @@ input[type="range"] {
 
 .run-button:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Show overlap: a toggle, pressed like the selected Java / Bedrock segment */
+.run-button.run-toggle {
+  flex: 1.6 1 auto;
+  width: auto; /* .controls-box button is 100 % wide */
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.run-button.run-toggle[aria-pressed="true"] {
+  background: var(--primary-accent);
+  border-color: var(--primary-accent);
+  color: #0f0f0f;
+  font-weight: 600;
+}
+
+.run-button.run-toggle[aria-pressed="true"]:hover {
+  background: var(--primary-accent-dark);
 }
 
 /* The fill grows while the button is held (1.5 s, HOLD_MS in main.js) and drains on release */
@@ -1285,8 +1310,9 @@ body.map-first .row a {
 /* !important: the img's inline style sizes it for the 3.4.0 page. */
 body.map-first #arnis-logo {
   width: auto !important;
-  height: 32px !important;
+  height: 46px !important;
   padding: 0;
+  image-rendering: pixelated;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
 }
 
@@ -1372,21 +1398,39 @@ body.map-first .preview3d-mini > * {
   direction: ltr;
 }
 
-/* The footer: one quiet line bottom centre over the map, level with the search bar */
+/* The footer: the search bar's box (same height, row, fill, radius and font size; map-controls.css) but
+   narrow and centred in the window, quiet until pointed at. Bottom is the search bar's: its 12 px
+   inside the 6 px map inset. */
 body.map-first .footer {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 27px;
+  bottom: 18px;
   z-index: 5;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 35px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 9px;
-  background: rgba(30, 30, 30, 0.55);
-  font-size: 10.5px;
-  line-height: 18px;
+  background: rgba(46, 46, 46, 0.9);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  backdrop-filter: blur(10px) saturate(120%);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  line-height: 17px;
+  white-space: nowrap;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+body.map-first .footer:hover,
+body.map-first .footer:focus-within {
+  opacity: 1;
 }
 
 body.map-first .footer a {
-  color: rgba(255, 255, 255, 0.72);
+  color: #ececec;
 }

@@ -945,9 +945,13 @@ function resetEta() {
   const el = document.getElementById("progress-eta");
   if (el) {
     el.classList.remove("visible");
-    el.textContent = "";
-    el.removeAttribute("aria-label");
+    setEtaText(el, "");
   }
+}
+
+// The estimate's label is two stacked copies (white over the fill, dark over the track; styles.css).
+function setEtaText(el, text) {
+  for (const span of el.children) span.textContent = text;
 }
 
 function formatEtaDuration(sec) {
@@ -966,16 +970,14 @@ function renderEta() {
   // Show nothing until we actually have an estimate (no "…" placeholder).
   if (!eta || eta.shown == null) {
     el.classList.remove("visible");
-    el.textContent = "";
-    el.removeAttribute("aria-label");
+    setEtaText(el, "");
     return;
   }
   // Floor at 1s so it never reads "0s" before Done.
   const value = formatEtaDuration(Math.max(1, eta.shown));
-  el.textContent = value; // duration only on the bar; no "~" prefix
-  // Screen-reader context (the visible pill is just the duration). Hardcoded
-  // English to match the rest of the progress messages, which aren't localized.
-  el.setAttribute("aria-label", `Time remaining: ${value}`);
+  // Only the estimate is on the bar; the elapsed time is in its tooltip (meld-features.js).
+  const tpl = (window.localization && window.localization.run_eta) || "about {time} left";
+  setEtaText(el, tpl.replace("{time}", value));
   el.classList.add("visible");
 }
 
@@ -1240,6 +1242,11 @@ function initEasterEggs() {
 
   // 5 rapid clicks on progress bar
   const progressBar = document.querySelector('.progress-bar-container');
+  // The estimate's two copies are clipped at the fill's edge: follow the fill's width (also while it animates).
+  const fill = document.getElementById('progress-bar');
+  if (fill && window.ResizeObserver) {
+    new ResizeObserver(() => progressBar.style.setProperty('--p', `${fill.offsetWidth}px`)).observe(fill);
+  }
   let clicks = [];
   progressBar.addEventListener('click', () => {
     const now = Date.now();

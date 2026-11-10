@@ -7,7 +7,7 @@ const nodes = new Map();
 const node = () => ({ value: '', checked: false, hidden: false, textContent: '', className: '', dataset: {}, children: [], classList: { toggle() {}, remove() {}, contains: () => false }, setAttribute() {}, addEventListener() {}, append() {}, replaceChildren(...c) { this.children = c; } });
 globalThis.document = { querySelector: () => null, addEventListener() {}, createElement: node, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 globalThis.window = { addEventListener() {} };
-const { initRunControls, initJobPlan, schedulePlan } = await import('../../src/gui/js/meld-features.js');
+const { initRunControls, initJobPlan, schedulePlan, showRunControls } = await import('../../src/gui/js/meld-features.js');
 
 const sent = [];
 initRunControls({ key: () => 'k', map: () => ({}), invoke: async () => ({ units: [], estimate: {} }), post: (m) => sent.push(m), start: async () => {}, localize: () => {} });
@@ -26,6 +26,13 @@ stretch.checked = true;
 schedulePlan();
 assert.ok(lines().length > 0 && lines().every((l) => l.label.endsWith('%')), 'toggle on: lines with their % labels');
 assert.ok(hasRow(), 'toggle on: the stretch line is shown');
+
+showRunControls(true);
+schedulePlan();
+assert.ok(!hasRow(), 'during a run the stretch line is hidden');
+showRunControls(false);
+schedulePlan();
+assert.ok(hasRow(), 'and back after it');
 
 stretch.checked = false;
 schedulePlan();
