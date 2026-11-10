@@ -270,8 +270,15 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         UnitSize::Auto => println!("One World: building {of} piece(s) of 2x2 to 8x8 regions"),
     }
     // The extract is read once, here; each piece then cuts its own area from the bake.
+    let mut argv = argv;
     if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
-        crate::osm_pbf::bake_for_job(&src, bake_area)?;
+        match crate::osm_pbf::bake_for_job(&src, bake_area) {
+            Err(e) if crate::osm_pbf::fallback_allowed(&src, crate::net::offline()) => {
+                crate::retrieve_data::warn_region_download_fallback(&e);
+                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"]);
+            }
+            r => r?,
+        }
     }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
@@ -746,6 +753,22 @@ const PER_PIECE_SWITCHES: &[&str] = &[
 /// and a run refuses a spawn outside its area.
 const SPAWN: &[&str] = &["--spawn-lat", "--spawn-lng"];
 
+/// `argv` without the options `names` and their values.
+fn without_options(argv: Vec<OsString>, names: &[&str]) -> Vec<OsString> {
+    let mut skip_value = false;
+    argv.into_iter()
+        .filter(|arg| {
+            if std::mem::take(&mut skip_value) {
+                return false;
+            }
+            let text = arg.to_string_lossy();
+            let named = names.contains(&text.split('=').next().unwrap_or_default());
+            skip_value = named && !text.contains('=');
+            !named
+        })
+        .collect()
+}
+
 /// A piece's command line: the job's own, minus what is decided per piece, plus the
 /// piece's bbox at full precision and its lease.
 fn child_args(
@@ -1035,6 +1058,16 @@ mod tests {
         assert!((job_percent(&d) - 2.75 / 16.0 * 100.0).abs() < 1e-9);
         assert_eq!(job_percent(&[1.0; 16]), 100.0);
         assert_eq!(job_percent(&[]), 0.0);
+    }
+
+    #[test]
+    fn a_region_download_fallback_drops_the_pbf_options() {
+        let argv = ["--osm-pbf", "geofabrik", "--osm-pbf-url=u", "--scale", "1"];
+        let got = without_options(
+            argv.map(OsString::from).to_vec(),
+            &["--osm-pbf", "--osm-pbf-url"],
+        );
+        assert_eq!(got, ["--scale", "1"].map(OsString::from));
     }
 
     #[test]

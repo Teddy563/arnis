@@ -45,6 +45,12 @@ impl Source {
     }
 }
 
+/// A failed Geofabrik download may fall back to the default source; a file the user
+/// named, or `--offline`, keeps the error.
+pub fn fallback_allowed(src: &Source, offline: bool) -> bool {
+    src.spec == GEOFABRIK && !offline
+}
+
 /// The OSM data of `bbox`, cut from a bake that covers it, or from the extract.
 pub fn fetch_data_from_pbf(src: &Source, bbox: LLBBox) -> Result<OsmData> {
     println!("{} Reading data from the .pbf extract...", "[1/7]".bold());
@@ -1271,6 +1277,18 @@ fn way_element(w: &osmpbf::Way, refs: Vec<i64>) -> OsmElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fallback_only_for_geofabrik_online() {
+        let src = |spec: &str| Source {
+            spec: spec.into(),
+            url: None,
+            pad_m: 0.0,
+        };
+        assert!(fallback_allowed(&src(GEOFABRIK), false));
+        assert!(!fallback_allowed(&src(GEOFABRIK), true));
+        assert!(!fallback_allowed(&src("berlin.osm.pbf"), false));
+    }
 
     #[test]
     fn a_download_splits_into_whole_ranges_within_the_cap() {
