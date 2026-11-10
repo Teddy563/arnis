@@ -1045,7 +1045,7 @@ $(document).ready(function () {
     // The slider shows while either layer is on the map.
     function updateSliderVisibility() {
         var box = document.getElementById('world-preview-slider-container');
-        if (box) box.style.display = worldOverlay || lastPieces.length ? 'block' : 'none';
+        if (box) box.style.display = worldOverlay || lastPieces.length ? 'flex' : 'none';
     }
 
     // Create the balance slider as a proper Leaflet control
@@ -1646,7 +1646,8 @@ $(document).ready(function () {
             }).addTo(pieceLayer);
             cellShade.bringToBack();
         }
-        pieces = inView.cells;
+        // Past the cap only the job's outline is drawn: a first 2,000 cells would be a patch, not a grid.
+        pieces = inView.over ? [] : inView.cells;
         var seen = {};
         pieces.forEach(function(p) {
             seen[p.i] = true;

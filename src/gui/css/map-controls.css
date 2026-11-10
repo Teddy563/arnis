@@ -266,7 +266,7 @@
   cursor: pointer;
 }
 
-/* The centre mark, behind the thumb (the thumb's travel is inset by half its width) */
+/* The centre mark, over the track so it shows with the thumb elsewhere */
 .world-preview-slider-tick {
   position: absolute;
   left: 50%;
@@ -277,6 +277,7 @@
   border-radius: 1px;
   background: var(--map-muted);
   pointer-events: none;
+  z-index: 2;
 }
 
 /* Clear selection: a fill rises while the button is held (arnisClearHoldMs in piece-style.js) */
