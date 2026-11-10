@@ -46,3 +46,29 @@ globalThis.arnisSnap = {
     span: (d, side) => (Math.round(d / side) || (d < 0 ? -1 : 1)) * side,
     shift: (d, side) => Math.round(d / side) * side
 };
+
+// The cells worth drawing now: those that touch `view` ([south, west, north, east]), at most `cap`
+// of them. `over` says more were in view than the cap allows (zoomed out); the map then draws
+// the job's outline instead (`arnisCellsExtent`).
+globalThis.arnisCellsInView = (pieces, view, cap = 2000) => {
+    const cells = [];
+    for (const p of pieces) {
+        const b = p.bounds;
+        if (b[2] < view[0] || b[0] > view[2] || b[3] < view[1] || b[1] > view[3]) continue;
+        if (cells.length >= cap) return { cells, over: true };
+        cells.push(p);
+    }
+    return { cells, over: false };
+};
+
+// [south, west, north, east] around the cells that are built (not the grey ones outside the outline
+// or the room to grow); null when there are none.
+globalThis.arnisCellsExtent = (pieces) => {
+    let e = null;
+    for (const p of pieces) {
+        if (p.state === 'excluded' || p.state === 'room') continue;
+        const b = p.bounds;
+        e = e ? [Math.min(e[0], b[0]), Math.min(e[1], b[1]), Math.max(e[2], b[2]), Math.max(e[3], b[3])] : b.slice();
+    }
+    return e;
+};

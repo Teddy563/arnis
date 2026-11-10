@@ -691,7 +691,6 @@
   "run_eta": "faltam cerca de {time}",
   "map_select_area": "Selecionar esta área",
   "map_use_outline": "Usar contorno",
-  "plan_too_many": "Partes demais para desenhar no mapa.",
   "plan_error": "Não foi possível planejar esta seleção: {error}",
   "plan_piece_size": "{n} × {m} regiões",
   "plan_legend_selection": "Seleção",

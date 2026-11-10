@@ -149,7 +149,7 @@ Rules:
 - A new kind of line gets a row in `legendRows`, a swatch from the same table, and a test in `tests/gui/map-legend.mjs`.
 - Do not change a colour or dash in `bbox.js` alone. Change `piece-style.js`.
 - Piece hovers and other map tooltips use the window's UI font, a state dot and the state word on line one, the size on line two (`bbox.css`, `.map-first .leaflet-tooltip`).
-- Zoomed out, pieces group into coarser cells; zoomed in, a piece fills from the bottom with its progress. Labels show only when a piece is large enough on screen.
+- The grid always draws, by zoom: zoomed in, only the cells inside the visible map (at most 2,000 rectangles, redrawn on `moveend`), each filling from the bottom with its progress; zoomed out past that, the job's outline alone. Labels show only when a cell is large enough on screen.
 
 ## 7. Advanced features gating
 

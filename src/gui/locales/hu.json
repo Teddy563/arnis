@@ -691,7 +691,6 @@
   "run_eta": "kb. {time} van hátra",
   "map_select_area": "Ennek a területnek a kijelölése",
   "map_use_outline": "Körvonal használata",
-  "plan_too_many": "Túl sok rész ahhoz, hogy a térképre rajzoljuk.",
   "plan_error": "Nem sikerült megtervezni ezt a kijelölést: {error}",
   "plan_piece_size": "{n} × {m} régió",
   "plan_legend_selection": "Kijelölés",

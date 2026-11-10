@@ -1585,10 +1585,25 @@ $(document).ready(function () {
     var pieceLayers = {};
     var heldCard = null;
 
+    // At most this many cells are drawn at once: the ones inside the view. Zoomed out past that,
+    // only the job's outline is drawn; zooming in brings the cells back (moveend below).
+    var CELL_CAP = 2000;
+    var cellExtent = null;
+
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
         // While pieces build, the selection and its handles fade so the pieces read (bbox.css).
         document.body.classList.toggle('pieces-building', pieces.some(function(p) { return p.state === 'start' || p.state === 'retry'; }));
+        var view = map.getBounds();
+        var inView = window.arnisCellsInView(pieces, [view.getSouth(), view.getWest(), view.getNorth(), view.getEast()], CELL_CAP);
+        var extent = inView.over ? window.arnisCellsExtent(pieces) : null;
+        if (cellExtent) { pieceLayer.removeLayer(cellExtent); cellExtent = null; }
+        if (extent) {
+            cellExtent = L.rectangle([[extent[0], extent[1]], [extent[2], extent[3]]], {
+                color: PIECE_COLORS.planned, weight: 2, fill: false, interactive: false
+            }).addTo(pieceLayer);
+        }
+        pieces = inView.cells;
         var seen = {};
         pieces.forEach(function(p) {
             seen[p.i] = true;
@@ -1710,6 +1725,7 @@ $(document).ready(function () {
         });
     }
     map.on('zoomend', updatePieceLabels);
+    map.on('moveend', function() { if (lastPieces.length) drawPieceOutlines(lastPieces); });
 
     // Listen for messages from parent window
     window.addEventListener('message', function(event) {

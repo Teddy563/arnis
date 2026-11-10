@@ -691,7 +691,6 @@
   "run_eta": "atlicis ap {time}",
   "map_select_area": "Atlasīt šo apgabalu",
   "map_use_outline": "Izmantot kontūru",
-  "plan_too_many": "Pārāk daudz daļu, lai tās zīmētu kartē.",
   "plan_error": "Neizdevās saplānot šo atlasi: {error}",
   "plan_piece_size": "{n} × {m} reģioni",
   "plan_legend_selection": "Atlase",

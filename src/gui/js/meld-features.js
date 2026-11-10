@@ -427,9 +427,6 @@ let planTimer = 0;
 let planKey = '';
 // Only the newest answer is drawn.
 let planSeq = 0;
-// Past this many pieces the map would crawl; the totals still show.
-const MAX_DRAWN = 3000;
-
 // The last plan drawn, { n pieces, w workers, done }, while it is the current one; null otherwise.
 let lastPlan = null;
 export const planPieces = () => lastPlan;
@@ -713,11 +710,10 @@ async function updatePlan() {
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
     ].join(' · '),
     `${t('plan_ram_tip', 'Memory per worker')}: ${range(e.ram_mb, gb)}`,
-    ...(units.length > MAX_DRAWN ? [t('plan_too_many', 'Too many pieces to draw on the map.')] : []),
   ]), '', units.some((u) => u.ring));
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
-  const planned = units.length > MAX_DRAWN ? [] : units.map((u) => {
+  const planned = units.map((u) => {
     const state = u.done ? 'done' : on('meld-skip-built-toggle') && u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
     const [key, fallback] = state === 'planned' ? ['plan_state', 'Planned'] : STATE_TEXT[state];
     return {
@@ -731,7 +727,7 @@ async function updatePlan() {
     ...(plan.excluded || []).map((bbox) => ['excluded', bbox, t('plan_state_excluded', 'Outside the outline: not built')]),
     ...(plan.room || []).map((bbox) => ['room', bbox, t('plan_state_room', 'Room to grow: you can build here later')]),
   ];
-  if (planned.length && planned.length + extra.length <= MAX_DRAWN) {
+  if (planned.length) {
     extra.forEach(([state, bbox, text], k) => planned.push({
       i: units.length + k, n: '', state, ring: false, bounds: bbox.split(',').map(Number),
       text: { piece: '', state: text, size: '', worker: '', error: '', hint: '' },

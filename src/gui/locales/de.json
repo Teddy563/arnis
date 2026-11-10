@@ -691,7 +691,6 @@
   "run_eta": "noch etwa {time}",
   "map_select_area": "Diesen Bereich auswählen",
   "map_use_outline": "Umriss verwenden",
-  "plan_too_many": "Zu viele Teile, um sie auf der Karte zu zeichnen.",
   "plan_error": "Diese Auswahl konnte nicht geplant werden: {error}",
   "plan_piece_size": "{n} × {m} Regionen",
   "plan_legend_selection": "Auswahl",

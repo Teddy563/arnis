@@ -691,7 +691,6 @@
   "run_eta": "лишилося близько {time}",
   "map_select_area": "Вибрати цю область",
   "map_use_outline": "Використати контур",
-  "plan_too_many": "Забагато частин, щоб намалювати їх на мапі.",
   "plan_error": "Не вдалося спланувати це виділення: {error}",
   "plan_piece_size": "{n} × {m} регіонів",
   "plan_legend_selection": "Виділення",

@@ -691,7 +691,6 @@
   "run_eta": "zostało ok. {time}",
   "map_select_area": "Zaznacz ten obszar",
   "map_use_outline": "Użyj obrysu",
-  "plan_too_many": "Zbyt wiele części, by narysować je na mapie.",
   "plan_error": "Nie udało się zaplanować tego zaznaczenia: {error}",
   "plan_piece_size": "{n} × {m} regionów",
   "plan_legend_selection": "Zaznaczenie",
