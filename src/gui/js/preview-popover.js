@@ -39,21 +39,53 @@ export function previewName(el, button) {
 const GAP = 12, MARGIN = 8;
 const hits = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
-// Where the popover (w x h) goes: top-left corner, in a vw x vh window. `obstacle` is the control (and its
-// text tooltip) that must stay uncovered, `panel` the settings column. First room that fits wins: the free
-// side of the panel (left in LTR, right in RTL), the other side, beside the control, then above or below it.
+// Where the popover (w x h) goes: top-left corner (and its width), in a vw x vh window. `obstacle` is the
+// control (and its text tooltip) that must stay uncovered, `panel` the settings column, `avoid` the
+// rects of text it must not cover. First room that fits wins: the free side of the panel (left in LTR,
+// right in RTL), the other side, beside the control; failing that the nearest hole in the text, shrunk
+// down to MIN_W wide (the picture's height follows, 4:3); last, above or below the control (no `fit`).
 // Vertically it follows the control, clamped into the window.
-export function placePopover({ obstacle, panel, vw, vh, w, h, rtl }) {
+const MIN_W = 220, FRAME = 22; // FRAME: the popover's padding + border around the picture
+export function placePopover({ obstacle, panel, vw, vh, w, h, rtl, avoid = [] }) {
+  const clear = (r) => !hits(r, obstacle) && !avoid.some((a) => hits(r, a));
   const top = Math.max(MARGIN, Math.min((obstacle.top + obstacle.bottom) / 2 - h / 2, vh - h - MARGIN));
   const lefts = (r) => [r.left - GAP - w, r.right + GAP]; // [before, after] a rect in LTR
   const order = [lefts(panel), lefts(obstacle)].flatMap(([a, b]) => (rtl ? [b, a] : [a, b]));
   for (const left of order) {
     const r = { left, right: left + w, top, bottom: top + h };
-    if (left >= MARGIN && r.right <= vw - MARGIN && !hits(r, obstacle)) return { left, top };
+    if (left >= MARGIN && r.right <= vw - MARGIN && clear(r)) return { left, top, w, fit: true };
   }
-  const left = Math.max(MARGIN, Math.min((obstacle.left + obstacle.right) / 2 - w / 2, vw - w - MARGIN));
+  const cx = (obstacle.left + obstacle.right) / 2, cy = (obstacle.top + obstacle.bottom) / 2;
+  for (let wi = w - 24; wi >= MIN_W - 24; wi -= 24) {
+    const ww = Math.max(MIN_W, wi);
+    const hh = h - (w - ww) * 0.75 + (ww < w ? 18 : 0); // the picture is 4:3; a narrower caption may take a line more
+    let best = null;
+    for (let l = MARGIN; l + ww <= vw - MARGIN; l += 8) {
+      for (let t = MARGIN; t + hh <= vh - MARGIN; t += 8) {
+        const r = { left: l, right: l + ww, top: t, bottom: t + hh };
+        if (!clear(r)) continue;
+        const d = (l + ww / 2 - cx) ** 2 + (t + hh / 2 - cy) ** 2;
+        if (!best || d < best.d) best = { left: l, top: t, w: ww, d };
+      }
+    }
+    if (best) return { left: best.left, top: best.top, w: best.w, fit: true };
+  }
+  const left = Math.max(MARGIN, Math.min(cx - w / 2, vw - w - MARGIN));
   const above = obstacle.top - GAP - h;
-  return { left, top: above >= MARGIN ? above : Math.min(obstacle.bottom + GAP, vh - h - MARGIN) };
+  return { left, top: above >= MARGIN ? above : Math.min(obstacle.bottom + GAP, vh - h - MARGIN), w };
+}
+
+// The rects of the text inside `root` that is on screen (one per line), tight to the glyphs.
+function textRects(root, vw, vh) {
+  if (!root || !document.createTreeWalker) return [];
+  const out = [];
+  const range = document.createRange();
+  for (const walker = document.createTreeWalker(root, 4); walker.nextNode();) {
+    if (!walker.currentNode.nodeValue.trim()) continue;
+    range.selectNodeContents(walker.currentNode);
+    for (const r of range.getClientRects()) if (r.width && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) out.push(r);
+  }
+  return out;
 }
 
 export const captionKey = (name) => `preview_${name.replace(/[^a-z0-9]+/gi, '_')}`;
@@ -92,8 +124,15 @@ export function initPreviews() {
     const tr = t && t.getBoundingClientRect();
     const obstacle = tr ? { left: Math.min(c.left, tr.left), right: Math.max(c.right, tr.right), top: Math.min(c.top, tr.top), bottom: Math.max(c.bottom, tr.bottom) } : c;
     const panel = (document.querySelector('.settings-content') || ctl).getBoundingClientRect();
+    img.style.width = ''; // full size first
     const p = pop.getBoundingClientRect();
-    const at = placePopover({ obstacle, panel, vw: window.innerWidth, vh: window.innerHeight, w: p.width, h: p.height, rtl: document.documentElement && document.documentElement.dir === 'rtl' });
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const args = { obstacle, panel, vw, vh, w: p.width, h: p.height, rtl: document.documentElement && document.documentElement.dir === 'rtl' };
+    const rows = textRects(document.querySelector('.settings-content'), vw, vh);
+    // Clear of the sidebar's text too when there is room; else over the sidebar, never over a setting's text.
+    let at = placePopover({ ...args, avoid: rows.concat(textRects(document.querySelector('.settings-sidebar'), vw, vh)) });
+    if (!at.fit) at = placePopover({ ...args, avoid: rows });
+    if (at.w < p.width) img.style.width = `${at.w - FRAME}px`;
     pop.style.left = `${at.left}px`;
     pop.style.top = `${at.top}px`;
   };

@@ -65,6 +65,25 @@ const ltr = placePopover({ obstacle: c1, panel: { left: 600, right: 1320 }, vw: 
 const rtl = placePopover({ obstacle: c1, panel: { left: 600, right: 1320 }, vw: 1920, vh: 1080, w: 362, h: 300, rtl: true });
 assert.ok(ltr.left < 600 && rtl.left > 1320, 'LTR takes the left of the panel, RTL the right');
 
+// No free side (1000 px: the sidebar, then rows whose text runs across): the popover shrinks into the
+// free space (>= 220 wide) and covers no text, only the hovered control's neighbours' blank parts.
+{
+  const text = [];
+  for (let y = 100; y < 640; y += 60) { text.push({ left: 271, right: 520, top: y, bottom: y + 14 }, { left: 271, right: 560, top: y + 18, bottom: y + 32 }, { left: 665, right: 900, top: y, bottom: y + 32 }); }
+  const ctrl = { left: 549, right: 591, top: 350, bottom: 374 };
+  for (const rtl of [false, true]) {
+    const at = placePopover({ obstacle: ctrl, panel: { left: 232, right: 990 }, vw: 1000, vh: 650, w: 362, h: 300, rtl, avoid: text });
+    const h = 300 - (362 - at.w) * 0.75 + 18;
+    const r = { left: at.left, right: at.left + at.w, top: at.top, bottom: at.top + h };
+    assert.ok(at.w >= 220 && at.w <= 362, `width ${at.w}`);
+    assert.ok(!hit(r, ctrl) && !text.some((a) => hit(r, a)), 'covers a control or text');
+    assert.ok(r.left >= 8 && r.right <= 992 && r.top >= 8 && r.bottom <= 642, 'inside the window');
+  }
+  const roomy = placePopover({ obstacle: { left: 880, right: 920, top: 300, bottom: 324 }, panel: { left: 600, right: 1320 }, vw: 1920, vh: 1080, w: 362, h: 300, rtl: false, avoid: [{ left: 650, right: 900, top: 290, bottom: 330 }] });
+  assert.equal(roomy.w, 362, 'with room it keeps the full size');
+  assert.ok(roomy.fit && !placePopover({ obstacle: ctrl, panel: { left: 232, right: 990 }, vw: 1000, vh: 650, w: 362, h: 300, avoid: [{ left: 0, right: 1000, top: 0, bottom: 650 }] }).fit, '`fit` says whether a clear spot was found');
+}
+
 // switch, select, slider and number box rows, and a row that carries the data itself
 const sel = node({ value: 'x' });
 const selRow = node({ querySelector: (q) => (q === 'select' ? sel : null) });
