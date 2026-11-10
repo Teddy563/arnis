@@ -959,6 +959,47 @@ mod tests {
     }
 
     #[test]
+    fn plan_leaves_out_pieces_outside_shape() {
+        use crate::args::UnitArgs;
+        let proj = WebMercatorProjection::new(44.435, 26.105, 1.0);
+        let grid = XZBBox::rect_from_min_max(0, 0, 2047, 2047).unwrap();
+        let req = llbbox_for_rect(&proj, &grid).unwrap();
+        // A triangle on the grid's north-west corner, its long side from (1800, 0) to (0, 1800).
+        let corner = |x: f64, z: f64| [proj.lon_for_x(x), proj.lat_for_z(z)];
+        let triangle = serde_json::json!({"type": "Polygon", "coordinates": [[
+            corner(0.0, 0.0), corner(1800.0, 0.0), corner(0.0, 1800.0), corner(0.0, 0.0)
+        ]]});
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("triangle.geojson");
+        std::fs::write(&path, triangle.to_string()).unwrap();
+        let all = plan(&proj, &req, &args_with(UnitArgs::default()), UnitSize::N(1)).unwrap();
+        assert_eq!(r(&all.rect), [0, 0, 2047, 2047]);
+        assert_eq!(all.units.len(), 16);
+        let shaped = plan(
+            &proj,
+            &req,
+            &args_with(UnitArgs {
+                plan_mask: Some(path),
+                ..Default::default()
+            }),
+            UnitSize::N(1),
+        )
+        .unwrap();
+        // Piece (i, j) has a column in the triangle when 512 * (i + j) < 1800.
+        let mut kept: Vec<(i32, i32)> = shaped
+            .units
+            .iter()
+            .map(|u| (u.rect.min_x() / 512, u.rect.min_z() / 512))
+            .collect();
+        kept.sort_unstable();
+        let want: Vec<(i32, i32)> = (0..4)
+            .flat_map(|i| (0..4).map(move |j| (i, j)))
+            .filter(|(i, j)| i + j <= 3)
+            .collect();
+        assert_eq!(kept, want);
+    }
+
+    #[test]
     fn a_mask_keeps_the_pieces_it_touches() {
         use crate::args::{SnapRegions, UnitArgs};
         let (proj, req) = doc18();
