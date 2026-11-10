@@ -24,8 +24,9 @@ assert.ok(!yes.className.includes('is-low') && !yes.hidden);
 assert.strictEqual(yes.textContent, 'Fits: 412.0 GB free');
 assert.ok(disk(huge).hidden, 'free space unknown: no line');
 
-// Fit model: bold 20px digits ~12.5px, 16px icon + 6px gap + 2 x 22px padding. The panel is
-// 250px wide at the narrowest (1000x650), so the headline may use 164px: 13 characters.
-for (const x of stats(huge)) assert.ok(x.length * 12.5 <= 164, `${x} fits on one line`);
+// Fit model: 11px semibold ~7px a character, each stat + 16px (icon and gap), the "?" 16px,
+// 10px gaps. The panel is 250px wide at the narrowest (1000x650) with 20px padding.
+const row = (x) => x.reduce((w, t) => w + t.length * 7 + 16, 0) + 16 + 10 * x.length;
+assert.ok(row(stats(huge)) <= 230, 'the stats row and its "?" fit on one line');
 console.log('plan-summary: ok');
 process.exit(0);

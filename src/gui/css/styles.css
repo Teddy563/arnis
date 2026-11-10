@@ -879,8 +879,8 @@ input[type="range"] {
 
 /* The plan of a job in pieces, before it runs (Meld features) */
 .job-plan {
-  margin-top: 8px;
-  font-size: 12px;
+  margin: 4px 0 11px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -895,27 +895,30 @@ input[type="range"] {
   flex-wrap: wrap;
   justify-content: center;
   gap: 2px 12px;
-  margin-top: 6px;
+  margin-top: 2px;
   color: var(--ui-muted);
   font-size: 11px;
 }
 
-/* The plan: time and size large, one line each, then the disk line; the rest sits behind the "?" */
+/* The plan: time, size and the one "?" on a single small row, then the disk line, then the legend */
 .plan-head {
-  position: relative;
-  padding: 0 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 10px;
 }
 
 .job-plan .plan-help {
-  position: absolute;
-  top: 2px;
-  right: 0;
+  flex: none;
   width: 16px;
   height: 16px;
   min-width: 0;
+  margin: 0;
   border: 0;
   padding: 0;
   cursor: help;
+  box-shadow: none;
 }
 
 .plan-help.is-warn {
@@ -928,7 +931,8 @@ input[type="range"] {
 
 .plan-tip {
   display: none;
-  margin: 4px -22px 0;
+  flex-basis: 100%;
+  margin: 4px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--ui-card-border);
   border-radius: 6px;
@@ -940,6 +944,14 @@ input[type="range"] {
   overflow-wrap: anywhere;
 }
 
+.plan-tip .legend-card {
+  margin-top: 6px;
+  padding: 6px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ui-card-border);
+  border-radius: 0;
+}
+
 .plan-help:hover ~ .plan-tip,
 .plan-help:focus-visible ~ .plan-tip,
 .plan-help.is-open ~ .plan-tip,
@@ -949,6 +961,7 @@ input[type="range"] {
 
 .plan-disk {
   margin-top: 2px;
+  text-align: center;
   color: #6fcf8f;
 }
 
@@ -972,20 +985,20 @@ input[type="range"] {
 }
 
 .plan-stat {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.3;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
   overflow-wrap: anywhere;
 }
 
 .plan-stat::before {
   content: "";
-  width: 16px;
-  height: 16px;
+  flex: none;
+  width: 12px;
+  height: 12px;
   background: currentColor;
   opacity: 0.7;
   -webkit-mask: var(--icon) center / contain no-repeat;
@@ -1048,17 +1061,6 @@ input[type="range"] {
 .job-plan-legend .swatch-ring {
   border: 1px dotted #5aa9ff;
   opacity: 0.8;
-}
-
-.job-plan-legend .legend-help {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 0;
-  padding: 0;
-  border-radius: 50%;
-  cursor: pointer;
-  align-self: center;
 }
 
 /* The card behind the "?": one line per thing the map shows now, in the map's own line patterns */

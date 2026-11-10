@@ -508,7 +508,7 @@ const minutes = (m) => {
 // A long job in whole hours ("48–139 h"); a shorter one as `minutes`.
 const longTime = (hours) => (m) => (hours ? t('plan_hours_only', '{h} h', { h: Math.max(1, Math.round(m / 60)) }) : minutes(m));
 
-// The plan's headline (time and size, large), the disk line, and a "?" with everything else.
+// The plan's headline (time and size, one small row, then the disk line), and a "?" with everything else.
 // `more` is the lines behind the "?". `disk` is null while the free space is unknown.
 export function planHead(e, more) {
   const head = div('plan-head', '');
@@ -518,11 +518,16 @@ export function planHead(e, more) {
   ]) head.append(Object.assign(div(`plan-stat plan-stat-${kind}`, text), { title: t(key, tip) }));
   const tip = Object.assign(div('plan-tip', ''), { id: 'plan-tip', role: 'tooltip' });
   tip.append(...more.map((x) => div('', x)));
-  const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon plan-help', textContent: '?', title: t('plan_more', 'Details') });
+  // The one "?": hover or focus shows the details; a click holds them open, with the legend card (showPlan).
+  const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon plan-help', id: 'legend-help', textContent: '?', title: t('plan_more', 'Details') });
   help.setAttribute('aria-describedby', 'plan-tip');
-  help.addEventListener('click', () => help.classList.toggle('is-open'));
-  help.addEventListener('blur', () => help.classList.remove('is-open'));
-  help.addEventListener('keydown', (ev) => ev.key === 'Escape' && help.classList.remove('is-open'));
+  const toggle = (open) => {
+    legendOpen = open;
+    showPlan(...shown);
+    el('legend-help')?.focus();
+  };
+  help.addEventListener('click', () => toggle(!legendOpen));
+  help.addEventListener('keydown', (ev) => ev.key === 'Escape' && legendOpen && toggle(false));
   head.append(help, tip);
   head.tip = tip;
   head.help = help;
@@ -549,8 +554,12 @@ function showPlan(rows, warn = '', ring = false) {
   // With a plan the stretch lines sit behind its "?" (amber or red there too); alone they show as they are.
   const head = rows[0]?.tip ? rows[0] : null;
   if (head) {
-    head.tip.querySelectorAll?.('.plan-stretch').forEach((x) => x.remove());
+    head.tip.querySelectorAll?.('.plan-stretch, .legend-card').forEach((x) => x.remove());
     head.tip.append(...stretchRows);
+    head.help.classList.toggle('is-open', legendOpen);
+    head.help.ariaExpanded = String(legendOpen);
+    // The "?" opens the card of every line the map can show right now, inside the details.
+    if (legendOpen && rows.length > 1) head.tip.append(legendCard());
     head.help.classList.toggle('is-warn', stretchRows.some((x) => x.classList.contains('is-warn')));
     head.help.classList.toggle('is-error', stretchRows.some((x) => x.classList.contains('is-error')));
   }
@@ -565,17 +574,7 @@ function showPlan(rows, warn = '', ring = false) {
       item.append(Object.assign(document.createElement('i'), { className: `swatch swatch-${kind}` }), t(key, fallback));
       legend.append(item);
     }
-    // The "?" opens the card of every line the map can show right now.
-    const help = Object.assign(document.createElement('button'), { type: 'button', className: 'tooltip-icon legend-help', id: 'legend-help', textContent: '?', title: t('legend_title', LEGEND_TEXT.legend_title) });
-    help.ariaExpanded = String(legendOpen);
-    help.addEventListener('click', () => {
-      legendOpen = !legendOpen;
-      showPlan(...shown);
-      el('legend-help')?.focus();
-    });
-    legend.append(help);
     box.append(legend);
-    if (legendOpen) box.append(legendCard());
   }
   box.hidden = !rows.length && !stretchRows.length;
 }
