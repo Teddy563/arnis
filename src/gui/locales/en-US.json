@@ -459,6 +459,7 @@
   "run_state_skipped": "Already built",
   "run_worker": "Worker {n}",
   "run_retry_hint": "Click to retry this piece",
+  "run_open_log": "Open log",
   "run_halo": "Show overlap",
   "run_piece": "Piece {n}",
   "meld_prepare_check": "Check",

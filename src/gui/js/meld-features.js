@@ -211,7 +211,9 @@ const outlines = () =>
         // The first line is the failure; the child's output after it stays in the log.
         error: (p.error || '').split('\n')[0],
         hint: canRetry(p) ? t('run_retry_hint', 'Click to retry this piece') : '',
+        openLog: p.state === 'failed' && p.log ? t('run_open_log', 'Open log') : '',
       },
+      log: p.state === 'failed' ? p.log : undefined,
     };
   });
 
@@ -293,9 +295,13 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   // The map: a click on a failed or stopped piece's outline retries just that piece.
   window.addEventListener('message', (event) => {
     const m = event.data;
-    if (!m || m.type !== 'retryPiece' || event.source !== mapWindow()) return;
+    if (!m || event.source !== mapWindow()) return;
     const p = pieces.get(m.piece);
-    if (p && canRetry(p)) retry([m.piece + 1]);
+    if (m.type === 'openLog') {
+      if (p?.state === 'failed' && p.log) call('gui_show_in_folder', { path: p.log }).catch(() => {});
+      return;
+    }
+    if (m.type === 'retryPiece' && p && canRetry(p)) retry([m.piece + 1]);
   });
   // The faint border around each piece showing what it builds beyond its own area.
   el('run-halo-toggle').addEventListener('change', (e) => {
@@ -327,6 +333,7 @@ export function notePiece(piece) {
     // A piece that starts again begins at its first percent, and a failure's error is its own.
     pct: piece.pct ?? (piece.state === 'queued' ? undefined : was?.pct),
     error: piece.state === 'failed' ? piece.error : '',
+    log: piece.log || was?.log,
   });
   postToMap({ type: 'pieceOutlines', pieces: outlines() });
 }

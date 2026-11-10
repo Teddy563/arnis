@@ -459,6 +459,7 @@
   "run_state_skipped": "已构建",
   "run_worker": "工作进程 {n}",
   "run_retry_hint": "点击以重试此分块",
+  "run_open_log": "打开日志",
   "run_halo": "显示重叠区域",
   "run_piece": "分块 {n}",
   "meld_prepare_check": "检查",

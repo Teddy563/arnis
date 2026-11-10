@@ -459,6 +459,7 @@
   "run_state_skipped": "Jau uzbūvēta",
   "run_worker": "Darbinieks {n}",
   "run_retry_hint": "Noklikšķiniet, lai šo daļu mēģinātu vēlreiz",
+  "run_open_log": "Atvērt žurnālu",
   "run_halo": "Rādīt pārklāšanos",
   "run_piece": "{n}. daļa",
   "meld_prepare_check": "Pārbaudīt",

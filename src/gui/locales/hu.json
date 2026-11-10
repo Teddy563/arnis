@@ -459,6 +459,7 @@
   "run_state_skipped": "Már elkészült",
   "run_worker": "{n}. munkás",
   "run_retry_hint": "Kattintson a rész újrapróbálásához",
+  "run_open_log": "Napló megnyitása",
   "run_halo": "Átfedés mutatása",
   "run_piece": "{n}. rész",
   "meld_prepare_check": "Ellenőrzés",

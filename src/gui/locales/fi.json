@@ -459,6 +459,7 @@
   "run_state_skipped": "Jo rakennettu",
   "run_worker": "Työntekijä {n}",
   "run_retry_hint": "Napsauta yrittääksesi tätä osaa uudelleen",
+  "run_open_log": "Avaa loki",
   "run_halo": "Näytä limitys",
   "run_piece": "Osa {n}",
   "meld_prepare_check": "Tarkista",

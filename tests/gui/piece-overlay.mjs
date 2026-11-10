@@ -111,3 +111,22 @@ assert.deepEqual(sent.at(-1), { type: 'pieceHalo', on: true });
 console.log('piece-overlay: ok');
 // The run line's one-second tick would keep node alive.
 process.exit(0);
+
+// G8: a failed piece's card offers "Open log"; the map's openLog message shows that file.
+{
+  const shown = [];
+  initRunControls({ key: () => 'bbox-g8|', map: () => mapWin, invoke: async (c, a) => { shown.push([c, a]); }, post: (m) => sent.push(m), start: async () => {}, localize: () => {} });
+  clearPieces();
+  rec(0, 'start', { worker: 1, pct: 0 });
+  rec(1, 'failed', { error: 'exit 1', log: 'C:/j/piece-2.log' });
+  assert.equal(last()[1].text.openLog, 'Open log');
+  assert.equal(last()[1].log, 'C:/j/piece-2.log');
+  assert.equal(last()[0].text.openLog, '', 'only a failed piece with a log');
+  message({ type: 'openLog', piece: 1 }, {});
+  assert.equal(shown.length, 0, 'ignored from anything but the map');
+  message({ type: 'openLog', piece: 0 });
+  assert.equal(shown.length, 0, 'a running piece has no log to open');
+  message({ type: 'openLog', piece: 1 });
+  assert.deepEqual(shown, [['gui_show_in_folder', { path: 'C:/j/piece-2.log' }]]);
+  console.log('piece-overlay G8 ok');
+}

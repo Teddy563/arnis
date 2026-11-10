@@ -459,6 +459,7 @@
   "run_state_skipped": "Уже построено",
   "run_worker": "Процесс {n}",
   "run_retry_hint": "Нажмите, чтобы повторить эту часть",
+  "run_open_log": "Открыть журнал",
   "run_halo": "Показать перекрытие",
   "run_piece": "Часть {n}",
   "meld_prepare_check": "Проверить",

@@ -459,6 +459,7 @@
   "run_state_skipped": "Deja construit",
   "run_worker": "Procesul {n}",
   "run_retry_hint": "Click pentru a reîncerca această bucată",
+  "run_open_log": "Deschide jurnalul",
   "run_halo": "Arată suprapunerea",
   "run_piece": "Bucata {n}",
   "meld_prepare_check": "Verifică",

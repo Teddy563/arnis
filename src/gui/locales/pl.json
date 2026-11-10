@@ -459,6 +459,7 @@
   "run_state_skipped": "Już zbudowane",
   "run_worker": "Proces {n}",
   "run_retry_hint": "Kliknij, aby ponowić tę część",
+  "run_open_log": "Otwórz dziennik",
   "run_halo": "Pokaż zakładkę",
   "run_piece": "Część {n}",
   "meld_prepare_check": "Sprawdź",

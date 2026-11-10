@@ -459,6 +459,7 @@
   "run_state_skipped": "Bereits gebaut",
   "run_worker": "Worker {n}",
   "run_retry_hint": "Klicken, um diesen Teil zu wiederholen",
+  "run_open_log": "Protokoll öffnen",
   "run_halo": "Überlappung anzeigen",
   "run_piece": "Teil {n}",
   "meld_prepare_check": "Prüfen",

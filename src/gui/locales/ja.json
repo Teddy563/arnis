@@ -459,6 +459,7 @@
   "run_state_skipped": "構築済み",
   "run_worker": "ワーカー {n}",
   "run_retry_hint": "クリックしてこのパーツを再試行",
+  "run_open_log": "ログを開く",
   "run_halo": "重なりを表示",
   "run_piece": "パーツ {n}",
   "meld_prepare_check": "確認",

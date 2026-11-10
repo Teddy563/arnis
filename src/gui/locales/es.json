@@ -459,6 +459,7 @@
   "run_state_skipped": "Ya construida",
   "run_worker": "Proceso {n}",
   "run_retry_hint": "Haz clic para reintentar esta pieza",
+  "run_open_log": "Abrir registro",
   "run_halo": "Mostrar solapamiento",
   "run_piece": "Pieza {n}",
   "meld_prepare_check": "Comprobar",

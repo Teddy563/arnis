@@ -459,6 +459,7 @@
   "run_state_skipped": "უკვე აგებულია",
   "run_worker": "დამმუშავებელი {n}",
   "run_retry_hint": "დააწკაპუნეთ ამ ნაწილის ხელახლა საცდელად",
+  "run_open_log": "ჟურნალის გახსნა",
   "run_halo": "გადაფარვის ჩვენება",
   "run_piece": "ნაწილი {n}",
   "meld_prepare_check": "შემოწმება",

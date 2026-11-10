@@ -459,6 +459,7 @@
   "run_state_skipped": "Déjà construite",
   "run_worker": "Processus {n}",
   "run_retry_hint": "Cliquez pour réessayer cette partie",
+  "run_open_log": "Ouvrir le journal",
   "run_halo": "Afficher le chevauchement",
   "run_piece": "Partie {n}",
   "meld_prepare_check": "Vérifier",

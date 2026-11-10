@@ -1568,6 +1568,15 @@ $(document).ready(function () {
         if (p.since) box.appendChild(row(pieceElapsed(p)));
         if (p.text.error) box.appendChild(row(p.text.error));
         if (p.text.hint) box.appendChild(row(p.text.hint));
+        if (p.text.openLog) {
+            var open = row(p.text.openLog);
+            open.className = 'piece-tip-log';
+            open.onclick = function(e) {
+                e.stopPropagation();
+                window.parent.postMessage({ type: 'openLog', piece: p.i }, '*');
+            };
+            box.appendChild(open);
+        }
         return box;
     }
 
@@ -1590,7 +1599,24 @@ $(document).ready(function () {
             if (!item) {
                 item = pieceLayers[p.i] = {};
                 item.rect = L.rectangle([[b[0], b[1]], [b[2], b[3]]], { interactive: true }).addTo(pieceLayer);
-                item.rect.bindTooltip(pieceTip(p), { sticky: true, className: 'piece-tip' });
+                // A failed piece's card holds an "Open log" button, so it must be reachable: it
+                // stays put (not sticky) and closes a moment after the pointer leaves both.
+                // Leaflet registers closeTooltip when binding, so the wrapper goes on first.
+                var closeNow = item.rect.closeTooltip;
+                item.rect.closeTooltip = function() {
+                    if (!item.p.text.openLog) return closeNow.call(item.rect);
+                    clearTimeout(item.closing);
+                    item.closing = setTimeout(function() {
+                        var tip = item.rect.getTooltip() && item.rect.getTooltip().getElement();
+                        if (!(tip && tip.matches(':hover'))) closeNow.call(item.rect);
+                    }, 250);
+                    return item.rect;
+                };
+                item.rect.bindTooltip(pieceTip(p), { sticky: true, interactive: true, className: 'piece-tip' });
+                item.rect.on('tooltipopen', function(e) {
+                    e.tooltip.options.sticky = !item.p.text.openLog;
+                    e.tooltip.getElement().onmouseleave = function() { item.rect.closeTooltip(); };
+                });
                 item.rect.on('click', function() {
                     if (item.p.text.hint) window.parent.postMessage({ type: 'retryPiece', piece: item.p.i }, '*');
                 });

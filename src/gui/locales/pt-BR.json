@@ -459,6 +459,7 @@
   "run_state_skipped": "Já construída",
   "run_worker": "Processo {n}",
   "run_retry_hint": "Clique para tentar esta parte novamente",
+  "run_open_log": "Abrir registro",
   "run_halo": "Mostrar sobreposição",
   "run_piece": "Parte {n}",
   "meld_prepare_check": "Verificar",

@@ -617,6 +617,13 @@ body,
   font-weight: 600;
 }
 
+.piece-tip-log {
+  margin-top: 4px;
+  color: #6fa8ff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .piece-tip-dot {
   width: 8px;
   height: 8px;

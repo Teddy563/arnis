@@ -459,6 +459,7 @@
   "run_state_skipped": "تم بناؤه مسبقًا",
   "run_worker": "العامل {n}",
   "run_retry_hint": "انقر لإعادة محاولة هذا الجزء",
+  "run_open_log": "فتح السجل",
   "run_halo": "إظهار التداخل",
   "run_piece": "الجزء {n}",
   "meld_prepare_check": "تحقق",

@@ -459,6 +459,7 @@
   "run_state_skipped": "Jau sukurta",
   "run_worker": "Vykdytojas {n}",
   "run_retry_hint": "Spustelėkite, kad bandytumėte šią dalį dar kartą",
+  "run_open_log": "Atidaryti žurnalą",
   "run_halo": "Rodyti sutapimą",
   "run_piece": "{n} dalis",
   "meld_prepare_check": "Tikrinti",
