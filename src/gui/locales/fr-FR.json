@@ -716,7 +716,7 @@
   "layout_mode_map": "Carte d'abord",
   "layout_mode_classic": "Classique",
   "plan_pieces": "{n} morceaux",
-  "plan_pieces_one": "{n} morceaux",
+  "plan_pieces_one": "{n} morceau",
   "plan_regions": "{n} régions",
   "plan_ring": "anneau {n}",
   "plan_workers": "{n} processus",
