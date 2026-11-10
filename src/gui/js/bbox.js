@@ -1493,6 +1493,14 @@ $(document).ready(function () {
     // A place picked in the search (search.js) becomes the selection the same way.
     window.arnisSelectBounds = applyBboxFromParent;
 
+    // An outline (GeoJSON Polygon or MultiPolygon, from the shape tool or a search result):
+    // its bounding box becomes the selection and the outline the plan's mask.
+    window.arnisSelectShape = function (geometry) {
+        var b = L.geoJSON(geometry).getBounds();
+        applyBboxFromParent([b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]);
+        setPlanMask(geometry);
+    };
+
     var pieceLayer = L.layerGroup().addTo(map);
     var PIECE_COLORS = {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
@@ -1577,10 +1585,12 @@ $(document).ready(function () {
             item.p = p;
             // A plan's pieces are thin outlines, its ring (margin) fainter and dotted. A job's
             // pieces are empty cups that fill from the bottom.
-            var planned = p.state === 'planned';
+            // Outside the outline: a plan's piece, greyed, that is not built.
+            var excluded = p.state === 'excluded';
+            var planned = p.state === 'planned' || excluded;
             item.rect.setStyle({
                 color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
-                fillOpacity: planned ? (p.ring ? 0.03 : 0.08) : 0,
+                fillOpacity: excluded ? 0.3 : planned ? (p.ring ? 0.03 : 0.08) : 0,
                 dashArray: planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
             });
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
@@ -1626,7 +1636,7 @@ $(document).ready(function () {
             var side = Math.min(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y));
             var el = item.label.getElement();
             if (!el) return;
-            el.classList.toggle('piece-label-off', side < PIECE_LABEL_MIN_PX);
+            el.classList.toggle('piece-label-off', side < PIECE_LABEL_MIN_PX || item.p.n === '');
             // The number grows with the piece on screen.
             var size = Math.max(14, Math.min(30, Math.round(side / 4))) + 'px';
             // Re-centred only when the size changes: Leaflet centres by the label's width.
@@ -1740,6 +1750,8 @@ $(document).ready(function () {
             // The map-first page's look (hover font, previews under the selection); Classic keeps 3.4.0's.
             window.arnisMapFirst = Boolean(event.data.mapFirst);
             document.body.classList.toggle('map-first', window.arnisMapFirst);
+            document.body.classList.toggle('meld-on', window.arnisMeldOn);
+            if (!window.arnisMeldOn && planMask) setPlanMask(null);
             if (was !== window.arnisMeldOn) refreshBboxHandles();
         }
 
@@ -1865,7 +1877,11 @@ $(document).ready(function () {
                 repeatMode: false
             },
             polyline: false,
-            polygon: false,
+            // Advanced features only (map-controls.css hides it otherwise): an outline, see setPlanMask.
+            polygon: {
+                allowIntersection: false,
+                shapeOptions: { color: '#ffea00', weight: 2, fillOpacity: 0.1 }
+            },
             circle: false,
             circlemarker: false,
             marker: {
@@ -1894,6 +1910,12 @@ $(document).ready(function () {
             return {
                 name: mapText('map_tool_area', 'Select area'),
                 desc: mapText('map_tool_area_desc', 'Drag over the map to choose what gets generated.')
+            };
+        }
+        if (c.contains('leaflet-draw-draw-polygon')) {
+            return {
+                name: mapText('map_tool_shape', 'Select shape'),
+                desc: mapText('map_tool_shape_desc', 'Click points around the area, then click the first point again. Pieces outside the shape are not built.')
             };
         }
         if (c.contains('leaflet-draw-draw-polyline')) {
@@ -2584,6 +2606,12 @@ $(document).ready(function () {
         // instanceof, not layerType: restore paths fire rectangles as "polygon"
         var isRectangle = e.layer instanceof L.Rectangle;
 
+        // Advanced features: a shape selects its bounding box, and the shape is the outline.
+        if (window.arnisMeldOn && !isRectangle && e.layer instanceof L.Polygon) {
+            window.arnisSelectShape(e.layer.toGeoJSON().geometry);
+            return;
+        }
+
         // The first area ever selected retires the hint for good. Recorded
         // before the layer is added below, whose layeradd refreshes the outline.
         if (isRectangle) {
@@ -2798,8 +2826,22 @@ $(document).ready(function () {
 
 function notifyBboxUpdate() {
     const bboxText = document.getElementById('boxbounds').textContent;
+    // Moved, resized, redrawn or cleared: the outline belonged to the old selection.
+    if (planMask && planMask.bboxText !== bboxText) setPlanMask(null);
     window.parent.postMessage({ bboxText: bboxText }, '*');
     updateTerrainPreviewButton();
+}
+
+// The outline the selection was made from, drawn on the map and sent to the window, which
+// passes it to a job in pieces as --plan-mask. null: none.
+var planMask = null;
+function setPlanMask(geometry) {
+    if (planMask) map.removeLayer(planMask.layer);
+    planMask = geometry ? {
+        bboxText: document.getElementById('boxbounds').textContent,
+        layer: L.geoJSON(geometry, { interactive: false, style: { color: '#ffea00', weight: 2, fillOpacity: 0.05 } }).addTo(map)
+    } : null;
+    window.parent.postMessage({ type: 'planMask', geojson: geometry || null }, '*');
 }
 
 // Max bbox area for the 3D terrain preview; mirrors MINI_MAX_AREA_M2 in preview3d.js.

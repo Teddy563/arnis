@@ -89,9 +89,9 @@ var citySearch = {
             extratags: 1,
             'accept-language': 'en'
         };
-        // Map-first page: each place's outline too (simplified ~500 m), kept on the result as
-        // `geojson` for selecting by outline later.
-        if (window.arnisMapFirst) {
+        // Map-first page or Advanced features: each place's outline too (simplified ~500 m),
+        // kept on the result as `geojson` for "Use outline".
+        if (window.arnisMapFirst || window.arnisMeldOn) {
             params.polygon_geojson = 1;
             params.polygon_threshold = 0.005;
         }
@@ -168,14 +168,24 @@ var citySearch = {
             if (window.arnisMeldOn && !window.arnisMapFirst && result.boundingbox && (result.class === 'boundary' || result.type === 'administrative')) {
                 html += '<button type="button" class="search-select-area" data-index="' + index + '"></button>';
             }
+            // Advanced features: a place with an outline (country, county, city) can be selected by it.
+            if (window.arnisMeldOn && result.geojson && /^(Multi)?Polygon$/.test(result.geojson.type)) {
+                html += '<button type="button" class="search-select-area search-use-outline" data-index="' + index + '"></button>';
+            }
             html += '</div>';
         });
         
         $results.html(html).show();
         $results.find('.search-select-area').text(window.mapText('map_select_area', 'Select this area'));
-        $results.find('.search-select-area').on('click', function(e) {
+        $results.find('.search-select-area').not('.search-use-outline').on('click', function(e) {
             e.stopPropagation();
             self.selectArea(results[$(this).data('index')]);
+        });
+        $results.find('.search-use-outline').text(window.mapText('map_use_outline', 'Use outline')).on('click', function(e) {
+            e.stopPropagation();
+            window.arnisSelectShape(results[$(this).data('index')].geojson);
+            $('#city-search').val('');
+            self.hideResults();
         });
         
         // Bind click events to results

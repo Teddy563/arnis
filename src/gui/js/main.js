@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -831,6 +831,11 @@ function registerMessageEvent() {
       selectWithRing(event.data.bounds);
     }
 
+    // The outline the selection was made from (shape tool or "Use outline"), or null.
+    if (event.data && event.data.type === 'planMask' && event.source === getMapFrame()?.contentWindow) {
+      setPlanMask(event.data.geojson).then(refreshBboxSelectionInfo);
+    }
+
     // World toggled on the map toolbar
     if (event.data && event.data.type === 'bodyChanged') {
       setCelestialBody(event.data.body);
@@ -1357,7 +1362,7 @@ function initSettings() {
     start: () => startGeneration(true),
     localize: (element, key) => localizeElement(window.localization, { element }, key),
     // The flags that cut the job into pieces are part of it: --only-pieces numbers its pieces.
-    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}|${meldFlags({ oneWorld: true, java: true, plan: true }).filter((f) => /^--(unit-regions|margin-regions|snap-regions|origin)=/.test(f))}`,
+    key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}|${meldFlags({ oneWorld: true, java: true, plan: true }).filter((f) => /^--(unit-regions|margin-regions|snap-regions|plan-mask|origin)=/.test(f))}`,
     map: () => getMapFrame()?.contentWindow,
   });
   document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
@@ -2783,6 +2788,10 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   let warned = false;
   if (pieces) {
     setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+  } else if (hasPlanMask()) {
+    // An outline only leaves pieces out: a build in one go would build the whole box.
+    setBboxSelectionInfo(bboxSelectionElement, "area_outline_needs_pieces", "#fecc44");
+    warned = true;
   } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
     warned = true;

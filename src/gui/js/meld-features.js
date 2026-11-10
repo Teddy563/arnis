@@ -85,6 +85,7 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
     if (value('meld-piece-order-select') !== 'centre') add('--piece-order', value('meld-piece-order-select'));
     if (on('meld-skip-built-toggle')) f.push('--skip-built');
     if (on('meld-stitch-map-toggle')) f.push('--stitch-map');
+    add('--plan-mask', maskPath);
   }
   add('--threads', value('meld-threads-input'));
   add('--ram-budget-mb', value('meld-ram-budget-input'));
@@ -140,6 +141,26 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
     if (value('meld-blinear-level-input') !== '6') add('--blinear-level', value('meld-blinear-level-input'));
   }
   return f;
+}
+
+// The outline drawn or picked on the map, as the file `--plan-mask` reads ('' for none): a
+// job in pieces then builds only the pieces it touches.
+let maskPath = '';
+let maskSeq = 0;
+export const hasPlanMask = () => Boolean(maskPath);
+export async function setPlanMask(geojson) {
+  const seq = ++maskSeq;
+  let path = '';
+  if (geojson) {
+    try {
+      path = await call('gui_write_plan_mask', { geojson: JSON.stringify(geojson) });
+    } catch (e) {
+      window.arnisLog?.('warn', `Outline not used: ${e}`);
+    }
+  }
+  if (seq !== maskSeq) return;
+  maskPath = path || '';
+  schedulePlan();
 }
 
 // ---- A job built in pieces: outlines on the map, Pause, Stop and Retry ----
@@ -525,6 +546,14 @@ async function updatePlan() {
       text: { piece: t('run_piece', 'Piece {n}', { n: u.index + 1 }), state: t(key, fallback), size: sizeText(u.index), worker: '', error: '', hint: '' },
     };
   });
+  // Outside the outline: grey, unnumbered, not built (numbered after the plan's own, as ids).
+  const excluded = plan.excluded || [];
+  if (planned.length && planned.length + excluded.length <= MAX_DRAWN) {
+    excluded.forEach((bbox, k) => planned.push({
+      i: units.length + k, n: '', state: 'excluded', ring: false, bounds: bbox.split(',').map(Number),
+      text: { piece: '', state: t('plan_state_excluded', 'Outside the outline: not built'), size: '', worker: '', error: '', hint: '' },
+    }));
+  }
   postToMap({ type: 'pieceOutlines', pieces: planned });
 }
 
