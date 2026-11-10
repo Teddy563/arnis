@@ -19,7 +19,7 @@ const disk = (e) => planHead(e, []).at(1);
 const no = disk({ ...huge, free_disk_mb: 48.1 * 1024 });
 assert.ok(no.className.includes('is-low') && !no.hidden, 'does not fit: red line');
 assert.strictEqual(no.textContent, 'Needs 3.8–4.6 TB, 48.1 GB free on this disk');
-const yes = disk({ ...huge, free_disk_mb: 412 * 1024 });
+const yes = disk({ ...huge, disk_mb: [120 * 1024, 150 * 1024], free_disk_mb: 412 * 1024 });
 assert.ok(!yes.className.includes('is-low') && !yes.hidden);
 assert.strictEqual(yes.textContent, 'Fits: 412.0 GB free');
 assert.ok(disk(huge).hidden, 'free space unknown: no line');
