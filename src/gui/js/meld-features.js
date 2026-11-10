@@ -667,7 +667,7 @@ async function updatePlan() {
   showPlan([
     div('plan-big', tn('plan_pieces', '{n} pieces', '{n} piece', totals.pieces)),
     div('plan-sub', [
-      t('plan_regions', '{n} regions', { n: totals.regions }),
+      tn('plan_regions', '{n} regions', '{n} region', totals.regions),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
     ].join(' · ')),

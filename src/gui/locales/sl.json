@@ -715,6 +715,7 @@
   "plan_pieces": "{n} kosov",
   "plan_pieces_one": "{n} kos",
   "plan_regions": "{n} regij",
+  "plan_regions_one": "{n} regija",
   "plan_ring": "obroč {n}",
   "plan_workers": "delavci: {n}",
   "plan_workers_one": "delavec: {n}",

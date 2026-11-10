@@ -14,4 +14,7 @@ assert.equal(tn('plan_pieces', '{n} pieces', '{n} piece', 1), '1 bucată');
 assert.equal(tn('plan_pieces', '{n} pieces', '{n} piece', 2), '2 bucăți');
 window.localization = { plan_pieces: '{n} 个分块' }; // no singular string: the plain one
 assert.equal(tn('plan_pieces', '{n} pieces', '{n} piece', 1), '1 个分块');
+window.localization = { plan_regions: '{n} regiuni', plan_regions_one: '{n} regiune' };
+assert.equal(tn('plan_regions', '{n} regions', '{n} region', 1), '1 regiune');
+assert.equal(tn('plan_regions', '{n} regions', '{n} region', 3), '3 regiuni');
 console.log('plural ok');

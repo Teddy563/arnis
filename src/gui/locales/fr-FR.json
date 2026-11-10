@@ -715,6 +715,7 @@
   "plan_pieces": "{n} morceaux",
   "plan_pieces_one": "{n} morceau",
   "plan_regions": "{n} régions",
+  "plan_regions_one": "{n} région",
   "plan_ring": "anneau {n}",
   "plan_workers": "{n} processus",
   "plan_workers_one": "{n} processus",

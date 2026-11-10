@@ -715,6 +715,7 @@
   "plan_pieces": "{n} ピース",
   "plan_pieces_one": "{n} ピース",
   "plan_regions": "{n} リージョン",
+  "plan_regions_one": "{n} リージョン",
   "plan_ring": "外周 {n}",
   "plan_workers": "ワーカー {n}",
   "plan_workers_one": "ワーカー {n}",

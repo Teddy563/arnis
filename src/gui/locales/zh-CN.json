@@ -715,6 +715,7 @@
   "plan_pieces": "{n} 个分块",
   "plan_pieces_one": "{n} 个分块",
   "plan_regions": "{n} 个区域",
+  "plan_regions_one": "{n} 个区域",
   "plan_ring": "外圈 {n}",
   "plan_workers": "{n} 个进程",
   "plan_workers_one": "{n} 个进程",

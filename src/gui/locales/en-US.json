@@ -715,6 +715,7 @@
   "plan_pieces": "{n} pieces",
   "plan_pieces_one": "{n} piece",
   "plan_regions": "{n} regions",
+  "plan_regions_one": "{n} region",
   "plan_ring": "ring {n}",
   "plan_workers": "{n} workers",
   "plan_workers_one": "{n} worker",

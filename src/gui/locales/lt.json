@@ -715,6 +715,7 @@
   "plan_pieces": "{n} dalių",
   "plan_pieces_one": "{n} dalis",
   "plan_regions": "{n} regionų",
+  "plan_regions_one": "{n} regionas",
   "plan_ring": "žiedas {n}",
   "plan_workers": "vykdytojų: {n}",
   "plan_workers_one": "vykdytojas: {n}",

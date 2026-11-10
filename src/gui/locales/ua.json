@@ -715,6 +715,7 @@
   "plan_pieces": "{n} частин",
   "plan_pieces_one": "{n} частина",
   "plan_regions": "{n} регіонів",
+  "plan_regions_one": "{n} регіон",
   "plan_ring": "кільце {n}",
   "plan_workers": "процесів: {n}",
   "plan_workers_one": "процес: {n}",
