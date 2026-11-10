@@ -907,6 +907,17 @@ input[type="range"] {
   color: var(--ui-muted);
 }
 
+/* How stretched a One World is here: amber past 5%, red past 10% */
+.plan-stretch {
+  color: var(--ui-muted);
+}
+.plan-stretch.is-warn {
+  color: #fecc44;
+}
+.plan-stretch.is-error {
+  color: #fa7878;
+}
+
 .plan-stats {
   display: flex;
   justify-content: center;

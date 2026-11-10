@@ -1502,6 +1502,7 @@ $(document).ready(function () {
     };
 
     var pieceLayer = L.layerGroup().addTo(map);
+    var stretchLayer = L.layerGroup().addTo(map);
     var PIECE_COLORS = {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
         skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff'
@@ -1586,12 +1587,15 @@ $(document).ready(function () {
             // A plan's pieces are thin outlines, its ring (margin) fainter and dotted. A job's
             // pieces are empty cups that fill from the bottom.
             // Outside the outline: a plan's piece, greyed, that is not built.
+            // Room to grow (within 5% stretch): grey, dotted, empty.
             var excluded = p.state === 'excluded';
-            var planned = p.state === 'planned' || excluded;
+            var room = p.state === 'room';
+            var planned = p.state === 'planned' || excluded || room;
             item.rect.setStyle({
                 color: color, weight: planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
-                fillOpacity: excluded ? 0.3 : planned ? (p.ring ? 0.03 : 0.08) : 0,
-                dashArray: planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
+                opacity: room ? 0.6 : 1,
+                fillOpacity: excluded ? 0.3 : room ? 0 : planned ? (p.ring ? 0.03 : 0.08) : 0,
+                dashArray: room ? '1 4' : planned && p.ring ? '3 3' : PIECE_DASH[p.state] || null
             });
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
             if (full > 0) {
@@ -1701,6 +1705,16 @@ $(document).ready(function () {
         // A job built in pieces: one outline per piece, coloured by its state.
         if (event.data && event.data.type === 'pieceOutlines') {
             drawPieceOutlines(event.data.pieces || []);
+        }
+
+        // A One World's stretch limits: dashed lines across the map at 5% and 10%.
+        if (event.data && event.data.type === 'stretchLines') {
+            stretchLayer.clearLayers();
+            (event.data.lines || []).forEach(function(l) {
+                L.polyline([[l.lat, -180], [l.lat, 180]], { color: l.color, weight: 2, opacity: 0.9, dashArray: '8 6', interactive: false }).addTo(stretchLayer);
+                L.tooltip({ permanent: true, direction: 'top', className: 'piece-label', interactive: false })
+                    .setLatLng([l.lat, l.lon]).setContent(l.label).addTo(stretchLayer);
+            });
         }
 
         // The faint border around each piece, off until the user asks for it.

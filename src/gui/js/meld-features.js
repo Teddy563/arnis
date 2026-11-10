@@ -389,9 +389,10 @@ export const planPieces = () => lastPlan;
 export const isPiecesJob = () => Boolean(planWanted().req);
 let onPlan = () => {};
 
-export function initJobPlan({ request, changed = () => {} }) {
+export function initJobPlan({ request, changed = () => {}, stretch = () => null }) {
   planRequest = request;
   onPlan = changed;
+  stretchSource = stretch;
   // Any setting may change the plan; an unchanged request is not asked again.
   ['change', 'click'].forEach((type) => document.addEventListener(type, () => schedulePlan()));
   schedulePlan();
@@ -407,6 +408,7 @@ function planWanted() {
 // `fresh` asks again even for an unchanged request: the world under it changed. A changed
 // request clears the old plan from the map at once and drops any answer still on its way.
 export function schedulePlan(fresh = false) {
+  refreshStretch();
   if (fresh) planKey = '';
   if (planWanted().key !== planKey) {
     planSeq++;
@@ -463,9 +465,11 @@ const div = (className, textContent) => Object.assign(document.createElement('di
 // The plan's blocks, a warning, and the legend of what the map shows: the selection, the
 // pieces to build and, with a margin, the ring around it.
 function showPlan(rows, warn = '', ring = false) {
+  shown = [rows, warn, ring];
   const box = el('job-plan');
   if (!box) return;
-  box.replaceChildren(...rows);
+  // The stretch line goes under the pieces and regions, or alone without a plan.
+  box.replaceChildren(...rows.slice(0, 2), ...stretchRows, ...rows.slice(2));
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
@@ -478,7 +482,7 @@ function showPlan(rows, warn = '', ring = false) {
     }
     box.append(legend);
   }
-  box.hidden = !rows.length;
+  box.hidden = !rows.length && !stretchRows.length;
 }
 
 async function updatePlan() {
@@ -547,14 +551,83 @@ async function updatePlan() {
     };
   });
   // Outside the outline: grey, unnumbered, not built (numbered after the plan's own, as ids).
-  const excluded = plan.excluded || [];
-  if (planned.length && planned.length + excluded.length <= MAX_DRAWN) {
-    excluded.forEach((bbox, k) => planned.push({
-      i: units.length + k, n: '', state: 'excluded', ring: false, bounds: bbox.split(',').map(Number),
-      text: { piece: '', state: t('plan_state_excluded', 'Outside the outline: not built'), size: '', worker: '', error: '', hint: '' },
+  // Around the job, within 5% stretch: faint, dotted, room to grow later.
+  const extra = [
+    ...(plan.excluded || []).map((bbox) => ['excluded', bbox, t('plan_state_excluded', 'Outside the outline: not built')]),
+    ...(plan.room || []).map((bbox) => ['room', bbox, t('plan_state_room', 'Room to grow: you can build here later')]),
+  ];
+  if (planned.length && planned.length + extra.length <= MAX_DRAWN) {
+    extra.forEach(([state, bbox, text], k) => planned.push({
+      i: units.length + k, n: '', state, ring: false, bounds: bbox.split(',').map(Number),
+      text: { piece: '', state: text, size: '', worker: '', error: '', hint: '' },
     }));
   }
   postToMap({ type: 'pieceOutlines', pieces: planned });
+}
+
+// ---- How far a One World can grow before it looks stretched ----
+
+// Blocks per metre are fixed at the origin's latitude and heights are not, so at latitude `lat`
+// the ground is this much wider (+) or narrower (-) than it is tall. Only latitude counts.
+const rad = Math.PI / 180;
+export const stretchAt = (origin, lat) => Math.cos(origin * rad) / Math.cos(lat * rad) - 1;
+
+// The nearest latitudes south and north of `origin` where the stretch reaches `s` either way
+// (cos lat = cos origin / (1 ± s)); null on a side that has none.
+export function stretchLines(origin, s) {
+  const lats = [];
+  for (const k of [1 + s, 1 - s]) {
+    const c = Math.cos(origin * rad) / k;
+    if (c <= 1) lats.push(Math.acos(c) / rad, -Math.acos(c) / rad);
+  }
+  const south = lats.filter((l) => l < origin);
+  const north = lats.filter((l) => l > origin);
+  return [south.length ? Math.max(...south) : null, north.length ? Math.min(...north) : null];
+}
+
+// The stretch furthest from none over [south, north] (it grows away from the equator).
+export function worstStretch(origin, south, north) {
+  const lats = south < 0 && north > 0 ? [south, north, 0] : [south, north];
+  return lats.map((l) => stretchAt(origin, l)).reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a));
+}
+
+// `stretchSource()`: { origin, knee, south, north, lon } for a One World selection, or null.
+let stretchSource = () => null;
+let stretchRows = [];
+let stretchKey = 'null';
+let shown = [[], '', false];
+const STRETCH_LEVELS = [[0.05, '#fecc44'], [0.1, '#fa7878']];
+
+export function refreshStretch() {
+  const s = on('advanced-meld-features-toggle') ? stretchSource() : null;
+  const key = JSON.stringify(s);
+  if (key === stretchKey) return;
+  stretchKey = key;
+  stretchRows = [];
+  const lines = [];
+  if (s) {
+    for (const [level, color] of STRETCH_LEVELS) {
+      for (const lat of stretchLines(s.origin, level)) {
+        if (lat !== null) lines.push({ lat, color, label: `${level * 100}%`, lon: s.lon });
+      }
+    }
+    const worst = worstStretch(s.origin, s.south, s.north);
+    const pct = Math.round(worst * 100);
+    const row = div('plan-stretch', t('plan_stretch', 'Stretch here: {pct} · up to 5% recommended', {
+      pct: `${pct > 0 ? '+' : pct < 0 ? '−' : ''}${Math.abs(pct)}%`,
+    }));
+    row.classList.toggle('is-warn', Math.abs(worst) > 0.05);
+    row.classList.toggle('is-error', Math.abs(worst) > 0.1);
+    stretchRows.push(row);
+    // The selection's heights are not known here: said as information.
+    if (s.knee != null) {
+      stretchRows.push(div('plan-stretch', t('plan_soft_top', 'Land above {m} m is squashed', {
+        m: (Math.round(s.knee / 100) * 100).toLocaleString(),
+      })));
+    }
+  }
+  postToMap({ type: 'stretchLines', lines });
+  showPlan(...shown);
 }
 
 // ---- Data panel: Prepare Countries and the Download Plan ----

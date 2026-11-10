@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1386,6 +1386,16 @@ function initSettings() {
       const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
       if (!bbox || !isOneWorldEnabled() || isLiveMode() || !savePath || !document.getElementById('meld-workers-select').value) return null;
       return { savePath, worldName: oneWorldFolderName(), bboxText: bbox, worldScale: readGenerationSettings(true).worldScale };
+    },
+    // A One World's selection against the latitude its blocks per metre were fixed at: the
+    // world's origin, else --origin, else the selection's centre (what the first area sets).
+    stretch: () => {
+      const [a, b, c, d] = (selectedBBox || '').split(/[\s,]+/).map(Number);
+      if (!isOneWorldEnabled() || !(a || c)) return null;
+      const world = oneWorldInfo && oneWorldInfo.exists ? oneWorldInfo : null;
+      const typed = parseFloat(document.getElementById('meld-origin-input').value);
+      const origin = world ? world.origin_lat : Number.isFinite(typed) ? typed : (a + c) / 2;
+      return { origin, knee: world ? world.knee_m : null, south: Math.min(a, c), north: Math.max(a, c), lon: (b + d) / 2 };
     },
   });
   // The map offers "Select this area" on a country or region, the edge handles and the size
@@ -3241,6 +3251,8 @@ function setOneWorldName(name) {
 }
 
 function setOneWorldStatus(text, tone) {
+  // Every read of the world ends here: the stretch view follows its origin.
+  refreshStretch();
   const el = document.getElementById('one-world-status');
   if (!el) return;
   el.style.display = text ? '' : 'none';
