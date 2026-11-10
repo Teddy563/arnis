@@ -602,7 +602,7 @@ async function updatePlan() {
   } catch (e) {
     if (seq !== planSeq) return;
     planAnswered = key;
-    showPlan([div('', String(e))]);
+    showPlan([div('', t('plan_error', 'Could not plan this selection: {error}', { error: e }))]);
     onPlan();
     return;
   }
@@ -775,7 +775,7 @@ export function initDataPanel({ invoke, area, plan }) {
       if (p.uncovered_points) rows.push([t('meld_uncovered', 'Not covered by any country (open sea)'), t('meld_points', '{n} points', { n: p.uncovered_points })]);
       lines(list, rows);
     } catch (e) {
-      say(list, String(e));
+      say(list, t('plan_error', 'Could not plan this selection: {error}', { error: e }));
     }
   });
 
@@ -790,7 +790,7 @@ export function initDataPanel({ invoke, area, plan }) {
       });
       say(list, done ? t('meld_bake_done', 'The local archive is ready. Pick Local Archive as the OSM Data Source to use it.') : t('meld_bake_stopped', 'Stopped. Finished countries are kept.'));
     } catch (e) {
-      say(list, String(e));
+      say(list, t('plan_error', 'Could not plan this selection: {error}', { error: e }));
     }
     stop.hidden = true;
   });
@@ -804,7 +804,7 @@ export function initDataPanel({ invoke, area, plan }) {
       if (p.free_bytes != null) rows.push([t('meld_free_space', 'Free space'), mb(p.free_bytes)]);
       lines(out, rows.length ? rows : [[t('meld_nothing_to_download', 'Nothing to download.'), '']]);
     } catch (e) {
-      say(out, String(e));
+      say(out, t('plan_error', 'Could not plan this selection: {error}', { error: e }));
     }
   });
 }

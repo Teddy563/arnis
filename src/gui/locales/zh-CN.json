@@ -682,6 +682,7 @@
   "map_select_area": "选择此区域",
   "map_use_outline": "使用轮廓",
   "plan_too_many": "分块太多，无法在地图上绘制。",
+  "plan_error": "无法规划此选区：{error}",
   "plan_piece_size": "{n} × {m} 个区域",
   "plan_legend_selection": "选区",
   "plan_legend_pieces": "待生成的分块",

@@ -682,6 +682,7 @@
   "map_select_area": "Select this area",
   "map_use_outline": "Use outline",
   "plan_too_many": "Too many pieces to draw on the map.",
+  "plan_error": "Could not plan this selection: {error}",
   "plan_piece_size": "{n} × {m} regions",
   "plan_legend_selection": "Selection",
   "plan_legend_pieces": "Pieces to build",

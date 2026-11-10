@@ -682,6 +682,7 @@
   "map_select_area": "Sélectionner cette zone",
   "map_use_outline": "Utiliser le contour",
   "plan_too_many": "Trop de parties pour les dessiner sur la carte.",
+  "plan_error": "Impossible de planifier cette sélection : {error}",
   "plan_piece_size": "{n} × {m} régions",
   "plan_legend_selection": "Sélection",
   "plan_legend_pieces": "Morceaux à construire",

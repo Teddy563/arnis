@@ -682,6 +682,7 @@
   "map_select_area": "Seleccionar esta zona",
   "map_use_outline": "Usar contorno",
   "plan_too_many": "Demasiadas piezas para dibujarlas en el mapa.",
+  "plan_error": "No se pudo planificar esta selección: {error}",
   "plan_piece_size": "{n} × {m} regiones",
   "plan_legend_selection": "Selección",
   "plan_legend_pieces": "Piezas por construir",

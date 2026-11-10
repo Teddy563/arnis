@@ -682,6 +682,7 @@
   "map_select_area": "تحديد هذه المنطقة",
   "map_use_outline": "استخدام الحدود",
   "plan_too_many": "الأجزاء أكثر من أن تُرسم على الخريطة.",
+  "plan_error": "تعذّر تخطيط هذا التحديد: {error}",
   "plan_piece_size": "{n} × {m} مناطق",
   "plan_legend_selection": "التحديد",
   "plan_legend_pieces": "الأجزاء المراد بناؤها",

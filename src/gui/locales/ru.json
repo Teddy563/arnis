@@ -682,6 +682,7 @@
   "map_select_area": "Выбрать эту область",
   "map_use_outline": "Использовать контур",
   "plan_too_many": "Слишком много частей, чтобы нарисовать их на карте.",
+  "plan_error": "Не удалось спланировать это выделение: {error}",
   "plan_piece_size": "{n} × {m} регионов",
   "plan_legend_selection": "Выделение",
   "plan_legend_pieces": "Части к постройке",

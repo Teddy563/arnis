@@ -682,6 +682,7 @@
   "map_select_area": "Markera det här området",
   "map_use_outline": "Använd kontur",
   "plan_too_many": "För många delar för att rita på kartan.",
+  "plan_error": "Det gick inte att planera det här urvalet: {error}",
   "plan_piece_size": "{n} × {m} regioner",
   "plan_legend_selection": "Markering",
   "plan_legend_pieces": "Delar att bygga",

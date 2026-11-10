@@ -682,6 +682,7 @@
   "map_select_area": "ამ არეალის მონიშვნა",
   "map_use_outline": "კონტურის გამოყენება",
   "plan_too_many": "რუკაზე დასახატად ძალიან ბევრი ნაწილია.",
+  "plan_error": "ამ მონიშვნის დაგეგმვა ვერ მოხერხდა: {error}",
   "plan_piece_size": "{n} × {m} რეგიონი",
   "plan_legend_selection": "მონიშვნა",
   "plan_legend_pieces": "ასაშენებელი ნაწილები",

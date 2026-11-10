@@ -682,6 +682,7 @@
   "map_select_area": "Selectează această zonă",
   "map_use_outline": "Folosește conturul",
   "plan_too_many": "Prea multe bucăți pentru a fi desenate pe hartă.",
+  "plan_error": "Nu s-a putut planifica această selecție: {error}",
   "plan_piece_size": "{n} × {m} regiuni",
   "plan_legend_selection": "Selecția",
   "plan_legend_pieces": "Bucăți de construit",

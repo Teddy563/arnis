@@ -682,6 +682,7 @@
   "map_select_area": "이 영역 선택",
   "map_use_outline": "윤곽선 사용",
   "plan_too_many": "조각이 너무 많아 지도에 그릴 수 없습니다.",
+  "plan_error": "이 선택 영역을 계획할 수 없습니다: {error}",
   "plan_piece_size": "{n} × {m} 리전",
   "plan_legend_selection": "선택 영역",
   "plan_legend_pieces": "생성할 조각",

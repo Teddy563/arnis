@@ -682,6 +682,7 @@
   "map_select_area": "Pažymėti šią sritį",
   "map_use_outline": "Naudoti kontūrą",
   "plan_too_many": "Per daug dalių, kad jas būtų galima nupiešti žemėlapyje.",
+  "plan_error": "Nepavyko suplanuoti šio pasirinkimo: {error}",
   "plan_piece_size": "{n} × {m} regionų",
   "plan_legend_selection": "Pasirinkimas",
   "plan_legend_pieces": "Statomos dalys",

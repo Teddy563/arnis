@@ -38,5 +38,15 @@ assert.ok(planPending(), 'still pending while the answer is on its way');
 release(plan);
 await new Promise((r) => setTimeout(r, 20));
 assert.ok(!planPending(), 'not pending once answered');
+
+// A plan that fails says so with the translated prefix.
+window.localization = { plan_error: 'Impossible de planifier : {error}' };
+const shown = [];
+nodes.set('job-plan', { ...node(), replaceChildren: (...c) => shown.push(c.map((x) => x.textContent ?? String(x)).join('|')) });
+initRunControls({ key: () => 'k', map: () => ({}), invoke: async () => { throw 'boom'; }, post: () => {}, start: async () => {}, localize: () => {} });
+document.getElementById('meld-workers-select').value = '2';
+schedulePlan(true);
+await new Promise((r) => setTimeout(r, 400));
+assert.ok(shown.some((x) => x.includes('Impossible de planifier : boom')), shown.join(';'));
 console.log('plan-rows: ok');
 process.exit(0);
