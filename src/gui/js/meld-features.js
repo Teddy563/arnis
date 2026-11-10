@@ -290,7 +290,10 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   localizer = localize;
   // The legend shows what the map was last sent.
   postToMap = (m) => {
-    if (m.type === 'pieceOutlines') drawn = m.pieces;
+    if (m.type === 'pieceOutlines') {
+      drawn = m.pieces;
+      if (legendOpen) showPlan(...shown); // an open card lists the lines now on the map
+    }
     post(m);
   };
   restart = start;
