@@ -469,6 +469,7 @@
   "data_source_land_cover": "Zemes segums",
   "data_source_overture": "Ēku kontūras",
   "meld_cache_path": "Faili tiek glabāti šeit: {path}",
+  "region_download_fallback": "Reģiona lejupielāde šai izvēlei nebija pieejama; tika izmantots noklusējuma avots.",
   "meld_open_folder": "Atvērt mapi",
   "meld_plan_download": "Lejupielādēt tagad",
   "meld_downloading": "Notiek lejupielāde: progress redzams galvenajā joslā.",

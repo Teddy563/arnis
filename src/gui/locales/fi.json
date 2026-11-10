@@ -469,6 +469,7 @@
   "data_source_land_cover": "Maanpeite",
   "data_source_overture": "Rakennusten pohjat",
   "meld_cache_path": "Tiedostot säilytetään kansiossa {path}",
+  "region_download_fallback": "Alueen lataus ei ollut käytettävissä tälle valinnalle; käytettiin oletuslähdettä.",
   "meld_open_folder": "Avaa kansio",
   "meld_plan_download": "Lataa nyt",
   "meld_downloading": "Ladataan: edistyminen näkyy pääpalkissa.",

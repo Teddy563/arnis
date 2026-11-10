@@ -469,6 +469,7 @@
   "data_source_land_cover": "الغطاء الأرضي",
   "data_source_overture": "مخططات المباني",
   "meld_cache_path": "الملفات محفوظة في {path}",
+  "region_download_fallback": "لم يكن تنزيل المنطقة متاحًا لهذا التحديد؛ تم استخدام المصدر الافتراضي.",
   "meld_open_folder": "فتح المجلد",
   "meld_plan_download": "نزّل الآن",
   "meld_downloading": "جارٍ التنزيل: التقدم على الشريط الرئيسي.",

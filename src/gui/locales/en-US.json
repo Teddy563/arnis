@@ -469,6 +469,7 @@
   "data_source_land_cover": "Land cover",
   "data_source_overture": "Building footprints",
   "meld_cache_path": "Files are kept in {path}",
+  "region_download_fallback": "Region Download was not available for this selection; the default source was used.",
   "meld_open_folder": "Open folder",
   "meld_plan_download": "Download now",
   "meld_downloading": "Downloading: the progress is on the main bar.",

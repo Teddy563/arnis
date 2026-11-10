@@ -469,6 +469,7 @@
   "data_source_land_cover": "მიწის საფარი",
   "data_source_overture": "შენობების კონტურები",
   "meld_cache_path": "ფაილები ინახება აქ: {path}",
+  "region_download_fallback": "რეგიონის ჩამოტვირთვა ამ არჩევისთვის მიუწვდომელი იყო; გამოყენებულია ნაგულისხმევი წყარო.",
   "meld_open_folder": "საქაღალდის გახსნა",
   "meld_plan_download": "ჩამოტვირთვა ახლა",
   "meld_downloading": "ჩამოტვირთვა: პროგრესი მთავარ ზოლზეა.",

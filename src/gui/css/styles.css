@@ -224,6 +224,10 @@ a:hover {
   margin-bottom: 5px;
 }
 
+.progress-info-text.is-notice {
+  color: #fecc44 !important; /* the listener sets an inline colour */
+}
+
 /* Time-remaining centered on the bar. White to match the percentage label; a
    text-shadow keeps it legible over the green fill and the lighter track. */
 .progress-eta-overlay {

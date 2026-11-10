@@ -469,6 +469,7 @@
   "data_source_land_cover": "Cobertura do solo",
   "data_source_overture": "Contornos de edifícios",
   "meld_cache_path": "Os arquivos ficam em {path}",
+  "region_download_fallback": "O Download de Região não estava disponível para esta seleção; a fonte padrão foi usada.",
   "meld_open_folder": "Abrir pasta",
   "meld_plan_download": "Baixar agora",
   "meld_downloading": "Baixando: o progresso está na barra principal.",

@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1127,7 +1127,11 @@ function setupProgressListener() {
     }
 
     if (message != "") {
-      progressInfo.textContent = message;
+      const shown = progressText(event.payload);
+      progressInfo.textContent = shown.text;
+      progressInfo.title = shown.title;
+      progressInfo.classList.toggle("is-notice", shown.notice);
+      if (shown.log) window.arnisLog?.(shown.notice ? "warn" : "error", shown.log);
 
       if (message.startsWith("Error!")) {
         progressInfo.style.color = "#fa7878";

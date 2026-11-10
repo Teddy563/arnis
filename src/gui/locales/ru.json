@@ -469,6 +469,7 @@
   "data_source_land_cover": "Земной покров",
   "data_source_overture": "Контуры зданий",
   "meld_cache_path": "Файлы хранятся в {path}",
+  "region_download_fallback": "Загрузка региона была недоступна для этого выделения; использован источник по умолчанию.",
   "meld_open_folder": "Открыть папку",
   "meld_plan_download": "Скачать сейчас",
   "meld_downloading": "Идёт загрузка: ход виден на главной полосе.",

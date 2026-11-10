@@ -469,6 +469,7 @@
   "data_source_land_cover": "Pokrycie terenu",
   "data_source_overture": "Obrysy budynków",
   "meld_cache_path": "Pliki są przechowywane w {path}",
+  "region_download_fallback": "Pobieranie regionu było niedostępne dla tego zaznaczenia; użyto domyślnego źródła.",
   "meld_open_folder": "Otwórz folder",
   "meld_plan_download": "Pobierz teraz",
   "meld_downloading": "Pobieranie: postęp widać na głównym pasku.",

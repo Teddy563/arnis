@@ -18,6 +18,16 @@ export const t = (key, fallback, vars = {}) => {
   return s;
 };
 
+// What the status line shows for a progress payload. An error that carries `detail` keeps the
+// short `message` on the line and the full text as its tooltip and in the log; a Region Download
+// fallback is a notice in the user's language rather than the raw log line.
+export function progressText({ message = '', detail = '' }) {
+  if (message.startsWith('region_download_fallback')) {
+    return { text: t('region_download_fallback', 'Region Download was not available for this selection; the default source was used.'), title: '', log: message, notice: true };
+  }
+  return { text: message, title: detail, log: detail || null, notice: false };
+}
+
 export function initMeldFeatures() {
   const toggle = el('advanced-meld-features-toggle');
   if (!toggle) return;
