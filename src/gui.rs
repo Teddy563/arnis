@@ -1343,6 +1343,10 @@ struct OneWorldInfo {
     terrain: Option<bool>,
     disable_height_limit: Option<bool>,
     aws_only_elevation: Option<bool>,
+    /// Blocks per metre are fixed at this latitude: the map shows how far the world can grow.
+    origin_lat: Option<f64>,
+    /// Land above this height is squashed.
+    knee_m: Option<f64>,
     /// Changes whenever an area is recorded.
     revision: u32,
 }
@@ -1381,6 +1385,10 @@ fn gui_one_world_info(save_path: String, world_name: String) -> Result<OneWorldI
         terrain: manifest.as_ref().map(|m| m.terrain),
         disable_height_limit: manifest.as_ref().map(|m| m.disable_height_limit),
         aws_only_elevation: manifest.as_ref().map(|m| m.aws_only_elevation),
+        origin_lat: manifest.as_ref().map(|m| m.origin_lat),
+        knee_m: manifest
+            .as_ref()
+            .and_then(|m| m.elevation.as_ref()?.soft_top.as_ref().map(|t| t.knee_m)),
         revision: manifest.as_ref().map(|m| m.next_area_id).unwrap_or(0),
     })
 }
@@ -1475,12 +1483,18 @@ fn gui_plan_job(
     let world_dir = one_world_dir(&save_path, &world_name);
     let bbox = LLBBox::from_str(&bbox_text)?;
     let mut line = crate::work_units::plan_line(&world_dir, &bbox, &args, size)?;
+    let proj = crate::one_world::frame_for(&world_dir, &bbox, &args)?;
     // With an outline, the pieces it leaves out too, for the map to grey: the same plan
     // without it, less the pieces the outline touches.
-    if let Some(path) = args.units.plan_mask.take() {
+    let mask = args.units.plan_mask.take();
+    let all = crate::work_units::plan(&proj, &bbox, &args, size)?;
+    // Pieces around the job still within 5% stretch, drawn faint: room to grow later.
+    line["room"] = crate::work_units::room(&proj, &all.rect, size, 0.05, 400)
+        .iter()
+        .map(|b| b.arg())
+        .collect();
+    if let Some(path) = mask {
         let mask = crate::work_units::Mask::load(&path)?;
-        let proj = crate::one_world::frame_for(&world_dir, &bbox, &args)?;
-        let all = crate::work_units::plan(&proj, &bbox, &args, size)?;
         line["excluded"] = all
             .units
             .iter()
