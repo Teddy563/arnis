@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Shows the Scale settings here and extra settings in Generation, Terrain & Nature, Map & Input and World. Turning it off hides them and sends none of them. Experimental.",
   "meld_workers_tip": "Splits a One World selection into pieces of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.",
   "meld_ram_budget_tip": "Sizes parallel work to this much memory instead of the free RAM measured, so several runs can share a machine. Empty measures free RAM.",
-  "meld_threads_tip": "Overrides CPU share. Empty uses 90% of the cores. A job in pieces splits it between the pieces.",
+  "meld_threads_tip": "Empty uses 90% of the cores. A job in pieces splits it between the pieces.",
   "disable_height_limit_tip": "Raises the build height only where the terrain or buildings would not fit, and on Java only as far as they reach. Off compresses tall terrain instead. Java 1.21.4+ and Bedrock 1.21.120+, not for Realms.",
   "aws_only_elevation_tip": "Uses the older AWS terrain tiles (about 30 m) instead of Mapterhorn. Less detailed; only useful if Mapterhorn can't be reached.",
   "bake_lighting_tip": "Precomputes lighting so LOD mods like Voxy show distant chunks lit before you visit them. Not needed in vanilla; takes longer.",

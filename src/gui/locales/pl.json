@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Pokazuje tu ustawienia Skali oraz dodatkowe ustawienia w sekcjach Generowanie, Teren i natura, Mapa i dane oraz Świat. Wyłączenie ukrywa je i żadnego z nich nie wysyła. Eksperymentalne.",
   "meld_workers_tip": "Dzieli zaznaczenie Jeden świat na części do 4 × 4 regionów i buduje kilka naraz, każdą w osobnym procesie. Auto wybiera od 2 do 6 według wolnej pamięci RAM i rdzeni. Ponowne generowanie tego samego obszaru wznawia pracę. Tylko Jeden świat.",
   "meld_ram_budget_tip": "Dopasowuje pracę równoległą do tej ilości pamięci zamiast do zmierzonej wolnej pamięci RAM, dzięki czemu kilka uruchomień może dzielić jeden komputer. Puste mierzy wolną pamięć RAM.",
-  "meld_threads_tip": "Zastępuje udział CPU. Puste używa 90% rdzeni. Zadanie podzielone na części dzieli tę liczbę między części.",
+  "meld_threads_tip": "Puste używa 90% rdzeni. Zadanie podzielone na części dzieli tę liczbę między części.",
   "disable_height_limit_tip": "Podnosi wysokość budowania tylko tam, gdzie teren lub budynki by się nie zmieściły, a w Javie tylko tak wysoko, jak sięgają. Wyłączone zamiast tego kompresuje wysoki teren. Java 1.21.4+ i Bedrock 1.21.120+, nie dla Realms.",
   "aws_only_elevation_tip": "Używa starszych kafelków terenu AWS (ok. 30 m) zamiast Mapterhorn. Mniej szczegółowe; przydatne tylko wtedy, gdy Mapterhorn jest nieosiągalny.",
   "bake_lighting_tip": "Oblicza oświetlenie z wyprzedzeniem, aby mody LOD, takie jak Voxy, pokazywały odległe chunki już oświetlone, zanim się do nich dotrze. Niepotrzebne w vanilli; trwa dłużej.",

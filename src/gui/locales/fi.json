@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Näyttää Mittakaava-asetukset tässä ja lisäasetukset osioissa Generointi, Maasto ja luonto, Kartta ja syöte ja Maailma. Pois päältä ne piilotetaan eikä mitään niistä lähetetä. Kokeellinen.",
   "meld_workers_tip": "Jakaa Yksi maailma -valinnan enintään 4 × 4 alueen paloihin ja rakentaa useita kerralla, kukin omassa prosessissaan. Auto valitsee 2-6 vapaan RAM-muistin ja ytimien mukaan. Saman alueen luominen uudelleen jatkaa työtä. Vain Yksi maailma.",
   "meld_ram_budget_tip": "Mitoittaa rinnakkaisen työn tähän muistimäärään mitatun vapaan RAM-muistin sijaan, jotta useampi ajo voi jakaa koneen. Tyhjänä mitataan vapaa RAM.",
-  "meld_threads_tip": "Ohittaa suorittimen osuuden. Tyhjänä käytetään 90 % ytimistä. Paloihin jaettu työ jakaa sen palojen kesken.",
+  "meld_threads_tip": "Tyhjänä käytetään 90 % ytimistä. Paloihin jaettu työ jakaa sen palojen kesken.",
   "disable_height_limit_tip": "Nostaa rakennuskorkeutta vain siellä, minne maasto tai rakennukset eivät mahtuisi, ja Javassa vain niin pitkälle kuin ne yltävät. Pois puristaa korkean maaston sen sijaan. Java 1.21.4+ ja Bedrock 1.21.120+, ei Realmsille.",
   "aws_only_elevation_tip": "Käyttää vanhempia AWS-maastolaattoja (noin 30 m) Mapterhornin sijaan. Vähemmän yksityiskohtia; hyödyllinen vain, jos Mapterhornia ei tavoiteta.",
   "bake_lighting_tip": "Laskee valaistuksen etukäteen, jotta LOD-modit, kuten Voxy, näyttävät kaukaiset palat valaistuina ennen kuin vierailet niissä. Ei tarvita vanillassa; kestää kauemmin.",

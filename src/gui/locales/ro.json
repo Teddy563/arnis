@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Afișează aici setările de Scară și setări suplimentare în Generare, Teren și natură, Hartă și introducere și Lume. Dezactivate, le ascunde și nu trimite niciuna dintre ele. Experimental.",
   "meld_workers_tip": "Împarte o selecție O singură lume în bucăți de până la 4 × 4 regiuni și construiește mai multe deodată, fiecare în propriul proces. Automat alege între 2 și 6 în funcție de RAM-ul liber și de nuclee. Generarea aceleiași zone din nou o reia. Doar O singură lume.",
   "meld_ram_budget_tip": "Dimensionează lucrul paralel după această cantitate de memorie, în loc de RAM-ul liber măsurat, ca mai multe rulări să poată împărți un computer. Gol măsoară RAM-ul liber.",
-  "meld_threads_tip": "Suprascrie cota de procesor. Gol folosește 90% din nuclee. O lucrare pe bucăți îl împarte între bucăți.",
+  "meld_threads_tip": "Gol folosește 90% din nuclee. O lucrare pe bucăți îl împarte între bucăți.",
   "disable_height_limit_tip": "Ridică înălțimea de construcție doar unde terenul sau clădirile nu ar încăpea, iar pe Java doar cât ajung ele. Dezactivat comprimă în schimb terenul înalt. Java 1.21.4+ și Bedrock 1.21.120+, nu pentru Realms.",
   "aws_only_elevation_tip": "Folosește dalele de teren AWS mai vechi (aproximativ 30 m) în locul Mapterhorn. Mai puțin detaliat; util doar dacă Mapterhorn nu poate fi contactat.",
   "bake_lighting_tip": "Precalculează iluminarea, ca modurile LOD precum Voxy să afișeze chunk-urile îndepărtate luminate înainte să le vizitezi. Nu e necesar în vanilla; durează mai mult.",

@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Affiche ici les réglages d'échelle et des réglages supplémentaires dans Génération, Terrain et nature, Carte et saisie et Monde. Le désactiver les masque et n'en envoie aucun. Expérimental.",
   "meld_workers_tip": "Découpe une sélection de Monde unique en morceaux allant jusqu'à 4 × 4 régions et en construit plusieurs à la fois, chacun dans son propre processus. Auto choisit de 2 à 6 selon la RAM libre et les cœurs. Générer à nouveau la même zone la reprend. Monde unique uniquement.",
   "meld_ram_budget_tip": "Dimensionne le travail parallèle sur cette quantité de mémoire plutôt que sur la RAM libre mesurée, pour que plusieurs exécutions puissent partager une machine. Vide, la RAM libre est mesurée.",
-  "meld_threads_tip": "Remplace la part du CPU. Vide, 90 % des cœurs sont utilisés. Une tâche découpée en morceaux le répartit entre eux.",
+  "meld_threads_tip": "Vide, 90 % des cœurs sont utilisés. Une tâche découpée en morceaux le répartit entre eux.",
   "disable_height_limit_tip": "Augmente la hauteur de construction uniquement là où le relief ou les bâtiments ne tiendraient pas, et sur Java seulement jusqu'où ils montent. Désactivé compresse plutôt le relief élevé. Java 1.21.4+ et Bedrock 1.21.120+, pas pour Realms.",
   "aws_only_elevation_tip": "Utilise les anciennes tuiles de relief AWS (environ 30 m) au lieu de Mapterhorn. Moins détaillé ; utile seulement si Mapterhorn est inaccessible.",
   "bake_lighting_tip": "Précalcule l'éclairage pour que les mods LOD comme Voxy affichent les chunks lointains éclairés avant que vous ne les visitiez. Inutile en vanilla ; plus long.",

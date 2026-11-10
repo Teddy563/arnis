@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Tukaj pokaže nastavitve Merila in dodatne nastavitve v razdelkih Generiranje, Teren in narava, Zemljevid in vnos ter Svet. Izklop jih skrije in nobene ne pošlje. Eksperimentalno.",
   "meld_workers_tip": "Izbor En svet razdeli na dele do 4 × 4 regij in jih gradi več hkrati, vsakega v svojem procesu. Samodejno izbere od 2 do 6 glede na prosti RAM in jedra. Ponovno ustvarjanje istega območja ga nadaljuje. Samo En svet.",
   "meld_ram_budget_tip": "Vzporedno delo prilagodi tej količini pomnilnika namesto izmerjenemu prostemu RAM-u, tako da si lahko več zagonov deli računalnik. Prazno izmeri prosti RAM.",
-  "meld_threads_tip": "Preglasi delež CPE. Prazno uporabi 90 % jeder. Opravilo v delih to število razdeli med dele.",
+  "meld_threads_tip": "Prazno uporabi 90 % jeder. Opravilo v delih to število razdeli med dele.",
   "disable_height_limit_tip": "Dvigne višino gradnje le tam, kjer teren ali stavbe ne bi šli noter, in v Javi le toliko, kot segajo. Izklopljeno namesto tega stisne visok teren. Java 1.21.4+ in Bedrock 1.21.120+, ne za Realms.",
   "aws_only_elevation_tip": "Uporabi starejše ploščice terena AWS (okoli 30 m) namesto Mapterhorn. Manj podrobno; uporabno le, če Mapterhorn ni dosegljiv.",
   "bake_lighting_tip": "Osvetlitev izračuna vnaprej, da modi LOD, kot je Voxy, pokažejo oddaljene bloke že osvetljene, preden jih obiščete. V vanilli ni potrebno; traja dlje.",

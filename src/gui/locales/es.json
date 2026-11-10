@@ -610,7 +610,7 @@
   "advanced_meld_features_tip": "Muestra aquí los ajustes de escala y ajustes adicionales en Generación, Terreno y naturaleza, Mapa y entrada y Mundo. Al desactivarlo se ocultan y no se envía ninguno. Experimental.",
   "meld_workers_tip": "Divide una selección de Un solo mundo en piezas de hasta 4 × 4 regiones y construye varias a la vez, cada una en su propio proceso. Automático elige de 2 a 6 según la RAM libre y los núcleos. Volver a generar la misma área la reanuda. Solo Un solo mundo.",
   "meld_ram_budget_tip": "Dimensiona el trabajo en paralelo a esta cantidad de memoria en lugar de a la RAM libre medida, para que varias ejecuciones puedan compartir una máquina. Vacío mide la RAM libre.",
-  "meld_threads_tip": "Sustituye el porcentaje de CPU. Vacío usa el 90 % de los núcleos. Un trabajo dividido en piezas lo reparte entre ellas.",
+  "meld_threads_tip": "Vacío usa el 90 % de los núcleos. Un trabajo dividido en piezas lo reparte entre ellas.",
   "disable_height_limit_tip": "Eleva la altura de construcción solo donde el terreno o los edificios no cabrían, y en Java solo hasta donde lleguen. Desactivado comprime en su lugar el terreno alto. Java 1.21.4+ y Bedrock 1.21.120+, no para Realms.",
   "aws_only_elevation_tip": "Usa las teselas de terreno de AWS, más antiguas (unos 30 m), en lugar de Mapterhorn. Menos detalle; solo útil si no se puede acceder a Mapterhorn.",
   "bake_lighting_tip": "Precalcula la iluminación para que los mods de LOD como Voxy muestren los chunks lejanos iluminados antes de visitarlos. No hace falta en vanilla; tarda más.",
