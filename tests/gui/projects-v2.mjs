@@ -8,7 +8,7 @@ globalThis.document = { createElement: node, getElementById: (id) => (nodes.has(
 const store = new Map();
 globalThis.localStorage = { setItem: (k, v) => store.set(k, v), getItem: (k) => store.get(k) ?? null };
 globalThis.window = {};
-const { initProjects } = await import('../../src/gui/js/meld-features.js');
+const { initProjects, placeZoom, placeForRun } = await import('../../src/gui/js/meld-features.js');
 
 const calls = [];
 const worlds = [
@@ -51,4 +51,46 @@ assert.ok(rows[0].children[0].className.includes('is-empty'));
 const title = (r) => r.children[1].children.map((c) => c.textContent);
 assert.deepStrictEqual(title(rows[1]), ['Paris', 'Paris'], 'the place name sits beside the name');
 assert.deepStrictEqual(title(rows[0]), ['Old'], 'an old world shows the name only');
+
+// The geocode zoom follows the size of the area.
+const box = (km) => [44, 26, 44 + km / 111, 26 + km / 111 / Math.cos((44 * Math.PI) / 180)];
+assert.deepStrictEqual([3000, 600, 100, 30, 8, 1].map((km) => placeZoom(box(km))), [3, 5, 8, 10, 14, 16]);
+
+// A search result names the build only when its point is inside the area.
+const found = { name: 'Bucharest', lat: 44.43, lon: 26.1 };
+assert.strictEqual(placeForRun(found, '44.40 26.00 44.50 26.20'), 'Bucharest');
+assert.strictEqual(placeForRun(found, '45.00 26.00 45.50 26.20'), '');
+assert.strictEqual(placeForRun(null, '44.40 26.00 44.50 26.20'), '');
+
+// A world with place_name null is looked up once at its centre; a failure is not retried.
+store.clear();
+calls.length = 0;
+const gone = [{ name: 'Old', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Old', place_name: null }, { name: 'Done', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Done', place_name: 'Rome' }];
+const areas = { areas: [{ min_lat: 44, max_lat: 44.2, min_lon: 26, max_lon: 26.2 }] };
+const asked2 = [];
+const place = (geocode) => initProjects({
+  invoke: async (cmd, args) => { calls.push([cmd, args]); return cmd === 'gui_list_one_worlds' ? gone : cmd === 'gui_get_one_world_overlays' ? areas : null; },
+  savePath: () => '/s', scale: () => 1, open: async () => {}, geocode, pause: async () => {},
+});
+const settle = () => new Promise((r) => setTimeout(r, 5));
+await place(async (lat, lon, zoom) => { asked2.push([lat, lon, zoom]); return 'Bucharest'; })();
+await settle();
+assert.strictEqual(asked2.length, 1, 'one lookup, for the world without a name');
+assert.ok(Math.abs(asked2[0][0] - 44.1) < 1e-9 && Math.abs(asked2[0][1] - 26.1) < 1e-9 && asked2[0][2] === 10, 'at the centre, city zoom');
+assert.deepStrictEqual(calls.find((c) => c[0] === 'gui_set_place_name'), ['gui_set_place_name', { worldPath: '/s/Old', placeName: 'Bucharest' }]);
+store.clear();
+asked2.length = 0;
+gone[0].place_name = null;
+await place(async () => { asked2.push(1); throw new Error('offline'); })();
+await settle();
+await place(async () => { asked2.push(1); return 'x'; })();
+await settle();
+assert.strictEqual(asked2.length, 1, 'a failure is cached: the second open does not ask again');
+// An engine without the field sends nothing to look up.
+asked2.length = 0;
+gone[0].place_name = undefined;
+store.clear();
+await place(async () => { asked2.push(1); return 'x'; })();
+await settle();
+assert.strictEqual(asked2.length, 0);
 console.log('projects-v2 ok');

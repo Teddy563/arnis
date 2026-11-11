@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { placeForRun, t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -816,6 +816,18 @@ function setCelestialBody(body) {
   refreshBboxSelectionInfo();
 }
 
+// The last search result used for a selection, and the name the running build keeps for its world.
+let searchedPlace = null;
+let runPlace = '';
+
+// Once a One World's first area is built, its place name is the search result's.
+async function rememberRunPlace() {
+  const place = runPlace;
+  runPlace = '';
+  const path = oneWorldInfo && oneWorldInfo.area_count === 1 ? oneWorldInfo.world_path : '';
+  if (place && path) await invoke('gui_set_place_name', { worldPath: path, placeName: place }).catch(() => {});
+}
+
 // Function to register the event listener for bbox updates from iframe
 function registerMessageEvent() {
   window.addEventListener('message', function (event) {
@@ -831,6 +843,11 @@ function registerMessageEvent() {
     // "Select this area" on a search result: the area and a ring of regions around it.
     if (event.data && event.data.type === 'selectArea' && event.source === getMapFrame()?.contentWindow) {
       selectWithRing(event.data.bounds);
+    }
+
+    // The search result the selection came from: its name goes to the world a build makes.
+    if (event.data && event.data.type === 'searchPlace' && event.source === getMapFrame()?.contentWindow) {
+      searchedPlace = { name: String(event.data.name), lat: Number(event.data.lat), lon: Number(event.data.lon) };
     }
 
     // The outline the selection was made from (shape tool or "Use outline"), or null.
@@ -1164,7 +1181,7 @@ function setupProgressListener() {
         // The world just grew by one area: reload its status and overlays.
         if (lastRunOneWorld) {
           oneWorldOverlayKey = null;
-          refreshOneWorldState();
+          refreshOneWorldState().then(rememberRunPlace);
         }
         // A generation just built facades into the same cache, so the preview
         // has something new to say.
@@ -4358,6 +4375,7 @@ async function startGeneration(confirmed = false, prewarm = false) {
     }
     lastRunOneWorld = oneWorld;
     lastRunPrewarm = prewarm;
+    runPlace = oneWorld && !prewarm ? placeForRun(searchedPlace, selectedBBox) : '';
 
     // Auto-create world for Java format (a One World is resolved by the backend)
     if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {

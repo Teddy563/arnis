@@ -1018,7 +1018,31 @@ const readView = () => {
   try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list'; } catch (_) { return 'list'; }
 };
 
-export function initProjects({ invoke, savePath, scale, open, available = () => true }) {
+// Nominatim's zoom for a reverse lookup, by the longer side of the area in km: a country for a
+// huge area, a city or town for a mid one, the suburb or main place for a small one.
+export function placeZoom([south, west, north, east]) {
+  const km = Math.max((north - south) * 111, (east - west) * 111 * Math.cos(((north + south) / 2) * Math.PI / 180));
+  return km >= 1500 ? 3 : km >= 300 ? 5 : km >= 60 ? 8 : km >= 15 ? 10 : km >= 3 ? 14 : 16;
+}
+
+// The name of a search result the selection came from, if its point is inside the area built.
+export function placeForRun(found, bboxText) {
+  const [s, w, n, e] = (bboxText || '').split(/[\s,]+/).map(Number);
+  return found && found.name && found.lat >= s && found.lat <= n && found.lon >= w && found.lon <= e ? found.name : '';
+}
+
+// The same geocoder, language and browser identity as the search box; only the coordinates leave.
+const nominatim = async (lat, lon, zoom) => {
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}&zoom=${zoom}&accept-language=en`);
+  if (!r.ok) return '';
+  const j = await r.json();
+  return String(j.name || String(j.display_name || '').split(',')[0]).trim();
+};
+const MISS_KEY = 'arnis-place-misses';
+const MISS_MS = 7 * 864e5;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep }) {
   const list = el('projects-list');
   let view = readView();
   const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
@@ -1093,6 +1117,43 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
   el('projects-view-grid')?.addEventListener('click', () => setView('grid'));
   paint();
 
+  // A world with a null place name (the engine knows the field) is looked up once, at its
+  // centre, one world at a time and a second apart (the geocoder's limit). A miss is kept for a week.
+  const titles = new Map();
+  const misses = () => { try { return JSON.parse(localStorage.getItem(MISS_KEY) || '{}'); } catch (_) { return {}; } };
+  let filling = false;
+  async function fillPlaces(worlds) {
+    if (filling) return;
+    filling = true;
+    let first = true;
+    try {
+      for (const w of worlds) {
+        if (w.place_name !== null || w.locked) continue;
+        const path = w.world_path || `${savePath()}/${w.name}`;
+        if (Date.now() - (misses()[path] || 0) < MISS_MS) continue;
+        let name = '';
+        try {
+          const areas = ((await invoke('gui_get_one_world_overlays', { worldPath: path })) || {}).areas || [];
+          if (areas.length) {
+            const b = [Math.min(...areas.map((a) => a.min_lat)), Math.min(...areas.map((a) => a.min_lon)), Math.max(...areas.map((a) => a.max_lat)), Math.max(...areas.map((a) => a.max_lon))];
+            if (!first) await pause(1100);
+            first = false;
+            name = await geocode((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, placeZoom(b));
+          }
+          if (name) await invoke('gui_set_place_name', { worldPath: path, placeName: name });
+        } catch (_) { name = ''; }
+        if (name) {
+          w.place_name = name;
+          titles.get(path)?.append(text('projects-place', name));
+        } else {
+          try { localStorage.setItem(MISS_KEY, JSON.stringify({ ...misses(), [path]: Date.now() })); } catch (_) { /* tried again next time */ }
+        }
+      }
+    } finally {
+      filling = false;
+    }
+  }
+
   async function refresh() {
     let worlds = [];
     try { worlds = savePath() ? (await invoke('gui_list_one_worlds', { savePath: savePath() })) || [] : []; } catch (e) { console.error(e); }
@@ -1104,6 +1165,7 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
       title.className = 'projects-title';
       title.append(text('projects-name', w.name));
       if (w.place_name) title.append(text('projects-place', w.place_name));
+      titles.set(w.world_path || `${savePath()}/${w.name}`, title);
       const kids = [
         thumb(w),
         title,
@@ -1122,6 +1184,7 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
     });
     if (!rows.length) rows.push(text('projects-empty', t('projects_empty', 'No worlds yet. Build one with One World on.')));
     list.replaceChildren(...rows);
+    fillPlaces(worlds);
   }
   return refresh;
 }
