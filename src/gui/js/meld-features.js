@@ -1009,10 +1009,18 @@ export function initDataPanel({ invoke, area, plan, prefetch }) {
   });
 }
 
-// Settings > Projects: the One Worlds in the save folder. `open(name, expand)` makes one the
-// target; the name is stored here so the choice outlives the session. Returns a refresh function.
+// Settings > Projects: the One Worlds in the save folder, as a list or a grid of cards.
+// `open(name, expand)` makes one the target; the name is stored here so the choice outlives the
+// session. Every field the engine adds later (place name, thumbnail, jobs) may be missing.
+// Returns a refresh function.
+const VIEW_KEY = 'arnis-projects-view';
+const readView = () => {
+  try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list'; } catch (_) { return 'list'; }
+};
+
 export function initProjects({ invoke, savePath, scale, open, available = () => true }) {
   const list = el('projects-list');
+  let view = readView();
   const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
   const button = (key, fallback, disabled, onClick) => {
     const b = document.createElement('button');
@@ -1034,15 +1042,71 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
     localStorage.setItem('arnis-one-world-picked', '1');
     await open(name, expand);
   };
-  return async function refresh() {
+
+  // A thumbnail is asked for when its card scrolls into view; no image leaves the placeholder.
+  const thumbs = new Map();
+  const loaders = new Map();
+  const seen = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      seen.unobserve(e.target);
+      loaders.get(e.target)?.();
+    }
+  }, { rootMargin: '200px' });
+  const thumb = (w) => {
+    const box = document.createElement('div');
+    box.className = 'projects-thumb is-empty';
+    const path = w.world_path || `${savePath()}/${w.name}`;
+    const key = `${path}|${w.modified_ms || 0}`;
+    const show = (url) => {
+      if (!url) return;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = url;
+      box.className = 'projects-thumb';
+      box.replaceChildren(img);
+    };
+    const load = async () => {
+      if (!thumbs.has(key)) {
+        let url = null;
+        try { url = w.preview === false ? null : await invoke('gui_world_thumbnail', { worldPath: path }); } catch (_) { /* a world without an image */ }
+        thumbs.set(key, url || null);
+      }
+      show(thumbs.get(key));
+    };
+    if (thumbs.has(key)) show(thumbs.get(key));
+    else if (seen) { loaders.set(box, load); seen.observe(box); } else load();
+    return box;
+  };
+
+  const setView = (v) => {
+    view = v;
+    try { localStorage.setItem(VIEW_KEY, v); } catch (_) { /* not kept */ }
+    paint();
+    refresh();
+  };
+  const paint = () => {
+    list.className = view === 'grid' ? 'projects-list is-grid' : 'projects-list';
+    for (const v of ['list', 'grid']) el(`projects-view-${v}`)?.setAttribute('aria-pressed', String(v === view));
+  };
+  el('projects-view-list')?.addEventListener('click', () => setView('list'));
+  el('projects-view-grid')?.addEventListener('click', () => setView('grid'));
+  paint();
+
+  async function refresh() {
     let worlds = [];
     try { worlds = savePath() ? (await invoke('gui_list_one_worlds', { savePath: savePath() })) || [] : []; } catch (e) { console.error(e); }
     const rows = worlds.map((w) => {
       const row = document.createElement('div');
       row.className = 'projects-row';
       const odd = w.scale != null && scale() != null && Math.abs(w.scale - scale()) > 1e-6;
+      const title = document.createElement('div');
+      title.className = 'projects-title';
+      title.append(text('projects-name', w.name));
+      if (w.place_name) title.append(text('projects-place', w.place_name));
       const kids = [
-        text('projects-name', w.name),
+        thumb(w),
+        title,
         text('projects-meta', t('projects_areas', 'Areas: {n}', { n: w.area_count })),
         text(odd ? 'projects-meta is-warn' : 'projects-meta', t('projects_scale', 'Scale {scale}', { scale: w.scale ? ratio(w.scale) : '-' })),
       ];
@@ -1058,5 +1122,6 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
     });
     if (!rows.length) rows.push(text('projects-empty', t('projects_empty', 'No worlds yet. Build one with One World on.')));
     list.replaceChildren(...rows);
-  };
+  }
+  return refresh;
 }

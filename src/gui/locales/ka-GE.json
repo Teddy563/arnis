@@ -753,5 +753,8 @@
   "projects_in_use": "გამოიყენება",
   "projects_open": "გახსნა",
   "projects_expand": "გაფართოება",
-  "projects_empty": "სამყაროები ჯერ არ არის. შექმენით One World-ის ჩართვით."
+  "projects_empty": "სამყაროები ჯერ არ არის. შექმენით One World-ის ჩართვით.",
+  "projects_view": "ხედი",
+  "projects_view_list": "სია",
+  "projects_view_grid": "ბადე"
 }

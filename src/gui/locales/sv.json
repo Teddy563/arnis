@@ -753,5 +753,8 @@
   "projects_in_use": "Används",
   "projects_open": "Öppna",
   "projects_expand": "Utöka",
-  "projects_empty": "Inga världar än. Bygg en med One World på."
+  "projects_empty": "Inga världar än. Bygg en med One World på.",
+  "projects_view": "Vy",
+  "projects_view_list": "Lista",
+  "projects_view_grid": "Rutnät"
 }

@@ -753,5 +753,8 @@
   "projects_in_use": "In Benutzung",
   "projects_open": "Öffnen",
   "projects_expand": "Erweitern",
-  "projects_empty": "Noch keine Welten. Baue eine mit aktiviertem One World."
+  "projects_empty": "Noch keine Welten. Baue eine mit aktiviertem One World.",
+  "projects_view": "Ansicht",
+  "projects_view_list": "Liste",
+  "projects_view_grid": "Raster"
 }

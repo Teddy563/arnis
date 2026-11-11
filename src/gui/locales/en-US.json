@@ -753,5 +753,8 @@
   "projects_in_use": "In use",
   "projects_open": "Open",
   "projects_expand": "Expand",
-  "projects_empty": "No worlds yet. Build one with One World on."
+  "projects_empty": "No worlds yet. Build one with One World on.",
+  "projects_view": "View",
+  "projects_view_list": "List",
+  "projects_view_grid": "Grid"
 }

@@ -753,5 +753,8 @@
   "projects_in_use": "Використовується",
   "projects_open": "Відкрити",
   "projects_expand": "Розширити",
-  "projects_empty": "Світів ще немає. Побудуйте один із увімкненим One World."
+  "projects_empty": "Світів ще немає. Побудуйте один із увімкненим One World.",
+  "projects_view": "Вигляд",
+  "projects_view_list": "Список",
+  "projects_view_grid": "Сітка"
 }

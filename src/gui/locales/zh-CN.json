@@ -753,5 +753,8 @@
   "projects_in_use": "使用中",
   "projects_open": "打开",
   "projects_expand": "扩展",
-  "projects_empty": "还没有世界。开启 One World 后创建一个。"
+  "projects_empty": "还没有世界。开启 One World 后创建一个。",
+  "projects_view": "视图",
+  "projects_view_list": "列表",
+  "projects_view_grid": "网格"
 }

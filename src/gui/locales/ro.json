@@ -753,5 +753,8 @@
   "projects_in_use": "În uz",
   "projects_open": "Deschide",
   "projects_expand": "Extinde",
-  "projects_empty": "Nu există încă lumi. Construiește una cu O singură lume activată."
+  "projects_empty": "Nu există încă lumi. Construiește una cu O singură lume activată.",
+  "projects_view": "Afișare",
+  "projects_view_list": "Listă",
+  "projects_view_grid": "Grilă"
 }

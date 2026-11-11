@@ -753,5 +753,8 @@
   "projects_in_use": "Em uso",
   "projects_open": "Abrir",
   "projects_expand": "Expandir",
-  "projects_empty": "Nenhum mundo ainda. Crie um com One World ativado."
+  "projects_empty": "Nenhum mundo ainda. Crie um com One World ativado.",
+  "projects_view": "Visualização",
+  "projects_view_list": "Lista",
+  "projects_view_grid": "Grade"
 }

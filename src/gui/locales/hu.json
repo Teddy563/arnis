@@ -753,5 +753,8 @@
   "projects_in_use": "Használatban",
   "projects_open": "Megnyitás",
   "projects_expand": "Bővítés",
-  "projects_empty": "Még nincs világ. Építs egyet bekapcsolt One World mellett."
+  "projects_empty": "Még nincs világ. Építs egyet bekapcsolt One World mellett.",
+  "projects_view": "Nézet",
+  "projects_view_list": "Lista",
+  "projects_view_grid": "Rács"
 }

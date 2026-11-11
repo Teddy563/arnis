@@ -753,5 +753,8 @@
   "projects_in_use": "قيد الاستخدام",
   "projects_open": "فتح",
   "projects_expand": "توسيع",
-  "projects_empty": "لا توجد عوالم بعد. ابنِ واحدًا مع تفعيل One World."
+  "projects_empty": "لا توجد عوالم بعد. ابنِ واحدًا مع تفعيل One World.",
+  "projects_view": "العرض",
+  "projects_view_list": "قائمة",
+  "projects_view_grid": "شبكة"
 }

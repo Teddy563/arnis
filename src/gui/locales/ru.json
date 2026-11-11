@@ -753,5 +753,8 @@
   "projects_in_use": "Используется",
   "projects_open": "Открыть",
   "projects_expand": "Расширить",
-  "projects_empty": "Миров пока нет. Постройте один с включённым One World."
+  "projects_empty": "Миров пока нет. Постройте один с включённым One World.",
+  "projects_view": "Вид",
+  "projects_view_list": "Список",
+  "projects_view_grid": "Сетка"
 }

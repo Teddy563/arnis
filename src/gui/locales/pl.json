@@ -753,5 +753,8 @@
   "projects_in_use": "W użyciu",
   "projects_open": "Otwórz",
   "projects_expand": "Rozszerz",
-  "projects_empty": "Brak światów. Zbuduj jeden z włączonym One World."
+  "projects_empty": "Brak światów. Zbuduj jeden z włączonym One World.",
+  "projects_view": "Widok",
+  "projects_view_list": "Lista",
+  "projects_view_grid": "Siatka"
 }

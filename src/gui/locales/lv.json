@@ -753,5 +753,8 @@
   "projects_in_use": "Lietošanā",
   "projects_open": "Atvērt",
   "projects_expand": "Paplašināt",
-  "projects_empty": "Pasauļu vēl nav. Izveidojiet vienu ar ieslēgtu One World."
+  "projects_empty": "Pasauļu vēl nav. Izveidojiet vienu ar ieslēgtu One World.",
+  "projects_view": "Skats",
+  "projects_view_list": "Saraksts",
+  "projects_view_grid": "Režģis"
 }

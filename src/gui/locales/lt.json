@@ -753,5 +753,8 @@
   "projects_in_use": "Naudojamas",
   "projects_open": "Atidaryti",
   "projects_expand": "Išplėsti",
-  "projects_empty": "Pasaulių dar nėra. Sukurkite įjungę One World."
+  "projects_empty": "Pasaulių dar nėra. Sukurkite įjungę One World.",
+  "projects_view": "Rodinys",
+  "projects_view_list": "Sąrašas",
+  "projects_view_grid": "Tinklelis"
 }

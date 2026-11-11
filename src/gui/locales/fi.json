@@ -753,5 +753,8 @@
   "projects_in_use": "Käytössä",
   "projects_open": "Avaa",
   "projects_expand": "Laajenna",
-  "projects_empty": "Ei vielä maailmoja. Rakenna yksi One World päällä."
+  "projects_empty": "Ei vielä maailmoja. Rakenna yksi One World päällä.",
+  "projects_view": "Näkymä",
+  "projects_view_list": "Luettelo",
+  "projects_view_grid": "Ruudukko"
 }

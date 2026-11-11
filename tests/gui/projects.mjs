@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 
-const node = () => ({ children: [], listeners: {}, addEventListener(e, f) { this.listeners[e] = f; }, append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } });
+const node = () => ({ children: [], listeners: {}, setAttribute() {}, addEventListener(e, f) { this.listeners[e] = f; }, append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } });
 const nodes = new Map();
 globalThis.document = { createElement: node, getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node()), nodes.get(id))) };
 const store = new Map();

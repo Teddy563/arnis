@@ -186,6 +186,7 @@ var citySearch = {
         $results.find('.search-use-outline').empty().append(outlineIcon, $('<span>').text(window.mapText('map_use_outline', 'Use outline'))).on('click', function(e) {
             e.stopPropagation();
             window.arnisSelectShape(results[$(this).data('index')].geojson);
+            self.notePlace(results[$(this).data('index')]);
             $('#city-search').val('');
             self.hideResults();
         });
@@ -211,6 +212,7 @@ var citySearch = {
         // Nominatim's box is south, north, west, east.
         var b = result.boundingbox.map(Number);
         var bounds = [b[0], b[2], b[1], b[3]];
+        this.notePlace(result);
         map.fitBounds([[b[0], b[2]], [b[1], b[3]]]);
         if (window.arnisMeldOn) {
             window.parent.postMessage({ type: 'selectArea', bounds: bounds }, '*');
@@ -219,6 +221,12 @@ var citySearch = {
         }
         $('#city-search').val('');
         this.hideResults();
+    },
+
+    // Tells the window which place the selection came from; it keeps the name for the world a build makes.
+    notePlace: function(result) {
+        var name = result.name || String(result.display_name || '').split(',')[0];
+        if (name) window.parent.postMessage({ type: 'searchPlace', name: name, lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, '*');
     },
 
     // Nominatim's addresstype folded into the kinds the list names (none: the old details line).
