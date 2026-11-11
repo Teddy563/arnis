@@ -200,6 +200,9 @@ pub fn run_gui() -> Result<(), String> {
             gui_cancel_precompute,
             gui_one_world_info,
             gui_list_one_worlds,
+            gui_world_thumbnail,
+            gui_set_place_name,
+            gui_rename_world,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
@@ -1397,12 +1400,107 @@ struct WorldMapData {
     max_mc_z: i32,
 }
 
+/// The image a world's thumbnail is made from: its map, else its newest area preview.
+fn thumbnail_source(world: &Path) -> Option<PathBuf> {
+    let map = world.join("arnis_world_map.png");
+    if map.is_file() {
+        return Some(map);
+    }
+    fs::read_dir(world.join(crate::one_world::PREVIEW_DIR))
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+}
+
+/// Where a world's thumbnail is kept, so the list need not shrink the image every time.
+const THUMB_FILE: &str = "arnis_one_world/thumb.png";
+const THUMB_WIDTH: u32 = 320;
+
+/// A small PNG of the world as a data URL, or None when it has no image.
+#[tauri::command(async)]
+fn gui_world_thumbnail(world_path: String) -> Result<Option<String>, String> {
+    let world = PathBuf::from(world_path);
+    let Some(source) = thumbnail_source(&world) else {
+        return Ok(None);
+    };
+    let thumb = world.join(THUMB_FILE);
+    let modified = |p: &Path| fs::metadata(p).and_then(|m| m.modified()).ok();
+    let kept = modified(&thumb).filter(|t| Some(*t) >= modified(&source));
+    let png = match kept.and_then(|_| fs::read(&thumb).ok()) {
+        Some(png) => png,
+        None => {
+            let img = image::open(&source)
+                .map_err(|e| format!("Failed to read {}: {e}", source.display()))?;
+            let img = if img.width() > THUMB_WIDTH {
+                img.thumbnail(THUMB_WIDTH, u32::MAX)
+            } else {
+                img
+            };
+            let mut png = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .map_err(|e| format!("Failed to make a thumbnail: {e}"))?;
+            // Not kept (a read-only folder, say): made again next time.
+            let _ = fs::create_dir_all(world.join("arnis_one_world"))
+                .and_then(|_| fs::write(&thumb, &png));
+            png
+        }
+    };
+    Ok(Some(format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
+    )))
+}
+
+/// What a world in use is refused with: Minecraft or a generation holds its session.lock.
+const WORLD_IN_USE: &str = "The world is in use; close it in Minecraft or wait for the run.";
+
+/// Stores the place the world shows; an empty name clears it.
+#[tauri::command(async)]
+fn gui_set_place_name(world_path: String, place_name: String) -> Result<(), String> {
+    let world = PathBuf::from(world_path);
+    let mut manifest = crate::one_world::Manifest::load(&world)?.ok_or("Not a One World.")?;
+    let _lock = SessionLock::acquire(&world).map_err(|_| WORLD_IN_USE.to_string())?;
+    let name = place_name.trim();
+    manifest.place_name = (!name.is_empty()).then(|| name.to_string());
+    manifest.save(&world)
+}
+
+/// Renames a world's folder and its LevelName together; returns the new folder name.
+#[tauri::command(async)]
+fn gui_rename_world(
+    save_path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<String, String> {
+    crate::world_utils::rename_world(Path::new(save_path.trim()), &old_name, &new_name)
+}
+
 #[derive(serde::Serialize)]
 struct OneWorldEntry {
     name: String,
     modified_ms: Option<u64>,
     #[serde(flatten)]
     info: OneWorldInfo,
+    place_name: Option<String>,
+    /// The areas' union, `[south, west, north, east]`; null without areas.
+    bbox: Option<[f64; 4]>,
+    jobs: Vec<JobEntry>,
+    /// A preview image exists, so `gui_world_thumbnail` has something to show.
+    preview: bool,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+struct JobEntry {
+    name: String,
+    settings: Vec<String>,
+    /// The area the job was started on, `[south, west, north, east]`; null for old jobs.
+    bbox: Option<[f64; 4]>,
+    done: u32,
+    total: u32,
+    finished: bool,
+    last_run_ms: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -1463,10 +1561,29 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
                 .map(|d| d.as_millis() as u64);
             // A damaged manifest is skipped here; the info command reports it.
             let info = one_world_info_at(&e.path()).ok()?;
+            let m = crate::one_world::Manifest::load(&e.path()).ok().flatten();
+            let jobs = m.as_ref().map_or_else(Vec::new, |m| {
+                crate::one_world::job_records(&e.path(), m)
+                    .into_iter()
+                    .map(|j| JobEntry {
+                        name: j.name,
+                        settings: j.settings,
+                        bbox: j.bbox,
+                        done: j.status.done,
+                        total: j.status.total,
+                        finished: j.status.finished,
+                        last_run_ms: j.status.last_run_ms,
+                    })
+                    .collect()
+            });
             Some(OneWorldEntry {
                 name: e.file_name().to_string_lossy().into_owned(),
                 modified_ms,
                 info,
+                bbox: m.as_ref().and_then(|m| m.bounds()),
+                place_name: m.and_then(|m| m.place_name),
+                jobs,
+                preview: thumbnail_source(&e.path()).is_some(),
             })
         })
         .collect();
@@ -1971,6 +2088,25 @@ fn confluence_args(
     crate::y_bounds::check(&extra)?;
     crate::output_args::validate(&extra)?;
     Ok(extra)
+}
+
+/// Window flags whose value is a path on this machine: not kept with a job.
+const PATH_FLAGS: &[&str] = &["plan-mask", "tree-pack-dir", "osm-pbf"];
+
+/// `flags` as a job keeps them for a later Resume or Rebuild: without paths.
+fn job_settings(flags: &[String]) -> Vec<String> {
+    flags
+        .iter()
+        .filter(|f| {
+            let name = f
+                .trim_start_matches("--")
+                .split('=')
+                .next()
+                .unwrap_or_default();
+            !PATH_FLAGS.contains(&name)
+        })
+        .cloned()
+        .collect()
 }
 
 /// The command line a job's pieces repeat. A piece is a run of this executable, and the window
@@ -2816,7 +2952,7 @@ fn gui_start_generation(
                         argv.push(format!("--spawn-lat={lat}").into());
                         argv.push(format!("--spawn-lng={lng}").into());
                     }
-                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building cells...");
                     // Unreadable counts as built, so a doubt keeps the world.
                     let areas = || {
                         crate::one_world::Manifest::load(&world_path)
@@ -2825,7 +2961,9 @@ fn gui_start_generation(
                             .map_or(1, |m| m.areas.len())
                     };
                     let areas_before = areas();
-                    if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
+                    if let Err(e) =
+                        crate::scale::run_with(&args, &world_path, argv, &job_settings(&flags))
+                    {
                         eprintln!("{e}");
                         // Finished pieces are kept: generating the same area again resumes.
                         // A world this job made and nothing was built in goes with the guard.
@@ -2837,12 +2975,12 @@ fn gui_start_generation(
                         if e == crate::scale::STOPPED {
                             emit_gui_progress_update(
                                 progress::MESSAGE_ONLY,
-                                "Stopped. Finished pieces are kept; starting again resumes them.",
+                                "Stopped. Finished cells are kept; starting again resumes them.",
                             );
                         } else if e == crate::scale::PARTIAL {
                             emit_gui_progress_update(
                                 progress::MESSAGE_ONLY,
-                                "The retried pieces are built; starting again builds the rest.",
+                                "The retried cells are built; starting again builds the rest.",
                             );
                         } else {
                             emit_gui_error(&e);
@@ -3779,6 +3917,118 @@ mod tests {
         assert_eq!(names, ["new", "old"]);
         let missing = save.join("nope").display().to_string();
         assert!(gui_list_one_worlds(missing).unwrap().is_empty());
+    }
+
+    /// No image, no thumbnail; with one, a data URL at most 320 px wide, kept beside the world.
+    #[test]
+    fn a_thumbnail_is_made_once_from_a_preview() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let path = world.display().to_string();
+        assert_eq!(gui_world_thumbnail(path.clone()).unwrap(), None);
+        assert!(!gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0].preview);
+        let previews = world.join(crate::one_world::PREVIEW_DIR);
+        fs::create_dir_all(&previews).unwrap();
+        image::RgbImage::new(640, 100)
+            .save(previews.join("area-1.png"))
+            .unwrap();
+        assert!(gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0].preview);
+        let url = gui_world_thumbnail(path.clone()).unwrap().unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+        let thumb = world.join(THUMB_FILE);
+        assert_eq!(image::open(&thumb).unwrap().width(), 320);
+        let made = fs::metadata(&thumb).unwrap().modified().unwrap();
+        assert_eq!(gui_world_thumbnail(path).unwrap().unwrap(), url);
+        assert_eq!(
+            fs::metadata(&thumb).unwrap().modified().unwrap(),
+            made,
+            "kept"
+        );
+    }
+
+    /// A place name is stored, cleared by an empty one, and refused while the world is in use.
+    #[test]
+    fn a_place_name_is_set_and_cleared() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let path = world.display().to_string();
+        let place = || {
+            gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0]
+                .place_name
+                .clone()
+        };
+        gui_set_place_name(path.clone(), " Bucharest ".into()).unwrap();
+        assert_eq!(place().as_deref(), Some("Bucharest"));
+        let held = SessionLock::acquire(&world).unwrap();
+        assert_eq!(
+            gui_set_place_name(path.clone(), "Paris".into()),
+            Err(WORLD_IN_USE.to_string())
+        );
+        drop(held);
+        gui_set_place_name(path, String::new()).unwrap();
+        assert_eq!(place(), None);
+    }
+
+    /// A renamed One World lists under its new name.
+    #[test]
+    fn a_renamed_world_lists_under_its_new_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&tmp.path().join("w"), &mut args, 40.0, -74.0).unwrap();
+        }
+        let save = tmp.path().display().to_string();
+        let new = gui_rename_world(save.clone(), "w".into(), "Paris".into()).unwrap();
+        let list = gui_list_one_worlds(save).unwrap();
+        assert_eq!((new.as_str(), list[0].name.as_str()), ("Paris", "Paris"));
+        assert!(list[0].info.exists);
+    }
+
+    /// An old world lists with no place and no jobs; a recorded job lists with its settings.
+    #[test]
+    fn listed_worlds_carry_their_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let list = || gui_list_one_worlds(tmp.path().display().to_string()).unwrap();
+        let old = &list()[0];
+        assert!(old.place_name.is_none() && old.jobs.is_empty() && old.bbox.is_none());
+        let flags = job_settings(&[
+            "--unit-regions=8".into(),
+            "--plan-mask=C:/tmp/m.geojson".into(),
+            "--tree-pack-dir=/packs".into(),
+            "--osm-pbf=x.pbf".into(),
+        ]);
+        assert_eq!(flags, ["--unit-regions=8"]);
+        crate::one_world::record_job(
+            &world,
+            "j",
+            Some(&flags),
+            Some([1.0, 2.0, 3.0, 4.0]),
+            2,
+            5,
+            false,
+        )
+        .unwrap();
+        let job = &list()[0].jobs[0];
+        assert_eq!(job.bbox, Some([1.0, 2.0, 3.0, 4.0]));
+        assert_eq!((job.name.as_str(), job.settings.clone()), ("j", flags));
+        assert_eq!((job.done, job.total, job.finished), (2, 5, false));
     }
 
     #[test]

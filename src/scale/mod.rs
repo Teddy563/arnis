@@ -221,11 +221,17 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
 /// Builds the selection `args` was opened on, piece by piece. Each piece runs this
 /// command line again with its own bbox and lease.
 pub fn run(args: &Args, world_dir: &Path) -> Result<(), String> {
-    run_with(args, world_dir, std::env::args_os().skip(1).collect())
+    run_with(args, world_dir, std::env::args_os().skip(1).collect(), &[])
 }
 
 /// `run` with the command line the pieces repeat; the window has none of its own to give.
-pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<(), String> {
+/// `settings` are the window's flags, kept with the job so it can be run again.
+pub fn run_with(
+    args: &Args,
+    world_dir: &Path,
+    argv: Vec<OsString>,
+    settings: &[String],
+) -> Result<(), String> {
     let ctx = args
         .one_world_run
         .as_ref()
@@ -460,6 +466,25 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         0.0,
     ));
     let finished = AtomicUsize::new(lock(&results).iter().flatten().count());
+    // How far the job is, kept in the manifest for the window's Projects list.
+    let (lo, hi) = (selection.min(), selection.max());
+    let first = Some((settings, [lo.lat(), lo.lng(), hi.lat(), hi.lng()]));
+    let record_job = |start: Option<(&[String], [f64; 4])>| {
+        let _guard = lock(&MANIFEST);
+        let done = finished.load(Ordering::Relaxed);
+        if let Err(e) = one_world::record_job(
+            world_dir,
+            &job.name,
+            start.map(|s| s.0),
+            start.map(|s| s.1),
+            done as u32,
+            of as u32,
+            done == of,
+        ) {
+            eprintln!("Warning: Failed to record the job's progress: {e}");
+        }
+    };
+    record_job(first);
     let status = || {
         if !crate::progress::is_running_with_gui() {
             // `--progress json` has its piece records, so its stream stays as it was.
@@ -591,6 +616,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
         write(&job.done_path(unit), &json!(r))?;
         crate::keep_one_world();
         let pieces_done = finished.fetch_add(1, Ordering::Relaxed) + 1;
+        record_job(None);
         piece_record(
             i,
             "done",
@@ -605,6 +631,14 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
 
     if let Some(i) = head {
         build(i, 0).map_err(|e| format!("{e}\n{RESUME}"))?;
+    }
+    if let Some(i) = head {
+        build(i, 0).map_err(|e| {
+            format!(
+                "{e}
+{RESUME}"
+            )
+        })?;
     }
     let queue = Mutex::new(queue);
     let work = |w: usize| -> Result<(), String> {
@@ -655,6 +689,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
             });
         }
     });
+    record_job(None);
     if let Some(e) = failure.into_inner().unwrap_or_else(|e| e.into_inner()) {
         return Err(format!("{e}\n{RESUME}"));
     }
