@@ -53,7 +53,7 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
   // The map-first card says the pieces in its plan block; this line would repeat them.
-  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info');
+  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info' || localizationKey === 'area_single_info');
 }
 
 // Initialize elements and start the demo progress
@@ -2877,7 +2877,7 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
     // The plan is being recomputed: neither warn nor offer pieces until it answers.
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   } else if (pieces) {
-    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+    setBboxSelectionInfo(bboxSelectionElement, pieces.single ? "area_single_info" : "area_pieces_info", "#ececec", pieces);
   } else if (hasPlanMask() && !selectedShapes) {
     // An outline only leaves pieces out: a build in one go would build the whole box.
     setBboxSelectionInfo(bboxSelectionElement, "area_outline_needs_pieces", "#fecc44");

@@ -15,7 +15,7 @@ globalThis.document = {
   getElementById: (id) => (nodes.has(id) ? nodes.get(id) : (nodes.set(id, node(id)), nodes.get(id))),
 };
 globalThis.window = { addEventListener() {} };
-const { initRunControls, initJobPlan, schedulePlan, useRecommended, RECOMMENDED_FROM_KM2 } = await import('../../src/gui/js/meld-features.js');
+const { initRunControls, initJobPlan, schedulePlan, useRecommended, RECOMMENDED_FROM_KM2, planPieces } = await import('../../src/gui/js/meld-features.js');
 
 const workers = document.getElementById('meld-workers-select');
 assert.equal(RECOMMENDED_FROM_KM2, 220);
@@ -51,5 +51,18 @@ const one = await lines({ units: [unit], estimate: est, single: true });
 assert.ok(one.text.includes('Small area: built in one run.'), one.text);
 assert.ok(!/cell|region|worker/.test(one.text.replace('Memory per worker', '')), `no counts: ${one.text}`);
 assert.deepStrictEqual(one.outlines, [], 'no cell grid');
+assert.equal(planPieces().single, true, 'selection line knows the plan is one run');
+await lines({ units: [unit], estimate: est });
+assert.equal(planPieces().single, false, 'false: counted line');
+
+// Locales: Auto carries the recommended label (never a fixed number), the single line exists.
+import fs from 'node:fs';
+const dir = new URL('../../src/gui/locales/', import.meta.url);
+for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'en.json')) {
+  const j = JSON.parse(fs.readFileSync(new URL(f, dir), 'utf8'));
+  for (const k of ['meld_workers_auto', 'meld_piece_size_auto']) assert.match(j[k], /[(（].+[)）]/, `${f} ${k}`);
+  assert.ok(j.area_single_info && !j.area_single_info.includes('{'), `${f} area_single_info`);
+}
+assert.equal(JSON.parse(fs.readFileSync(new URL('ro.json', dir), 'utf8')).meld_workers_auto, 'Auto (recomandat)');
 console.log('recommended: ok');
 process.exit(0);

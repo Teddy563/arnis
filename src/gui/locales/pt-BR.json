@@ -719,6 +719,7 @@
   "legend_held": "Terreno que este mundo já contém",
   "map_selection_size": "{w} × {h} km · cerca de {r} regiões",
   "area_pieces_info": "Construído em {n} células · Processos: {w}",
+  "area_single_info": "Construído em uma única execução.",
   "area_outline_needs_pieces": "O contorno só vale para uma construção em células; de uma vez só, o retângulo inteiro é gerado.",
   "meld_use_pieces": "Use os recursos avançados para construir em células",
   "plan_seconds": "{s} s",

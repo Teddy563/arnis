@@ -719,6 +719,7 @@
   "legend_held": "Terreno que este mundo ya contiene",
   "map_selection_size": "{w} × {h} km · unas {r} regiones",
   "area_pieces_info": "Se construye en {n} celdas · Procesos: {w}",
+  "area_single_info": "Se construye de una vez.",
   "area_outline_needs_pieces": "El contorno solo se aplica al construir por celdas; de una sola vez se genera todo el rectángulo.",
   "meld_use_pieces": "Usa las funciones avanzadas para construirlo por celdas",
   "plan_seconds": "{s} s",

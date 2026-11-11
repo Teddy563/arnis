@@ -719,6 +719,7 @@
   "legend_held": "このワールドにすでにある土地",
   "map_selection_size": "{w} × {h} km · 約 {r} リージョン",
   "area_pieces_info": "{n} セルに分割して構築 · ワーカー: {w}",
+  "area_single_info": "1 回の実行で構築",
   "area_outline_needs_pieces": "輪郭は分割して構築する場合にのみ使われます。一度に構築すると長方形全体が生成されます。",
   "meld_use_pieces": "高度な機能を使うと分割して構築できます",
   "plan_seconds": "{s} 秒",

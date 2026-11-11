@@ -719,6 +719,7 @@
   "legend_held": "Terület, amelyet ez a világ már tartalmaz",
   "map_selection_size": "{w} × {h} km · kb. {r} régió",
   "area_pieces_info": "{n} cellában épül · Feldolgozók: {w}",
+  "area_single_info": "Egy menetben épül.",
   "area_outline_needs_pieces": "A körvonal csak cellánkénti építéskor számít; egyben építve a teljes téglalap elkészül.",
   "meld_use_pieces": "A speciális funkciókkal cellánként építheted meg",
   "plan_seconds": "{s} s",

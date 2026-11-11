@@ -719,6 +719,7 @@
   "legend_held": "Mark som den här världen redan innehåller",
   "map_selection_size": "{w} × {h} km · cirka {r} regioner",
   "area_pieces_info": "Byggs i {n} celler · Arbetare: {w}",
+  "area_single_info": "Byggs i en körning.",
   "area_outline_needs_pieces": "Konturen gäller bara när området byggs i celler; byggt i ett svep genereras hela rektangeln.",
   "meld_use_pieces": "Använd avancerade funktioner för att bygga det i celler",
   "plan_seconds": "{s} s",

@@ -719,6 +719,7 @@
   "legend_held": "Land, das diese Welt schon enthält",
   "map_selection_size": "{w} × {h} km · etwa {r} Regionen",
   "area_pieces_info": "Wird in {n} Zellen gebaut · Worker: {w}",
+  "area_single_info": "Wird in einem Durchlauf gebaut.",
   "area_outline_needs_pieces": "Der Umriss gilt nur beim Bauen in Zellen; in einem Durchgang wird das ganze Rechteck erzeugt.",
   "meld_use_pieces": "Mit erweiterten Funktionen in Zellen bauen",
   "plan_seconds": "{s} s",

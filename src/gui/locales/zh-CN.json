@@ -719,6 +719,7 @@
   "legend_held": "这个世界已包含的土地",
   "map_selection_size": "{w} × {h} 公里 · 约 {r} 个区域",
   "area_pieces_info": "分 {n} 个单元格构建 · 工作进程：{w}",
+  "area_single_info": "一次运行完成构建",
   "area_outline_needs_pieces": "轮廓仅在按单元格构建时生效；一次性构建时会生成整个矩形。",
   "meld_use_pieces": "启用高级功能即可按单元格构建",
   "plan_seconds": "{s} 秒",

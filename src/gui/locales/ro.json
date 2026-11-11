@@ -719,6 +719,7 @@
   "legend_held": "Teren deja inclus în această lume",
   "map_selection_size": "{w} × {h} km · aproximativ {r} regiuni",
   "area_pieces_info": "Se construiește în {n} celule · Procese: {w}",
+  "area_single_info": "Se construiește dintr-o dată.",
   "area_outline_needs_pieces": "Conturul contează doar când construiești pe celule; construită dintr-odată, se generează tot dreptunghiul.",
   "meld_use_pieces": "Folosește funcțiile avansate ca s-o construiești pe celule",
   "plan_seconds": "{s} s",

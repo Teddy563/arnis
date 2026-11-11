@@ -719,6 +719,7 @@
   "legend_held": "Land this world already holds",
   "map_selection_size": "{w} × {h} km · about {r} regions",
   "area_pieces_info": "Builds in {n} cells · Workers: {w}",
+  "area_single_info": "Builds in one run.",
   "area_outline_needs_pieces": "The outline only applies to a build in cells; built in one go, the whole box is generated.",
   "meld_use_pieces": "Use Advanced features to build it in cells",
   "plan_seconds": "{s} s",

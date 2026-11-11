@@ -767,7 +767,7 @@ async function updatePlan() {
   // leaves those out, so then it is 0).
   const overlap = on('meld-skip-built-toggle') ? 0 : units.filter((u) => u.existing_chunks > 0).length;
   planAnswered = key;
-  lastPlan = { n: units.length, w: e.workers, done, overlap };
+  lastPlan = { n: units.length, w: e.workers, done, overlap, single: plan.single === true };
   onPlan();
   planSizes.clear();
   units.forEach((u) => planSizes.set(u.index, u.size));
