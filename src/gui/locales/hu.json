@@ -624,6 +624,7 @@
   "meld_workers_tip": "Az Egy világ kijelölést legfeljebb 4 × 4 régiós cellákra osztja, és többet épít egyszerre, mindegyiket külön folyamatban. Az Automatikus a szabad RAM és a magok alapján 2 és 6 között választ. Ugyanazon terület újragenerálása folytatja azt. Csak Egy világ.",
   "meld_recommended": "Ajánlott beállítás",
   "meld_recommended_tip": "A leggyorsabb a 2026. novemberi tesztben, ilyen gépen",
+  "plan_single": "Kis terület: egy menetben épül.",
   "meld_ram_budget_tip": "A párhuzamos munkát erre a memóriamennyiségre méretezi a mért szabad RAM helyett, így több futtatás megoszthat egy gépet. Üresen a szabad RAM-ot méri.",
   "meld_threads_tip": "Üresen a magok 90%-át használja. A cellákra bontott feladat elosztja a cellák között.",
   "disable_height_limit_tip": "Csak ott emeli az építési magasságot, ahol a terep vagy az épületek nem férnének el, Javában pedig csak addig, ameddig elérnek. A Ki ehelyett összenyomja a magas terepet. Java 1.21.4+ és Bedrock 1.21.120+, Realmshez nem.",

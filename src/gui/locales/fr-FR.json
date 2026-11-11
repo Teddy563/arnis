@@ -624,6 +624,7 @@
   "meld_workers_tip": "Découpe une sélection de Monde unique en cellules allant jusqu'à 4 × 4 régions et en construit plusieurs à la fois, chacune dans son propre processus. Auto choisit de 2 à 6 selon la RAM libre et les cœurs. Générer à nouveau la même zone la reprend. Monde unique uniquement.",
   "meld_recommended": "Utiliser la recommandation",
   "meld_recommended_tip": "La plus rapide au test de novembre 2026 sur ce type de PC",
+  "plan_single": "Petite zone : construite en une seule passe.",
   "meld_ram_budget_tip": "Dimensionne le travail parallèle sur cette quantité de mémoire plutôt que sur la RAM libre mesurée, pour que plusieurs exécutions puissent partager une machine. Vide, la RAM libre est mesurée.",
   "meld_threads_tip": "Vide, 90 % des cœurs sont utilisés. Une tâche découpée en cellules le répartit entre elles.",
   "disable_height_limit_tip": "Augmente la hauteur de construction uniquement là où le relief ou les bâtiments ne tiendraient pas, et sur Java seulement jusqu'où ils montent. Désactivé compresse plutôt le relief élevé. Java 1.21.4+ et Bedrock 1.21.120+, pas pour Realms.",

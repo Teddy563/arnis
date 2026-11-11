@@ -624,6 +624,7 @@
   "meld_workers_tip": "Dzieli zaznaczenie Jeden świat na komórki do 4 × 4 regionów i buduje kilka naraz, każdą w osobnym procesie. Auto wybiera od 2 do 6 według wolnej pamięci RAM i rdzeni. Ponowne generowanie tego samego obszaru wznawia pracę. Tylko Jeden świat.",
   "meld_recommended": "Użyj zalecanych",
   "meld_recommended_tip": "Najszybsze w teście z listopada 2026 na takim komputerze",
+  "plan_single": "Mały obszar: budowany w jednym przebiegu.",
   "meld_ram_budget_tip": "Dopasowuje pracę równoległą do tej ilości pamięci zamiast do zmierzonej wolnej pamięci RAM, dzięki czemu kilka uruchomień może dzielić jeden komputer. Puste mierzy wolną pamięć RAM.",
   "meld_threads_tip": "Puste używa 90% rdzeni. Zadanie podzielone na komórki dzieli tę liczbę między komórki.",
   "disable_height_limit_tip": "Podnosi wysokość budowania tylko tam, gdzie teren lub budynki by się nie zmieściły, a w Javie tylko tak wysoko, jak sięgają. Wyłączone zamiast tego kompresuje wysoki teren. Java 1.21.4+ i Bedrock 1.21.120+, nie dla Realms.",

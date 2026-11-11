@@ -624,6 +624,7 @@
   "meld_workers_tip": "Vienas pasaulis pasirinkimą padalija į langelius iki 4 × 4 regionų ir stato kelis vienu metu, kiekvieną savo procese. Automatinis parenka nuo 2 iki 6 pagal laisvą RAM ir branduolius. Dar kartą generuojant tą pačią sritį darbas tęsiamas. Tik Vienas pasaulis.",
   "meld_recommended": "Naudoti rekomenduojamą",
   "meld_recommended_tip": "Greičiausia 2026 m. lapkričio bandyme tokio tipo kompiuteryje",
+  "plan_single": "Maža vietovė: statoma vienu paleidimu.",
   "meld_ram_budget_tip": "Lygiagretų darbą pritaiko šiam atminties kiekiui, o ne išmatuotam laisvam RAM, kad kelios paleistys galėtų dalytis vienu kompiuteriu. Tuščia matuoja laisvą RAM.",
   "meld_threads_tip": "Tuščia naudoja 90 % branduolių. Langeliais suskaidytas darbas šį skaičių padalija tarp langelių.",
   "disable_height_limit_tip": "Pakelia statybos aukštį tik ten, kur reljefas ar pastatai netilptų, o Java tik tiek, kiek jie siekia. Išjungta vietoje to suspaudžia aukštą reljefą. Java 1.21.4+ ir Bedrock 1.21.120+, ne Realms.",

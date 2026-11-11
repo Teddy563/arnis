@@ -620,8 +620,8 @@ const div = (className, textContent) => Object.assign(document.createElement('di
 
 // The plan's blocks, a warning, and the legend of what the map shows: the selection, the
 // pieces to build and, with a margin, the ring around it.
-function showPlan(rows, warn = '', ring = false) {
-  shown = [rows, warn, ring];
+function showPlan(rows, warn = '', ring = false, single = false) {
+  shown = [rows, warn, ring, single];
   const box = el('job-plan');
   if (!box) return;
   // With a plan the stretch lines sit behind its "?" (amber or red there too); alone they show as they are.
@@ -641,7 +641,7 @@ function showPlan(rows, warn = '', ring = false) {
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
-    const keys = [['selection', 'plan_legend_selection', 'Selection'], ['pieces', 'plan_legend_pieces', 'Cells to build']];
+    const keys = [['selection', 'plan_legend_selection', 'Selection'], ...(single ? [] : [['pieces', 'plan_legend_pieces', 'Cells to build']])];
     if (ring) keys.push(['ring', 'plan_legend_ring', 'Ring (margin)']);
     for (const [kind, key, fallback] of keys) {
       const item = document.createElement('span');
@@ -775,15 +775,21 @@ async function updatePlan() {
   const ring = regions(units.filter((u) => u.ring));
   const totals = { pieces: units.length, regions: regions(units), ring };
   // Time and size large, the disk line, the rest behind the "?".
+  // A small area is built in one run: no cells to count or draw.
+  const single = plan.single === true;
   showPlan(planHead(e, [
-    [
+    single ? t('plan_single', 'Small area: built in one run.') : [
       tn('plan_pieces', '{n} cells', '{n} cell', totals.pieces),
       tn('plan_regions', '{n} regions', '{n} region', totals.regions),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
     ].join(' · '),
     `${t('plan_ram_tip', 'Memory per worker')}: ${range(e.ram_mb, gb)}`,
-  ]), '', units.some((u) => u.ring));
+  ]), '', units.some((u) => u.ring), single);
+  if (single && !pieces.size) {
+    postToMap({ type: 'pieceOutlines', pieces: [] });
+    return;
+  }
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
   const planned = units.map((u) => {

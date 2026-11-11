@@ -624,6 +624,7 @@
   "meld_workers_tip": "Divide una selección de Un solo mundo en celdas de hasta 4 × 4 regiones y construye varias a la vez, cada una en su propio proceso. Automático elige de 2 a 6 según la RAM libre y los núcleos. Volver a generar la misma área la reanuda. Solo Un solo mundo.",
   "meld_recommended": "Usar lo recomendado",
   "meld_recommended_tip": "La más rápida en la prueba de noviembre de 2026 con un PC de este tipo",
+  "plan_single": "Zona pequeña: se construye de una vez.",
   "meld_ram_budget_tip": "Dimensiona el trabajo en paralelo a esta cantidad de memoria en lugar de a la RAM libre medida, para que varias ejecuciones puedan compartir una máquina. Vacío mide la RAM libre.",
   "meld_threads_tip": "Vacío usa el 90 % de los núcleos. Un trabajo dividido en celdas lo reparte entre ellas.",
   "disable_height_limit_tip": "Eleva la altura de construcción solo donde el terreno o los edificios no cabrían, y en Java solo hasta donde lleguen. Desactivado comprime en su lugar el terreno alto. Java 1.21.4+ y Bedrock 1.21.120+, no para Realms.",

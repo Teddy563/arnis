@@ -624,6 +624,7 @@
   "meld_workers_tip": "Delar upp en En värld-markering i celler på upp till 4 × 4 regioner och bygger flera samtidigt, var och en i sin egen process. Auto väljer 2 till 6 utifrån ledigt RAM och antal kärnor. Att generera samma område igen återupptar det. Endast En värld.",
   "meld_recommended": "Använd rekommenderat",
   "meld_recommended_tip": "Snabbast i testet från november 2026 på en sådan här dator",
+  "plan_single": "Litet område: byggs i en körning.",
   "meld_ram_budget_tip": "Dimensionerar parallellt arbete efter den här minnesmängden i stället för det uppmätta lediga RAM, så att flera körningar kan dela en dator. Tomt mäter ledigt RAM.",
   "meld_threads_tip": "Tomt använder 90 % av kärnorna. Ett jobb i celler delar den mellan cellerna.",
   "disable_height_limit_tip": "Höjer byggnadshöjden bara där terrängen eller byggnaderna inte skulle få plats, och på Java bara så långt de når. Av trycker i stället ihop hög terräng. Java 1.21.4+ och Bedrock 1.21.120+, inte för Realms.",
