@@ -215,9 +215,11 @@ impl Queue {
                     }
                 }
             }
-            _ => return Err(format!(
+            _ => {
+                return Err(format!(
                 "{action}: not a cell action (hold, resume, front, cancel, retry, skip, include)."
-            )),
+            ))
+            }
         }
         Ok(applied)
     }
@@ -253,6 +255,15 @@ impl Drop for Active {
     fn drop(&mut self) {
         *lock(&ACTIVE) = None;
     }
+}
+
+/// Whether a job of this process builds the world at `world_dir`.
+pub fn runs_on(world_dir: &Path) -> bool {
+    let same = |a: &Path| {
+        let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        canon(a) == canon(world_dir)
+    };
+    lock(&ACTIVE).as_ref().is_some_and(|(w, _)| same(w))
 }
 
 /// The window's cell actions on the running job: `hold` keeps pending cells from starting
@@ -1516,12 +1527,16 @@ second
             pending: VecDeque::from([0, 1]),
             ..Default::default()
         }));
-        let active = Active::register(Path::new("w"), &queue);
+        let tmp = tempfile::tempdir().unwrap();
+        let active = Active::register(tmp.path(), &queue);
         let r = control("front", &[1, 7]).unwrap();
         assert_eq!(
             (r.applied, r.ignored, r.pending),
             (vec![1], vec![7], vec![1, 0])
         );
+        // No cells come out of a world a job is building.
+        let err = one_world::remove_cells(tmp.path(), None, &[0]).unwrap_err();
+        assert!(err.contains("job is building"), "{err}");
         drop(active);
         assert!(control("hold", &[0]).is_err());
     }
