@@ -12,6 +12,43 @@ _**Want mobile generation or larger map sizes?** [MapSmith](https://arnismc.com/
 ![Minecraft Preview](assets/git/preview.jpg)
 <i>This GitHub page and [arnismc.com](https://arnismc.com) are the only official project websites. Do not download Arnis from any other website.</i>
 
+## Arnis 3.5.0 Confluence (fork)
+
+This fork release (Teddy563/arnis) brings the large-world tooling and generation options of Meld into Arnis. Big areas build in parallel pieces that you can pause, stop, resume and retry, with progress as JSON lines for other programs. About 50 new flags cover data sources (`.osm.pbf`, a local archive, offline and prewarm), output (B_Linear, origin, world border), terrain (river beds, water detail, per-position climate, seed, Y limits), nature (rocks, bushes, tree packs, cave styles) and building (road detail, props, loot tables). The GUI gets an Advanced features switch, run controls, a data panel, a map legend and a Projects section, in 20 languages, and the branch is merged with upstream's Live mode. See the [3.5.0 release notes](docs/release/RELEASE-3.5.0-CONFLUENCE.mdx) for every flag, the phases, known limitations and how it was verified.
+
+Every new flag is off by default. With Advanced features off and no new flag on the command line, Arnis builds the same world as stock.
+
+<p>
+<img width="48%" src="docs/images/3.5.0/gui-generation-meld.png" alt="Meld settings in the Generation section">
+<img width="48%" src="docs/images/3.5.0/gui-run-controls.png" alt="Pause, Stop and piece outlines on the map">
+</p>
+<p>
+<img width="48%" src="docs/images/3.5.0/gui-data-panel.png" alt="Data panel: OSM source, offline mode, prepare countries">
+<img width="48%" src="docs/images/3.5.0/gui-nature.png" alt="Nature settings: rocks, bushes, trees, caves">
+</p>
+<p>
+<img width="48%" src="docs/images/3.5.0/preview-stock.png" alt="Top-down preview of Bucharest by the Dambovita">
+<img width="48%" src="docs/images/3.5.0/preview-4-pieces.png" alt="A job built in four pieces, outlined">
+</p>
+
+**CLI quick start**
+
+```sh
+# Stock behaviour, unchanged
+arnis --bbox 44.425,26.08,44.435,26.10 --output-dir ./worlds
+
+# A One World built in parallel pieces, with the water, nature and road flags on
+arnis --one-world --output-dir ./worlds --world-name W --bbox 44.425,26.08,44.435,26.10 \
+  --one-world-workers auto --unit-regions 1 \
+  --river-bed v1 --water-detail scaled --rocks --bushes --road-detail clean --caves
+
+# Fetch the inputs once, then build without the network
+arnis --bbox 44.425,26.08,44.435,26.10 --prewarm
+arnis --bbox 44.425,26.08,44.435,26.10 --output-dir ./worlds --offline
+```
+
+`arnis --capabilities` lists every flag the build knows, and `arnis --help` describes them.
+
 ## :keyboard: Usage
 <img width="60%" src="assets/git/gui.png"><br>
 Download the [latest release](https://github.com/louis-e/arnis/releases/) or [compile](#trophy-open-source) the project on your own.

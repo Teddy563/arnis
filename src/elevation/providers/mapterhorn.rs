@@ -194,6 +194,28 @@ fn covering_tile_keys(bbox: &LLBBox, zoom: u8) -> Vec<TileKey> {
     keys
 }
 
+/// The files a fetch of `bbox` at the grid's zoom reads from `dir`: each tile's cache file, or
+/// its 404 marker where one stands in for a tile known to be absent.
+pub(crate) fn cache_files(
+    dir: &Path,
+    bbox: &LLBBox,
+    grid_width: usize,
+    grid_height: usize,
+) -> Vec<PathBuf> {
+    let zoom = choose_zoom(bbox, grid_width, grid_height);
+    covering_tile_keys(bbox, zoom)
+        .into_iter()
+        .map(|k| {
+            let marker = k.marker_path(dir);
+            if marker.exists() {
+                marker
+            } else {
+                k.cache_path(dir)
+            }
+        })
+        .collect()
+}
+
 /// Tile containing the given normalized mercator coords at a zoom level.
 fn tile_key_at(z: u8, norm_x: f64, norm_y: f64) -> TileKey {
     let n = 2.0_f64.powi(z as i32);
@@ -437,7 +459,22 @@ fn fetch_tile_pyramid(
         }
     }
 
-    // Persist 404 markers only when this run saw at least one good download.
+    // Persist 404 markers only when this run saw at least one good download. Under --prewarm, when every tile it
+    // found came from disk, one live known-land request gives that proof, since --offline can
+    // only replay the 404s that were stored.
+    if crate::net::prewarm()
+        && !state.pending_markers.is_empty()
+        && !state
+            .saw_network_success
+            .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let _ = download_tile(
+            &client,
+            &KNOWN_LAND_TILE,
+            &KNOWN_LAND_TILE.cache_path(cache_dir),
+            &state.saw_network_success,
+        );
+    }
     if state
         .saw_network_success
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -499,6 +536,9 @@ fn download_tile(
     tile_path: &Path,
     net_ok: &std::sync::atomic::AtomicBool,
 ) -> TileFetch {
+    if let Err(e) = crate::net::ensure_online("elevation tiles (Mapterhorn)") {
+        return TileFetch::Failed(e);
+    }
     let url = key.url();
     let mut last_error = String::new();
 
