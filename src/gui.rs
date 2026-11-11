@@ -202,6 +202,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_list_one_worlds,
             gui_world_thumbnail,
             gui_set_place_name,
+            gui_rename_world,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
@@ -1464,6 +1465,16 @@ fn gui_set_place_name(world_path: String, place_name: String) -> Result<(), Stri
     let name = place_name.trim();
     manifest.place_name = (!name.is_empty()).then(|| name.to_string());
     manifest.save(&world)
+}
+
+/// Renames a world's folder and its LevelName together; returns the new folder name.
+#[tauri::command(async)]
+fn gui_rename_world(
+    save_path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<String, String> {
+    crate::world_utils::rename_world(Path::new(save_path.trim()), &old_name, &new_name)
 }
 
 #[derive(serde::Serialize)]
@@ -3960,6 +3971,22 @@ mod tests {
         drop(held);
         gui_set_place_name(path, String::new()).unwrap();
         assert_eq!(place(), None);
+    }
+
+    /// A renamed One World lists under its new name.
+    #[test]
+    fn a_renamed_world_lists_under_its_new_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&tmp.path().join("w"), &mut args, 40.0, -74.0).unwrap();
+        }
+        let save = tmp.path().display().to_string();
+        let new = gui_rename_world(save.clone(), "w".into(), "Paris".into()).unwrap();
+        let list = gui_list_one_worlds(save).unwrap();
+        assert_eq!((new.as_str(), list[0].name.as_str()), ("Paris", "Paris"));
+        assert!(list[0].info.exists);
     }
 
     /// An old world lists with no place and no jobs; a recorded job lists with its settings.
