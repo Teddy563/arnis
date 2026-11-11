@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 
 pub const MANIFEST_FILE: &str = "arnis_one_world.json";
 pub const PREVIEW_DIR: &str = "arnis_one_world/previews";
+/// Where a job built in pieces keeps its state, one folder per job.
+pub const JOBS_DIR: &str = "arnis_one_world/jobs";
 pub const DEFAULT_WORLD_NAME: &str = "Arnis One World";
 /// 2: merges write into empty region files. Version 1 worlds still hold
 /// region template chunks outside their areas and are repaired once.
@@ -27,6 +29,27 @@ pub const MANIFEST_VERSION: u32 = 3;
 /// Geometry kept past the area edge, so an element straddling a seam is
 /// built whole on both sides.
 pub const CLIP_PAD_BLOCKS: i32 = 128;
+
+/// How far past its own chunks a piece of a job builds, writing only its own: what is
+/// rooted in a neighbour's ground (a tree, a building's far wall) reaches across the seam
+/// as it does in a single run.
+// ponytail: fixed reach; something wider than this still loses its far side at a seam.
+pub const PIECE_HALO_BLOCKS: i32 = 32;
+// Whole chunks, so the piece's own chunk snap gives its build rect back exactly.
+const _: () = assert!(PIECE_HALO_BLOCKS % 16 == 0);
+
+/// What a piece over `rect` builds: `rect` grown by `PIECE_HALO_BLOCKS`, but never past
+/// the job's `selection`, which a single run would not build either.
+pub fn piece_build_rect(rect: &XZBBox, selection: &XZBBox) -> XZBBox {
+    let h = PIECE_HALO_BLOCKS;
+    XZBBox::rect_from_min_max(
+        (rect.min_x() - h).max(selection.min_x()),
+        (rect.min_z() - h).max(selection.min_z()),
+        (rect.max_x() + h).min(selection.max_x()),
+        (rect.max_z() + h).min(selection.max_z()),
+    )
+    .unwrap_or_else(|_| rect.clone())
+}
 
 const MAX_ABS_LAT: f64 = 85.0;
 
@@ -60,6 +83,18 @@ pub struct GeneratedArea {
     pub max_lat: f64,
     pub max_lon: f64,
     pub preview: Option<String>,
+    /// Set when this area is one piece of a job built in pieces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub piece: Option<PieceRef>,
+}
+
+/// Which piece of which job built an area.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PieceRef {
+    /// The job, named by its block rectangle and piece size.
+    pub job: String,
+    /// Position in the job's plan (`WorkUnit::index`).
+    pub index: u32,
 }
 
 impl GeneratedArea {
@@ -92,6 +127,114 @@ pub struct Manifest {
     pub elevation: Option<ElevationAffine>,
     pub next_area_id: u32,
     pub areas: Vec<GeneratedArea>,
+    /// The place the world shows, set by the window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place_name: Option<String>,
+    /// Jobs built in pieces, kept after their folder goes so the window can rebuild them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jobs: Vec<JobRecord>,
+}
+
+/// A job built in pieces: the window's settings for it and how far it got.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct JobRecord {
+    pub name: String,
+    /// The flags the window sent, without paths.
+    pub settings: Vec<String>,
+    /// The area the job was started on, `[south, west, north, east]` in degrees.
+    pub bbox: Option<[f64; 4]>,
+    pub status: JobStatus,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct JobStatus {
+    pub done: u32,
+    pub total: u32,
+    pub finished: bool,
+    /// Unix milliseconds.
+    pub last_run_ms: u64,
+}
+
+/// Records how far job `name` got. `settings` and `bbox` replace the kept ones when given.
+pub fn record_job(
+    world_dir: &Path,
+    name: &str,
+    settings: Option<&[String]>,
+    bbox: Option<[f64; 4]>,
+    done: u32,
+    total: u32,
+    finished: bool,
+) -> Result<(), String> {
+    let mut manifest = Manifest::load(world_dir)?.ok_or("The One World vanished.")?;
+    let i = match manifest.jobs.iter().position(|j| j.name == name) {
+        Some(i) => i,
+        None => {
+            manifest.jobs.push(JobRecord {
+                name: name.to_string(),
+                ..Default::default()
+            });
+            manifest.jobs.len() - 1
+        }
+    };
+    let job = &mut manifest.jobs[i];
+    if let Some(s) = settings {
+        job.settings = s.to_vec();
+    }
+    if bbox.is_some() {
+        job.bbox = bbox;
+    }
+    job.status = JobStatus {
+        done,
+        total,
+        finished,
+        last_run_ms: unix_now_ms(),
+    };
+    manifest.save(world_dir)
+}
+
+/// The world's jobs: the recorded ones, then job folders from before jobs were recorded,
+/// counted from their own files.
+pub fn job_records(world_dir: &Path, manifest: &Manifest) -> Vec<JobRecord> {
+    let mut jobs = manifest.jobs.clone();
+    let Ok(dirs) = std::fs::read_dir(world_dir.join(JOBS_DIR)) else {
+        return jobs;
+    };
+    for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
+        let name = dir.file_name().to_string_lossy().into_owned();
+        if jobs.iter().any(|j| j.name == name) {
+            continue;
+        }
+        let state = dir.path().join("job.json");
+        let total = std::fs::read_to_string(&state)
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v["slots"].as_object().map(|s| s.len() as u32))
+            .unwrap_or(0);
+        let done = std::fs::read_dir(dir.path()).map_or(0, |d| {
+            d.flatten()
+                .filter(|f| f.file_name().to_string_lossy().starts_with("done-"))
+                .count() as u32
+        });
+        let last_run_ms = std::fs::metadata(&state)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as u64);
+        jobs.push(JobRecord {
+            name,
+            settings: Vec::new(),
+            bbox: None,
+            status: JobStatus {
+                done,
+                total,
+                finished: false,
+                last_run_ms,
+            },
+        });
+    }
+    jobs
 }
 
 fn real_height() -> f64 {
@@ -134,6 +277,8 @@ impl Manifest {
             }),
             next_area_id: 1,
             areas: Vec::new(),
+            place_name: None,
+            jobs: Vec::new(),
         }
     }
 
@@ -206,6 +351,22 @@ impl Manifest {
             .map_err(|e| format!("Failed to write {}: {e}", path.display()))
     }
 
+    /// The areas' union as `[south, west, north, east]` in degrees; none without areas.
+    pub fn bounds(&self) -> Option<[f64; 4]> {
+        let mut it = self.areas.iter();
+        let a = it.next()?;
+        Some(
+            it.fold([a.min_lat, a.min_lon, a.max_lat, a.max_lon], |b, a| {
+                [
+                    b[0].min(a.min_lat),
+                    b[1].min(a.min_lon),
+                    b[2].max(a.max_lat),
+                    b[3].max(a.max_lon),
+                ]
+            }),
+        )
+    }
+
     pub fn extent(&self) -> Option<XZBBox> {
         let first = self.areas.first()?;
         let mut min_x = first.min_x;
@@ -256,6 +417,30 @@ pub fn existing_chunks(world_dir: &Path, rect: &XZBBox) -> u64 {
     count
 }
 
+/// Block (0, 0) of a world created for `requested`: the request's centre.
+fn new_origin(requested: &LLBBox) -> (f64, f64) {
+    (
+        (requested.min().lat() + requested.max().lat()) / 2.0,
+        (requested.min().lng() + requested.max().lng()) / 2.0,
+    )
+}
+
+/// The frame `requested` lands in: the world's own, or for a world that does
+/// not exist yet the one `prepare` would create. Reads only; takes no lock.
+pub fn frame_for(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &Args,
+) -> Result<WebMercatorProjection, String> {
+    Ok(match Manifest::load(world_dir)? {
+        Some(manifest) => manifest.projection(),
+        None => {
+            let (lat, lon) = new_origin(requested);
+            Manifest::new(args, lat, lon).projection()
+        }
+    })
+}
+
 /// The One World a run lands in, carried in `Args::one_world_run`.
 #[derive(Clone, Debug)]
 pub struct RunContext {
@@ -267,6 +452,28 @@ pub struct RunContext {
     /// Chunks of this area that already exist and are replaced.
     pub replaced_chunks: u64,
     pub area_id: u32,
+    /// Set when this run builds one piece of a job.
+    pub piece: Option<PieceRef>,
+    /// Set in a piece of a job, whose coordinator holds the world's lock and records the area.
+    pub unit: Option<UnitLease>,
+}
+
+/// What a job's coordinator tells one of its pieces, in the file `--one-world-unit` names.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UnitLease {
+    /// Position in the job's plan.
+    pub piece: u32,
+    pub area_id: u32,
+    /// False for the one piece that makes the world's map item and settings.
+    pub extending: bool,
+    /// The piece's own range of map ids, so pieces running together never share one.
+    pub first_map_id: i32,
+    /// The piece's own block rectangle: it builds past it and writes only inside.
+    pub rect: [i32; 4],
+    /// The job's whole block rectangle, which metadata.json describes.
+    pub job: [i32; 4],
+    /// Whether a single run of the whole job would build in parallel tiles.
+    pub tiled: bool,
 }
 
 impl RunContext {
@@ -363,17 +570,52 @@ pub fn prepare(world_dir: &Path, requested: &LLBBox, args: &mut Args) -> Result<
         crate::live::recover(world_dir)?;
     }
     let mut owned = false;
-    let resolved = resolve(world_dir, requested, args, lock, &mut owned);
-    if resolved.is_err() && fresh_dir {
-        // Everything in it is ours once the check under the lock passed.
-        // Before that only an empty folder is removed.
-        let _ = if owned {
-            std::fs::remove_dir_all(world_dir)
-        } else {
-            std::fs::remove_dir(world_dir)
-        };
+    match resolve(world_dir, requested, args, &mut owned) {
+        Ok((created, llbbox)) => Ok(Session {
+            created,
+            llbbox,
+            lock,
+        }),
+        Err(e) => {
+            drop(lock);
+            if fresh_dir {
+                // Everything in it is ours once the check under the lock passed.
+                // Before that only an empty folder is removed.
+                let _ = if owned {
+                    std::fs::remove_dir_all(world_dir)
+                } else {
+                    std::fs::remove_dir(world_dir)
+                };
+            }
+            Err(e)
+        }
     }
-    resolved
+}
+
+/// Opens the world for one piece of a job. The coordinator holds the world's lock and
+/// has created the world, so this takes no lock and creates nothing; the lease it
+/// reads decides the area id and whether the piece makes the world's extras.
+pub fn prepare_unit(
+    world_dir: &Path,
+    requested: &LLBBox,
+    args: &mut Args,
+    lease: &Path,
+) -> Result<LLBBox, String> {
+    let lease: UnitLease = std::fs::read_to_string(lease)
+        .map_err(|e| format!("Failed to read {}: {e}", lease.display()))
+        .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))?;
+    if Manifest::load(world_dir)?.is_none() {
+        return Err(format!("{} is not a One World.", world_dir.display()));
+    }
+    crate::scale::child::fail_for_test(lease.piece as usize);
+    crate::map_item::leave_counter_to_coordinator();
+    let (_, llbbox) = resolve(world_dir, requested, args, &mut false)?;
+    if let Some(run) = args.one_world_run.as_mut() {
+        run.area_id = lease.area_id;
+        run.extending = lease.extending;
+        run.unit = Some(lease);
+    }
+    Ok(llbbox)
 }
 
 /// The part of `prepare` that runs under the world's lock.
@@ -382,9 +624,8 @@ fn resolve(
     world_dir: &Path,
     requested: &LLBBox,
     args: &mut Args,
-    lock: SessionLock,
     owned: &mut bool,
-) -> Result<Session, String> {
+) -> Result<(bool, LLBBox), String> {
     let (mut manifest, created) = match Manifest::load(world_dir)? {
         Some(manifest) => {
             if !world_dir.join("level.dat").is_file() {
@@ -448,8 +689,7 @@ fn resolve(
                 );
                 args.disable_height_limit = true;
             }
-            let origin_lat = (requested.min().lat() + requested.max().lat()) / 2.0;
-            let origin_lon = (requested.min().lng() + requested.max().lng()) / 2.0;
+            let (origin_lat, origin_lon) = new_origin(requested);
             (Manifest::new(args, origin_lat, origin_lon), true)
         }
     };
@@ -510,6 +750,8 @@ fn resolve(
         elevation: manifest.elevation,
         replaced_chunks: replaced,
         area_id,
+        piece: None,
+        unit: None,
     });
     args.projection = crate::projection::ProjectionKind::WebMercator;
     args.bbox = Some(llbbox);
@@ -585,11 +827,7 @@ fn resolve(
         );
     }
 
-    Ok(Session {
-        created,
-        llbbox,
-        lock,
-    })
+    Ok((created, llbbox))
 }
 
 /// Records a finished area and drops the ones it fully covers.
@@ -632,6 +870,7 @@ pub fn record_area(
         max_lat: llbbox.max().lat(),
         max_lon: llbbox.max().lng(),
         preview: preview_rel.clone(),
+        piece: run.piece.clone(),
     });
     manifest.next_area_id = manifest.next_area_id.max(run.area_id.saturating_add(1));
     manifest.save(&run.world_dir)?;
@@ -730,6 +969,8 @@ pub fn record_live_tile(
         elevation: manifest.elevation,
         replaced_chunks: 0,
         area_id,
+        piece: None,
+        unit: None,
     };
     record_area(&run, llbbox, xzbbox, manifest.elevation, preview.as_deref())
 }
@@ -763,11 +1004,162 @@ pub fn safe_preview_path(world_dir: &Path, rel: &str) -> Option<PathBuf> {
     valid.then(|| world_dir.join(PREVIEW_DIR).join(name))
 }
 
+/// What [`remove_cells`] did.
+#[derive(Serialize, Debug, Default, PartialEq)]
+pub struct RemoveReport {
+    /// The job whose cells these are.
+    pub job: String,
+    /// Cells whose areas left the manifest, by plan index.
+    pub removed: Vec<u32>,
+    /// Cells asked for that have no area in the world.
+    pub not_built: Vec<u32>,
+    /// Files deleted, relative to the world folder, `/`-separated.
+    pub deleted: Vec<String>,
+    /// Region files of the removed cells kept because an area outside them lies there too.
+    pub kept: Vec<String>,
+}
+
+/// The region files `(rx, rz)` an area lies in.
+fn area_regions(a: &GeneratedArea) -> impl Iterator<Item = (i32, i32)> {
+    let r = |v: i32| v.div_euclid(512);
+    let (x0, x1, z0, z1) = (r(a.min_x), r(a.max_x), r(a.min_z), r(a.max_z));
+    (z0..=z1).flat_map(move |z| (x0..=x1).map(move |x| (x, z)))
+}
+
+/// Takes `cells` (plan indexes) of `job` (default: the job run last) out of the world: their
+/// region files, with the `entities/` and `poi/` files beside them, and their previews are
+/// deleted, their areas leave the manifest and the job counts them as not built. A region
+/// file another area also lies in is kept. Refused while a job or Minecraft has the world.
+pub fn remove_cells(
+    world_dir: &Path,
+    job: Option<&str>,
+    cells: &[u32],
+) -> Result<RemoveReport, String> {
+    if crate::scale::runs_on(world_dir) {
+        return Err("A job is building this world; stop it first.".to_string());
+    }
+    let _lock = SessionLock::acquire(world_dir).map_err(|_| {
+        "The world is in use (open in Minecraft, or another run writes it); close it first."
+            .to_string()
+    })?;
+    let mut manifest = Manifest::load(world_dir)?
+        .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
+    let job = match job {
+        Some(j) => j.to_string(),
+        None => manifest
+            .jobs
+            .iter()
+            .max_by_key(|j| j.status.last_run_ms)
+            .map(|j| j.name.clone())
+            .or_else(|| {
+                manifest
+                    .areas
+                    .iter()
+                    .rev()
+                    .find_map(|a| Some(a.piece.as_ref()?.job.clone()))
+            })
+            .ok_or("This world has no job built in cells.")?,
+    };
+    let (gone, kept): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut manifest.areas)
+            .into_iter()
+            .partition(|a| {
+                a.piece
+                    .as_ref()
+                    .is_some_and(|p| p.job == job && cells.contains(&p.index))
+            });
+    let removed: std::collections::BTreeSet<u32> = gone
+        .iter()
+        .flat_map(|a| &a.piece)
+        .map(|p| p.index)
+        .collect();
+    manifest.areas = kept;
+    if let Some(j) = manifest.jobs.iter_mut().find(|j| j.name == job) {
+        j.status.done = j.status.done.saturating_sub(removed.len() as u32);
+        j.status.finished = false;
+    }
+    // First: should a delete fail, the world shows the cell as not built, and a rebuild
+    // writes over what is left.
+    manifest.save(world_dir)?;
+
+    let mut report = RemoveReport {
+        job: job.clone(),
+        removed: removed.iter().copied().collect(),
+        not_built: cells
+            .iter()
+            .copied()
+            .filter(|c| !removed.contains(c))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        ..Default::default()
+    };
+    let rel = |p: &Path| {
+        let r = p.strip_prefix(world_dir).unwrap_or(p);
+        r.to_string_lossy().replace('\\', "/")
+    };
+    let mut delete = |path: PathBuf| -> Result<(), String> {
+        if path.is_file() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {e}", path.display()))?;
+            report.deleted.push(rel(&path));
+        }
+        Ok(())
+    };
+    let others: std::collections::HashSet<(i32, i32)> =
+        manifest.areas.iter().flat_map(area_regions).collect();
+    let targets: std::collections::BTreeSet<(i32, i32)> =
+        gone.iter().flat_map(area_regions).collect();
+    let overworld = crate::world_utils::WorldLayout::of(world_dir).overworld_dir(world_dir);
+    let mut shared = Vec::new();
+    for (rx, rz) in targets {
+        let name = format!("r.{rx}.{rz}.mca");
+        if others.contains(&(rx, rz)) {
+            shared.push(rel(&overworld.join("region").join(&name)));
+            continue;
+        }
+        for folder in ["region", "entities", "poi"] {
+            delete(overworld.join(folder).join(&name))?;
+        }
+    }
+    let job_dir = world_dir.join(JOBS_DIR).join(&job);
+    for a in &gone {
+        if let Some(path) = a
+            .preview
+            .as_deref()
+            .and_then(|p| safe_preview_path(world_dir, p))
+        {
+            delete(path)?;
+        }
+        // The job's record of the cell, so a resume builds it again.
+        let index = a.piece.as_ref().map_or(0, |p| p.index);
+        let key = format!(
+            "done-r{}_{}_s",
+            a.min_x.div_euclid(512),
+            a.min_z.div_euclid(512)
+        );
+        for f in std::fs::read_dir(&job_dir).into_iter().flatten().flatten() {
+            let name = f.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&key) || name == format!("done-{index}.json") {
+                delete(f.path())?;
+            }
+        }
+    }
+    report.kept = shared;
+    Ok(report)
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 #[cfg(test)]
@@ -783,6 +1175,130 @@ mod tests {
 
     const MUNICH: &str = "48.130,11.560,48.145,11.590";
 
+    /// A 3 x 3 grid of cells of 2 x 2 regions, the corner cell clipped mid-region, and one
+    /// plain area sharing a region with the middle cell: removing the middle and a corner
+    /// deletes exactly their files.
+    #[test]
+    fn removing_cells_deletes_only_their_region_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path();
+        let mut m = Manifest::new(&args_for(MUNICH, &[]), 48.13, 11.56);
+        let area = |id: u32, r: [i32; 4], piece: Option<u32>| GeneratedArea {
+            id,
+            generated_at: 0,
+            arnis_version: String::new(),
+            min_x: r[0],
+            min_z: r[1],
+            max_x: r[2],
+            max_z: r[3],
+            min_lat: 0.0,
+            min_lon: 0.0,
+            max_lat: 0.0,
+            max_lon: 0.0,
+            preview: Some(format!("{PREVIEW_DIR}/area-{id}.png")),
+            piece: piece.map(|index| PieceRef {
+                job: "J".into(),
+                index,
+            }),
+        };
+        // Cell `index` sits at grid (gx, gz), both in -1..=1.
+        let cell = |index: u32| {
+            let (gx, gz) = (index as i32 % 3 - 1, index as i32 / 3 - 1);
+            let mut r = [gx * 1024, gz * 1024, gx * 1024 + 1023, gz * 1024 + 1023];
+            if index == 0 {
+                r[0] += 100;
+                r[1] += 100;
+            }
+            r
+        };
+        for i in 0..9 {
+            m.areas.push(area(i + 1, cell(i), Some(i)));
+        }
+        // A plain run over region (1, 0), which the middle cell (regions 0..=1) also holds.
+        m.areas.push(area(20, [600, 10, 700, 90], None));
+        m.jobs.push(JobRecord {
+            name: "J".into(),
+            status: JobStatus {
+                done: 9,
+                total: 9,
+                finished: true,
+                last_run_ms: 1,
+            },
+            ..Default::default()
+        });
+        m.save(world).unwrap();
+        for d in ["region", "entities", PREVIEW_DIR] {
+            std::fs::create_dir_all(world.join(d)).unwrap();
+        }
+        let mut all = Vec::new();
+        for rz in -2..=3 {
+            for rx in -2..=3 {
+                all.push(format!("region/r.{rx}.{rz}.mca"));
+            }
+        }
+        all.extend(["entities/r.0.0.mca".into(), "entities/r.-2.-2.mca".into()]);
+        all.extend((1..=9).map(|id| format!("{PREVIEW_DIR}/area-{id}.png")));
+        for f in &all {
+            std::fs::write(world.join(f), b"x").unwrap();
+        }
+        let jobs = world.join(JOBS_DIR).join("J");
+        std::fs::create_dir_all(&jobs).unwrap();
+        for f in [
+            "done-r0_0_s2.json",
+            "done-r-2_-2_s2.json",
+            "done-r2_2_s2.json",
+        ] {
+            std::fs::write(jobs.join(f), "{}").unwrap();
+        }
+
+        // Refused while the world is locked.
+        let held = SessionLock::acquire(world).unwrap();
+        let err = remove_cells(world, None, &[4, 0]).unwrap_err();
+        assert!(err.contains("in use"), "{err}");
+        drop(held);
+
+        let report = remove_cells(world, None, &[4, 0, 0, 12]).unwrap();
+        assert_eq!(report.job, "J");
+        assert_eq!(report.removed, [0, 4]);
+        assert_eq!(report.not_built, [12]);
+        assert_eq!(report.kept, ["region/r.1.0.mca"]);
+        let mut gone: Vec<String> = [
+            "region/r.-2.-2.mca",
+            "region/r.-1.-2.mca",
+            "region/r.-2.-1.mca",
+            "region/r.-1.-1.mca",
+            "entities/r.-2.-2.mca",
+            "region/r.0.0.mca",
+            "entities/r.0.0.mca",
+            "region/r.0.1.mca",
+            "region/r.1.1.mca",
+            &format!("{PREVIEW_DIR}/area-1.png"),
+            &format!("{PREVIEW_DIR}/area-5.png"),
+            &format!("{JOBS_DIR}/J/done-r0_0_s2.json"),
+            &format!("{JOBS_DIR}/J/done-r-2_-2_s2.json"),
+        ]
+        .map(String::from)
+        .to_vec();
+        let mut deleted = report.deleted.clone();
+        gone.sort();
+        deleted.sort();
+        assert_eq!(deleted, gone);
+        for f in &all {
+            assert_eq!(world.join(f).exists(), !gone.contains(f), "{f}");
+        }
+        assert!(jobs.join("done-r2_2_s2.json").exists());
+        let m = Manifest::load(world).unwrap().unwrap();
+        assert_eq!(m.areas.len(), 8);
+        assert!(m
+            .areas
+            .iter()
+            .all(|a| a.piece.as_ref().is_none_or(|p| ![0, 4].contains(&p.index))));
+        assert_eq!(
+            (m.jobs[0].status.done, m.jobs[0].status.finished),
+            (7, false)
+        );
+    }
+
     fn rect(args: &Args, s: &Session) -> XZBBox {
         crate::projection::ProjectionSpec::from_args(args)
             .transformer(&s.llbbox)
@@ -793,6 +1309,103 @@ mod tests {
     fn record(args: &Args, s: &Session, elevation: Option<ElevationAffine>) {
         let run = args.one_world_run.clone().unwrap();
         record_area(&run, &s.llbbox, &rect(args, s), elevation, None).unwrap();
+    }
+
+    /// A manifest the stock v3.4.0 exe wrote still opens, and one carrying
+    /// piece records is still read by v3.4.0's own struct (unknown fields ignored).
+    #[test]
+    fn v340_manifest_still_opens() {
+        #[derive(Deserialize)]
+        struct V340Area {
+            id: u32,
+            min_x: i32,
+            max_z: i32,
+        }
+        #[derive(Deserialize)]
+        struct V340 {
+            version: u32,
+            next_area_id: u32,
+            areas: Vec<V340Area>,
+        }
+        let text = include_str!("../tests/fixtures/one_world_v340.json");
+        let mut m: Manifest = serde_json::from_str(text).unwrap();
+        m.validate().unwrap();
+        assert!(m.areas.iter().all(|a| a.piece.is_none()));
+        let plain = serde_json::to_string(&m).unwrap();
+        assert!(!plain.contains("piece"), "no piece key unless one is set");
+        m.areas[0].piece = Some(PieceRef {
+            job: "j".into(),
+            index: 3,
+        });
+        let old: V340 = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!((old.version, old.next_area_id), (m.version, m.next_area_id));
+        assert_eq!(
+            (old.areas[0].id, old.areas[0].min_x),
+            (m.areas[0].id, m.areas[0].min_x)
+        );
+        assert_eq!(old.areas[0].max_z, m.areas[0].max_z);
+        let back: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
+    }
+
+    /// The place name and job records round-trip, and a manifest without them writes neither.
+    #[test]
+    fn place_name_and_jobs_round_trip() {
+        let text = include_str!("../tests/fixtures/one_world_v340.json");
+        let mut m: Manifest = serde_json::from_str(text).unwrap();
+        assert!(m.place_name.is_none() && m.jobs.is_empty());
+        let plain = serde_json::to_string(&m).unwrap();
+        assert!(!plain.contains("place_name") && !plain.contains("jobs"));
+        m.place_name = Some("Bucharest".into());
+        m.jobs.push(JobRecord {
+            name: "job".into(),
+            settings: vec!["--unit-regions=8".into()],
+            bbox: Some([48.1, 11.5, 48.2, 11.6]),
+            status: JobStatus {
+                done: 3,
+                total: 9,
+                finished: false,
+                last_run_ms: 42,
+            },
+        });
+        let back: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
+        // A record missing its newer fields still reads.
+        let bare: JobRecord = serde_json::from_str(r#"{"name":"j"}"#).unwrap();
+        assert_eq!((bare.settings.len(), bare.status.total), (0, 0));
+        assert_eq!(bare.bbox, None);
+        let with: JobRecord = serde_json::from_str(r#"{"name":"j","bbox":[1,2,3,4]}"#).unwrap();
+        assert_eq!(with.bbox, Some([1.0, 2.0, 3.0, 4.0]));
+    }
+
+    /// `record_job` keeps one record per job; a job folder from before records lists too.
+    #[test]
+    fn jobs_are_recorded_and_old_job_folders_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        drop(prepare(&world, &req, &mut args_for(MUNICH, &[])).unwrap());
+        let flags = vec!["--seed=1".to_string()];
+        let bb = [48.1, 11.5, 48.2, 11.6];
+        record_job(&world, "a", Some(&flags), Some(bb), 0, 4, false).unwrap();
+        record_job(&world, "a", None, None, 4, 4, true).unwrap();
+        let old = world.join(JOBS_DIR).join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(
+            old.join("job.json"),
+            r#"{"area_base":1,"map_base":0,"slots":{"r0_0_s4":0,"r1_0_s4":1}}"#,
+        )
+        .unwrap();
+        std::fs::write(old.join("done-r0_0_s4.json"), "{}").unwrap();
+        let m = Manifest::load(&world).unwrap().unwrap();
+        let jobs = job_records(&world, &m);
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].settings, flags);
+        assert_eq!((jobs[0].bbox, jobs[1].bbox), (Some(bb), None));
+        assert_eq!((jobs[0].status.done, jobs[0].status.finished), (4, true));
+        assert!(jobs[0].status.last_run_ms > 0);
+        assert_eq!((jobs[1].name.as_str(), jobs[1].status.done), ("old", 1));
+        assert_eq!((jobs[1].status.total, jobs[1].status.finished), (2, false));
     }
 
     #[test]
@@ -1149,6 +1762,35 @@ mod tests {
     }
 
     #[test]
+    fn bounds_are_the_union_of_the_areas() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        drop(prepare(&world, &req, &mut args_for(MUNICH, &[])).unwrap());
+        let mut m = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(m.bounds(), None);
+        let area = |min_lat, min_lon, max_lat, max_lon| GeneratedArea {
+            id: 1,
+            generated_at: 0,
+            arnis_version: String::new(),
+            min_x: 0,
+            min_z: 0,
+            max_x: 1,
+            max_z: 1,
+            min_lat,
+            min_lon,
+            max_lat,
+            max_lon,
+            preview: None,
+            piece: None,
+        };
+        m.areas = vec![area(1.0, 2.0, 3.0, 4.0)];
+        assert_eq!(m.bounds(), Some([1.0, 2.0, 3.0, 4.0]));
+        m.areas.push(area(0.5, 3.0, 2.0, 5.0));
+        assert_eq!(m.bounds(), Some([0.5, 2.0, 3.0, 5.0]));
+    }
+
+    #[test]
     fn a_manifest_without_areas_has_no_extent() {
         let dir = tempfile::tempdir().unwrap();
         let world = dir.path().join("w");
@@ -1161,5 +1803,16 @@ mod tests {
             .unwrap(),
         );
         assert!(Manifest::load(&world).unwrap().unwrap().extent().is_none());
+    }
+
+    #[test]
+    fn a_piece_builds_its_halo_but_never_past_the_selection() {
+        let selection = XZBBox::rect_from_min_max(-320, -176, 319, 175).unwrap();
+        let rect = XZBBox::rect_from_min_max(0, -176, 319, -1).unwrap();
+        let b = piece_build_rect(&rect, &selection);
+        let h = PIECE_HALO_BLOCKS;
+        // Grown towards its neighbours, held at the selection's own edges.
+        assert_eq!((b.min_x(), b.max_x()), (-h, 319));
+        assert_eq!((b.min_z(), b.max_z()), (-176, -1 + h));
     }
 }
