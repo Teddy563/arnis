@@ -958,6 +958,33 @@ label[for].setting-label {
   gap: 10px;
 }
 
+.settings-about-meld {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  flex-basis: 100%;
+}
+
+.settings-about-credit {
+  flex: 1 1 240px;
+  color: var(--ui-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.settings-about-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 13.5px;
+}
+
+.settings-about-layout .settings-select {
+  width: 160px;
+}
+
 .settings-about-links {
   flex-basis: 100%;
   padding-top: 14px;
@@ -1085,6 +1112,40 @@ body.meld-off .meld-only {
 
 .settings-page .meld-card .setting-grid {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* Data panel: Prepare Countries and Download Plan */
+.settings-page .meld-data-row {
+  flex-wrap: wrap;
+}
+
+.settings-page .meld-data-row .settings-control {
+  gap: 8px;
+}
+
+.settings-page .meld-data-row .run-button {
+  flex: none;
+  padding: 0 14px;
+}
+
+.settings-page .meld-data-out {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.settings-page .meld-data-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.settings-page .meld-data-line[hidden] {
+  display: none;
 }
 
 /* Meld settings (and the switch that shows them) carry gold viewfinder corners: the tile's own
