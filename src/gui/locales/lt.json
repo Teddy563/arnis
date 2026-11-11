@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} langelių",
   "projects_resume": "Tęsti",
   "projects_rebuild": "Perkurti",
-  "projects_rebuild_sure": "Perkurti? Spustelėk dar kartą"
+  "projects_rebuild_sure": "Perkurti? Spustelėk dar kartą",
+  "projects_rename": "Pervardyti",
+  "world_rename_tip": "Spustelėk, kad pervardytum šį pasaulį"
 }

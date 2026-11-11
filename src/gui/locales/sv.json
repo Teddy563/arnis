@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} celler",
   "projects_resume": "Återuppta",
   "projects_rebuild": "Bygg om",
-  "projects_rebuild_sure": "Bygga om? Klicka igen"
+  "projects_rebuild_sure": "Bygga om? Klicka igen",
+  "projects_rename": "Byt namn",
+  "world_rename_tip": "Klicka för att byta namn på världen"
 }

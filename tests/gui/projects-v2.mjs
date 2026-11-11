@@ -48,7 +48,7 @@ assert.strictEqual(rows.length, 3, 'a world with no preview and no new field sti
 assert.ok(rows[1].children[0].className === 'projects-thumb' && rows[1].children[0].children[0].src.startsWith('data:image/png'), 'a thumbnail fills its box');
 assert.ok(rows[2].children[0].className.includes('is-empty'), 'no image leaves the placeholder');
 assert.ok(rows[0].children[0].className.includes('is-empty'));
-const title = (r) => r.children[1].children.map((c) => c.textContent);
+const title = (r) => r.children[1].children.map((c) => c.textContent).filter(Boolean);
 assert.deepStrictEqual(title(rows[1]), ['Paris', 'Paris'], 'the place name sits beside the name');
 assert.deepStrictEqual(title(rows[0]), ['Old'], 'an old world shows the name only');
 
@@ -120,4 +120,42 @@ assert.strictEqual(started.length, 1, 'the first click only asks');
 assert.strictEqual(rebuild.textContent, 'Rebuild? Click again');
 await rebuild.listeners.click();
 assert.deepStrictEqual(started.at(-1), ['Done', ['--seed=3'], true]);
+
+// Inline rename: the pencil opens the field, Escape leaves it, Enter renames and refreshes.
+store.clear();
+const names = [{ name: 'Old', area_count: 1, scale: 1, locked: false, modified_ms: 1 }, { name: 'Busy', area_count: 1, scale: 1, locked: true, modified_ms: 1 }];
+const renames = [];
+const renamedTo = [];
+let lists = 0;
+const ren = initProjects({
+  invoke: async (c, a) => {
+    if (c === 'gui_list_one_worlds') { lists++; return names; }
+    if (c === 'gui_rename_world') { renames.push(a); if (a.newName === 'Bad/') throw 'A name cannot hold / characters.'; names[0].name = a.newName; return a.newName; }
+  },
+  savePath: () => '/s', scale: () => 1, open: async () => {}, renamed: (a, b) => renamedTo.push([a, b]),
+});
+await ren();
+store.set('arnis-one-world-name', 'Old');
+const head = () => list.children[0].children[1];
+assert.strictEqual(list.children[1].children[1].children[1].disabled, true, 'a world in use cannot be renamed');
+head().children[1].listeners.click();
+let field = head().children[0];
+assert.strictEqual(field.value, 'Old', 'the field starts on the name');
+field.listeners.keydown({ key: 'Escape' });
+assert.deepStrictEqual(head().children.map((c) => c.textContent).filter(Boolean), ['Old'], 'Escape puts the name back');
+assert.strictEqual(renames.length, 0);
+head().children[0].listeners.click(); // clicking the name opens it too
+field = head().children[0];
+field.value = 'Bad/';
+field.listeners.keydown({ key: 'Enter' });
+await settle();
+assert.strictEqual(head().children[1].textContent, 'A name cannot hold / characters.', 'the refusal is shown');
+field.value = 'New';
+field.listeners.keydown({ key: 'Enter' });
+await settle();
+assert.deepStrictEqual(renames.at(-1), { savePath: '/s', oldName: 'Old', newName: 'New' });
+assert.deepStrictEqual(renamedTo, [['Old', 'New']]);
+assert.strictEqual(store.get('arnis-one-world-name'), 'New', 'the picked world follows its new name');
+assert.strictEqual(lists, 2, 'the list is read again');
+assert.strictEqual(list.children[0].children[1].children[0].textContent, 'New');
 console.log('projects-v2 ok');

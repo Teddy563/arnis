@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} комірок",
   "projects_resume": "Продовжити",
   "projects_rebuild": "Перебудувати",
-  "projects_rebuild_sure": "Перебудувати? Натисніть ще раз"
+  "projects_rebuild_sure": "Перебудувати? Натисніть ще раз",
+  "projects_rename": "Перейменувати",
+  "world_rename_tip": "Натисніть, щоб перейменувати цей світ"
 }

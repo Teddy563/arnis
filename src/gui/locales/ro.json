@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} celule",
   "projects_resume": "Reia",
   "projects_rebuild": "Reconstruiește",
-  "projects_rebuild_sure": "Reconstruiești? Apasă încă o dată"
+  "projects_rebuild_sure": "Reconstruiești? Apasă încă o dată",
+  "projects_rename": "Redenumește",
+  "world_rename_tip": "Apasă pentru a redenumi această lume"
 }

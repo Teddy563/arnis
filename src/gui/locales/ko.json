@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} 셀",
   "projects_resume": "이어서 하기",
   "projects_rebuild": "다시 빌드",
-  "projects_rebuild_sure": "다시 빌드할까요? 한 번 더 클릭"
+  "projects_rebuild_sure": "다시 빌드할까요? 한 번 더 클릭",
+  "projects_rename": "이름 바꾸기",
+  "world_rename_tip": "클릭하여 이 월드 이름 바꾸기"
 }

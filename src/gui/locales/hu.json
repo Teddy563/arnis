@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} cella",
   "projects_resume": "Folytatás",
   "projects_rebuild": "Újraépítés",
-  "projects_rebuild_sure": "Újraépítés? Kattints újra"
+  "projects_rebuild_sure": "Újraépítés? Kattints újra",
+  "projects_rename": "Átnevezés",
+  "world_rename_tip": "Kattints a világ átnevezéséhez"
 }

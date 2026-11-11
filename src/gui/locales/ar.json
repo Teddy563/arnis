@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} خلية",
   "projects_resume": "متابعة",
   "projects_rebuild": "إعادة البناء",
-  "projects_rebuild_sure": "إعادة البناء؟ انقر مرة أخرى"
+  "projects_rebuild_sure": "إعادة البناء؟ انقر مرة أخرى",
+  "projects_rename": "إعادة التسمية",
+  "world_rename_tip": "انقر لإعادة تسمية هذا العالم"
 }

@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} ruutua",
   "projects_resume": "Jatka",
   "projects_rebuild": "Rakenna uudelleen",
-  "projects_rebuild_sure": "Rakenna uudelleen? Napsauta uudelleen"
+  "projects_rebuild_sure": "Rakenna uudelleen? Napsauta uudelleen",
+  "projects_rename": "Nimeä uudelleen",
+  "world_rename_tip": "Napsauta nimeämään tämä maailma uudelleen"
 }

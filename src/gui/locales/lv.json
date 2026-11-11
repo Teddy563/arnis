@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} šūnu",
   "projects_resume": "Turpināt",
   "projects_rebuild": "Pārbūvēt",
-  "projects_rebuild_sure": "Pārbūvēt? Noklikšķini vēlreiz"
+  "projects_rebuild_sure": "Pārbūvēt? Noklikšķini vēlreiz",
+  "projects_rename": "Pārdēvēt",
+  "world_rename_tip": "Noklikšķini, lai pārdēvētu šo pasauli"
 }

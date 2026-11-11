@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} ячеек",
   "projects_resume": "Продолжить",
   "projects_rebuild": "Перестроить",
-  "projects_rebuild_sure": "Перестроить? Нажмите ещё раз"
+  "projects_rebuild_sure": "Перестроить? Нажмите ещё раз",
+  "projects_rename": "Переименовать",
+  "world_rename_tip": "Нажмите, чтобы переименовать этот мир"
 }

@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} celic",
   "projects_resume": "Nadaljuj",
   "projects_rebuild": "Znova zgradi",
-  "projects_rebuild_sure": "Znova zgradim? Klikni še enkrat"
+  "projects_rebuild_sure": "Znova zgradim? Klikni še enkrat",
+  "projects_rename": "Preimenuj",
+  "world_rename_tip": "Klikni za preimenovanje tega sveta"
 }

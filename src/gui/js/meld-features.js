@@ -1108,7 +1108,7 @@ export function projectJob(w) {
 
 // `resume(world, job, rebuild)` starts a job again with its settings; without it (or without
 // job data from the engine) only Open and Expand are offered.
-export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep, resume = null }) {
+export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep, resume = null, renamed = null }) {
   const list = el('projects-list');
   let view = readView();
   const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
@@ -1220,6 +1220,45 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
     }
   }
 
+  // The folder and the name inside level.dat change together in the engine; a refusal comes back
+  // as text and is shown beside the field.
+  const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zm17.71-10.04a1 1 0 0 0 0-1.42l-2.5-2.5a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75z"/></svg>';
+  function renameField(w, title) {
+    const before = [...title.children];
+    const from = w.name;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'projects-rename';
+    input.maxLength = 48;
+    input.value = w.name;
+    input.setAttribute('aria-label', t('projects_rename', 'Rename'));
+    const err = text('projects-error', '');
+    let ended = false;
+    const cancel = () => { if (!ended) { ended = true; title.replaceChildren(...before); } };
+    const commit = async () => {
+      const name = input.value.trim();
+      if (!name || name === from) return cancel();
+      try {
+        const folder = (await invoke('gui_rename_world', { savePath: savePath(), oldName: from, newName: name })) || name;
+        ended = true;
+        try { if (localStorage.getItem('arnis-one-world-name') === from) localStorage.setItem('arnis-one-world-name', folder); } catch (_) { /* not kept */ }
+        if (renamed) renamed(from, folder);
+        await refresh();
+      } catch (e) {
+        err.textContent = String((e && e.message) || e);
+      }
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation?.();
+      if (e.key === 'Enter') { e.preventDefault?.(); commit(); } else if (e.key === 'Escape') { e.preventDefault?.(); cancel(); }
+    });
+    input.addEventListener('blur', cancel);
+    title.replaceChildren(input, err);
+    input.focus?.();
+    input.select?.();
+    return input;
+  }
+
   async function refresh() {
     let worlds = [];
     try { worlds = savePath() ? (await invoke('gui_list_one_worlds', { savePath: savePath() })) || [] : []; } catch (e) { console.error(e); }
@@ -1229,7 +1268,18 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
       const odd = w.scale != null && scale() != null && Math.abs(w.scale - scale()) > 1e-6;
       const title = document.createElement('div');
       title.className = 'projects-title';
-      title.append(text('projects-name', w.name));
+      const name = text('projects-name', w.name);
+      const pencil = document.createElement('button');
+      pencil.type = 'button';
+      pencil.className = 'projects-pencil';
+      pencil.innerHTML = PENCIL;
+      pencil.title = t('projects_rename', 'Rename');
+      pencil.setAttribute('aria-label', t('projects_rename', 'Rename'));
+      pencil.disabled = Boolean(w.locked);
+      const edit = () => { if (!w.locked) renameField(w, title); };
+      name.addEventListener('click', edit);
+      pencil.addEventListener('click', edit);
+      title.append(name, pencil);
       if (w.place_name) title.append(text('projects-place', w.place_name));
       titles.set(w.world_path || `${savePath()}/${w.name}`, title);
       const kids = [

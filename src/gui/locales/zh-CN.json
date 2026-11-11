@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} 单元格",
   "projects_resume": "继续",
   "projects_rebuild": "重建",
-  "projects_rebuild_sure": "重建？再点一次"
+  "projects_rebuild_sure": "重建？再点一次",
+  "projects_rename": "重命名",
+  "world_rename_tip": "点击重命名此世界"
 }

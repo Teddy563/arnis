@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} უჯრედი",
   "projects_resume": "გაგრძელება",
   "projects_rebuild": "ხელახლა აგება",
-  "projects_rebuild_sure": "ხელახლა აგება? დააჭირე კიდევ ერთხელ"
+  "projects_rebuild_sure": "ხელახლა აგება? დააჭირე კიდევ ერთხელ",
+  "projects_rename": "სახელის შეცვლა",
+  "world_rename_tip": "დააჭირე ამ სამყაროს სახელის შესაცვლელად"
 }

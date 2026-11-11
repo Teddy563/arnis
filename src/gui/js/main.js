@@ -1489,6 +1489,7 @@ function initSettings() {
     savePath: () => savePath,
     scale: () => readGenerationSettings(true).worldScale,
     available: () => isOneWorldAvailable() && !liveActive(),
+    renamed: (from, to) => worldRenamed(from, to),
     open: async (name, expand) => {
       oneWorldName = name;
       oneWorldPicked = true;
@@ -3100,10 +3101,13 @@ function renderWorldNameLabel() {
   if (!label) return;
   const pending = pendingWorldName();
   const text = pending || worldLabelName;
+  // The world under Start can be renamed by clicking its name.
+  const renamable = !pending && !!text && !!renamableWorld();
   label.toggleAttribute('data-pending', !!pending);
+  label.toggleAttribute('data-renamable', renamable);
   label.title = pending
     ? (window.localization && window.localization.placeholder_world_name) || 'Name of the next world'
-    : '';
+    : renamable ? oneWorldText('world_rename_tip', 'Click to rename this world') : '';
   if (text) {
     label.removeAttribute('data-placeholder');
     label.textContent = text;
@@ -3122,6 +3126,68 @@ function renderWorldNameLabel() {
 function basenameFromPath(p) {
   if (!p) return "";
   return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+}
+
+/* Renaming the world on disk: click its name under Start, or the pencil in Projects */
+
+// Folder name of the world a click on the name would rename, or "": the One World shown, or the
+// Java world the last run made, once nothing is running and Meld features are on.
+function renamableWorld() {
+  if (!savePath || document.body.classList.contains('meld-off') || selectedWorldFormat !== 'java' || !generationButtonEnabled || liveActive()) return "";
+  if (isOneWorldEnabled()) return oneWorldInfo && oneWorldInfo.exists && !oneWorldInfo.locked ? basenameFromPath(oneWorldInfo.world_path) : "";
+  return basenameFromPath(worldPath);
+}
+
+// What the window remembers of a world's name once its folder has been renamed.
+function worldRenamed(from, to) {
+  if (basenameFromPath(worldPath) === from) worldPath = worldPath.replace(/[^\\/]+([\\/]*)$/, to + '$1');
+  // A One World keeps being the one under Start, now picked by its new name.
+  if (oneWorldName === from || (oneWorldInfo && basenameFromPath(oneWorldInfo.world_path) === from)) {
+    oneWorldName = to;
+    oneWorldPicked = true;
+    localStorage.setItem(ONE_WORLD_NAME_KEY, to);
+    localStorage.setItem('arnis-one-world-picked', '1');
+  }
+  if (worldLabelName === from) setWorldNameLabel(to);
+  oneWorldOverlayKey = null;
+  refreshOneWorldState();
+}
+
+// The name under Start becomes the editor; Enter renames, Escape leaves it.
+let renamingWorld = "";
+function startWorldRename(event) {
+  const from = renamableWorld();
+  if (!from || !worldLabelName) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const label = document.getElementById('world-name-label');
+  const input = document.getElementById('world-name-input');
+  if (!label || !input) return;
+  renamingWorld = from;
+  input.value = from;
+  label.style.display = 'none';
+  const editButton = document.getElementById('world-name-edit-button');
+  if (editButton) editButton.style.display = 'none';
+  input.style.display = '';
+  updateWorldNameLimitState();
+  input.focus();
+  input.select();
+}
+
+async function commitWorldRename(input) {
+  const from = renamingWorld;
+  const to = input.value.trim();
+  endWorldNameEdit();
+  if (!to || to === from) return;
+  try {
+    const folder = (await invoke('gui_rename_world', { savePath: savePath, oldName: from, newName: to })) || to;
+    worldRenamed(from, folder);
+  } catch (error) {
+    // The engine says why (a clash, a path character, a world in use).
+    const info = document.getElementById('progress-info');
+    info.textContent = String((error && error.message) || error);
+    info.style.color = "#fa7878";
+  }
 }
 
 /* Custom world name (Java only, opt-in via Settings > Custom World Name) */
@@ -3224,6 +3290,10 @@ function commitWorldNameEdit() {
     endWorldNameEdit();
     return;
   }
+  if (renamingWorld) {
+    commitWorldRename(input);
+    return;
+  }
   const newName = input.value.trim();
 
   // One World: the name picks the world to extend or create. Nothing is renamed.
@@ -3252,6 +3322,7 @@ function endWorldNameEdit() {
   const label = document.getElementById('world-name-label');
   const input = document.getElementById('world-name-input');
   const editButton = document.getElementById('world-name-edit-button');
+  renamingWorld = "";
   if (!input || input.style.display === 'none') return;
   // Only when the input still holds focus: a teardown reached *from* the blur
   // handler must not arm this, or it would swallow the next real blur.
@@ -3272,6 +3343,10 @@ function initCustomWorldNameToggle() {
   // (both dispatch a real "change" event), as long as this listener is
   // attached before initSettingsStore() runs its restore().
   toggle.addEventListener('change', refreshWorldNameEditUI);
+
+  document.getElementById('world-name-label')?.addEventListener('click', (event) => {
+    if (document.getElementById('world-name-label').hasAttribute('data-renamable')) startWorldRename(event);
+  });
 
   if (editButton) {
     editButton.addEventListener('click', startWorldNameEdit);

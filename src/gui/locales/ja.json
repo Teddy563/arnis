@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} セル",
   "projects_resume": "再開",
   "projects_rebuild": "再構築",
-  "projects_rebuild_sure": "再構築しますか？もう一度クリック"
+  "projects_rebuild_sure": "再構築しますか？もう一度クリック",
+  "projects_rename": "名前を変更",
+  "world_rename_tip": "クリックでこのワールドの名前を変更"
 }

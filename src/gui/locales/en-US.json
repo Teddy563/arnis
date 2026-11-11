@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} cells",
   "projects_resume": "Resume",
   "projects_rebuild": "Rebuild",
-  "projects_rebuild_sure": "Rebuild? Click again"
+  "projects_rebuild_sure": "Rebuild? Click again",
+  "projects_rename": "Rename",
+  "world_rename_tip": "Click to rename this world"
 }

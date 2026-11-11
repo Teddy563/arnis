@@ -760,5 +760,7 @@
   "projects_cells": "{done} / {total} komórek",
   "projects_resume": "Wznów",
   "projects_rebuild": "Zbuduj ponownie",
-  "projects_rebuild_sure": "Zbudować ponownie? Kliknij jeszcze raz"
+  "projects_rebuild_sure": "Zbudować ponownie? Kliknij jeszcze raz",
+  "projects_rename": "Zmień nazwę",
+  "world_rename_tip": "Kliknij, aby zmienić nazwę tego świata"
 }
