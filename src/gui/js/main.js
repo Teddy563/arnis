@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { placeForRun, t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { applyFlags, selectBounds, placeForRun, t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1500,6 +1500,19 @@ function initSettings() {
       oneWorldRefit = false;
       closeSettings();
       if (expand) document.getElementById('plan-expand-button').click();
+    },
+    // Resume and Rebuild: the job's settings and area go back in, and the same run starts. A job
+    // without a known area only restores its settings; Start then waits for the user.
+    resume: async (world, job, rebuild) => {
+      applyFlags(job.settings, rebuild);
+      const b = Array.isArray(job.bbox) ? job.bbox.map(Number) : String(job.bbox || '').split(/[\s,]+/).map(Number);
+      if (b.length !== 4 || !b.every(Number.isFinite)) return;
+      selectBounds(b);
+      for (let i = 0; i < 80; i++) {
+        const now = (selectedBBox || '').split(/[\s,]+/).map(Number);
+        if (now.length === 4 && now.every((v, k) => Math.abs(v - b[k]) < 1e-4)) return startGeneration(true);
+        await new Promise((r) => setTimeout(r, 50));
+      }
     },
   });
   initDataPanel({

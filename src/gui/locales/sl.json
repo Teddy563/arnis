@@ -756,5 +756,9 @@
   "projects_empty": "Svetov še ni. Zgradite enega z vklopljenim One World.",
   "projects_view": "Pogled",
   "projects_view_list": "Seznam",
-  "projects_view_grid": "Mreža"
+  "projects_view_grid": "Mreža",
+  "projects_cells": "{done} / {total} celic",
+  "projects_resume": "Nadaljuj",
+  "projects_rebuild": "Znova zgradi",
+  "projects_rebuild_sure": "Znova zgradim? Klikni še enkrat"
 }

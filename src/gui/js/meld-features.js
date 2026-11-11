@@ -233,6 +233,64 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
   return f;
 }
 
+// meldFlags in reverse: each flag a job kept, and the control it came from, with the control's
+// value when the flag is absent. Flags that carry a path (an archive, a tree pack, the plan
+// mask) are not kept by a job, so they are not here.
+const FLAG_CONTROLS = [
+  ['--one-world-workers', 'meld-workers-select', 'value', ''], ['--snap-regions', 'meld-snap-group', 'group', 'off'],
+  ['--margin-regions', 'meld-margin-input', 'value', '0'], ['--unit-regions', 'meld-piece-size-group', 'group', '4'],
+  ['--piece-order', 'meld-piece-order-select', 'value', 'centre'], ['--skip-built', 'meld-skip-built-toggle', 'toggle'],
+  ['--stitch-map', 'meld-stitch-map-toggle', 'toggle'], ['--threads', 'meld-threads-input', 'value', ''],
+  ['--ram-budget-mb', 'meld-ram-budget-input', 'value', ''], ['--seed', 'meld-seed-input', 'value', ''],
+  ['--min-y', 'meld-min-y-input', 'value', ''], ['--max-y', 'meld-max-y-input', 'value', ''],
+  ['--road-detail', 'meld-road-detail-group', 'group', 'max'], ['--surface-patches', 'meld-surface-patches-toggle', 'toggle'],
+  ['--no-buildings', 'meld-buildings-toggle', 'untoggle'], ['--props', 'meld-props-group', 'group', 'auto'],
+  ['--rocks', 'meld-rocks-toggle', 'toggle'], ['--rock-density', 'meld-rock-density-input', 'value', '0.02'],
+  ['--bushes', 'meld-bushes-toggle', 'toggle'], ['--bush-density', 'meld-bush-density-input', 'value', '0.05'],
+  ['--tree-realm', 'meld-tree-realm-select', 'value', 'auto'], ['--cave-style', 'meld-cave-style-select', 'value', 'all-mix'],
+  ['--cave-ores', 'meld-cave-ores-group', 'group', 'normal'], ['--river-bed', 'meld-river-bed-group', 'group', 'off'],
+  ['--water-detail', 'meld-water-detail-group', 'group', 'default'], ['--climate-mode', 'meld-climate-mode-group', 'group', 'origin'],
+  ['--osm-pbf-url', 'meld-pbf-url-input', 'value', ''], ['--overpass-url', 'meld-overpass-input', 'value', ''],
+  ['--offline', 'meld-offline-toggle', 'toggle'], ['--origin', 'meld-origin-input', 'value', ''],
+  ['--world-border', 'meld-world-border-toggle', 'toggle'], ['--region-format', 'meld-region-format-group', 'group', 'mca'],
+  ['--blinear-level', 'meld-blinear-level-input', 'value', '6'],
+];
+
+// Puts a job's flags back into the controls (the Start path in reverse); a flag the job did not
+// send puts its control back to the default. `rebuild` leaves out what would skip built cells.
+export function applyFlags(flags, rebuild = false) {
+  const kept = new Map();
+  for (const f of flags || []) {
+    const i = f.indexOf('=');
+    kept.set(i < 0 ? f : f.slice(0, i), i < 0 ? true : f.slice(i + 1));
+  }
+  if (rebuild) kept.delete('--skip-built');
+  const set = (id, kind, v) => {
+    if (kind === 'group') {
+      const seg = document.querySelector(`#${id} .segment[data-v="${v}"]`);
+      if (seg && choice(id) !== v) seg.click();
+      return;
+    }
+    const box = el(id);
+    if (!box) return;
+    const prop = kind === 'value' ? 'value' : 'checked';
+    if (box[prop] !== v) {
+      box[prop] = v;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  };
+  for (const [flag, id, kind, fallback] of FLAG_CONTROLS) {
+    const v = kept.get(flag);
+    if (kind === 'value' || kind === 'group') set(id, kind, v === undefined ? fallback : String(v));
+    else set(id, 'toggle', kind === 'untoggle' ? v === undefined : v !== undefined);
+  }
+  // Region Download is the one data source a job keeps; any other source goes back to the default.
+  set('meld-osm-source-group', 'group', kept.get('--osm-pbf') === 'geofabrik' ? 'region' : 'default');
+}
+
+// Selects `bounds` ([south, west, north, east]) exactly, with no ring around it.
+export const selectBounds = (bounds) => postToMap({ type: 'setBbox', bounds });
+
 // The outline drawn or picked on the map, as the file `--plan-mask` reads ('' for none): a
 // job in pieces then builds only the pieces it touches.
 let maskPath = '';
@@ -1042,7 +1100,15 @@ const MISS_KEY = 'arnis-place-misses';
 const MISS_MS = 7 * 864e5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep }) {
+// The job a card offers: the unfinished one that ran last, else the last one that finished.
+export function projectJob(w) {
+  const jobs = [...(Array.isArray(w.jobs) ? w.jobs : [])].sort((a, b) => (b.last_run_ms || 0) - (a.last_run_ms || 0));
+  return jobs.find((j) => !j.finished) || jobs[0] || null;
+}
+
+// `resume(world, job, rebuild)` starts a job again with its settings; without it (or without
+// job data from the engine) only Open and Expand are offered.
+export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep, resume = null }) {
   const list = el('projects-list');
   let view = readView();
   const ratio = (s) => (s >= 1 ? `${+s.toFixed(2)}:1` : `1:${+(1 / s).toFixed(2)}`);
@@ -1176,6 +1242,25 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
       if (w.locked) kids.push(text('projects-meta is-warn', t('projects_in_use', 'In use')));
       // One World needs Java on Earth: without it the buttons would do nothing.
       const off = !available();
+      const job = resume ? projectJob(w) : null;
+      if (job && job.total > 0) {
+        const lang = (() => { try { return localStorage.getItem('arnis-language') || undefined; } catch (_) { return undefined; } })();
+        const n = (x) => { try { return Number(x).toLocaleString(lang); } catch (_) { return String(x); } };
+        if (!job.finished) kids.push(text('projects-meta', t('projects_cells', '{done} / {total} cells', { done: n(job.done), total: n(job.total) })));
+        const go = async (rebuild) => { await pick(w.name, false); await resume(w, job, rebuild); };
+        if (!job.finished) kids.push(button('projects_resume', 'Resume', w.locked || off, () => go(false)));
+        else {
+          // Rebuilding replaces what is built: the first click asks, the second does it.
+          let armed = 0;
+          const b = button('projects_rebuild', 'Rebuild', w.locked || off, () => {
+            if (armed) { clearTimeout(armed); armed = 0; b.textContent = t('projects_rebuild', 'Rebuild'); return go(true); }
+            b.textContent = t('projects_rebuild_sure', 'Rebuild? Click again');
+            armed = setTimeout(() => { armed = 0; b.textContent = t('projects_rebuild', 'Rebuild'); }, 4000);
+            armed.unref?.();
+          });
+          kids.push(b);
+        }
+      }
       kids.push(button('projects_open', 'Open', w.locked || off, () => pick(w.name, false)));
       kids.push(button('projects_expand', 'Expand', w.locked || off, () => pick(w.name, true)));
       if (off) kids.slice(-2).forEach((b) => { b.title = t('one_world_desc_on', 'Each area joins one growing world at its real position. Java only.'); });

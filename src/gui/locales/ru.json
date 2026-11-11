@@ -756,5 +756,9 @@
   "projects_empty": "Миров пока нет. Постройте один с включённым One World.",
   "projects_view": "Вид",
   "projects_view_list": "Список",
-  "projects_view_grid": "Сетка"
+  "projects_view_grid": "Сетка",
+  "projects_cells": "{done} / {total} ячеек",
+  "projects_resume": "Продолжить",
+  "projects_rebuild": "Перестроить",
+  "projects_rebuild_sure": "Перестроить? Нажмите ещё раз"
 }

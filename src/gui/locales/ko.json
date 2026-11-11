@@ -756,5 +756,9 @@
   "projects_empty": "아직 월드가 없습니다. One World를 켜고 만들어 보세요.",
   "projects_view": "보기",
   "projects_view_list": "목록",
-  "projects_view_grid": "격자"
+  "projects_view_grid": "격자",
+  "projects_cells": "{done} / {total} 셀",
+  "projects_resume": "이어서 하기",
+  "projects_rebuild": "다시 빌드",
+  "projects_rebuild_sure": "다시 빌드할까요? 한 번 더 클릭"
 }

@@ -756,5 +756,9 @@
   "projects_empty": "Pasauļu vēl nav. Izveidojiet vienu ar ieslēgtu One World.",
   "projects_view": "Skats",
   "projects_view_list": "Saraksts",
-  "projects_view_grid": "Režģis"
+  "projects_view_grid": "Režģis",
+  "projects_cells": "{done} / {total} šūnu",
+  "projects_resume": "Turpināt",
+  "projects_rebuild": "Pārbūvēt",
+  "projects_rebuild_sure": "Pārbūvēt? Noklikšķini vēlreiz"
 }

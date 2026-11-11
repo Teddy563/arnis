@@ -756,5 +756,9 @@
   "projects_empty": "Pasaulių dar nėra. Sukurkite įjungę One World.",
   "projects_view": "Rodinys",
   "projects_view_list": "Sąrašas",
-  "projects_view_grid": "Tinklelis"
+  "projects_view_grid": "Tinklelis",
+  "projects_cells": "{done} / {total} langelių",
+  "projects_resume": "Tęsti",
+  "projects_rebuild": "Perkurti",
+  "projects_rebuild_sure": "Perkurti? Spustelėk dar kartą"
 }

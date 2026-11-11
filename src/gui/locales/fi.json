@@ -756,5 +756,9 @@
   "projects_empty": "Ei vielä maailmoja. Rakenna yksi One World päällä.",
   "projects_view": "Näkymä",
   "projects_view_list": "Luettelo",
-  "projects_view_grid": "Ruudukko"
+  "projects_view_grid": "Ruudukko",
+  "projects_cells": "{done} / {total} ruutua",
+  "projects_resume": "Jatka",
+  "projects_rebuild": "Rakenna uudelleen",
+  "projects_rebuild_sure": "Rakenna uudelleen? Napsauta uudelleen"
 }

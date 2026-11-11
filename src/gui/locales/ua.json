@@ -756,5 +756,9 @@
   "projects_empty": "Світів ще немає. Побудуйте один із увімкненим One World.",
   "projects_view": "Вигляд",
   "projects_view_list": "Список",
-  "projects_view_grid": "Сітка"
+  "projects_view_grid": "Сітка",
+  "projects_cells": "{done} / {total} комірок",
+  "projects_resume": "Продовжити",
+  "projects_rebuild": "Перебудувати",
+  "projects_rebuild_sure": "Перебудувати? Натисніть ще раз"
 }

@@ -756,5 +756,9 @@
   "projects_empty": "لا توجد عوالم بعد. ابنِ واحدًا مع تفعيل One World.",
   "projects_view": "العرض",
   "projects_view_list": "قائمة",
-  "projects_view_grid": "شبكة"
+  "projects_view_grid": "شبكة",
+  "projects_cells": "{done} / {total} خلية",
+  "projects_resume": "متابعة",
+  "projects_rebuild": "إعادة البناء",
+  "projects_rebuild_sure": "إعادة البناء؟ انقر مرة أخرى"
 }

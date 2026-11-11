@@ -756,5 +756,9 @@
   "projects_empty": "Aún no hay mundos. Crea uno con One World activado.",
   "projects_view": "Vista",
   "projects_view_list": "Lista",
-  "projects_view_grid": "Cuadrícula"
+  "projects_view_grid": "Cuadrícula",
+  "projects_cells": "{done} / {total} celdas",
+  "projects_resume": "Reanudar",
+  "projects_rebuild": "Reconstruir",
+  "projects_rebuild_sure": "¿Reconstruir? Haz clic otra vez"
 }

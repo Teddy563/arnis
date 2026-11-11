@@ -93,4 +93,31 @@ store.clear();
 await place(async () => { asked2.push(1); return 'x'; })();
 await settle();
 assert.strictEqual(asked2.length, 0);
+
+// Resume (unfinished job) and Rebuild (finished area, behind a second click).
+store.clear();
+const jobs = [
+  { name: 'Open', area_count: 1, scale: 1, locked: false, modified_ms: 1, jobs: [{ name: 'j1', settings: ['--threads=2'], done: 1204, total: 61747, finished: false, last_run_ms: 5 }] },
+  { name: 'Done', area_count: 1, scale: 1, locked: false, modified_ms: 1, jobs: [{ name: 'j2', settings: ['--seed=3'], done: 9, total: 9, finished: true, last_run_ms: 5 }] },
+  { name: 'Plain', area_count: 1, scale: 1, locked: false, modified_ms: 1 },
+];
+const started = [];
+const withJobs = initProjects({ invoke: async (c) => (c === 'gui_list_one_worlds' ? jobs : null), savePath: () => '/s', scale: () => 1, open: async () => {}, resume: async (w, j, r) => started.push([w.name, j.settings, r]) });
+await withJobs();
+const cards = list.children;
+const label = (r) => r.children.map((c) => c.textContent);
+assert.ok(label(cards[0]).includes('1,204 / 61,747 cells'), 'the count is formatted');
+assert.ok(label(cards[0]).includes('Resume') && !label(cards[0]).includes('Rebuild'));
+assert.ok(label(cards[1]).includes('Rebuild') && !label(cards[1]).includes('Resume') && !label(cards[1]).some((x) => x.includes('cells')));
+assert.deepStrictEqual(label(cards[2]).filter((x) => /Resume|Rebuild/.test(x)), [], 'a plain world has neither');
+const btn = (r, name) => r.children.find((c) => c.textContent === name || c.textContent.startsWith(name));
+await btn(cards[0], 'Resume').listeners.click();
+assert.deepStrictEqual(started.at(-1), ['Open', ['--threads=2'], false]);
+assert.strictEqual(store.get('arnis-one-world-name'), 'Open', 'the world is picked first');
+const rebuild = btn(cards[1], 'Rebuild');
+await rebuild.listeners.click();
+assert.strictEqual(started.length, 1, 'the first click only asks');
+assert.strictEqual(rebuild.textContent, 'Rebuild? Click again');
+await rebuild.listeners.click();
+assert.deepStrictEqual(started.at(-1), ['Done', ['--seed=3'], true]);
 console.log('projects-v2 ok');

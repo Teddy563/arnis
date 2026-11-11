@@ -756,5 +756,9 @@
   "projects_empty": "No worlds yet. Build one with One World on.",
   "projects_view": "View",
   "projects_view_list": "List",
-  "projects_view_grid": "Grid"
+  "projects_view_grid": "Grid",
+  "projects_cells": "{done} / {total} cells",
+  "projects_resume": "Resume",
+  "projects_rebuild": "Rebuild",
+  "projects_rebuild_sure": "Rebuild? Click again"
 }

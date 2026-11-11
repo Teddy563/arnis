@@ -756,5 +756,9 @@
   "projects_empty": "Brak światów. Zbuduj jeden z włączonym One World.",
   "projects_view": "Widok",
   "projects_view_list": "Lista",
-  "projects_view_grid": "Siatka"
+  "projects_view_grid": "Siatka",
+  "projects_cells": "{done} / {total} komórek",
+  "projects_resume": "Wznów",
+  "projects_rebuild": "Zbuduj ponownie",
+  "projects_rebuild_sure": "Zbudować ponownie? Kliknij jeszcze raz"
 }

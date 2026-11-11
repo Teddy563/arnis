@@ -756,5 +756,9 @@
   "projects_empty": "ワールドはまだありません。One World をオンにして作成してください。",
   "projects_view": "表示",
   "projects_view_list": "リスト",
-  "projects_view_grid": "グリッド"
+  "projects_view_grid": "グリッド",
+  "projects_cells": "{done} / {total} セル",
+  "projects_resume": "再開",
+  "projects_rebuild": "再構築",
+  "projects_rebuild_sure": "再構築しますか？もう一度クリック"
 }

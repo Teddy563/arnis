@@ -756,5 +756,9 @@
   "projects_empty": "Noch keine Welten. Baue eine mit aktiviertem One World.",
   "projects_view": "Ansicht",
   "projects_view_list": "Liste",
-  "projects_view_grid": "Raster"
+  "projects_view_grid": "Raster",
+  "projects_cells": "{done} / {total} Zellen",
+  "projects_resume": "Fortsetzen",
+  "projects_rebuild": "Neu bauen",
+  "projects_rebuild_sure": "Neu bauen? Nochmal klicken"
 }

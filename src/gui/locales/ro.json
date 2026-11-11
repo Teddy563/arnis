@@ -756,5 +756,9 @@
   "projects_empty": "Nu există încă lumi. Construiește una cu O singură lume activată.",
   "projects_view": "Afișare",
   "projects_view_list": "Listă",
-  "projects_view_grid": "Grilă"
+  "projects_view_grid": "Grilă",
+  "projects_cells": "{done} / {total} celule",
+  "projects_resume": "Reia",
+  "projects_rebuild": "Reconstruiește",
+  "projects_rebuild_sure": "Reconstruiești? Apasă încă o dată"
 }

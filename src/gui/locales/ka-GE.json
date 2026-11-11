@@ -756,5 +756,9 @@
   "projects_empty": "სამყაროები ჯერ არ არის. შექმენით One World-ის ჩართვით.",
   "projects_view": "ხედი",
   "projects_view_list": "სია",
-  "projects_view_grid": "ბადე"
+  "projects_view_grid": "ბადე",
+  "projects_cells": "{done} / {total} უჯრედი",
+  "projects_resume": "გაგრძელება",
+  "projects_rebuild": "ხელახლა აგება",
+  "projects_rebuild_sure": "ხელახლა აგება? დააჭირე კიდევ ერთხელ"
 }

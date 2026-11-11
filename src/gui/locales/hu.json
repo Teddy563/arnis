@@ -756,5 +756,9 @@
   "projects_empty": "Még nincs világ. Építs egyet bekapcsolt One World mellett.",
   "projects_view": "Nézet",
   "projects_view_list": "Lista",
-  "projects_view_grid": "Rács"
+  "projects_view_grid": "Rács",
+  "projects_cells": "{done} / {total} cella",
+  "projects_resume": "Folytatás",
+  "projects_rebuild": "Újraépítés",
+  "projects_rebuild_sure": "Újraépítés? Kattints újra"
 }
