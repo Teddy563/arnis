@@ -161,7 +161,7 @@ var citySearch = {
                 details = [label, kind !== 'country' && result.address && result.address.country].filter(Boolean).join(' · ');
             }
             
-            html += '<div class="search-result-item" data-index="' + index + '" data-lat=""' + result.lat + '" data-lon="' + result.lon + '">';
+            html += '<div class="search-result-item" data-index="' + index + '" data-lat="' + result.lat + '" data-lon="' + result.lon + '">';
             html += '<div class="search-result-text"><div class="search-result-name">' + self.escapeHtml(mainName) + '</div>';
             html += '<div class="search-result-details">' + self.escapeHtml(details) + '</div></div>';
             // A country or region (Meld features): select all of it, not just look there.

@@ -141,7 +141,7 @@ fn chunk_piece(
         (false, false) => return None,
     };
     let schem = if rock_hit {
-        // Big rocks weigh 1 against 6 for small ones: about one rock in ten.
+        // Big rocks weigh 1 against 6 for small ones: about one rock in eleven.
         let weight = |s: &StructureSchematic| if is_large(s) { 1 } else { 6 };
         let mut roll = rng.random_range(0..pool.iter().map(weight).sum::<u32>());
         pool.iter()
