@@ -762,5 +762,21 @@
   "projects_rebuild": "Perkurti",
   "projects_rebuild_sure": "Perkurti? Spustelėk dar kartą",
   "projects_rename": "Pervardyti",
-  "world_rename_tip": "Spustelėk, kad pervardytum šį pasaulį"
+  "world_rename_tip": "Spustelėk, kad pervardytum šį pasaulį",
+  "map_tool_cells": "Pasirinkti langelius",
+  "map_tool_cells_desc": "Spustelėkite langelį arba nutempkite rėmelį. Shift arba Ctrl prideda. Dešinysis pelės mygtukas rodo veiksmus. Esc išvalo pasirinkimą.",
+  "cell_skip": "Praleisti",
+  "cell_include": "Įtraukti vėl",
+  "cell_pause_now": "Pristabdyti dabar",
+  "cell_next": "Statyti kitus",
+  "cell_remove": "Pašalinti iš pasaulio",
+  "cell_none": "Joks veiksmas netinka visiems šiems langeliams.",
+  "cell_head_why": "Pirmasis langelis statomas vienas, jo negalima pristabdyti ar atšaukti.",
+  "cell_ignored": "Nepavyko pakeisti: {n}.",
+  "cell_remove_confirm": "Pašalinti pasirinktus langelius ({n}) iš pasaulio? To atšaukti negalima.",
+  "cell_rebuild_confirm": "Perstatyti pasirinktus langelius ({n})? Jų žemė pirmiausia pašalinama.",
+  "cell_hold": "Laikykite nuspaudę, kad patvirtintumėte",
+  "run_state_held": "Sulaikytas",
+  "run_state_omitted": "Praleistas",
+  "legend_picked": "Pasirinkti langeliai"
 }

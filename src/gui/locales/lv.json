@@ -762,5 +762,21 @@
   "projects_rebuild": "Pārbūvēt",
   "projects_rebuild_sure": "Pārbūvēt? Noklikšķini vēlreiz",
   "projects_rename": "Pārdēvēt",
-  "world_rename_tip": "Noklikšķini, lai pārdēvētu šo pasauli"
+  "world_rename_tip": "Noklikšķini, lai pārdēvētu šo pasauli",
+  "map_tool_cells": "Atlasīt šūnas",
+  "map_tool_cells_desc": "Noklikšķini uz šūnas vai velc rāmi. Shift vai Ctrl pievieno. Labais klikšķis atver darbības. Esc notīra atlasi.",
+  "cell_skip": "Izlaist",
+  "cell_include": "Iekļaut atkal",
+  "cell_pause_now": "Pauzēt tūlīt",
+  "cell_next": "Būvēt nākamās",
+  "cell_remove": "Noņemt no pasaules",
+  "cell_none": "Neviena darbība neder visām šīm šūnām.",
+  "cell_head_why": "Pirmā šūna tiek būvēta viena, un to nevar pauzēt vai atcelt.",
+  "cell_ignored": "{n} nevarēja mainīt.",
+  "cell_remove_confirm": "Noņemt no pasaules atlasītās šūnas ({n})? To nevar atsaukt.",
+  "cell_rebuild_confirm": "Pārbūvēt atlasītās šūnas ({n})? Vispirms tiek noņemta to zeme.",
+  "cell_hold": "Turi nospiestu, lai apstiprinātu",
+  "run_state_held": "Aizturēta",
+  "run_state_omitted": "Izlaista",
+  "legend_picked": "Atlasītās šūnas"
 }

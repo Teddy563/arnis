@@ -762,5 +762,21 @@
   "projects_rebuild": "Újraépítés",
   "projects_rebuild_sure": "Újraépítés? Kattints újra",
   "projects_rename": "Átnevezés",
-  "world_rename_tip": "Kattints a világ átnevezéséhez"
+  "world_rename_tip": "Kattints a világ átnevezéséhez",
+  "map_tool_cells": "Cellák kijelölése",
+  "map_tool_cells_desc": "Kattints egy cellára, vagy húzz egy keretet. Shift vagy Ctrl hozzáad. Jobb kattintás: műveletek. Esc törli a kijelölést.",
+  "cell_skip": "Kihagyás",
+  "cell_include": "Újra bevonás",
+  "cell_pause_now": "Szüneteltetés most",
+  "cell_next": "Építés következőnek",
+  "cell_remove": "Eltávolítás a világból",
+  "cell_none": "Egyetlen művelet sem illik mindegyik cellához.",
+  "cell_head_why": "Az első cella egyedül épül, nem szüneteltethető és nem szakítható meg.",
+  "cell_ignored": "{n} nem módosítható.",
+  "cell_remove_confirm": "Eltávolítod a világból a kijelölt cellákat ({n})? Ez nem vonható vissza.",
+  "cell_rebuild_confirm": "Újraépíted a kijelölt cellákat ({n})? A területük előbb törlődik.",
+  "cell_hold": "Tartsd lenyomva a megerősítéshez",
+  "run_state_held": "Szünetel",
+  "run_state_omitted": "Kihagyva",
+  "legend_picked": "Kijelölt cellák"
 }

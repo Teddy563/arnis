@@ -762,5 +762,21 @@
   "projects_rebuild": "다시 빌드",
   "projects_rebuild_sure": "다시 빌드할까요? 한 번 더 클릭",
   "projects_rename": "이름 바꾸기",
-  "world_rename_tip": "클릭하여 이 월드 이름 바꾸기"
+  "world_rename_tip": "클릭하여 이 월드 이름 바꾸기",
+  "map_tool_cells": "셀 선택",
+  "map_tool_cells_desc": "셀을 클릭하거나 상자를 드래그하세요. Shift 또는 Ctrl로 추가합니다. 우클릭으로 작업을 엽니다. Esc로 선택을 해제합니다.",
+  "cell_skip": "건너뛰기",
+  "cell_include": "다시 포함",
+  "cell_pause_now": "지금 일시정지",
+  "cell_next": "다음에 빌드",
+  "cell_remove": "월드에서 제거",
+  "cell_none": "선택한 모든 셀에 적용할 수 있는 작업이 없습니다.",
+  "cell_head_why": "첫 번째 셀은 혼자 빌드되며 일시정지하거나 취소할 수 없습니다.",
+  "cell_ignored": "{n}개는 변경할 수 없었습니다.",
+  "cell_remove_confirm": "선택한 셀({n}개)을 월드에서 제거할까요? 되돌릴 수 없습니다.",
+  "cell_rebuild_confirm": "선택한 셀({n}개)을 다시 빌드할까요? 먼저 해당 지형이 제거됩니다.",
+  "cell_hold": "길게 눌러 확인",
+  "run_state_held": "보류됨",
+  "run_state_omitted": "건너뜀",
+  "legend_picked": "선택한 셀"
 }

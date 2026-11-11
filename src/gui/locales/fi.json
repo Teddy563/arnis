@@ -762,5 +762,21 @@
   "projects_rebuild": "Rakenna uudelleen",
   "projects_rebuild_sure": "Rakenna uudelleen? Napsauta uudelleen",
   "projects_rename": "Nimeä uudelleen",
-  "world_rename_tip": "Napsauta nimeämään tämä maailma uudelleen"
+  "world_rename_tip": "Napsauta nimeämään tämä maailma uudelleen",
+  "map_tool_cells": "Valitse ruutuja",
+  "map_tool_cells_desc": "Napsauta ruutua tai vedä laatikko. Vaihto tai Ctrl lisää. Hiiren oikea painike avaa toiminnot. Esc tyhjentää valinnan.",
+  "cell_skip": "Ohita",
+  "cell_include": "Sisällytä uudelleen",
+  "cell_pause_now": "Keskeytä nyt",
+  "cell_next": "Rakenna seuraavaksi",
+  "cell_remove": "Poista maailmasta",
+  "cell_none": "Mikään toiminto ei sovi kaikille näille ruuduille.",
+  "cell_head_why": "Ensimmäinen ruutu rakennetaan yksin, eikä sitä voi keskeyttää tai peruuttaa.",
+  "cell_ignored": "{n} ei voitu muuttaa.",
+  "cell_remove_confirm": "Poistetaanko valitut ruudut ({n}) maailmasta? Tätä ei voi perua.",
+  "cell_rebuild_confirm": "Rakennetaanko valitut ruudut ({n}) uudelleen? Niiden maa poistetaan ensin.",
+  "cell_hold": "Vahvista pitämällä painettuna",
+  "run_state_held": "Pidossa",
+  "run_state_omitted": "Ohitettu",
+  "legend_picked": "Valitut ruudut"
 }

@@ -762,5 +762,21 @@
   "projects_rebuild": "再構築",
   "projects_rebuild_sure": "再構築しますか？もう一度クリック",
   "projects_rename": "名前を変更",
-  "world_rename_tip": "クリックでこのワールドの名前を変更"
+  "world_rename_tip": "クリックでこのワールドの名前を変更",
+  "map_tool_cells": "セルを選択",
+  "map_tool_cells_desc": "セルをクリックするか、ドラッグで範囲を選びます。Shift または Ctrl で追加。右クリックで操作。Esc で解除。",
+  "cell_skip": "スキップ",
+  "cell_include": "再び含める",
+  "cell_pause_now": "今すぐ一時停止",
+  "cell_next": "次に構築",
+  "cell_remove": "ワールドから削除",
+  "cell_none": "選択したすべてのセルに使える操作はありません。",
+  "cell_head_why": "最初のセルは単独で構築されるため、一時停止も取り消しもできません。",
+  "cell_ignored": "{n} 件は変更できませんでした。",
+  "cell_remove_confirm": "選択したセル ({n}) をワールドから削除しますか？ 元に戻せません。",
+  "cell_rebuild_confirm": "選択したセル ({n}) を再構築しますか？ 先にその土地が削除されます。",
+  "cell_hold": "長押しで確定",
+  "run_state_held": "保留中",
+  "run_state_omitted": "スキップ済み",
+  "legend_picked": "選択中のセル"
 }

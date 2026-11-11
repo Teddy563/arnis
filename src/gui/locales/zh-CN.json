@@ -762,5 +762,21 @@
   "projects_rebuild": "重建",
   "projects_rebuild_sure": "重建？再点一次",
   "projects_rename": "重命名",
-  "world_rename_tip": "点击重命名此世界"
+  "world_rename_tip": "点击重命名此世界",
+  "map_tool_cells": "选择单元格",
+  "map_tool_cells_desc": "点击单元格或拖出方框。Shift 或 Ctrl 可追加。右键打开操作。Esc 取消选择。",
+  "cell_skip": "跳过",
+  "cell_include": "重新包含",
+  "cell_pause_now": "立即暂停",
+  "cell_next": "接着构建",
+  "cell_remove": "从世界中移除",
+  "cell_none": "没有适用于所有这些单元格的操作。",
+  "cell_head_why": "第一个单元格单独构建，无法暂停或取消。",
+  "cell_ignored": "{n} 个无法更改。",
+  "cell_remove_confirm": "从世界中移除所选单元格（{n} 个）？此操作无法撤销。",
+  "cell_rebuild_confirm": "重建所选单元格（{n} 个）？会先移除它们的地形。",
+  "cell_hold": "长按以确认",
+  "run_state_held": "已搁置",
+  "run_state_omitted": "已跳过",
+  "legend_picked": "所选单元格"
 }

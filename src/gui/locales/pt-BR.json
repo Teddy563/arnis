@@ -762,5 +762,21 @@
   "projects_rebuild": "Reconstruir",
   "projects_rebuild_sure": "Reconstruir? Clique de novo",
   "projects_rename": "Renomear",
-  "world_rename_tip": "Clique para renomear este mundo"
+  "world_rename_tip": "Clique para renomear este mundo",
+  "map_tool_cells": "Selecionar células",
+  "map_tool_cells_desc": "Clique em uma célula ou arraste uma caixa. Shift ou Ctrl adiciona. Botão direito para ações. Esc limpa a seleção.",
+  "cell_skip": "Pular",
+  "cell_include": "Incluir de novo",
+  "cell_pause_now": "Pausar agora",
+  "cell_next": "Construir em seguida",
+  "cell_remove": "Remover do mundo",
+  "cell_none": "Nenhuma ação serve para todas essas células.",
+  "cell_head_why": "A primeira célula é construída sozinha e não pode ser pausada nem cancelada.",
+  "cell_ignored": "{n} não puderam ser alteradas.",
+  "cell_remove_confirm": "Remover do mundo as células selecionadas ({n})? Isso não pode ser desfeito.",
+  "cell_rebuild_confirm": "Reconstruir as células selecionadas ({n})? O terreno delas é removido antes.",
+  "cell_hold": "Segure para confirmar",
+  "run_state_held": "Em pausa",
+  "run_state_omitted": "Pulada",
+  "legend_picked": "Células selecionadas"
 }

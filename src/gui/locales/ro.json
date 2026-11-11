@@ -762,5 +762,21 @@
   "projects_rebuild": "Reconstruiește",
   "projects_rebuild_sure": "Reconstruiești? Apasă încă o dată",
   "projects_rename": "Redenumește",
-  "world_rename_tip": "Apasă pentru a redenumi această lume"
+  "world_rename_tip": "Apasă pentru a redenumi această lume",
+  "map_tool_cells": "Selectează celule",
+  "map_tool_cells_desc": "Dă clic pe o celulă sau trage un cadru. Shift sau Ctrl adaugă. Clic dreapta pentru acțiuni. Esc șterge selecția.",
+  "cell_skip": "Sari peste",
+  "cell_include": "Include din nou",
+  "cell_pause_now": "Pauză acum",
+  "cell_next": "Construiește următoarele",
+  "cell_remove": "Elimină din lume",
+  "cell_none": "Nicio acțiune nu se potrivește tuturor acestor celule.",
+  "cell_head_why": "Prima celulă se construiește singură și nu poate fi pusă pe pauză sau anulată.",
+  "cell_ignored": "{n} nu au putut fi modificate.",
+  "cell_remove_confirm": "Elimini din lume celulele selectate ({n})? Nu se poate anula.",
+  "cell_rebuild_confirm": "Reconstruiești celulele selectate ({n})? Terenul lor se elimină mai întâi.",
+  "cell_hold": "Ține apăsat ca să confirmi",
+  "run_state_held": "Pe pauză",
+  "run_state_omitted": "Omisă",
+  "legend_picked": "Celule selectate"
 }

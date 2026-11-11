@@ -762,5 +762,21 @@
   "projects_rebuild": "Zbuduj ponownie",
   "projects_rebuild_sure": "Zbudować ponownie? Kliknij jeszcze raz",
   "projects_rename": "Zmień nazwę",
-  "world_rename_tip": "Kliknij, aby zmienić nazwę tego świata"
+  "world_rename_tip": "Kliknij, aby zmienić nazwę tego świata",
+  "map_tool_cells": "Zaznacz komórki",
+  "map_tool_cells_desc": "Kliknij komórkę lub przeciągnij ramkę. Shift lub Ctrl dodaje. Prawy przycisk pokazuje działania. Esc czyści zaznaczenie.",
+  "cell_skip": "Pomiń",
+  "cell_include": "Dołącz ponownie",
+  "cell_pause_now": "Wstrzymaj teraz",
+  "cell_next": "Zbuduj następne",
+  "cell_remove": "Usuń ze świata",
+  "cell_none": "Żadne działanie nie pasuje do wszystkich tych komórek.",
+  "cell_head_why": "Pierwsza komórka buduje się sama i nie można jej wstrzymać ani anulować.",
+  "cell_ignored": "Nie udało się zmienić: {n}.",
+  "cell_remove_confirm": "Usunąć ze świata zaznaczone komórki ({n})? Tego nie można cofnąć.",
+  "cell_rebuild_confirm": "Zbudować ponownie zaznaczone komórki ({n})? Najpierw usunięty zostanie ich teren.",
+  "cell_hold": "Przytrzymaj, aby potwierdzić",
+  "run_state_held": "Wstrzymana",
+  "run_state_omitted": "Pominięta",
+  "legend_picked": "Zaznaczone komórki"
 }

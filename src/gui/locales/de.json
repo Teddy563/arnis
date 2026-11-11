@@ -762,5 +762,21 @@
   "projects_rebuild": "Neu bauen",
   "projects_rebuild_sure": "Neu bauen? Nochmal klicken",
   "projects_rename": "Umbenennen",
-  "world_rename_tip": "Zum Umbenennen dieser Welt klicken"
+  "world_rename_tip": "Zum Umbenennen dieser Welt klicken",
+  "map_tool_cells": "Zellen auswählen",
+  "map_tool_cells_desc": "Zelle anklicken oder Rahmen aufziehen. Umschalt oder Strg fügt hinzu. Rechtsklick für Aktionen. Esc hebt die Auswahl auf.",
+  "cell_skip": "Überspringen",
+  "cell_include": "Wieder aufnehmen",
+  "cell_pause_now": "Jetzt pausieren",
+  "cell_next": "Als Nächstes bauen",
+  "cell_remove": "Aus der Welt entfernen",
+  "cell_none": "Keine Aktion passt zu allen diesen Zellen.",
+  "cell_head_why": "Die erste Zelle wird allein gebaut und kann nicht pausiert oder abgebrochen werden.",
+  "cell_ignored": "{n} konnten nicht geändert werden.",
+  "cell_remove_confirm": "Die ausgewählten Zellen ({n}) aus der Welt entfernen? Das lässt sich nicht rückgängig machen.",
+  "cell_rebuild_confirm": "Die ausgewählten Zellen ({n}) neu bauen? Ihr Land wird zuerst entfernt.",
+  "cell_hold": "Zum Bestätigen gedrückt halten",
+  "run_state_held": "Angehalten",
+  "run_state_omitted": "Übersprungen",
+  "legend_picked": "Ausgewählte Zellen"
 }

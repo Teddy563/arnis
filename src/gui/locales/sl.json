@@ -762,5 +762,21 @@
   "projects_rebuild": "Znova zgradi",
   "projects_rebuild_sure": "Znova zgradim? Klikni še enkrat",
   "projects_rename": "Preimenuj",
-  "world_rename_tip": "Klikni za preimenovanje tega sveta"
+  "world_rename_tip": "Klikni za preimenovanje tega sveta",
+  "map_tool_cells": "Izberi celice",
+  "map_tool_cells_desc": "Kliknite celico ali povlecite okvir. Shift ali Ctrl doda. Desni klik odpre dejanja. Esc počisti izbiro.",
+  "cell_skip": "Preskoči",
+  "cell_include": "Ponovno vključi",
+  "cell_pause_now": "Pavza zdaj",
+  "cell_next": "Zgradi naslednje",
+  "cell_remove": "Odstrani iz sveta",
+  "cell_none": "Nobeno dejanje ne ustreza vsem tem celicam.",
+  "cell_head_why": "Prva celica se gradi sama in je ni mogoče zaustaviti ali preklicati.",
+  "cell_ignored": "Ni bilo mogoče spremeniti: {n}.",
+  "cell_remove_confirm": "Odstranim izbrane celice ({n}) iz sveta? Tega ni mogoče razveljaviti.",
+  "cell_rebuild_confirm": "Znova zgradim izbrane celice ({n})? Njihovo zemljo najprej odstranimo.",
+  "cell_hold": "Pridržite za potrditev",
+  "run_state_held": "Zadržana",
+  "run_state_omitted": "Preskočena",
+  "legend_picked": "Izbrane celice"
 }
