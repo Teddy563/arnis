@@ -532,6 +532,17 @@ export function schedulePlan(fresh = false) {
   planTimer = setTimeout(updatePlan, 250);
 }
 
+// The benchmark winner (Nov 2026): cells of 8 regions, 4 workers, from this area up. Below it
+// Auto builds in one plain run, so Auto stays.
+export const RECOMMENDED_FROM_KM2 = 220;
+export function useRecommended(areaKm2) {
+  const big = areaKm2 >= RECOMMENDED_FROM_KM2;
+  const workers = el('meld-workers-select');
+  workers.value = big ? '4' : 'auto';
+  workers.dispatchEvent(new Event('change', { bubbles: true }));
+  document.querySelector(`#meld-piece-size-group .segment[data-v="${big ? '8' : 'auto'}"]`)?.click();
+}
+
 // Selects `bounds` ([south, west, north, east]) with a ring of regions around it: a job in
 // pieces with a margin of at least one region. `skipBuilt` leaves out what the world has.
 export function selectWithRing(bounds, skipBuilt = false) {
@@ -609,8 +620,8 @@ const div = (className, textContent) => Object.assign(document.createElement('di
 
 // The plan's blocks, a warning, and the legend of what the map shows: the selection, the
 // pieces to build and, with a margin, the ring around it.
-function showPlan(rows, warn = '', ring = false) {
-  shown = [rows, warn, ring];
+function showPlan(rows, warn = '', ring = false, single = false) {
+  shown = [rows, warn, ring, single];
   const box = el('job-plan');
   if (!box) return;
   // With a plan the stretch lines sit behind its "?" (amber or red there too); alone they show as they are.
@@ -630,7 +641,7 @@ function showPlan(rows, warn = '', ring = false) {
   if (warn) box.append(div('job-plan-warn', warn));
   if (rows.length > 1) {
     const legend = div('job-plan-legend', '');
-    const keys = [['selection', 'plan_legend_selection', 'Selection'], ['pieces', 'plan_legend_pieces', 'Cells to build']];
+    const keys = [['selection', 'plan_legend_selection', 'Selection'], ...(single ? [] : [['pieces', 'plan_legend_pieces', 'Cells to build']])];
     if (ring) keys.push(['ring', 'plan_legend_ring', 'Ring (margin)']);
     for (const [kind, key, fallback] of keys) {
       const item = document.createElement('span');
@@ -756,7 +767,7 @@ async function updatePlan() {
   // leaves those out, so then it is 0).
   const overlap = on('meld-skip-built-toggle') ? 0 : units.filter((u) => u.existing_chunks > 0).length;
   planAnswered = key;
-  lastPlan = { n: units.length, w: e.workers, done, overlap };
+  lastPlan = { n: units.length, w: e.workers, done, overlap, single: plan.single === true };
   onPlan();
   planSizes.clear();
   units.forEach((u) => planSizes.set(u.index, u.size));
@@ -764,15 +775,21 @@ async function updatePlan() {
   const ring = regions(units.filter((u) => u.ring));
   const totals = { pieces: units.length, regions: regions(units), ring };
   // Time and size large, the disk line, the rest behind the "?".
+  // A small area is built in one run: no cells to count or draw.
+  const single = plan.single === true;
   showPlan(planHead(e, [
-    [
+    single ? t('plan_single', 'Small area: built in one run.') : [
       tn('plan_pieces', '{n} cells', '{n} cell', totals.pieces),
       tn('plan_regions', '{n} regions', '{n} region', totals.regions),
       ...(ring ? [t('plan_ring', 'ring {n}', { n: ring })] : []),
       tn('plan_workers', '{n} workers', '{n} worker', e.workers),
     ].join(' · '),
     `${t('plan_ram_tip', 'Memory per worker')}: ${range(e.ram_mb, gb)}`,
-  ]), '', units.some((u) => u.ring));
+  ]), '', units.some((u) => u.ring), single);
+  if (single && !pieces.size) {
+    postToMap({ type: 'pieceOutlines', pieces: [] });
+    return;
+  }
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
   const planned = units.map((u) => {

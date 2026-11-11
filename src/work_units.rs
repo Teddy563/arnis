@@ -405,9 +405,12 @@ pub fn plan(
         (UnitSize::N(n), _) => plan_cells(proj, &rect, n, merge)?,
         (UnitSize::Auto, max) => {
             let max = max.unwrap_or(AUTO_SIZES[0]);
-            // Larger leaves until the map ids go round.
+            // Whole `max` pieces clipped at the edges: smaller edge pieces cost more than they
+            // save (B3, 256 km2: 136 mixed pieces 93 s, 16 of 8 x 8 65 s). An outline still
+            // splits, larger leaves until the map ids go round.
             let mut cut = Vec::new();
-            for min in AUTO_SIZES.into_iter().rev().filter(|&s| s <= max) {
+            let leaves = AUTO_SIZES.into_iter().rev();
+            for min in leaves.filter(|&s| s <= max && (mask.is_some() || s == max)) {
                 cut = auto_cells(proj, &rect, max, min, mask.as_ref())?;
                 if cut.len() <= crate::scale::MAX_PIECES {
                     break;
@@ -424,7 +427,8 @@ pub fn plan(
         rect.max_z()
     );
     if let Some(max) = auto_max {
-        name.push_str(&max.to_string());
+        // `w`: whole pieces, not the mixed cut of 3.5.0, whose jobs keep their own folder.
+        name.push_str(&format!("{max}{}", if mask.is_none() { "w" } else { "" }));
     }
     // Merged edges cut other pieces than a plain job over the same rectangle.
     if merge {
@@ -524,12 +528,19 @@ pub fn plan_line(
         name,
     } = plan(&proj, requested, args, size)?;
     let mut existing = 0;
-    let workers = crate::scale::budget::sizing(
-        args,
-        units.len(),
-        units.iter().map(|u| u.regions).max().unwrap_or(1),
-    )
-    .workers;
+    // The runner's own decision: Auto below the break-even is one plain run, so one worker.
+    let single =
+        crate::scale::budget::builds_single(args, requested.area_km2() * args.scale * args.scale);
+    let workers = if single {
+        1
+    } else {
+        crate::scale::budget::sizing(
+            args,
+            units.len(),
+            units.iter().map(|u| u.regions).max().unwrap_or(1),
+        )
+        .workers
+    };
     let (job_estimate, warnings) = job_estimate(&units, args, workers, world_dir);
     let units: Vec<_> = units
         .iter()
@@ -570,6 +581,9 @@ pub fn plan_line(
         },
         "rect": [world.min_x(), world.min_z(), world.max_x(), world.max_z()],
         "requested": [asked.min_x(), asked.min_z(), asked.max_x(), asked.max_z()],
+        // True when the job runs as one plain run; `units` still draws the cells it covers.
+        "single": single,
+        "pieces": if single { 1 } else { units.len() },
         "units": units,
         "existing_chunks": existing,
         "estimate": job_estimate,
@@ -588,10 +602,11 @@ const DISK_KB_PER_CHUNK: [f64; 2] = [4.0, 4.6];
 /// Previews and map items beside the region files, KB per region, from the same smokes:
 /// 84 (rural), 220 (city) and 249 (parity area, many signage maps).
 const EXTRA_KB_PER_REGION: [f64; 2] = [84.0, 249.0];
-/// Wall seconds per 1,000 chunks for one worker. The T1 smokes ran 2 workers x 10 threads on
-/// 24 cores at scale 1, caches warm: 0.34 s per 1,000 chunks (city, 65,536 chunks), 0.90
-/// (rural, 16,384) and 0.99 (parity area, 4,096); doubled for one worker.
-const WORKER_S_PER_KCHUNK: [f64; 2] = [0.68, 1.98];
+/// Wall seconds per 1,000 chunks for one worker. B3 (work/bench22): Auto on 256 km² of
+/// Bucharest, 16 pieces, 4 workers x 5 threads on 24 cores at scale 1, caches warm, built
+/// 1,000,000 chunks in 52.8 s (median of 3): 0.21; the range brackets it, so its middle
+/// lands within 10%. Smaller and rural pieces ran slower per chunk in the T1 smokes.
+const WORKER_S_PER_KCHUNK: [f64; 2] = [0.18, 0.28];
 
 /// Ranges for some pieces built by `workers` at once.
 #[derive(Debug, PartialEq)]
@@ -710,15 +725,22 @@ mod tests {
         let ram = crate::scale::budget::estimate_piece_mb(one[0].regions, 1.0) as f64;
         assert_eq!(e.ram_mb, [ram, ram]);
         let min = |s: f64| (c / 1000.0 * s / 60.0 * 10.0).round() / 10.0;
-        assert_eq!(e.time_min, [min(0.68), min(1.98)]);
+        assert_eq!(e.time_min, [min(0.18), min(0.28)]);
         // Workers split the time, not the disk; RAM is per worker.
         let all: Vec<&WorkUnit> = units.iter().collect();
         let (a, b) = (Estimate::of(&all, 1.0, 1), Estimate::of(&all, 1.0, 4));
         assert_eq!(a.disk_mb, b.disk_mb);
         assert!((a.time_min[1] / 4.0 - b.time_min[1]).abs() <= 0.1);
         assert!(a.ram_mb[0] <= a.ram_mb[1]);
-        // A 1,000-chunk piece at the measured top rate: 1.98 s.
-        assert_eq!(WORKER_S_PER_KCHUNK[1] / 2.0, 0.99);
+    }
+
+    #[test]
+    fn time_estimate_tracks_measured_s16() {
+        // B3: tuned Auto on S16 (256 km², 1,000,000 chunks, 4 workers) took 52.8 s
+        // (median of 3, work/bench22/results-b3.jsonl); the window shows the range's middle.
+        let (lo, hi) = (WORKER_S_PER_KCHUNK[0], WORKER_S_PER_KCHUNK[1]);
+        let shown_s = 1_000.0 * (lo + hi) / 2.0 / 4.0;
+        assert!((shown_s / 52.8 - 1.0).abs() <= 0.25, "{shown_s} s");
     }
 
     fn bucharest() -> (WebMercatorProjection, XZBBox) {
@@ -783,38 +805,38 @@ mod tests {
             snap_regions: Some(SnapRegions::Cover),
             ..Default::default()
         });
-        // Room for two 8 x 8 pieces at scale 1 (1,616 MB each).
+        // Room for two 8 x 8 pieces at scale 1 (976 MB each).
         args.ram_budget_mb = Some(4000);
         let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
         // Covered to the 2-region lattice: 8 x 8 regions around block 0.
         assert_eq!(r(&p.rect), [-2048, -2048, 2047, 2047]);
-        assert!(p.name.ends_with("_nauto8"));
-        // The 8-lattice lines at x 0 and z 0 cut it into four whole 4 x 4 pieces.
+        assert!(p.name.ends_with("_nauto8w"));
+        // The 8-lattice lines at x 0 and z 0 cut it into four clipped 8 x 8 pieces.
         assert_eq!(sizes(&p.units), [(2048, 2048); 4]);
-        assert!(p.units.iter().all(|u| u.size == 4));
-        // A wide job takes 8 x 8 pieces where they fit, smaller ones at its edges.
+        assert!(p.units.iter().all(|u| u.size == 8));
+        // A wide job: 8 x 8 pieces, clipped at its edges, never split smaller.
         let wide = LLBBox::new(44.38, 26.00, 44.49, 26.21).unwrap();
         let p = plan(&proj, &wide, &args, UnitSize::Auto).unwrap();
-        let has = |s| p.units.iter().any(|u| u.size == s);
-        assert!(has(8) && has(4) && has(2), "{:?}", sizes(&p.units));
+        assert!(p.units.iter().all(|u| u.size == 8), "{:?}", sizes(&p.units));
         for u in &p.units {
             let [x0, z0, x1, z1] = r(&u.rect);
-            assert_eq!((x1 - x0 + 1, z1 - z0 + 1), (512 * u.size, 512 * u.size));
+            assert_eq!(x0.div_euclid(4096), x1.div_euclid(4096));
+            assert_eq!(z0.div_euclid(4096), z1.div_euclid(4096));
         }
         let area: u64 = p.units.iter().map(WorkUnit::chunks).sum();
         let [x0, z0, x1, z1] = r(&p.rect);
         assert_eq!(area, ((x1 - x0 + 1) / 16 * ((z1 - z0 + 1) / 16)) as u64);
-        // Less memory: no 8 x 8 pieces, and another job folder.
+        // Less memory: 4 x 4 pieces, and another job folder.
         let eights = p.name.clone();
-        args.ram_budget_mb = Some(2000);
+        args.ram_budget_mb = Some(1500);
         let p = plan(&proj, &wide, &args, UnitSize::Auto).unwrap();
-        assert!(p.units.iter().all(|u| u.size <= 4));
-        assert!(p.name.ends_with("_nauto4") && eights.ends_with("_nauto8"));
-        assert_ne!(p.name, eights);
-        // Without snapping, edge leaves are clipped 2 x 2 cells.
+        assert!(p.units.iter().all(|u| u.size == 4));
+        assert!(p.name.ends_with("_nauto4w") && eights.ends_with("_nauto8w"));
+        // Without snapping, the edges are clipped: four pieces either side of block 0.
         args.units.snap_regions = None;
+        args.ram_budget_mb = Some(4000);
         let p = plan(&proj, &req, &args, UnitSize::Auto).unwrap();
-        assert!(p.units.iter().all(|u| u.chunks() <= 64 * 64));
+        assert_eq!(p.units.len(), 4);
         assert_eq!(r(&p.rect), [-2000, -1120, 1999, 1119]);
     }
 

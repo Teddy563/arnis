@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -53,7 +53,7 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
   // The map-first card says the pieces in its plan block; this line would repeat them.
-  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info');
+  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info' || localizationKey === 'area_single_info');
 }
 
 // Initialize elements and start the demo progress
@@ -1437,6 +1437,10 @@ function initSettings() {
   // Advanced off: a finished One World's name is no longer the world under Start.
   meldToggle.addEventListener('change', () => { if (!meldToggle.checked && (lastRunOneWorld || oneWorldPicked)) setWorldNameLabel(""); });
   document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
+  document.getElementById('meld-recommended-btn')?.addEventListener('click', () => {
+    const [a, b, c, d] = (selectedBBox || '').split(/[\s,]+/).map(Number);
+    useRecommended(calculateBBoxSize(a, b, c, d) / 1e6); // no selection: NaN, so Auto
+  });
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
   // A One World's built land, and a ring of regions around it to build next.
@@ -2873,7 +2877,7 @@ function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
     // The plan is being recomputed: neither warn nor offer pieces until it answers.
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   } else if (pieces) {
-    setBboxSelectionInfo(bboxSelectionElement, "area_pieces_info", "#ececec", pieces);
+    setBboxSelectionInfo(bboxSelectionElement, pieces.single ? "area_single_info" : "area_pieces_info", "#ececec", pieces);
   } else if (hasPlanMask() && !selectedShapes) {
     // An outline only leaves pieces out: a build in one go would build the whole box.
     setBboxSelectionInfo(bboxSelectionElement, "area_outline_needs_pieces", "#fecc44");

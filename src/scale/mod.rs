@@ -267,7 +267,7 @@ pub fn run_with(args: &Args, world_dir: &Path, argv: Vec<OsString>) -> Result<()
 
     match size {
         UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
-        UnitSize::Auto => println!("One World: building {of} piece(s) of 2x2 to 8x8 regions"),
+        UnitSize::Auto => println!("One World: building {of} piece(s) of up to 8x8 regions"),
     }
     // The extract is read once, here; each piece then cuts its own area from the bake.
     let mut argv = argv;
