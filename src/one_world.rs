@@ -363,6 +363,22 @@ impl Manifest {
             .map_err(|e| format!("Failed to write {}: {e}", path.display()))
     }
 
+    /// The areas' union as `[south, west, north, east]` in degrees; none without areas.
+    pub fn bounds(&self) -> Option<[f64; 4]> {
+        let mut it = self.areas.iter();
+        let a = it.next()?;
+        Some(
+            it.fold([a.min_lat, a.min_lon, a.max_lat, a.max_lon], |b, a| {
+                [
+                    b[0].min(a.min_lat),
+                    b[1].min(a.min_lon),
+                    b[2].max(a.max_lat),
+                    b[3].max(a.max_lon),
+                ]
+            }),
+        )
+    }
+
     pub fn extent(&self) -> Option<XZBBox> {
         let first = self.areas.first()?;
         let mut min_x = first.min_x;
@@ -1610,6 +1626,35 @@ mod tests {
         assert_eq!(existing_chunks(dir.path(), &rect), 1);
         let rect = XZBBox::rect_from_min_max(512, 512, 527, 527).unwrap();
         assert_eq!(existing_chunks(dir.path(), &rect), 0);
+    }
+
+    #[test]
+    fn bounds_are_the_union_of_the_areas() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = dir.path().join("w");
+        let req = LLBBox::from_str(MUNICH).unwrap();
+        drop(prepare(&world, &req, &mut args_for(MUNICH, &[])).unwrap());
+        let mut m = Manifest::load(&world).unwrap().unwrap();
+        assert_eq!(m.bounds(), None);
+        let area = |min_lat, min_lon, max_lat, max_lon| GeneratedArea {
+            id: 1,
+            generated_at: 0,
+            arnis_version: String::new(),
+            min_x: 0,
+            min_z: 0,
+            max_x: 1,
+            max_z: 1,
+            min_lat,
+            min_lon,
+            max_lat,
+            max_lon,
+            preview: None,
+            piece: None,
+        };
+        m.areas = vec![area(1.0, 2.0, 3.0, 4.0)];
+        assert_eq!(m.bounds(), Some([1.0, 2.0, 3.0, 4.0]));
+        m.areas.push(area(0.5, 3.0, 2.0, 5.0));
+        assert_eq!(m.bounds(), Some([0.5, 2.0, 3.0, 5.0]));
     }
 
     #[test]

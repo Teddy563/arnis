@@ -1484,6 +1484,8 @@ struct OneWorldEntry {
     #[serde(flatten)]
     info: OneWorldInfo,
     place_name: Option<String>,
+    /// The areas' union, `[south, west, north, east]`; null without areas.
+    bbox: Option<[f64; 4]>,
     jobs: Vec<JobEntry>,
     /// A preview image exists, so `gui_world_thumbnail` has something to show.
     preview: bool,
@@ -1493,6 +1495,8 @@ struct OneWorldEntry {
 struct JobEntry {
     name: String,
     settings: Vec<String>,
+    /// The area the job was started on, `[south, west, north, east]`; null for old jobs.
+    bbox: Option<[f64; 4]>,
     done: u32,
     total: u32,
     finished: bool,
@@ -1564,6 +1568,7 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
                     .map(|j| JobEntry {
                         name: j.name,
                         settings: j.settings,
+                        bbox: j.bbox,
                         done: j.status.done,
                         total: j.status.total,
                         finished: j.status.finished,
@@ -1575,6 +1580,7 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
                 name: e.file_name().to_string_lossy().into_owned(),
                 modified_ms,
                 info,
+                bbox: m.as_ref().and_then(|m| m.bounds()),
                 place_name: m.and_then(|m| m.place_name),
                 jobs,
                 preview: thumbnail_source(&e.path()).is_some(),
@@ -4001,7 +4007,7 @@ mod tests {
         }
         let list = || gui_list_one_worlds(tmp.path().display().to_string()).unwrap();
         let old = &list()[0];
-        assert!(old.place_name.is_none() && old.jobs.is_empty());
+        assert!(old.place_name.is_none() && old.jobs.is_empty() && old.bbox.is_none());
         let flags = job_settings(&[
             "--unit-regions=8".into(),
             "--plan-mask=C:/tmp/m.geojson".into(),
@@ -4009,8 +4015,18 @@ mod tests {
             "--osm-pbf=x.pbf".into(),
         ]);
         assert_eq!(flags, ["--unit-regions=8"]);
-        crate::one_world::record_job(&world, "j", Some(&flags), None, 2, 5, false).unwrap();
+        crate::one_world::record_job(
+            &world,
+            "j",
+            Some(&flags),
+            Some([1.0, 2.0, 3.0, 4.0]),
+            2,
+            5,
+            false,
+        )
+        .unwrap();
         let job = &list()[0].jobs[0];
+        assert_eq!(job.bbox, Some([1.0, 2.0, 3.0, 4.0]));
         assert_eq!((job.name.as_str(), job.settings.clone()), ("j", flags));
         assert_eq!((job.done, job.total, job.finished), (2, 5, false));
     }
