@@ -1174,7 +1174,7 @@ function setupProgressListener() {
           window.arnisPreview3D?.refreshFacades();
           noteGenerationDone();
         }
-      } else if (message.startsWith("Stopped.") || message.startsWith("The retried pieces are built")) {
+      } else if (message.startsWith("Stopped.") || message.startsWith("The retried cells are built")) {
         // A job in pieces ends here when stopped or when only some pieces were asked for.
         progressInfo.style.color = "#ececec";
         setGenerationButtonEnabled(true);

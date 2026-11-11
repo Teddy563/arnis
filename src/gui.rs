@@ -2946,7 +2946,7 @@ fn gui_start_generation(
                         argv.push(format!("--spawn-lat={lat}").into());
                         argv.push(format!("--spawn-lng={lng}").into());
                     }
-                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building pieces...");
+                    emit_gui_progress_update(progress::MESSAGE_ONLY, "Building cells...");
                     // Unreadable counts as built, so a doubt keeps the world.
                     let areas = || {
                         crate::one_world::Manifest::load(&world_path)
@@ -2969,12 +2969,12 @@ fn gui_start_generation(
                         if e == crate::scale::STOPPED {
                             emit_gui_progress_update(
                                 progress::MESSAGE_ONLY,
-                                "Stopped. Finished pieces are kept; starting again resumes them.",
+                                "Stopped. Finished cells are kept; starting again resumes them.",
                             );
                         } else if e == crate::scale::PARTIAL {
                             emit_gui_progress_update(
                                 progress::MESSAGE_ONLY,
-                                "The retried pieces are built; starting again builds the rest.",
+                                "The retried cells are built; starting again builds the rest.",
                             );
                         } else {
                             emit_gui_error(&e);
