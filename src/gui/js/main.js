@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { resumeJob, placeForRun, t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { resumeJob, placeForRun, t as oneWorldText, initMeldFeatures, initRunControls, initCellMenu, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -167,7 +167,7 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize], #run-confirm [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize], #run-confirm [data-localize], #cells-confirm [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
   });
 
@@ -1411,7 +1411,11 @@ function initSettings() {
     // The flags that cut the job into pieces are part of it: --only-pieces numbers its pieces.
     key: () => `${selectedBBox}|${isOneWorldEnabled() ? oneWorldFolderName() : ''}|${meldFlags({ oneWorld: true, java: true, plan: true }).filter((f) => /^--(unit-regions|margin-regions|snap-regions|plan-mask|origin)=/.test(f))}`,
     map: () => getMapFrame()?.contentWindow,
+    // Remove and Rebuild in the cell menu work on the open One World, then read it again.
+    world: () => oneWorldInfo?.world_path || '',
+    refreshWorld: () => { oneWorldOverlayKey = null; refreshOneWorldState(); },
   });
+  initCellMenu();
   document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
   initJobPlan({
     // A new plan, or none: the line under the buttons says how the selection is built, and

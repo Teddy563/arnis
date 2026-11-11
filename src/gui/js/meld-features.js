@@ -152,6 +152,11 @@ export function initMeldFeatures() {
   }
 }
 
+// The cells the menu skipped or included since the last run (a Set of plan indexes), and the job
+// they are for; null until the menu changes them, so the engine's saved set stands.
+let skipCells = null;
+let skipKey = '';
+
 // The flags for one run, as the CLI takes them (`--name=value`). What a field holds is passed
 // as typed: the backend parses it with the CLI's own parser and says what is wrong.
 // `plan` is for the plan drawn before a run: it leaves a pending retry for the run itself.
@@ -174,6 +179,8 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
     if (choice('meld-piece-size-group') !== '4') add('--unit-regions', choice('meld-piece-size-group'));
     if (value('meld-piece-order-select') !== 'centre') add('--piece-order', value('meld-piece-order-select'));
     if (on('meld-skip-built-toggle')) f.push('--skip-built');
+    // Cells the menu skipped or included before this run; the run takes them (then the engine keeps them).
+    if (skipCells && skipKey === keyOf()) f.push(globalThis.arnisCells.skipFlag([...skipCells]));
     if (on('meld-stitch-map-toggle')) f.push('--stitch-map');
     add('--plan-mask', maskPath);
   }
@@ -230,6 +237,8 @@ export function meldFlags({ oneWorld, java, caves, extendHeight, lods, plan = fa
     add('--region-format', choice('meld-region-format-group'));
     if (value('meld-blinear-level-input') !== '6') add('--blinear-level', value('meld-blinear-level-input'));
   }
+  // The run took the cells the menu skipped; the engine keeps them from here.
+  if (!plan) skipCells = null;
   return f;
 }
 
@@ -333,11 +342,14 @@ let restart = () => {};
 let localizer = () => {};
 
 const RUNNING = new Set(['start', 'retry']);
+// States of a cell that waits: it has no clock and no percent.
+const WAITING = new Set(['queued', 'held', 'omitted']);
 const STATE_TEXT = {
   queued: ['run_state_queued', 'Waiting'], start: ['run_state_running', 'Running'],
   retry: ['run_state_running', 'Running'], done: ['run_state_done', 'Done'],
   skipped: ['run_state_skipped', 'Already built'], failed: ['run_state_failed', 'Failed'],
-  stopped: ['run_state_stopped', 'Stopped'],
+  stopped: ['run_state_stopped', 'Stopped'], held: ['run_state_held', 'Held'],
+  omitted: ['run_state_omitted', 'Skipped'], planned: ['plan_state', 'Planned'],
 };
 
 // What the map draws; the words are localized here because the map has no language of its own.
@@ -346,6 +358,7 @@ const outlines = () =>
     const [key, fallback] = STATE_TEXT[p.state] || STATE_TEXT.queued;
     return {
       i, n: i + 1, state: p.state, bounds: p.bounds, halo: p.halo, pct: p.pct, since: p.since, end: p.end,
+      head: i === headCell && RUNNING.has(p.state),
       text: {
         piece: t('run_piece', 'Cell {n}', { n: i + 1 }),
         state: t(key, fallback),
@@ -372,6 +385,8 @@ export function failedLine() {
 // When this run's first piece record came, so after any dialog: the clock and the ETA count
 // only what it built. 0 until then.
 let runStart = 0;
+// The cell building alone at the start of a new world (it cannot be paused or cancelled); -1: none.
+let headCell = -1;
 
 // The bar's tooltip: "3:12 elapsed · 4 running" (the estimate is on the bar itself).
 function barTip() {
@@ -402,10 +417,15 @@ function retry(list) {
 }
 
 let mapWindow = () => null;
+let world = () => '';
+let refreshWorld = () => {};
 
-export function initRunControls({ invoke, post, start, localize, key = () => '', map = () => null }) {
+export function initRunControls({ invoke, post, start, localize, key = () => '', map = () => null, world: worldOf = () => '', refreshWorld: refresh = () => {} }) {
+  world = worldOf;
+  refreshWorld = refresh;
   keyOf = key;
   mapWindow = map;
+
   call = invoke;
   localizer = localize;
   // The legend shows what the map was last sent.
@@ -414,7 +434,7 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
       drawn = m.pieces;
       if (legendOpen) showPlan(...shown); // an open card lists the lines now on the map
     }
-    post(m);
+    post(m.type === 'pieceOutlines' ? { ...m, running } : m);
   };
   restart = start;
   // The bar's tooltip ticks once a second while a job runs.
@@ -435,6 +455,11 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   window.addEventListener('message', (event) => {
     const m = event.data;
     if (!m || event.source !== mapWindow()) return;
+    if (m.type === 'cellsPicked') {
+      if (legendOpen) showPlan(...shown); // the card's selected-cells row follows the selection
+      return;
+    }
+    if (m.type === 'cellsAction') return void cellAction(m.action, m.cells, { world, refreshWorld });
     const p = pieces.get(m.piece);
     if (m.type === 'openLog') {
       if (p?.state === 'failed' && p.log) call('gui_show_in_folder', { path: p.log }).catch(() => {});
@@ -451,6 +476,103 @@ export function initRunControls({ invoke, post, start, localize, key = () => '',
   });
 }
 
+// ---- The cell menu: Skip, Pause, Cancel, Rebuild, Remove ... on the cells picked on the map ----
+
+// A line under the bar (red for an engine error).
+function say(text, bad = true) {
+  const info = el('progress-info');
+  if (!info) return;
+  info.textContent = text;
+  info.style.color = bad ? '#fa7878' : '#ececec';
+}
+
+// The question before a Rebuild or Remove, with the window's hold button; true once held.
+let askCells = async () => true;
+export function initCellMenu() {
+  // The map writes the count of picked cells in the language shown.
+  window.arnisCellCount = (n) => tn('plan_pieces', '{n} cells', '{n} cell', n);
+  const box = el('cells-confirm');
+  let answer = null;
+  const close = (yes) => {
+    box.hidden = true;
+    answer?.(yes);
+    answer = null;
+  };
+  askCells = (action, list) => new Promise((resolve) => {
+    answer?.(false);
+    answer = resolve;
+    el('cells-confirm-text').textContent = t(`cell_${action}_confirm`, '', { n: list.length });
+    box.hidden = false;
+    box.scrollIntoView({ block: 'nearest' });
+    el('cells-confirm-hold').focus();
+  });
+  el('cells-confirm-cancel').addEventListener('click', () => close(false));
+  box.addEventListener('keydown', (e) => e.key === 'Escape' && close(false));
+  globalThis.arnisHold(el('cells-confirm-hold'), () => close(true), 1500);
+  // Esc clears the cells picked on the map (the map clears them itself when it has the focus).
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && postToMap({ type: 'cellsClear' }));
+}
+
+// Skip or Include before a run, or on the outlines a finished job left: the next run takes them.
+function skipLocal(list, include) {
+  const set = new Set(drawn.filter((p) => p.state === 'omitted').map((p) => p.i));
+  list.forEach((i) => (include ? set.delete(i) : set.add(i)));
+  skipCells = set;
+  skipKey = keyOf();
+  if (pieces.size) {
+    list.forEach((i) => pieces.has(i) && (pieces.get(i).state = include ? 'queued' : 'omitted'));
+    postToMap({ type: 'pieceOutlines', pieces: outlines() });
+  }
+  schedulePlan();
+}
+
+// A menu action on `cells` (plan indexes). A running job takes it through the engine; between
+// runs Skip, Include and Retry are the next run's, and Rebuild and Remove delete built land
+// first, after the hold. `deps` are for tests.
+export async function cellAction(action, cells, deps = {}) {
+  const list = [...new Set(cells)].sort((a, b) => a - b);
+  const { call: invoke = call, ask = askCells, live = running, world: worldPath = world, after = afterRemove } = deps;
+  if (!list.length) return;
+  try {
+    if (globalThis.arnisCells.confirm.has(action) && !(await ask(action, list))) return;
+    if (live) {
+      let result;
+      for (const [command, args] of globalThis.arnisCells.calls(action, list)) { const r = await invoke(command, args); result ??= r; }
+      const missed = (result?.ignored || []).filter((i) => list.includes(i)).length;
+      if (missed) say(t('cell_ignored', '{n} could not be changed.', { n: missed }));
+    } else if (action === 'skip' || action === 'include') {
+      skipLocal(list, action === 'include');
+    } else if (action === 'retry') {
+      retry(list.map((i) => i + 1));
+    } else {
+      const [command, args] = globalThis.arnisCells.calls('remove', list, worldPath())[0];
+      await invoke(command, args);
+      after(list, action === 'rebuild');
+    }
+  } catch (e) {
+    say(String(e));
+  }
+}
+
+// The cells' land is gone: the plan is read again; a Rebuild builds just those cells now.
+function afterRemove(list, rebuild) {
+  if (rebuild) {
+    // A plan not yet run becomes the job's outlines, so the cells around stay on the map.
+    if (!pieces.size) {
+      drawn.filter(globalThis.arnisCells.pickable).forEach((p) => pieces.set(p.i, { state: p.state, bounds: p.bounds }));
+      jobKey = keyOf();
+    }
+    list.forEach((i) => pieces.has(i) && (pieces.get(i).state = 'planned'));
+    postToMap({ type: 'pieceOutlines', pieces: outlines() });
+    retry(list.map((i) => i + 1));
+  } else {
+    resetPieces();
+  }
+  schedulePlan(true);
+  refreshWorld();
+}
+
+
 // Whether the queue is held, and what the button says: the two are one variable.
 function setPaused(next) {
   paused = next;
@@ -466,14 +588,18 @@ const RETRYABLE = new Set(['failed', 'stopped', 'queued']);
 export function notePiece(piece) {
   if (!runStart) runStart = Date.now();
   const was = pieces.get(piece.piece);
+  // A cell left out by --skip-cells is not one that was already built.
+  if (piece.state === 'skipped' && piece.reason === 'skip_cells') piece = { ...piece, state: 'omitted' };
+  // The head cell builds alone first, in a job with nothing built yet: the first to start then.
+  if (piece.state === 'start' && headCell < 0 && ![...pieces.values()].some((p) => RUNNING.has(p.state) || p.state === 'done' || p.state === 'skipped')) headCell = piece.piece;
   // Progress records repeat the running state: the clock starts with the first.
   const since = RUNNING.has(piece.state) ? (was && RUNNING.has(was.state) ? was.since : Date.now()) : was?.since;
   pieces.set(piece.piece, {
     state: piece.state, bounds: piece.bounds, halo: piece.halo || was?.halo,
     worker: piece.worker ?? was?.worker, since,
-    end: RUNNING.has(piece.state) || piece.state === 'queued' ? undefined : (was && !RUNNING.has(was.state) && was.end) || Date.now(),
+    end: RUNNING.has(piece.state) || WAITING.has(piece.state) ? undefined : (was && !RUNNING.has(was.state) && was.end) || Date.now(),
     // A piece that starts again begins at its first percent, and a failure's error is its own.
-    pct: piece.pct ?? (piece.state === 'queued' ? undefined : was?.pct),
+    pct: piece.pct ?? (WAITING.has(piece.state) ? undefined : was?.pct),
     error: piece.state === 'failed' ? piece.error : '',
     log: piece.log || was?.log,
   });
@@ -484,6 +610,7 @@ export function notePiece(piece) {
 // the run is for.
 export function clearPieces() {
   runStart = 0;
+  headCell = -1;
   if (retryNext.length) return;
   jobKey = keyOf();
   forgetPieces();
@@ -505,6 +632,7 @@ export function resetPieces() {
 
 function forgetPieces() {
   pieces.clear();
+  headCell = -1;
   postToMap({ type: 'pieceOutlines', pieces: [] });
 }
 
@@ -727,6 +855,9 @@ const LEGEND_TEXT = {
   run_state_done: 'Done',
   run_state_failed: 'Failed',
   run_state_stopped: 'Stopped',
+  run_state_held: 'Held',
+  run_state_omitted: 'Skipped',
+  legend_picked: 'Selected cells',
   plan_state_excluded: 'Outside the outline: not built',
   plan_state_room: 'Room to grow: you can build here later',
   plan_legend_ring: 'Ring (margin)',
@@ -753,6 +884,9 @@ export function legendRows(state) {
   add(has('done', 'skipped'), 'run_state_done', colors.done);
   add(has('failed'), 'run_state_failed', colors.failed, { weight: 3 });
   add(has('stopped'), 'run_state_stopped', colors.stopped, { dash: dash.stopped });
+  add(has('held'), 'run_state_held', colors.held, { dash: dash.held });
+  add(has('omitted'), 'run_state_omitted', colors.omitted, { fill: 0.3, dash: dash.omitted });
+  add(state.picked, 'legend_picked', colors.picked, { weight: 4, fill: 0.3 });
   add(has('excluded'), 'plan_state_excluded', colors.excluded, { weight: 1, fill: 0.3 });
   add(has('room'), 'plan_state_room', colors.room, { weight: 1.5, dash: dash.room });
   add(state.cells.some((c) => c.state === 'planned' && c.ring), 'plan_legend_ring', colors.planned, { weight: 1, fill: 0.03, dash: dash.ring });
@@ -771,7 +905,7 @@ let legendOpen = false;
 function legendCard() {
   const map = mapWindow()?.arnisLegendState?.() || {};
   const rows = legendRows({
-    drawing: map.drawing, selection: map.selection, held: map.held, rect: map.rect, shape: hasPlanMask(),
+    drawing: map.drawing, selection: map.selection, held: map.held, picked: map.picked, rect: map.rect, shape: hasPlanMask(),
     cells: drawn, halo, stretch: stretchShown,
   });
   const card = div('legend-card', '');
@@ -851,8 +985,8 @@ async function updatePlan() {
   // A job's own outlines (running, or left to retry) stay until they go stale.
   if (pieces.size) return;
   const planned = units.map((u) => {
-    const state = u.done ? 'done' : on('meld-skip-built-toggle') && u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
-    const [key, fallback] = state === 'planned' ? ['plan_state', 'Planned'] : STATE_TEXT[state];
+    const state = u.done ? 'done' : u.skip ? 'omitted' : on('meld-skip-built-toggle') && u.existing_chunks >= u.chunks ? 'skipped' : 'planned';
+    const [key, fallback] = STATE_TEXT[state];
     return {
       i: u.index, n: u.index + 1, state, ring: u.ring, bounds: u.bbox.split(',').map(Number),
       text: { piece: t('run_piece', 'Cell {n}', { n: u.index + 1 }), state: t(key, fallback), size: sizeText(u.index), worker: '', error: '', hint: '' },

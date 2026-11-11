@@ -5,10 +5,12 @@ globalThis.arnisPieceStyle = {
     colors: {
         queued: '#8a8a8a', start: '#fecc44', retry: '#fecc44', done: '#7bd864',
         skipped: '#7bd864', failed: '#fa7878', stopped: '#ff9f43', planned: '#5aa9ff',
-        excluded: '#8a8a8a', room: '#5c5c5c'
+        excluded: '#8a8a8a', room: '#5c5c5c',
+        // held: paused by the user; omitted: left out of the job (hatched); picked: chosen with the select tool.
+        held: '#b794f6', omitted: '#8a8a8a', picked: '#2ee6d6'
     },
     // Line patterns: a piece's state, a margin piece (ring), room to grow, the halo, a stretch line.
-    dash: { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5', ring: '3 3', room: '2 4', halo: '2 6', stretch: '8 6' },
+    dash: { queued: '4 4', start: '8 8', retry: '8 8', stopped: '10 5 2 5', held: '6 4', omitted: '1 4', ring: '3 3', room: '2 4', halo: '2 6', stretch: '8 6' },
     // The selection, while it is drawn (dashed) and once it is placed.
     selection: '#fecc44',
     selectionDash: '10, 10',
@@ -119,3 +121,71 @@ globalThis.arnisBalance = (balance, world = 0.7) => ({
 
 // How long Clear selection is held, in ms (the fill in map-controls.css runs for the same time).
 globalThis.arnisClearHoldMs = 800;
+
+// The cell select tool, apart from the map: which cells a click or a box picks, which actions fit
+// the picked cells, and the engine calls an action makes. `pieces` are the map's records
+// ({ i, state, bounds: [south, west, north, east], head }); an index is the cell's plan index.
+globalThis.arnisCells = {
+    // The plan's own cells, not the grey ones outside the outline or the room to grow.
+    pickable: (p) => p.state !== 'excluded' && p.state !== 'room',
+    // Every pickable cell whose centre is inside the box [south, west, north, east], drawn or not.
+    inBox(pieces, box) {
+        const [s, w, n, e] = box;
+        return pieces.filter((p) => {
+            const lat = (p.bounds[0] + p.bounds[2]) / 2, lng = (p.bounds[1] + p.bounds[3]) / 2;
+            return this.pickable(p) && lat >= Math.min(s, n) && lat <= Math.max(s, n) && lng >= Math.min(w, e) && lng <= Math.max(w, e);
+        }).map((p) => p.i);
+    },
+    // The pickable cell under a point, or -1.
+    at(pieces, lat, lng) {
+        const p = pieces.find((q) => this.pickable(q) && lat >= q.bounds[0] && lat <= q.bounds[2] && lng >= q.bounds[1] && lng <= q.bounds[3]);
+        return p ? p.i : -1;
+    },
+    // The selection after `hits` are picked: they replace it, or with `add` (Shift/Ctrl) join it, or
+    // leave it when all of them were in it already.
+    pick(sel, hits, add) {
+        if (!add) return new Set(hits);
+        const out = new Set(sel);
+        const all = hits.length > 0 && hits.every((i) => out.has(i));
+        hits.forEach((i) => (all ? out.delete(i) : out.add(i)));
+        return out;
+    },
+    // What the menu offers for `cells` (records): only what fits every one of them. An action that
+    // fits but cannot be done to the head cell (it builds alone) carries `why`: [key, English].
+    actions(cells, running) {
+        const all = (...states) => cells.length > 0 && cells.every((c) => states.includes(c.state));
+        const live = ['start', 'retry'];
+        const why = cells.some((c) => c.head) ? ['cell_head_why', 'The first cell builds alone and cannot be paused or cancelled.'] : undefined;
+        const out = [];
+        const add = (ok, id, label, w) => ok && out.push({ id, label, why: w });
+        if (running) {
+            add(all('queued', ...live), 'pause', ['run_pause', 'Pause'], why);
+            add(all('queued', ...live) && cells.some((c) => live.includes(c.state)), 'pausenow', ['cell_pause_now', 'Pause now'], why);
+            add(all('held'), 'resume', ['run_resume', 'Resume']);
+            add(all('queued', 'held'), 'next', ['cell_next', 'Build next']);
+            add(all(...live), 'cancel', ['one_world_confirm_cancel', 'Cancel'], why);
+            add(all('queued', 'held'), 'skip', ['cell_skip', 'Skip']);
+            add(all('failed'), 'retry', ['run_retry', 'Retry cells']);
+        } else {
+            add(all('planned', 'queued', 'held', 'failed', 'stopped'), 'skip', ['cell_skip', 'Skip']);
+            add(all('failed', 'stopped'), 'retry', ['run_retry', 'Retry cells']);
+            add(all('done'), 'rebuild', ['projects_rebuild', 'Rebuild']);
+            add(all('done'), 'remove', ['cell_remove', 'Remove from world']);
+        }
+        add(all('omitted'), 'include', ['cell_include', 'Include again']);
+        return out;
+    },
+    // Esc empties the selection; any other key leaves it.
+    key: (e, sel) => (e.key === 'Escape' ? new Set() : sel),
+    // These ask first: they delete built land.
+    confirm: new Set(['rebuild', 'remove']),
+    // `--skip-cells=` with sorted, unique indexes (empty clears the saved set).
+    skipFlag: (list) => `--skip-cells=${[...new Set(list)].sort((a, b) => a - b).join(',')}`,
+    // The engine calls (command, arguments) of a menu action on a running job, or of Remove.
+    calls(action, cells, world) {
+        const control = (a) => ['gui_cells_control', { action: a, cells }];
+        if (action === 'remove') return [['gui_cells_remove', { worldPath: world, cells, job: null }]];
+        if (action === 'pausenow') return [control('hold'), control('cancel')];
+        return [control({ pause: 'hold', next: 'front' }[action] || action)];
+    }
+};

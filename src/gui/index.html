@@ -182,6 +182,14 @@
                 <button type="button" id="run-confirm-hold" class="run-button run-hold" disabled data-localize="plan_confirm_hold">Hold to start</button>
               </div>
             </div>
+            <!-- Before the cell menu rebuilds or removes built cells: what it does, and a hold to confirm (meld-features.js) -->
+            <div id="cells-confirm" class="run-confirm meld-only" role="alertdialog" aria-labelledby="cells-confirm-text" hidden>
+              <p id="cells-confirm-text"></p>
+              <div class="run-confirm-row">
+                <button type="button" id="cells-confirm-cancel" class="run-button" data-localize="one_world_confirm_cancel">Cancel</button>
+                <button type="button" id="cells-confirm-hold" class="run-button run-hold" data-localize="cell_hold">Hold to confirm</button>
+              </div>
+            </div>
             <div class="progress-row">
               <div class="progress-bar-container">
                 <div class="progress-bar" id="progress-bar"></div>

@@ -1285,8 +1285,9 @@ $(document).ready(function () {
     }
 
     // Show context menu at position
-    function showContextMenu(x, y, latLng, canCopy, area) {
+    function showContextMenu(x, y, latLng, canCopy, area, cells) {
         var menu = createContextMenu();
+        fillCellActions(menu, cells || []);
         menu._area = area || null;
         menu.querySelector('#copy-coords-item').style.display = canCopy ? '' : 'none';
         menu.querySelector('#live-teleport-item').style.display = liveCanTeleport ? '' : 'none';
@@ -1296,8 +1297,9 @@ $(document).ready(function () {
         menu.querySelector('#remove-area-text').textContent = mapText('map_remove_area', 'Remove this area');
 
         // Position the menu, ensuring it stays within viewport
-        var menuWidth = 180;
-        var menuHeight = 4 + 36 * [canCopy, liveCanTeleport, !!area].filter(Boolean).length;
+        menu.style.display = 'block';
+        var menuWidth = menu.offsetWidth || 180;
+        var menuHeight = menu.offsetHeight || 4 + 36 * [canCopy, liveCanTeleport, !!area].filter(Boolean).length;
         var viewportWidth = window.innerWidth;
         var viewportHeight = window.innerHeight;
 
@@ -1319,6 +1321,60 @@ $(document).ready(function () {
         // Store the latLng for copying
         menu.dataset.lat = latLng.lat;
         menu.dataset.lng = latLng.lng;
+    }
+
+    // The cell actions at the top of the menu: the count, then what fits every picked cell. An action
+    // the head cell cannot take says why, instead of going grey without a word.
+    function fillCellActions(menu, cells) {
+        var old = menu.querySelector('.cell-actions');
+        if (old) old.remove();
+        if (!cells.length) return;
+        var records = lastPieces.filter(function(p) { return cells.indexOf(p.i) >= 0; });
+        var box = document.createElement('div');
+        box.className = 'cell-actions';
+        var head = document.createElement('div');
+        head.className = 'cell-actions-head';
+        head.textContent = cellCount(cells.length);
+        box.appendChild(head);
+        var actions = window.arnisCells.actions(records, cellsRunning);
+        actions.forEach(function(a) {
+            var item = document.createElement('div');
+            item.className = 'coordinate-context-menu-item' + (a.why ? ' is-off' : '');
+            item.setAttribute('role', 'menuitem');
+            var label = document.createElement('span');
+            label.textContent = mapText(a.label[0], a.label[1]);
+            item.appendChild(label);
+            if (a.why) {
+                var why = document.createElement('small');
+                why.textContent = mapText(a.why[0], a.why[1]);
+                item.appendChild(why);
+                item.setAttribute('aria-disabled', 'true');
+            } else {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    hideContextMenu();
+                    window.parent.postMessage({ type: 'cellsAction', action: a.id, cells: cells }, '*');
+                });
+            }
+            box.appendChild(item);
+        });
+        if (!actions.length) {
+            var none = document.createElement('div');
+            none.className = 'cell-actions-none';
+            none.textContent = mapText('cell_none', 'No action fits all of these cells.');
+            box.appendChild(none);
+        }
+        var sep = document.createElement('div');
+        sep.className = 'coordinate-context-menu-separator';
+        box.appendChild(sep);
+        menu.insertBefore(box, menu.firstChild);
+    }
+
+    // The count of cells in the language shown ("12 cells"); the window writes it.
+    function cellCount(n) {
+        var f = window.parent && window.parent.arnisCellCount;
+        return f ? f(n) : n + ' cells';
     }
 
     // Hide context menu
@@ -1442,8 +1498,16 @@ $(document).ready(function () {
         // During a live session the copied command would jump onto land not built yet.
         if (liveActive) canCopy = false;
         var area = areaAt(e.latlng);
-        if (canCopy || liveCanTeleport || area) {
-            showContextMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.latlng, canCopy, area);
+        // With the select tool on, a cell under the pointer: the menu acts on the picked cells (the cell
+        // alone if it was not one of them).
+        var cells = [];
+        var hit = cellTool ? window.arnisCells.at(lastPieces, e.latlng.lat, e.latlng.lng) : -1;
+        if (hit >= 0) {
+            if (!cellPick.has(hit)) pickCells(new Set([hit]));
+            cells = Array.from(cellPick).sort(function(a, b) { return a - b; });
+        }
+        if (canCopy || liveCanTeleport || area || cells.length) {
+            showContextMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.latlng, canCopy, area, cells);
         }
     });
 
@@ -1565,7 +1629,7 @@ $(document).ready(function () {
     // How full each state's cup is: a running piece fills to its percent, a finished one to the top.
     var PIECE_FULL = { done: 1, skipped: 1, failed: 1, stopped: 1 };
     // Colour is never the only sign of a state: an icon in the label, and the line's pattern.
-    var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8' };
+    var PIECE_ICONS = { done: '\u2713', skipped: '\u2713', failed: '\u2715', stopped: '\u23F8', held: '\u23F8', omitted: '\u2298' };
     var PIECE_DASH = window.arnisPieceStyle.dash;
     var lastPieces = [];
     var pieceHalo = false;
@@ -1626,8 +1690,38 @@ $(document).ready(function () {
     var cellExtent = null;
     var cellShade = null;
 
+    // The cell select tool: on, the cells picked (plan indexes), a drag in progress, and the button.
+    var cellTool = false;
+    var cellPick = new Set();
+    var cellsRunning = false;
+    var cellDrag = null;
+    var cellBoxLayer = null;
+    var cellBtn = null;
+
+    // A hatched fill for the cells left out of the job; the SVG pattern goes in the cell pane's svg once.
+    function ensureHatch(layer) {
+        var svg = layer._renderer && layer._renderer._container;
+        if (!svg || svg.querySelector('#arnis-hatch')) return;
+        var ns = 'http://www.w3.org/2000/svg';
+        var pat = document.createElementNS(ns, 'pattern');
+        pat.setAttribute('id', 'arnis-hatch');
+        pat.setAttribute('patternUnits', 'userSpaceOnUse');
+        pat.setAttribute('width', '6');
+        pat.setAttribute('height', '6');
+        pat.setAttribute('patternTransform', 'rotate(45)');
+        var line = document.createElementNS(ns, 'line');
+        line.setAttribute('y2', '6');
+        line.setAttribute('stroke', PIECE_COLORS.omitted);
+        line.setAttribute('stroke-width', '2');
+        pat.appendChild(line);
+        var defs = document.createElementNS(ns, 'defs');
+        defs.appendChild(pat);
+        svg.insertBefore(defs, svg.firstChild);
+    }
+
     function drawPieceOutlines(pieces) {
         lastPieces = pieces;
+        syncCellTool();
         // While pieces build, the selection and its handles fade so the pieces read (bbox.css).
         document.body.classList.toggle('pieces-building', pieces.some(function(p) { return p.state === 'start' || p.state === 'retry'; }));
         var view = map.getBounds();
@@ -1662,6 +1756,7 @@ $(document).ready(function () {
             if (!item) {
                 item = pieceLayers[p.i] = {};
                 item.rect = L.rectangle([[b[0], b[1]], [b[2], b[3]]], { interactive: true, pane: 'arnisCells' }).addTo(pieceLayer);
+                ensureHatch(item.rect);
                 // A failed piece's card holds an "Open log" button, so it must be reachable: it
                 // stays put (not sticky) and closes a moment after the pointer leaves both.
                 // Leaflet registers closeTooltip when binding, so the wrapper goes on first.
@@ -1692,7 +1787,7 @@ $(document).ready(function () {
                     e.tooltip.getElement().onmouseleave = function() { item.leftAt = 0; item.rect.closeTooltip(); };
                 });
                 item.rect.on('click', function() {
-                    if (item.p.text.hint) window.parent.postMessage({ type: 'retryPiece', piece: item.p.i }, '*');
+                    if (!cellTool && item.p.text.hint) window.parent.postMessage({ type: 'retryPiece', piece: item.p.i }, '*');
                 });
                 item.label = L.tooltip({ permanent: true, direction: 'center', className: 'piece-label', interactive: false, pane: 'arnisCellLabels' })
                     .setLatLng(item.rect.getBounds().getCenter()).addTo(pieceLayer);
@@ -1711,11 +1806,15 @@ $(document).ready(function () {
             var excluded = p.state === 'excluded';
             var room = p.state === 'room';
             var planned = p.state === 'planned' || excluded || room;
+            // A picked cell: the pick colour, a thick line and a fill. A skipped one is hatched.
+            var picked = cellPick.has(p.i);
             item.rect.setStyle({
-                color: color, weight: room ? 1.5 : planned ? 1 : p.state === 'failed' ? 3 : 2, fillColor: color,
+                color: picked ? PIECE_COLORS.picked : color,
+                weight: picked ? 4 : room ? 1.5 : planned ? 1 : p.state === 'failed' ? 3 : 2,
+                fillColor: picked ? PIECE_COLORS.picked : p.state === 'omitted' ? 'url(#arnis-hatch)' : color,
                 opacity: room ? 0.9 : 1,
-                fillOpacity: excluded ? 0.3 : room ? 0 : planned ? (p.ring ? 0.03 : 0.08) : 0,
-                dashArray: room ? PIECE_DASH.room : planned && p.ring ? PIECE_DASH.ring : PIECE_DASH[p.state] || null
+                fillOpacity: picked ? 0.3 : p.state === 'omitted' ? 0.9 : excluded ? 0.3 : room ? 0 : planned ? (p.ring ? 0.03 : 0.08) : 0,
+                dashArray: picked ? null : room ? PIECE_DASH.room : planned && p.ring ? PIECE_DASH.ring : PIECE_DASH[p.state] || null
             });
             var full = running ? (p.pct || 0) / 100 : PIECE_FULL[p.state] || 0;
             if (full > 0) {
@@ -1833,7 +1932,13 @@ $(document).ready(function () {
         }
 
         if (event.data && event.data.type === 'pieceOutlines') {
+            cellsRunning = Boolean(event.data.running);
             drawPieceOutlines(event.data.pieces || []);
+        }
+
+        // Esc in the window clears the picked cells too.
+        if (event.data && event.data.type === 'cellsClear') {
+            pickCells(new Set());
         }
 
         // A One World's stretch limits: dashed lines across the map at 5% and 10%.
@@ -2113,7 +2218,8 @@ $(document).ready(function () {
             selection: drawnItems.getLayers().length > 0,
             drawing: _drawing,
             rect: Boolean(shapesRectLayer),
-            held: Boolean(worldOverlayEnabled && worldOverlayData && worldOverlayData.areas)
+            held: Boolean(worldOverlayEnabled && worldOverlayData && worldOverlayData.areas),
+            picked: cellPick.size > 0
         };
     };
 
@@ -2259,6 +2365,13 @@ $(document).ready(function () {
                 name: mapText('map_tool_rotation', 'Rotation angle'),
                 desc: mapText('map_tool_rotation_desc', 'Draw a line along a street to line the world up with it.'),
                 note: _rotationLocked ? mapText('map_tool_rotation_one_world', 'Off in One World mode.') : ''
+            };
+        }
+        if (c.contains('leaflet-draw-draw-cells')) {
+            return {
+                name: mapText('map_tool_cells', 'Select cells'),
+                desc: mapText('map_tool_cells_desc', 'Click a cell or drag a box. Shift or Ctrl adds. Right-click for actions. Esc clears.'),
+                note: cellPick.size ? cellCount(cellPick.size) : ''
             };
         }
         if (c.contains('leaflet-draw-draw-marker')) {
@@ -2570,6 +2683,90 @@ $(document).ready(function () {
             drawToolbar.appendChild(btn);
         }
     })();
+
+    // The select tool for cells: in the top toolbar with the draw tools; shown only while the map has cells.
+    (function addCellToolButton() {
+        var drawToolbar = document.querySelector('.leaflet-draw-toolbar.leaflet-draw-toolbar-top');
+        if (!drawToolbar) return;
+        var btn = L.DomUtil.create('a', 'leaflet-draw-draw-cells', drawToolbar);
+        btn.href = '#';
+        btn.setAttribute('role', 'button');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.style.display = 'none';
+        L.DomEvent
+            .on(btn, 'click mousedown dblclick', L.DomEvent.stopPropagation)
+            .on(btn, 'click', L.DomEvent.preventDefault)
+            .on(btn, 'click', function() { setCellTool(!cellTool); });
+        cellBtn = btn;
+        refreshToolLabel(btn);
+    })();
+
+    // Whether the map has cells to pick: the plan's or a job's own, not the grey ones around.
+    function syncCellTool() {
+        if (!cellBtn) return;
+        var any = lastPieces.some(window.arnisCells.pickable);
+        cellBtn.style.display = any ? '' : 'none';
+        if (!any) setCellTool(false);
+        var ids = {};
+        lastPieces.forEach(function(p) { ids[p.i] = true; });
+        var size = cellPick.size;
+        cellPick.forEach(function(i) { if (!ids[i]) cellPick.delete(i); });
+        if (cellPick.size !== size) window.parent.postMessage({ type: 'cellsPicked', n: cellPick.size }, '*');
+    }
+
+    function setCellTool(on) {
+        if (on === cellTool) return;
+        cellTool = on;
+        cellBtn.classList.toggle('leaflet-draw-toolbar-button-enabled', on);
+        cellBtn.setAttribute('aria-pressed', String(on));
+        map.getContainer().classList.toggle('cell-tool', on);
+        if (!on) pickCells(new Set());
+        refreshToolLabel(cellBtn);
+    }
+
+    // The picked cells change: draw them, say so to the window (the legend), refresh the tool's note.
+    function pickCells(set) {
+        if (set.size === cellPick.size && Array.from(set).every(function(i) { return cellPick.has(i); })) return;
+        cellPick = set;
+        drawPieceOutlines(lastPieces);
+        window.parent.postMessage({ type: 'cellsPicked', n: set.size }, '*');
+        refreshToolLabel(cellBtn);
+    }
+
+    // A draw tool and the select tool do not run together.
+    map.on('draw:drawstart', function() { setCellTool(false); });
+
+    // Click picks a cell, a drag a box of cells (by plan geometry, so cells not drawn at this zoom
+    // count); Shift or Ctrl adds. Caught before the map sees the press, so the map does not pan.
+    map.getContainer().addEventListener('mousedown', function(e) {
+        if (!cellTool || e.button !== 0 || e.target.closest('.leaflet-control-container, .map-tool-tip, .piece-tip')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        cellDrag = { x: e.clientX, y: e.clientY, from: map.mouseEventToLatLng(e), add: e.shiftKey || e.ctrlKey || e.metaKey, moved: false };
+    }, true);
+    document.addEventListener('mousemove', function(e) {
+        if (!cellDrag) return;
+        if (!cellDrag.moved && Math.hypot(e.clientX - cellDrag.x, e.clientY - cellDrag.y) < 4) return;
+        cellDrag.moved = true;
+        var box = L.latLngBounds(cellDrag.from, map.mouseEventToLatLng(e));
+        if (cellBoxLayer) cellBoxLayer.setBounds(box);
+        else cellBoxLayer = L.rectangle(box, { color: PIECE_COLORS.picked, weight: 1, dashArray: '4 4', fillOpacity: 0.1, interactive: false }).addTo(map);
+    });
+    document.addEventListener('mouseup', function(e) {
+        if (!cellDrag) return;
+        var drag = cellDrag;
+        cellDrag = null;
+        if (cellBoxLayer) { map.removeLayer(cellBoxLayer); cellBoxLayer = null; }
+        var to = map.mouseEventToLatLng(e);
+        var hits = drag.moved
+            ? window.arnisCells.inBox(lastPieces, [drag.from.lat, drag.from.lng, to.lat, to.lng])
+            : [window.arnisCells.at(lastPieces, drag.from.lat, drag.from.lng)].filter(function(i) { return i >= 0; });
+        pickCells(window.arnisCells.pick(cellPick, hits, drag.add));
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hideContextMenu();
+        pickCells(window.arnisCells.key(e, cellPick));
+    });
 
     // Hint at the bottom-center of the map, shown until the first area is
     // selected (see areaToolLearned)

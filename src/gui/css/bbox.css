@@ -665,3 +665,7 @@ body,
 .piece-icon-stopped {
   color: #ff9f43;
 }
+
+.piece-icon-held {
+  color: #b794f6;
+}

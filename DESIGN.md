@@ -135,6 +135,9 @@ Every line on the map means one thing. The legend (the `?` after the plan's colo
 | Green cell | Done | `run_state_done` |
 | Red thick cell | Failed; hover it for the reason | `run_state_failed` |
 | Orange dash-dot cell | Stopped; Start resumes it | `run_state_stopped` |
+| Violet long-dashed cell | Held: paused by you, waits until resumed | `run_state_held` |
+| Hatched grey cell | Skipped: left out of the job | `run_state_omitted` |
+| Thick teal cell | Picked with the select tool (the cell menu acts on these) | `legend_picked` |
 | Grey filled cell | Outside the outline, not built | `plan_state_excluded` |
 | Grey dotted cell | Room to grow: you can build here later | `plan_state_room` |
 | Blue dotted cell | Ring (margin) around the selection | `plan_legend_ring` |
