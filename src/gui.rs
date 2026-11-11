@@ -1403,6 +1403,18 @@ struct OneWorldEntry {
     modified_ms: Option<u64>,
     #[serde(flatten)]
     info: OneWorldInfo,
+    place_name: Option<String>,
+    jobs: Vec<JobEntry>,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+struct JobEntry {
+    name: String,
+    settings: Vec<String>,
+    done: u32,
+    total: u32,
+    finished: bool,
+    last_run_ms: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -1463,10 +1475,26 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
                 .map(|d| d.as_millis() as u64);
             // A damaged manifest is skipped here; the info command reports it.
             let info = one_world_info_at(&e.path()).ok()?;
+            let m = crate::one_world::Manifest::load(&e.path()).ok().flatten();
+            let jobs = m.as_ref().map_or_else(Vec::new, |m| {
+                crate::one_world::job_records(&e.path(), m)
+                    .into_iter()
+                    .map(|j| JobEntry {
+                        name: j.name,
+                        settings: j.settings,
+                        done: j.status.done,
+                        total: j.status.total,
+                        finished: j.status.finished,
+                        last_run_ms: j.status.last_run_ms,
+                    })
+                    .collect()
+            });
             Some(OneWorldEntry {
                 name: e.file_name().to_string_lossy().into_owned(),
                 modified_ms,
                 info,
+                place_name: m.and_then(|m| m.place_name),
+                jobs,
             })
         })
         .collect();
@@ -1971,6 +1999,25 @@ fn confluence_args(
     crate::y_bounds::check(&extra)?;
     crate::output_args::validate(&extra)?;
     Ok(extra)
+}
+
+/// Window flags whose value is a path on this machine: not kept with a job.
+const PATH_FLAGS: &[&str] = &["plan-mask", "tree-pack-dir", "osm-pbf"];
+
+/// `flags` as a job keeps them for a later Resume or Rebuild: without paths.
+fn job_settings(flags: &[String]) -> Vec<String> {
+    flags
+        .iter()
+        .filter(|f| {
+            let name = f
+                .trim_start_matches("--")
+                .split('=')
+                .next()
+                .unwrap_or_default();
+            !PATH_FLAGS.contains(&name)
+        })
+        .cloned()
+        .collect()
 }
 
 /// The command line a job's pieces repeat. A piece is a run of this executable, and the window
@@ -2825,7 +2872,9 @@ fn gui_start_generation(
                             .map_or(1, |m| m.areas.len())
                     };
                     let areas_before = areas();
-                    if let Err(e) = crate::scale::run_with(&args, &world_path, argv) {
+                    if let Err(e) =
+                        crate::scale::run_with(&args, &world_path, argv, &job_settings(&flags))
+                    {
                         eprintln!("{e}");
                         // Finished pieces are kept: generating the same area again resumes.
                         // A world this job made and nothing was built in goes with the guard.
@@ -3779,6 +3828,32 @@ mod tests {
         assert_eq!(names, ["new", "old"]);
         let missing = save.join("nope").display().to_string();
         assert!(gui_list_one_worlds(missing).unwrap().is_empty());
+    }
+
+    /// An old world lists with no place and no jobs; a recorded job lists with its settings.
+    #[test]
+    fn listed_worlds_carry_their_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let list = || gui_list_one_worlds(tmp.path().display().to_string()).unwrap();
+        let old = &list()[0];
+        assert!(old.place_name.is_none() && old.jobs.is_empty());
+        let flags = job_settings(&[
+            "--unit-regions=8".into(),
+            "--plan-mask=C:/tmp/m.geojson".into(),
+            "--tree-pack-dir=/packs".into(),
+            "--osm-pbf=x.pbf".into(),
+        ]);
+        assert_eq!(flags, ["--unit-regions=8"]);
+        crate::one_world::record_job(&world, "j", Some(&flags), 2, 5, false).unwrap();
+        let job = &list()[0].jobs[0];
+        assert_eq!((job.name.as_str(), job.settings.clone()), ("j", flags));
+        assert_eq!((job.done, job.total, job.finished), (2, 5, false));
     }
 
     #[test]
