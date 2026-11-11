@@ -5,12 +5,13 @@
 //! free memory, `--max-downloads` else 16.
 //!
 //! `auto` sizes from the machine:
-//! - budget = cores x 75%, or `--threads`;
+//! - budget = cores x 90%, or `--threads`, as a fixed count takes;
 //! - W = clamp(min(pieces, budget / MIN_THREADS, free RAM / piece RAM), 2, MAX_WORKERS);
 //! - T = budget / W.
 //!
 //! A few fat workers beat many thin ones (T3: 4 x 5 threads was 1.26-1.53x one
-//! process; 16 x 1 was slower), hence the thread floor and the cap of 6. Piece
+//! process; 16 x 1 was slower; B3 on 24 threads: 4 x 5 beat 6 x 3 and 2 x 10), hence
+//! the thread floor of 5 and the cap of 6. Piece
 //! RAM starts from `estimate_piece_mb` and, once pieces finish, follows the
 //! largest peak they reported (`Sizing::cap_for`).
 
@@ -18,17 +19,19 @@ use crate::args::{Args, Workers};
 use std::ffi::OsString;
 
 /// Threads below which a piece is not worth its own process.
-const MIN_THREADS: usize = 4;
+const MIN_THREADS: usize = 5;
 const MIN_WORKERS: usize = 2;
 pub const MAX_WORKERS: usize = 6;
 /// CPU share `auto` plans for, leaving the machine usable.
-const AUTO_CPU_TARGET: usize = 75;
+const AUTO_CPU_TARGET: usize = 90;
 
 /// Peak memory of one piece of `regions` regions before any has reported.
-/// From T3: a piece of 64 regions at scale 1 peaked near 1.6 GB, a whole
-/// 64-region run at scale 0.05 at 0.9 GB.
+/// From B3 (S16, warm caches, 5 threads a piece): 8 x 8 pieces peaked at 825 MB
+/// a worker, 4 x 4 at 529; a whole 64-region run at scale 0.05 at 0.9 GB (T3).
+/// More threads a piece raise it (8 x 8 with 10 threads: 1.3 GB), which
+/// `Sizing::cap_for` catches once a piece reports.
 pub fn estimate_piece_mb(regions: u64, scale: f64) -> u64 {
-    let per_region = if scale >= 0.5 { 19 } else { 8 };
+    let per_region = if scale >= 0.5 { 9 } else { 8 };
     400 + per_region * regions
 }
 
@@ -171,8 +174,8 @@ mod tests {
 
     #[test]
     fn auto_stays_between_2_and_6() {
-        // 24 cores at 75%: 18 threads, 4 workers of 4+ threads.
-        assert_eq!(auto_plan(18, 16, 30_000, 720), (4, 4));
+        // 24 cores at 90%: 21 threads, 4 workers of 5+ threads.
+        assert_eq!(auto_plan(21, 16, 30_000, 976), (4, 5));
         // Never more than six, however big the machine.
         assert_eq!(auto_plan(96, 100, 500_000, 720), (6, 16));
         // Short on memory, cores or pieces: still two.
@@ -183,7 +186,7 @@ mod tests {
 
     #[test]
     fn piece_memory_follows_its_size_and_scale() {
-        assert_eq!(estimate_piece_mb(16, 1.0), 704);
+        assert_eq!(estimate_piece_mb(16, 1.0), 544);
         assert!(estimate_piece_mb(64, 1.0) > estimate_piece_mb(64, 0.05));
         assert_eq!(reserve_mb(8_000), 2048);
         assert_eq!(reserve_mb(64_000), 6400);
@@ -223,13 +226,13 @@ mod tests {
 
     #[test]
     fn auto_pieces_are_as_large_as_two_fit_the_memory() {
-        // Two 8 x 8 pieces at scale 1 need 2 x 1,616 MB, two 4 x 4 2 x 704 MB.
+        // Two 8 x 8 pieces at scale 1 need 2 x 976 MB, two 4 x 4 2 x 544 MB.
         for (mb, side) in [
             (4000, 8),
-            (3232, 8),
-            (3231, 4),
-            (1408, 4),
-            (1407, 2),
+            (1952, 8),
+            (1951, 4),
+            (1088, 4),
+            (1087, 2),
             (10, 2),
         ] {
             let args = parse(&["--ram-budget-mb", &mb.to_string()]);
@@ -287,8 +290,67 @@ mod tests {
             16,
             16,
         );
-        // 16 threads allow 4 workers, 6000 MB at ~704 MB a piece allow 8.
-        assert_eq!((s.workers, s.threads, s.ram_mb), (4, 4, Some(1500)));
+        // 16 threads allow 3 workers, 6000 MB at ~544 MB a piece allow 11.
+        assert_eq!((s.workers, s.threads, s.ram_mb), (3, 5, Some(2000)));
         assert_eq!(s.usable_mb, Some(6000));
+    }
+
+    // B3 (work/bench22/results.jsonl, S16 = 256 km2 of Bucharest, warm caches, 24 threads,
+    // 31 GB): the lowest median was 8 x 8 regions with 4 workers, 64.9 s, peak 3,298 MB for
+    // the whole job; 4 x 4 regions with 4 workers peaked at 2,116 MB.
+    #[test]
+    fn auto_plan_picks_measured_sweet_spot() {
+        let total = 31 * 1024;
+        let usable = total - reserve_mb(total);
+        let side = auto_max_regions(&parse(&["--ram-budget-mb", &usable.to_string()]));
+        assert_eq!(side, 8);
+        let regions = (side * side) as u64;
+        // S16 cuts into 16 pieces of up to 8 x 8.
+        let plan = auto_plan(
+            24 * AUTO_CPU_TARGET / 100,
+            16,
+            usable,
+            estimate_piece_mb(regions, 1.0),
+        );
+        assert_eq!(plan, (4, 5));
+    }
+
+    #[test]
+    fn estimate_tracks_measured_peak() {
+        for (regions, job_peak_mb, workers) in [(64, 3298.0, 4.0), (16, 2116.0, 4.0)] {
+            let peak = job_peak_mb / workers;
+            let est = estimate_piece_mb(regions, 1.0) as f64;
+            assert!(
+                est >= peak && est <= peak * 1.3,
+                "{regions}: {est} vs {peak}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_small_machine_plans_small() {
+        // 8 threads, 16 GB: two workers of three threads, not the 24-thread four of five.
+        let total = 16 * 1024;
+        let usable = 12_000 - reserve_mb(total);
+        assert_eq!(
+            auto_plan(
+                8 * AUTO_CPU_TARGET / 100,
+                16,
+                usable,
+                estimate_piece_mb(64, 1.0)
+            ),
+            (2, 3)
+        );
+        // 4 threads, 3 GB to spare: still two, of two threads, on 4 x 4 pieces.
+        assert_eq!(auto_max_regions(&parse(&["--ram-budget-mb", "1500"])), 4);
+        assert_eq!(
+            auto_plan(
+                4 * AUTO_CPU_TARGET / 100,
+                16,
+                1500,
+                estimate_piece_mb(16, 1.0)
+            ),
+            (2, 1)
+        );
     }
 }
