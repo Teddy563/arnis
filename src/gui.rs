@@ -2004,6 +2004,7 @@ const WINDOW_FLAGS: &[&str] = &[
     "margin-regions",
     "piece-order",
     "skip-built",
+    "skip-cells",
     "stitch-map",
     "plan-mask",
     "threads",
@@ -2423,8 +2424,8 @@ fn gui_stop_generation() {
     crate::scale::STOP.store(true, std::sync::atomic::Ordering::Release);
 }
 
-/// A cell action on the running job (`hold`, `resume`, `front`, `cancel`, `retry`) for the
-/// cells given by plan index; an error when no job runs.
+/// A cell action on the running job (`hold`, `resume`, `front`, `cancel`, `retry`, `skip`,
+/// `include`) for the cells given by plan index; an error when no job runs.
 #[tauri::command]
 fn gui_cells_control(
     action: String,

@@ -69,6 +69,10 @@ pub struct Queue {
     /// Pending cells that do not start until resumed. A held running cell finishes.
     held: BTreeSet<usize>,
     failed: BTreeSet<usize>,
+    /// Left out of the job (`--skip-cells`), kept in its state.
+    skipped: BTreeSet<usize>,
+    /// `skipped` changed since the job last saved it.
+    skip_changed: bool,
     /// Running cells to kill and put back in `pending`.
     cancel: BTreeSet<usize>,
     /// State changes the job has not reported yet.
@@ -180,6 +184,28 @@ impl Queue {
                     }
                 }
             }
+            "skip" => {
+                for &i in cells {
+                    if let Some(p) = self.pending.iter().position(|&c| c == i) {
+                        self.pending.remove(p);
+                        self.held.remove(&i);
+                        self.skipped.insert(i);
+                        self.events.push((i, "skipped"));
+                        applied.push(i);
+                    }
+                }
+                self.skip_changed |= !applied.is_empty();
+            }
+            "include" => {
+                for &i in cells {
+                    if self.skipped.remove(&i) {
+                        self.pending.push_back(i);
+                        self.events.push((i, "queued"));
+                        applied.push(i);
+                    }
+                }
+                self.skip_changed |= !applied.is_empty();
+            }
             "retry" => {
                 for &i in cells {
                     if self.failed.remove(&i) {
@@ -189,11 +215,9 @@ impl Queue {
                     }
                 }
             }
-            _ => {
-                return Err(format!(
-                    "{action}: not a cell action (hold, resume, front, cancel, retry)."
-                ))
-            }
+            _ => return Err(format!(
+                "{action}: not a cell action (hold, resume, front, cancel, retry, skip, include)."
+            )),
         }
         Ok(applied)
     }
@@ -209,6 +233,7 @@ pub struct CellsControlResult {
     pub running: Vec<u32>,
     pub held: Vec<u32>,
     pub failed: Vec<u32>,
+    pub skipped: Vec<u32>,
 }
 
 /// The running job's world and cells; one job per process.
@@ -233,7 +258,8 @@ impl Drop for Active {
 /// The window's cell actions on the running job: `hold` keeps pending cells from starting
 /// (a running one finishes), `resume` lets them, `front` moves pending cells to the front in
 /// the given order, `cancel` kills running cells and puts them back in pending, `retry`
-/// puts failed cells back in pending.
+/// puts failed cells back in pending, `skip` leaves pending cells out of the job and
+/// `include` puts skipped cells back in pending.
 pub fn control(action: &str, cells: &[u32]) -> Result<CellsControlResult, String> {
     let active = lock(&ACTIVE);
     let (_, queue) = active.as_ref().ok_or("No job is running.")?;
@@ -252,6 +278,7 @@ pub fn control(action: &str, cells: &[u32]) -> Result<CellsControlResult, String
         running: ids(&mut q.running.iter()),
         held: ids(&mut q.held.iter()),
         failed: ids(&mut q.failed.iter()),
+        skipped: ids(&mut q.skipped.iter()),
     })
 }
 
@@ -277,6 +304,8 @@ struct Job {
     /// Each piece's share of the reserved ids, by region key. A 3.5.0 job has none: its
     /// pieces' shares follow their plan index.
     slots: serde_json::Map<String, Value>,
+    /// Cells left out, by plan index: `--skip-cells`, kept in `job.json`.
+    skip: BTreeSet<usize>,
 }
 
 /// A finished piece's file names its regions and size, so it stays its own whatever order
@@ -351,13 +380,24 @@ impl Job {
                 (area_base, map_base, slots)
             }
         };
+        let skip = kept
+            .as_ref()
+            .map_or_else(BTreeSet::new, |v| skip_set(&v["skip"]));
         Ok(Self {
             name,
             dir,
             area_base,
             map_base,
             slots,
+            skip,
         })
+    }
+
+    /// Keeps `skip` in `job.json`, so a run of the same job leaves the same cells out.
+    fn save_skip(&mut self, skip: BTreeSet<usize>) -> Result<(), String> {
+        save_skip(&self.dir, &skip)?;
+        self.skip = skip;
+        Ok(())
     }
 
     /// The piece's share of the job's area and map ids.
@@ -409,6 +449,41 @@ pub fn piece_done(world_dir: &Path, name: &str, u: &WorkUnit) -> bool {
         || dir.join(format!("done-{}.json", u.index)).exists()
 }
 
+fn skip_set(v: &Value) -> BTreeSet<usize> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c.as_u64().map(|c| c as usize))
+        .collect()
+}
+
+/// Writes the cells left out into the job state in `dir`.
+fn save_skip(dir: &Path, skip: &BTreeSet<usize>) -> Result<(), String> {
+    let state = dir.join("job.json");
+    let mut v: Value = std::fs::read_to_string(&state)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| json!({}));
+    v["skip"] = json!(skip);
+    write(&state, &v)
+}
+
+/// The cells a run of job `name` leaves out: `--skip-cells` when given, else those kept in
+/// the job's state.
+pub fn skipped_cells(world_dir: &Path, name: &str, args: &Args) -> BTreeSet<usize> {
+    if let Some(cells) = &args.units.skip_cells {
+        return cells.iter().map(|&c| c as usize).collect();
+    }
+    let state = world_dir
+        .join(one_world::JOBS_DIR)
+        .join(name)
+        .join("job.json");
+    std::fs::read_to_string(state)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .map_or_else(BTreeSet::new, |v| skip_set(&v["skip"]))
+}
+
 fn write(path: &Path, value: &Value) -> Result<(), String> {
     crate::world_utils::replace_file_atomically(path, value.to_string().as_bytes())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
@@ -454,7 +529,18 @@ pub fn run_with(
     if let Some(&bad) = only.into_iter().flatten().find(|&&p| p as usize > of) {
         return Err(format!("--only-pieces {bad}: this job has {of} pieces."));
     }
-    let wanted = |i: usize| only.is_none_or(|p| p.contains(&(i as u32 + 1)));
+    if let Some(&bad) = args
+        .units
+        .skip_cells
+        .iter()
+        .flatten()
+        .find(|&&c| c as usize >= of)
+    {
+        return Err(format!(
+            "--skip-cells {bad}: this job's cells are 0 to {}.",
+            of - 1
+        ));
+    }
     let order = work_units::build_order(&units, args.units.piece_order.as_ref())?;
     // Snapping or a mask can leave the requested spawn outside every piece.
     if let Some((x, z)) = user_spawn_xz(args, &selection)
@@ -465,7 +551,14 @@ pub fn run_with(
              of this job and is ignored."
         );
     }
-    let job = Job::open(world_dir, plan.name, &units)?;
+    let mut job = Job::open(world_dir, plan.name, &units)?;
+    // `--skip-cells` replaces the cells the job kept out, an empty list none.
+    if let Some(cells) = &args.units.skip_cells {
+        job.save_skip(cells.iter().map(|&c| c as usize).collect())?;
+    }
+    let job = job;
+    let wanted =
+        |i: usize| !job.skip.contains(&i) && only.is_none_or(|p| p.contains(&(i as u32 + 1)));
 
     match size {
         UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
@@ -519,6 +612,10 @@ pub fn run_with(
                 println!("  piece {}/{of}: already built", i + 1);
                 piece_record(i, "skipped", json!({}));
                 lock(&results)[i] = Some(r);
+            }
+            None if job.skip.contains(&i) => {
+                println!("  piece {}/{of}: left out", i + 1);
+                piece_record(i, "skipped", json!({"reason": "skip_cells"}));
             }
             // `--skip-built`: every chunk is in the world already, from an earlier job.
             None if wanted(i) && args.units.skip_built && job.built_before(world_dir, unit) => {
@@ -718,6 +815,9 @@ pub fn run_with(
     // The cells left to build, which the window may hold, reorder, cancel and retry.
     let queue = Arc::new(Mutex::new(Queue {
         pending: queue,
+        skipped: (0..of)
+            .filter(|&i| job.skip.contains(&i) && lock(&results)[i].is_none())
+            .collect(),
         ..Default::default()
     }));
     let _active = Active::register(world_dir, &queue);
@@ -898,9 +998,17 @@ pub fn run_with(
         // What the window changed (held, back in the queue) goes out here, in full records.
         loop {
             let over = workers.iter().all(|t| t.is_finished());
-            let events = std::mem::take(&mut lock(&queue).events);
+            let (events, skip) = {
+                let mut q = lock(&queue);
+                let skip = std::mem::take(&mut q.skip_changed).then(|| q.skipped.clone());
+                (std::mem::take(&mut q.events), skip)
+            };
             for (i, state) in events {
-                piece_record(i, state, json!({}));
+                let reason = (state == "skipped").then_some("skip_cells");
+                piece_record(i, state, json!({ "reason": reason }));
+            }
+            if let Err(e) = skip.map_or(Ok(()), |skip| save_skip(&job.dir, &skip)) {
+                eprintln!("Warning: Failed to keep the cells left out: {e}");
             }
             if over {
                 break;
@@ -916,8 +1024,10 @@ pub fn run_with(
     if !failed.is_empty() && !STOP.load(Ordering::Acquire) {
         return Err(failed_summary(failed, of));
     }
+    // Left out: the job is built without them and keeps its state for a later run.
+    let skipped = lock(&queue).skipped.len();
     // Stopped before the last piece, or only some retried: kept for a resume.
-    if finished.load(Ordering::Relaxed) < of {
+    if finished.load(Ordering::Relaxed) + skipped < of {
         let partial = only.is_some() && !STOP.load(Ordering::Acquire);
         return Err(if partial { PARTIAL } else { STOPPED }.to_string());
     }
@@ -938,6 +1048,10 @@ pub fn run_with(
     }
     if args.world_border {
         one_world::apply_world_border(world_dir, &rect);
+    }
+    if skipped > 0 {
+        println!("  {skipped} cell(s) left out; the job keeps them for a later run");
+        return Ok(());
     }
     // The job is built; its state is not needed any more.
     let _ = std::fs::remove_dir_all(&job.dir);
@@ -1012,6 +1126,7 @@ const PER_PIECE: &[&str] = &[
     "--max-downloads",
     "--one-world-unit",
     "--only-pieces",
+    "--skip-cells",
     "--snap-regions",
     "--margin-regions",
     // Handed over in the environment, out of sight of other processes.
@@ -1338,6 +1453,63 @@ second
     }
 
     #[test]
+    fn skipped_cells_leave_the_queue_and_come_back() {
+        let mut q = Queue {
+            pending: VecDeque::from([0, 1, 2]),
+            running: BTreeSet::from([3]),
+            ..Default::default()
+        };
+        // Only pending cells can be left out.
+        assert_eq!(q.apply("skip", &[1, 3]).unwrap(), [1]);
+        assert!(q.skip_changed && q.skipped == BTreeSet::from([1]));
+        assert_eq!(q.events, [(1, "skipped")]);
+        assert_eq!(q.next(true), Next::Cell(0));
+        assert_eq!(q.next(true), Next::Cell(2));
+        q.skip_changed = false;
+        assert_eq!(q.apply("include", &[1, 2]).unwrap(), [1]);
+        assert!(q.skip_changed && q.skipped.is_empty());
+        assert_eq!(q.next(true), Next::Cell(1));
+    }
+
+    #[test]
+    fn the_skip_set_round_trips_through_the_job_state() {
+        let proj = crate::projection::WebMercatorProjection::new(44.4465, 26.099, 1.0);
+        let req = LLBBox::new(44.4375, 26.0865, 44.4555, 26.1115).unwrap();
+        let (world, _) = crate::projection::snap_bbox_to_chunks(&proj, &req).unwrap();
+        let units = work_units::plan_units(&proj, &world, 1).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(one_world::JOBS_DIR).join("j");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("job.json"), r#"{"area_base":5,"map_base":100}"#).unwrap();
+        let mut job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert!(job.skip.is_empty());
+        job.save_skip(BTreeSet::from([1, 3])).unwrap();
+        // A restart reads it back; the reserved ids stay.
+        let job = Job::open(tmp.path(), "j".into(), &units).unwrap();
+        assert_eq!(job.skip, BTreeSet::from([1, 3]));
+        assert_eq!(job.area_id(&units[2]), 7);
+        let parse = |argv: &[&str]| <Args as clap::Parser>::try_parse_from(argv).unwrap();
+        let plain = parse(&["arnis"]);
+        assert_eq!(
+            skipped_cells(tmp.path(), "j", &plain),
+            BTreeSet::from([1, 3])
+        );
+        // The flag wins; an empty list leaves nothing out.
+        let flag = parse(&["arnis", "--skip-cells", "2, 0"]);
+        assert_eq!(
+            skipped_cells(tmp.path(), "j", &flag),
+            BTreeSet::from([0, 2])
+        );
+        let none = parse(&["arnis", "--skip-cells="]);
+        assert!(skipped_cells(tmp.path(), "j", &none).is_empty());
+        assert!(<Args as clap::Parser>::try_parse_from(["arnis", "--skip-cells", "x"]).is_err());
+        // Only a job built in pieces takes it.
+        let alone = parse(&["arnis", "--one-world", "--skip-cells", "1"]);
+        let err = crate::args::validate_args(&alone).unwrap_err();
+        assert!(err.contains("--skip-cells"), "{err}");
+    }
+
+    #[test]
     fn cell_actions_need_a_running_job() {
         assert!(control("hold", &[0]).unwrap_err().contains("No job"));
         let queue = Arc::new(Mutex::new(Queue {
@@ -1533,6 +1705,7 @@ second
             "MLY|secret",
             "--mapillary-token=MLY|secret",
             "--skip-built",
+            "--skip-cells=1,2",
             "--stitch-map",
             "--snap-regions",
             "cover",

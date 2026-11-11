@@ -818,6 +818,20 @@ pub struct UnitArgs {
     /// of them; without it the map shows the first piece only.
     #[arg(long)]
     pub stitch_map: bool,
+
+    /// Leave these cells of a --one-world job out (plan indexes from 0, as --plan-units lists
+    /// them); kept with the job, and an empty list builds every cell again.
+    #[arg(long, hide = true, value_name = "N,N...", value_parser = parse_cells)]
+    pub skip_cells: Option<std::collections::BTreeSet<u32>>,
+}
+
+/// `--skip-cells`: plan indexes, comma separated; empty for none.
+fn parse_cells(s: &str) -> Result<std::collections::BTreeSet<u32>, String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| t.parse().map_err(|_| format!("{t}: not a cell number")))
+        .collect()
 }
 
 /// `--piece-order`.
@@ -975,6 +989,7 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (u.piece_order.is_some(), "--piece-order"),
         (u.plan_mask.is_some(), "--plan-mask"),
         (u.stitch_map, "--stitch-map"),
+        (u.skip_cells.is_some(), "--skip-cells"),
         (
             args.region_format != crate::output_args::RegionFormat::Mca,
             "--region-format",
@@ -1686,6 +1701,11 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     if args.units.only_pieces.is_some() && !args.units.coordinates() {
         return Err(
             "--only-pieces only applies to a job built in pieces (--unit-regions).".to_string(),
+        );
+    }
+    if args.units.skip_cells.is_some() && !args.units.coordinates() {
+        return Err(
+            "--skip-cells only applies to a job built in pieces (--unit-regions).".to_string(),
         );
     }
     refuse_live_extras(args)?;
