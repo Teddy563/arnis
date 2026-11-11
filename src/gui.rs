@@ -200,6 +200,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_cancel_precompute,
             gui_one_world_info,
             gui_list_one_worlds,
+            gui_world_thumbnail,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
@@ -1397,6 +1398,59 @@ struct WorldMapData {
     max_mc_z: i32,
 }
 
+/// The image a world's thumbnail is made from: its map, else its newest area preview.
+fn thumbnail_source(world: &Path) -> Option<PathBuf> {
+    let map = world.join("arnis_world_map.png");
+    if map.is_file() {
+        return Some(map);
+    }
+    fs::read_dir(world.join(crate::one_world::PREVIEW_DIR))
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+}
+
+/// Where a world's thumbnail is kept, so the list need not shrink the image every time.
+const THUMB_FILE: &str = "arnis_one_world/thumb.png";
+const THUMB_WIDTH: u32 = 320;
+
+/// A small PNG of the world as a data URL, or None when it has no image.
+#[tauri::command(async)]
+fn gui_world_thumbnail(world_path: String) -> Result<Option<String>, String> {
+    let world = PathBuf::from(world_path);
+    let Some(source) = thumbnail_source(&world) else {
+        return Ok(None);
+    };
+    let thumb = world.join(THUMB_FILE);
+    let modified = |p: &Path| fs::metadata(p).and_then(|m| m.modified()).ok();
+    let kept = modified(&thumb).filter(|t| Some(*t) >= modified(&source));
+    let png = match kept.and_then(|_| fs::read(&thumb).ok()) {
+        Some(png) => png,
+        None => {
+            let img = image::open(&source)
+                .map_err(|e| format!("Failed to read {}: {e}", source.display()))?;
+            let img = if img.width() > THUMB_WIDTH {
+                img.thumbnail(THUMB_WIDTH, u32::MAX)
+            } else {
+                img
+            };
+            let mut png = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .map_err(|e| format!("Failed to make a thumbnail: {e}"))?;
+            // Not kept (a read-only folder, say): made again next time.
+            let _ = fs::create_dir_all(world.join("arnis_one_world"))
+                .and_then(|_| fs::write(&thumb, &png));
+            png
+        }
+    };
+    Ok(Some(format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
+    )))
+}
+
 #[derive(serde::Serialize)]
 struct OneWorldEntry {
     name: String,
@@ -1405,6 +1459,8 @@ struct OneWorldEntry {
     info: OneWorldInfo,
     place_name: Option<String>,
     jobs: Vec<JobEntry>,
+    /// A preview image exists, so `gui_world_thumbnail` has something to show.
+    preview: bool,
 }
 
 #[derive(serde::Serialize, Debug, PartialEq)]
@@ -1495,6 +1551,7 @@ fn gui_list_one_worlds(save_path: String) -> Result<Vec<OneWorldEntry>, String> 
                 info,
                 place_name: m.and_then(|m| m.place_name),
                 jobs,
+                preview: thumbnail_source(&e.path()).is_some(),
             })
         })
         .collect();
@@ -3828,6 +3885,38 @@ mod tests {
         assert_eq!(names, ["new", "old"]);
         let missing = save.join("nope").display().to_string();
         assert!(gui_list_one_worlds(missing).unwrap().is_empty());
+    }
+
+    /// No image, no thumbnail; with one, a data URL at most 320 px wide, kept beside the world.
+    #[test]
+    fn a_thumbnail_is_made_once_from_a_preview() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let path = world.display().to_string();
+        assert_eq!(gui_world_thumbnail(path.clone()).unwrap(), None);
+        assert!(!gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0].preview);
+        let previews = world.join(crate::one_world::PREVIEW_DIR);
+        fs::create_dir_all(&previews).unwrap();
+        image::RgbImage::new(640, 100)
+            .save(previews.join("area-1.png"))
+            .unwrap();
+        assert!(gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0].preview);
+        let url = gui_world_thumbnail(path.clone()).unwrap().unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+        let thumb = world.join(THUMB_FILE);
+        assert_eq!(image::open(&thumb).unwrap().width(), 320);
+        let made = fs::metadata(&thumb).unwrap().modified().unwrap();
+        assert_eq!(gui_world_thumbnail(path).unwrap().unwrap(), url);
+        assert_eq!(
+            fs::metadata(&thumb).unwrap().modified().unwrap(),
+            made,
+            "kept"
+        );
     }
 
     /// An old world lists with no place and no jobs; a recorded job lists with its settings.
