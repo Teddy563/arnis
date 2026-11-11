@@ -183,6 +183,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_bake_archive,
             gui_cancel_bake,
             gui_stop_generation,
+            gui_cells_control,
             gui_get_version,
             gui_get_update_info,
             gui_get_platform,
@@ -2420,6 +2421,16 @@ fn gui_pause_generation(paused: bool) {
 #[tauri::command]
 fn gui_stop_generation() {
     crate::scale::STOP.store(true, std::sync::atomic::Ordering::Release);
+}
+
+/// A cell action on the running job (`hold`, `resume`, `front`, `cancel`, `retry`) for the
+/// cells given by plan index; an error when no job runs.
+#[tauri::command]
+fn gui_cells_control(
+    action: String,
+    cells: Vec<u32>,
+) -> Result<crate::scale::CellsControlResult, String> {
+    crate::scale::control(&action, &cells)
 }
 
 // Everything before the `spawn` below - the spawn point written into level.dat -
