@@ -487,12 +487,13 @@ pub fn check_run_size(
     format: crate::world_editor::WorldFormat,
     dir: &Path,
 ) -> Result<(), RunSizeError> {
-    if args.mapillary_probe {
+    if args.mapillary_probe || args.prewarm {
         return Ok(());
     }
     let from_archive = !args.skip_osm()
         && args.file.is_none()
         && !args.no_tile_archive
+        && args.osm_pbf.is_none()
         && !args.osm_tiles_url.is_empty();
     if from_archive {
         if let Err(e) = crate::osm_tiles::check_size(bbox, args.scale) {

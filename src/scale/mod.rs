@@ -527,6 +527,12 @@ pub fn run_with(
         .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
     let proj = manifest.projection();
     let plan = work_units::plan(&proj, &selection, args, size)?;
+    // A snapped job reaches past the selection, and its data must too.
+    let bake_area = if corners(&plan.rect) == corners(&plan.requested) {
+        selection
+    } else {
+        crate::projection::llbbox_for_rect(&proj, &plan.rect)?
+    };
     let (rect, units) = (plan.rect, plan.units);
     let of = units.len();
     // `--only-pieces`: these are built, the job's other missing pieces wait.
@@ -568,6 +574,17 @@ pub fn run_with(
     match size {
         UnitSize::N(n) => println!("One World: building {of} piece(s) of up to {n}x{n} regions"),
         UnitSize::Auto => println!("One World: building {of} piece(s) of up to 8x8 regions"),
+    }
+    // The extract is read once, here; each piece then cuts its own area from the bake.
+    let mut argv = argv;
+    if let Some(src) = crate::osm_pbf::Source::from_args(args).filter(|_| !args.skip_osm()) {
+        match crate::osm_pbf::bake_for_job(&src, bake_area) {
+            Err(e) if crate::osm_pbf::fallback_allowed(&src, crate::net::offline()) => {
+                crate::retrieve_data::warn_region_download_fallback(&e);
+                argv = without_options(argv, &["--osm-pbf", "--osm-pbf-url"], &[]);
+            }
+            r => r?,
+        }
     }
     let results: Mutex<Vec<Option<PieceResult>>> = Mutex::new(vec![None; of]);
     let mut queue = VecDeque::new();
@@ -692,6 +709,60 @@ pub fn run_with(
         let bbox = crate::projection::llbbox_for_rect(&proj, &built)?.arg();
         Ok((lease, bbox))
     };
+
+    // `--prewarm-first`: one piece at a time, each with the job's whole download allowance, so N
+    // workers then read the caches instead of all fetching at once. `--prewarm` stops after it.
+    if args.prewarm || args.prewarm_first {
+        let warm: Vec<usize> = (0..of)
+            .filter(|&i| wanted(i) && job.finished(&units[i]).is_none())
+            .collect();
+        // A lease already there marks a piece an earlier run started; `--prewarm` must keep it.
+        let fresh: Vec<usize> = warm
+            .iter()
+            .copied()
+            .filter(|&i| !job.lease_path(i).exists())
+            .collect();
+        let stopped = || STOP.load(Ordering::Acquire);
+        for (k, &i) in warm.iter().enumerate() {
+            if STOP.load(Ordering::Acquire) {
+                return Err(STOPPED.to_string());
+            }
+            // Warm what the piece will build: its rect plus the halo.
+            let (lease, bbox) = piece_child(i)?;
+            let mut warm_argv = child_args(argv.iter().cloned(), &bbox, &lease, false);
+            let downloads = args.max_downloads.unwrap_or(16).to_string();
+            warm_argv.extend([
+                "--prewarm".into(),
+                "--max-downloads".into(),
+                downloads.into(),
+            ]);
+            println!("  piece {}/{of}: warming the caches", i + 1);
+            // The job's bar: the pieces warmed so far plus this one's share.
+            let report = |f: f64| {
+                let pct = (k as f64 + f) / warm.len() as f64 * 100.0;
+                crate::progress::emit_gui_progress_update(pct, "");
+            };
+            let log = piece_log_path(&job.dir, i);
+            run_piece_until(&warm_argv, &token, &stopped, Path::new(&log), report).map_err(
+                |f| {
+                    if STOP.load(Ordering::Acquire) {
+                        STOPPED.to_string()
+                    } else {
+                        format!("warming piece {} failed: {}", i + 1, f.message)
+                    }
+                },
+            )?;
+        }
+        if args.prewarm {
+            // Only the leases it wrote: a job already under way keeps its resume records.
+            for &i in &fresh {
+                let _ = std::fs::remove_file(job.lease_path(i));
+            }
+            let _ = std::fs::remove_dir(&job.dir);
+            let _ = std::fs::remove_dir(world_dir.join(one_world::JOBS_DIR));
+            return Ok(());
+        }
+    }
 
     // Each piece's fraction done, and the highest job percentage sent.
     let done: Mutex<(Vec<f64>, f64)> = Mutex::new((
@@ -1070,9 +1141,14 @@ const PER_PIECE: &[&str] = &[
     "--mapillary-token",
 ];
 
-/// Switches the coordinator decides, as clap refuses one given twice. They take no value, so
-/// the next argument is kept.
-const PER_PIECE_SWITCHES: &[&str] = &["--skip-built", "--stitch-map"];
+/// Switches the coordinator decides: it hands `--prewarm` to the pieces it warms, and clap
+/// refuses one given twice. They take no value, so the next argument is kept.
+const PER_PIECE_SWITCHES: &[&str] = &[
+    "--prewarm",
+    "--prewarm-first",
+    "--skip-built",
+    "--stitch-map",
+];
 
 /// Only the piece the world spawns in gets the spawn point: the others do not contain it,
 /// and a run refuses a spawn outside its area.
@@ -1153,9 +1229,10 @@ fn is_transient(code: Option<i32>, tail: &[String]) -> bool {
 
 /// Runs one piece to the end, or kills it as soon as `cancel` says so. `progress` gets the
 /// piece's own fraction done. Its output lines are also written to `log`.
-/// A piece's log, appended to so a retry keeps the first failure; each try opens with a
-/// `--- try N ---` line.
-fn open_piece_log(path: &Path) -> Option<std::fs::File> {
+/// A piece's log, appended to so a retry (or the build after a prewarm) keeps the
+/// first failure; each build try opens with a `--- try N ---` line, the warm step with
+/// `--- warm ---`, which is not a try.
+fn open_piece_log(path: &Path, warm: bool) -> Option<std::fs::File> {
     let tries = std::fs::read_to_string(path)
         .map(|t| t.lines().filter(|l| l.starts_with("--- try ")).count())
         .unwrap_or(0);
@@ -1164,7 +1241,11 @@ fn open_piece_log(path: &Path) -> Option<std::fs::File> {
         .append(true)
         .open(path)
         .ok()?;
-    writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    if warm {
+        writeln!(f, "--- warm ---").ok()?;
+    } else {
+        writeln!(f, "--- try {} ---", tries + 1).ok()?;
+    }
     Some(f)
 }
 
@@ -1201,7 +1282,9 @@ fn run_piece_until(
     // Held open for the piece's life: on Unix it exits when this closes.
     let _stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_LINES)));
-    let log = Arc::new(Mutex::new(open_piece_log(log)));
+    // Only the warm step's command line carries `--prewarm`: the coordinator strips it.
+    let warm = argv.iter().any(|a| a == "--prewarm");
+    let log = Arc::new(Mutex::new(open_piece_log(log, warm)));
     let push =
         |tail: &Mutex<VecDeque<String>>, log: &Mutex<Option<std::fs::File>>, line: String| {
             if let Some(f) = lock(log).as_mut() {
@@ -1259,6 +1342,12 @@ fn run_piece_until(
                     if let Some(p) = record["progress"].as_f64() {
                         progress(p / 100.0);
                     }
+                    if let Some(notice) = forwarded_notice(&record) {
+                        crate::progress::emit_gui_progress_update(
+                            crate::progress::MESSAGE_ONLY,
+                            notice,
+                        );
+                    }
                 }
                 Some("done") => {
                     result.peak_rss_mb = record["peak_rss_mb"].as_u64();
@@ -1285,6 +1374,13 @@ fn run_piece_until(
     })
 }
 
+/// A piece's `phase` the job passes on as its own: a Region Download fallback notice.
+fn forwarded_notice(record: &Value) -> Option<&str> {
+    let name = record["name"].as_str()?;
+    (record["type"] == "phase" && name.starts_with(crate::retrieve_data::REGION_DOWNLOAD_FALLBACK))
+        .then_some(name)
+}
+
 /// The job's percentage: every piece is an equal share, so it reads n/N as "n/N done"
 /// does, plus the running pieces' own fractions.
 fn job_percent(done: &[f64]) -> f64 {
@@ -1300,14 +1396,20 @@ mod tests {
     fn a_piece_log_keeps_every_try() {
         let p = std::env::temp_dir().join(format!("piece-log-{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&p);
-        for line in ["first failure", "second"] {
-            writeln!(open_piece_log(&p).unwrap(), "{line}").unwrap();
+        for (warm, line) in [
+            (true, "warmed"),
+            (false, "first failure"),
+            (false, "second"),
+        ] {
+            writeln!(open_piece_log(&p, warm).unwrap(), "{line}").unwrap();
         }
         let t = std::fs::read_to_string(&p).unwrap();
         let _ = std::fs::remove_file(&p);
         assert_eq!(
             t,
-            "--- try 1 ---
+            "--- warm ---
+warmed
+--- try 1 ---
 first failure
 --- try 2 ---
 second
@@ -1558,6 +1660,35 @@ second
         assert!((job_percent(&d) - 2.75 / 16.0 * 100.0).abs() < 1e-9);
         assert_eq!(job_percent(&[1.0; 16]), 100.0);
         assert_eq!(job_percent(&[]), 0.0);
+    }
+
+    #[test]
+    fn a_piece_region_download_notice_is_forwarded() {
+        let rec = |line: &str| serde_json::from_str::<Value>(line).unwrap();
+        let notice = rec(
+            r#"{"v":1,"type":"phase","name":"region_download_fallback: network","progress":null}"#,
+        );
+        assert_eq!(
+            forwarded_notice(&notice),
+            Some("region_download_fallback: network")
+        );
+        let step = rec(r#"{"v":1,"type":"phase","name":"Generating area...","progress":20.0}"#);
+        assert_eq!(forwarded_notice(&step), None);
+        assert_eq!(
+            forwarded_notice(&rec(r#"{"v":1,"type":"progress","progress":3.0}"#)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_region_download_fallback_drops_the_pbf_options() {
+        let argv = ["--osm-pbf", "geofabrik", "--osm-pbf-url=u", "--scale", "1"];
+        let got = without_options(
+            argv.map(OsString::from).to_vec(),
+            &["--osm-pbf", "--osm-pbf-url"],
+            &[],
+        );
+        assert_eq!(got, ["--scale", "1"].map(OsString::from));
     }
 
     #[test]
