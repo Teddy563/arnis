@@ -11,7 +11,7 @@ import {
 } from './settings-store.js';
 import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
-import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
+import { t as oneWorldText, initMeldFeatures, initRunControls, initDataPanel, initProjects, initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing, useRecommended, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls, meldFlags, setPlanMask, hasPlanMask, refreshStretch, progressText, etaDuration, holdsNotice, generationTarget, generationShapes } from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -1437,6 +1437,10 @@ function initSettings() {
   // Advanced off: a finished One World's name is no longer the world under Start.
   meldToggle.addEventListener('change', () => { if (!meldToggle.checked && (lastRunOneWorld || oneWorldPicked)) setWorldNameLabel(""); });
   document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
+  document.getElementById('meld-recommended-btn')?.addEventListener('click', () => {
+    const [a, b, c, d] = (selectedBBox || '').split(/[\s,]+/).map(Number);
+    useRecommended(calculateBBoxSize(a, b, c, d) / 1e6); // no selection: NaN, so Auto
+  });
   getMapFrame()?.addEventListener('load', pushMeldToMap);
   pushMeldToMap();
   // A One World's built land, and a ring of regions around it to build next.

@@ -1206,6 +1206,12 @@ body.meld-off .meld-only {
   opacity: 1;
 }
 
+.settings-page #meld-recommended-btn {
+  height: 34px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .settings-page .projects-row .settings-action-button {
   height: 32px;
   padding: 0 12px;

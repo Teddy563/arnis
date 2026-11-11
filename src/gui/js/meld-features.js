@@ -532,6 +532,17 @@ export function schedulePlan(fresh = false) {
   planTimer = setTimeout(updatePlan, 250);
 }
 
+// The benchmark winner (Nov 2026): cells of 8 regions, 4 workers, from this area up. Below it
+// Auto builds in one plain run, so Auto stays.
+export const RECOMMENDED_FROM_KM2 = 220;
+export function useRecommended(areaKm2) {
+  const big = areaKm2 >= RECOMMENDED_FROM_KM2;
+  const workers = el('meld-workers-select');
+  workers.value = big ? '4' : 'auto';
+  workers.dispatchEvent(new Event('change', { bubbles: true }));
+  document.querySelector(`#meld-piece-size-group .segment[data-v="${big ? '8' : 'auto'}"]`)?.click();
+}
+
 // Selects `bounds` ([south, west, north, east]) with a ring of regions around it: a job in
 // pieces with a margin of at least one region. `skipBuilt` leaves out what the world has.
 export function selectWithRing(bounds, skipBuilt = false) {

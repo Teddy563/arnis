@@ -622,6 +622,8 @@
   "clear_tile_cache_tip": "Deletes all cached map tiles and facade textures to free the space shown. They are downloaded again when needed.",
   "advanced_meld_features_tip": "Shows the Scale settings here and extra settings in Generation, Terrain & Nature, Map & Input and World. Turning it off hides them and sends none of them. Experimental.",
   "meld_workers_tip": "Splits a One World selection into cells of up to 4 × 4 regions and builds several at once, each in its own process. Auto picks 2 to 6 from free RAM and cores. Generating the same area again resumes it. One World only.",
+  "meld_recommended": "Use recommended",
+  "meld_recommended_tip": "Fastest in the Nov 2026 benchmark on this kind of PC",
   "meld_ram_budget_tip": "Sizes parallel work to this much memory instead of the free RAM measured, so several runs can share a machine. Empty measures free RAM.",
   "meld_threads_tip": "Left empty, it uses 90% of the cores. A job in cells splits it between the cells.",
   "disable_height_limit_tip": "Raises the build height only where the terrain or buildings would not fit, and on Java only as far as they reach. Off compresses tall terrain instead. Java 1.21.4+ and Bedrock 1.21.120+, not for Realms.",
