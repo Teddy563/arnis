@@ -57,6 +57,7 @@ mod overture;
 mod preview_3d;
 #[cfg(feature = "gui")]
 mod progress;
+mod progress_json;
 mod projection;
 mod retrieve_data;
 mod structures;
@@ -97,9 +98,16 @@ mod progress {
     /// Mirrors the real module's constant so callers outside the GUI feature
     /// still compile; nothing here reads it, the emits below do nothing.
     pub const MESSAGE_ONLY: f64 = -1.0;
-    pub fn emit_gui_error(_message: &str) {}
-    pub fn emit_gui_progress_update(_progress: f64, _message: &str) {}
-    pub fn emit_gui_progress_update_ex(_progress: f64, _message: &str, _streaming: bool) {}
+    // `--progress json` is the one consumer left without a window.
+    pub fn emit_gui_error(message: &str) {
+        crate::progress_json::error(message);
+    }
+    pub fn emit_gui_progress_update(progress: f64, message: &str) {
+        crate::progress_json::progress(progress, message);
+    }
+    pub fn emit_gui_progress_update_ex(progress: f64, message: &str, _streaming: bool) {
+        crate::progress_json::progress(progress, message);
+    }
     pub fn while_waiting<T>(_waiting_for: &str, wait: impl FnOnce() -> T) -> T {
         wait()
     }
@@ -151,6 +159,7 @@ fn release_one_world(failed: bool) {
 
 /// `process::exit` skips destructors, so failures go through here.
 fn exit_failed() -> ! {
+    progress_json::error("generation failed, see stderr");
     release_one_world(true);
     std::process::exit(1);
 }
@@ -159,20 +168,41 @@ fn run_cli() {
     // A live tile is one of many runs a live session starts, so it skips the greeting.
     let live_tile = std::env::args().any(|a| a == "--live-tile");
 
+    // Parsed ahead of the banner so `--capabilities` prints its line alone.
+    let mut args: Args = Args::parse();
+    if args.capabilities {
+        println!("{}", args::capabilities_json());
+        return;
+    }
+    // Ahead of the early exits below, which would otherwise skip Live without a word.
+    if let Err(e) = args::refuse_live_extras(&args) {
+        eprintln!("{}: {}", "Error".red().bold(), e);
+        std::process::exit(1);
+    }
     // Configure thread pool with 90% CPU cap to keep system responsive
-    floodfill_cache::configure_rayon_thread_pool(0.9);
-
-    if !live_tile {
-        print_banner();
+    match args.thread_count() {
+        Some(threads) => floodfill_cache::configure_rayon_threads(threads),
+        None => floodfill_cache::configure_rayon_thread_pool(0.9),
+    }
+    if let Some(mb) = args.ram_budget_mb {
+        data_processing::set_ram_budget_mb(mb);
+    }
+    if let Some(n) = args.max_downloads {
+        net::set_max_requests(n as usize);
     }
 
-    // Parse input arguments
-    let mut args: Args = Args::parse();
+    if !live_tile {
+        print_banner(&args);
+    }
+
     if let Err(e) = args::resolve_shapes(&mut args) {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
     }
     let asked_mob_spawning = args.mob_spawning;
+    if args.progress == Some(args::ProgressFormat::Json) {
+        progress_json::enable();
+    }
     args::apply_body_defaults(&mut args);
     args::apply_feature_needs(&mut args);
 
@@ -189,9 +219,11 @@ fn run_cli() {
     run_generation_cli(args, asked_mob_spawning);
 }
 
-fn print_banner() {
+fn print_banner(args: &Args) {
     // Clean up old cached elevation tiles on startup
-    elevation_data::cleanup_old_cached_tiles();
+    if !args.no_cache_sweep {
+        elevation_data::cleanup_old_cached_tiles();
+    }
 
     let version: &str = env!("CARGO_PKG_VERSION");
     let repository: &str = env!("CARGO_PKG_REPOSITORY");
@@ -215,7 +247,9 @@ fn print_banner() {
     );
 
     // Fire-and-forget update check; prints a one-line notice on a background thread.
-    version_check::check_for_updates_async();
+    if !args.no_update_check {
+        version_check::check_for_updates_async();
+    }
 }
 
 /// Plays the One World live on a local server until Ctrl+C.
@@ -313,6 +347,7 @@ fn run_live_cli(args: Args) {
 }
 
 fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
+    let started = std::time::Instant::now();
     // Cave zone-map mode renders the cave biome layout for --bbox and exits, before any world
     // exists. It uses the same zone picker, seed and --cave-biomes amounts as --caves.
     if args.cave_zone_map.is_some() {
@@ -992,6 +1027,7 @@ fn run_generation_cli(mut args: Args, asked_mob_spawning: args::MobSpawning) {
         }
     }
     release_one_world(false);
+    progress_json::done(started);
 }
 
 fn main() {
@@ -1028,5 +1064,12 @@ fn main() {
         }
     }
 
-    run_cli();
+    // ponytail: debug frames exceed the 1 MB Windows main stack
+    let cli = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(run_cli)
+        .expect("failed to start the CLI thread");
+    if cli.join().is_err() {
+        std::process::exit(101);
+    }
 }
