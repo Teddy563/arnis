@@ -467,13 +467,16 @@ pub fn run_with(
     ));
     let finished = AtomicUsize::new(lock(&results).iter().flatten().count());
     // How far the job is, kept in the manifest for the window's Projects list.
-    let record_job = |settings: Option<&[String]>| {
+    let (lo, hi) = (selection.min(), selection.max());
+    let first = Some((settings, [lo.lat(), lo.lng(), hi.lat(), hi.lng()]));
+    let record_job = |start: Option<(&[String], [f64; 4])>| {
         let _guard = lock(&MANIFEST);
         let done = finished.load(Ordering::Relaxed);
         if let Err(e) = one_world::record_job(
             world_dir,
             &job.name,
-            settings,
+            start.map(|s| s.0),
+            start.map(|s| s.1),
             done as u32,
             of as u32,
             done == of,
@@ -481,7 +484,7 @@ pub fn run_with(
             eprintln!("Warning: Failed to record the job's progress: {e}");
         }
     };
-    record_job(Some(settings));
+    record_job(first);
     let status = || {
         if !crate::progress::is_running_with_gui() {
             // `--progress json` has its piece records, so its stream stays as it was.

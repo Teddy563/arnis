@@ -151,6 +151,8 @@ pub struct JobRecord {
     pub name: String,
     /// The flags the window sent, without paths.
     pub settings: Vec<String>,
+    /// The area the job was started on, `[south, west, north, east]` in degrees.
+    pub bbox: Option<[f64; 4]>,
     pub status: JobStatus,
 }
 
@@ -164,11 +166,12 @@ pub struct JobStatus {
     pub last_run_ms: u64,
 }
 
-/// Records how far job `name` got. `settings` replaces the kept ones when given.
+/// Records how far job `name` got. `settings` and `bbox` replace the kept ones when given.
 pub fn record_job(
     world_dir: &Path,
     name: &str,
     settings: Option<&[String]>,
+    bbox: Option<[f64; 4]>,
     done: u32,
     total: u32,
     finished: bool,
@@ -187,6 +190,9 @@ pub fn record_job(
     let job = &mut manifest.jobs[i];
     if let Some(s) = settings {
         job.settings = s.to_vec();
+    }
+    if bbox.is_some() {
+        job.bbox = bbox;
     }
     job.status = JobStatus {
         done,
@@ -228,6 +234,7 @@ pub fn job_records(world_dir: &Path, manifest: &Manifest) -> Vec<JobRecord> {
         jobs.push(JobRecord {
             name,
             settings: Vec::new(),
+            bbox: None,
             status: JobStatus {
                 done,
                 total,
@@ -1148,6 +1155,7 @@ mod tests {
         m.jobs.push(JobRecord {
             name: "job".into(),
             settings: vec!["--unit-regions=8".into()],
+            bbox: Some([48.1, 11.5, 48.2, 11.6]),
             status: JobStatus {
                 done: 3,
                 total: 9,
@@ -1160,6 +1168,9 @@ mod tests {
         // A record missing its newer fields still reads.
         let bare: JobRecord = serde_json::from_str(r#"{"name":"j"}"#).unwrap();
         assert_eq!((bare.settings.len(), bare.status.total), (0, 0));
+        assert_eq!(bare.bbox, None);
+        let with: JobRecord = serde_json::from_str(r#"{"name":"j","bbox":[1,2,3,4]}"#).unwrap();
+        assert_eq!(with.bbox, Some([1.0, 2.0, 3.0, 4.0]));
     }
 
     /// `record_job` keeps one record per job; a job folder from before records lists too.
@@ -1170,8 +1181,9 @@ mod tests {
         let req = LLBBox::from_str(MUNICH).unwrap();
         drop(prepare(&world, &req, &mut args_for(MUNICH, &[])).unwrap());
         let flags = vec!["--seed=1".to_string()];
-        record_job(&world, "a", Some(&flags), 0, 4, false).unwrap();
-        record_job(&world, "a", None, 4, 4, true).unwrap();
+        let bb = [48.1, 11.5, 48.2, 11.6];
+        record_job(&world, "a", Some(&flags), Some(bb), 0, 4, false).unwrap();
+        record_job(&world, "a", None, None, 4, 4, true).unwrap();
         let old = world.join(JOBS_DIR).join("old");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::write(
@@ -1184,6 +1196,7 @@ mod tests {
         let jobs = job_records(&world, &m);
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[0].settings, flags);
+        assert_eq!((jobs[0].bbox, jobs[1].bbox), (Some(bb), None));
         assert_eq!((jobs[0].status.done, jobs[0].status.finished), (4, true));
         assert!(jobs[0].status.last_run_ms > 0);
         assert_eq!((jobs[1].name.as_str(), jobs[1].status.done), ("old", 1));

@@ -4009,7 +4009,7 @@ mod tests {
             "--osm-pbf=x.pbf".into(),
         ]);
         assert_eq!(flags, ["--unit-regions=8"]);
-        crate::one_world::record_job(&world, "j", Some(&flags), 2, 5, false).unwrap();
+        crate::one_world::record_job(&world, "j", Some(&flags), None, 2, 5, false).unwrap();
         let job = &list()[0].jobs[0];
         assert_eq!((job.name.as_str(), job.settings.clone()), ("j", flags));
         assert_eq!((job.done, job.total, job.finished), (2, 5, false));
