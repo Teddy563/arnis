@@ -338,6 +338,7 @@ fn run_cli() {
     args::apply_body_defaults(&mut args);
     args::apply_feature_needs(&mut args);
     y_bounds::apply(&mut args);
+    scale::budget::single_below_break_even(&mut args);
 
     // These two need no area, so they skip the general validation.
     if args.map_item_only || args.dh_lod_only {
