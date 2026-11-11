@@ -49,3 +49,23 @@ assert.deepStrictEqual(out(), ['--one-world-workers=2', '--skip-built']);
 applyFlags(undefined);
 assert.deepStrictEqual(out(), [], 'a job without settings changes nothing but the defaults');
 console.log('resume ok');
+
+// Resume / Rebuild select the job's own area, [south, west, north, east], then start.
+const { resumeJob } = await import('../../src/gui/js/meld-features.js');
+const run = async (bbox, matches = true) => {
+  const log = [];
+  let sel = '';
+  await resumeJob({ settings: ['--threads=3'], bbox }, false, {
+    select: (b) => { log.push(['select', b]); if (matches) sel = b.join(' '); },
+    current: () => sel,
+    start: () => log.push(['start']),
+    noArea: () => log.push(['noArea']),
+    wait: async () => {},
+  });
+  return log;
+};
+assert.deepStrictEqual(await run([44.1, 26.0, 44.5, 26.9]), [['select', [44.1, 26.0, 44.5, 26.9]], ['start']], 'non-square area, S/W/N/E order, then start');
+assert.deepStrictEqual(await run(null), [['noArea']], 'no area: settings restored, said once, nothing starts');
+assert.deepStrictEqual(await run([1, 2, 3]), [['noArea']], 'a malformed area counts as unknown');
+assert.deepStrictEqual(await run([44.1, 26.0, 44.5, 26.9], false), [['select', [44.1, 26.0, 44.5, 26.9]]], 'does not start until the map shows the area');
+assert.deepStrictEqual(out(), ['--threads=3'], 'settings are restored in every case');

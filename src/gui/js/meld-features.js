@@ -1106,6 +1106,21 @@ export function projectJob(w) {
   return jobs.find((j) => !j.finished) || jobs[0] || null;
 }
 
+// Resume / Rebuild after the world is open: the job's settings go back in, its area ([south,
+// west, north, east]) is selected, and the run starts once the map reports the same area. A job
+// without an area (an old one) only restores its settings and tells the user to pick one.
+export async function resumeJob(job, rebuild, { select = selectBounds, current, start, noArea, wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  applyFlags(job.settings, rebuild);
+  const b = Array.isArray(job.bbox) ? job.bbox.map(Number) : [];
+  if (b.length !== 4 || !b.every(Number.isFinite)) return noArea();
+  select(b);
+  for (let i = 0; i < 80; i++) {
+    const now = (current() || '').split(/[\s,]+/).map(Number);
+    if (now.length === 4 && now.every((v, k) => Math.abs(v - b[k]) < 1e-4)) return start();
+    await wait(50);
+  }
+}
+
 // `resume(world, job, rebuild)` starts a job again with its settings; without it (or without
 // job data from the engine) only Open and Expand are offered.
 export function initProjects({ invoke, savePath, scale, open, available = () => true, geocode = nominatim, pause = sleep, resume = null, renamed = null }) {
