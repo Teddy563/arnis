@@ -170,8 +170,8 @@ code{font:7.8pt Consolas,monospace}.foot{font-size:7.6pt;color:#333;border-top:1
 
 def footer():
     return ("Machine: 24 threads, 31 GB RAM, Windows 11; one machine, three areas. Runs on 2026-11-10 and 2026-11-11. "
-            "Stock = Arnis 3.4.0 exe (sha256 aafa66e9&hellip;). Confluence.4 = branch tip build a78668b6 (sweep), "
-            "plus the tuned Auto build (branch c35/c4-tune, commit 1cefd515, sha256 b295e96b&hellip;) for the tuned numbers. "
+            "Stock = Arnis 3.4.0 exe (sha256 aafa66e9&hellip;). Confluence.4 = pre-tuning gate build, commit 62507023 (sweep), "
+            "plus the Confluence.4 tuned build (arnis-3.5 at f44c4678, tuned Auto 1cefd515, sha256 b295e96b&hellip;) for the tuned numbers. "
             "Caches warm; the two cold-cache runs (one each) are in docs/23-BENCH-PIECES-VS-SINGLE.md. "
             "Wall time is the median of 3 runs; the grid also shows min&ndash;max. "
             "The second session ran about 20% faster than the first (stock S16 "

@@ -19,7 +19,7 @@ Machine: 24 threads, 31 GB RAM, Windows 11, one machine. All areas are squares a
 | S16 | `44.3549,26.0019,44.4987,26.2031` | 256 | 1024 |
 | S24 | `44.3190,25.9515,44.5346,26.2535` | 576 | 2209 |
 
-Builds: stock is `arnis-v3.4.0.exe` (sha256 `aafa66e9...`). Session 1 used the Confluence.4 branch tip, commit a78668b6 (`arnis-tip.exe`, sha256 `571f629f...`). Session 2 used the tuned build, branch `c35/c4-tune`, commit 1cefd515 (`arnis-tuned.exe`, sha256 `b295e96b...`; the break-even W runs used `arnis-tuned-be.exe`, `b0318c8c...`, whose fixed-count path is the same). `cpu_s` is the last per-second sample of the process tree's CPU time, so it under-counts runs of a few seconds. Failed, timed-out or out-of-memory runs: 0.
+Builds: stock is `arnis-v3.4.0.exe` (sha256 `aafa66e9...`). Session 1 used the pre-tuning Confluence.4 gate build of the window worktree at commit 62507023, engine lineage fb06f6e9 (`arnis-tip.exe`, sha256 `571f629f...`). Session 2 used the Confluence.4 tuned build, arnis-3.5 at f44c4678 (tuned Auto 1cefd515) (`arnis-tuned.exe`, sha256 `b295e96b...`; the break-even W runs used `arnis-tuned-be.exe`, `b0318c8c...`, whose fixed-count path is the same). `cpu_s` is the last per-second sample of the process tree's CPU time, so it under-counts runs of a few seconds. Failed, timed-out or out-of-memory runs: 0.
 
 **The two sessions differ.** Session 2 ran about 20% faster than session 1 on the same stock exe (S16: 72.7 s, then 57.9 s). Machine state varies. So the tuned numbers are compared with stock reruns from session 2 (`A0b3`), never with session 1.
 
@@ -95,9 +95,9 @@ Tuned Auto against the fixed winner cell on S16, same session: 52.8 s against 52
 
 ## What changed in `budget.rs`
 
-From the tune branch `c35/c4-tune` (commits 780f9445 and 1cefd515) against 7310c28a. Line numbers are in `src/scale/budget.rs` unless stated.
+Merged into arnis-3.5 at f44c4678 from the tune branch `c35/c4-tune` (commits 780f9445 and 1cefd515); compared with 7310c28a. Line numbers are in `src/scale/budget.rs` unless stated.
 
-| Constant or rule | Before (7310c28a) | After (c35/c4-tune) |
+| Constant or rule | Before (7310c28a) | After (arnis-3.5 at f44c4678) |
 |---|---|---|
 | `MIN_THREADS` | 4 (line 21) | 5 (line 22) |
 | `AUTO_CPU_TARGET` | 75 (line 25) | 90 (line 26) |
