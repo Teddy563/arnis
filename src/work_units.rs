@@ -542,6 +542,7 @@ pub fn plan_line(
         .workers
     };
     let (job_estimate, warnings) = job_estimate(&units, args, workers, world_dir);
+    let skip = crate::scale::skipped_cells(world_dir, &name, args);
     let units: Vec<_> = units
         .iter()
         .map(|u| {
@@ -563,6 +564,8 @@ pub fn plan_line(
                 "existing_chunks": have,
                 // Built by an earlier run of this same job, which a run now resumes.
                 "done": crate::scale::piece_done(world_dir, &name, u),
+                // Left out of the job (`--skip-cells`, or kept from an earlier run of it).
+                "skip": skip.contains(&(u.index as usize)),
                 // Wholly outside the selection: a piece of the margin ring.
                 "ring": u.rect.max_x() < asked.min_x()
                     || asked.max_x() < u.rect.min_x()

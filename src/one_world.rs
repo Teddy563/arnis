@@ -1084,6 +1084,151 @@ pub fn safe_preview_path(world_dir: &Path, rel: &str) -> Option<PathBuf> {
     valid.then(|| world_dir.join(PREVIEW_DIR).join(name))
 }
 
+/// What [`remove_cells`] did.
+#[derive(Serialize, Debug, Default, PartialEq)]
+pub struct RemoveReport {
+    /// The job whose cells these are.
+    pub job: String,
+    /// Cells whose areas left the manifest, by plan index.
+    pub removed: Vec<u32>,
+    /// Cells asked for that have no area in the world.
+    pub not_built: Vec<u32>,
+    /// Files deleted, relative to the world folder, `/`-separated.
+    pub deleted: Vec<String>,
+    /// Region files of the removed cells kept because an area outside them lies there too.
+    pub kept: Vec<String>,
+}
+
+/// The region files `(rx, rz)` an area lies in.
+fn area_regions(a: &GeneratedArea) -> impl Iterator<Item = (i32, i32)> {
+    let r = |v: i32| v.div_euclid(512);
+    let (x0, x1, z0, z1) = (r(a.min_x), r(a.max_x), r(a.min_z), r(a.max_z));
+    (z0..=z1).flat_map(move |z| (x0..=x1).map(move |x| (x, z)))
+}
+
+/// Takes `cells` (plan indexes) of `job` (default: the job run last) out of the world: their
+/// region files, with the `entities/` and `poi/` files beside them, and their previews are
+/// deleted, their areas leave the manifest and the job counts them as not built. A region
+/// file another area also lies in is kept. Refused while a job or Minecraft has the world.
+pub fn remove_cells(
+    world_dir: &Path,
+    job: Option<&str>,
+    cells: &[u32],
+) -> Result<RemoveReport, String> {
+    if crate::scale::runs_on(world_dir) {
+        return Err("A job is building this world; stop it first.".to_string());
+    }
+    let _lock = SessionLock::acquire(world_dir).map_err(|_| {
+        "The world is in use (open in Minecraft, or another run writes it); close it first."
+            .to_string()
+    })?;
+    let mut manifest = Manifest::load(world_dir)?
+        .ok_or_else(|| format!("{} is not a One World.", world_dir.display()))?;
+    let job = match job {
+        Some(j) => j.to_string(),
+        None => manifest
+            .jobs
+            .iter()
+            .max_by_key(|j| j.status.last_run_ms)
+            .map(|j| j.name.clone())
+            .or_else(|| {
+                manifest
+                    .areas
+                    .iter()
+                    .rev()
+                    .find_map(|a| Some(a.piece.as_ref()?.job.clone()))
+            })
+            .ok_or("This world has no job built in cells.")?,
+    };
+    let (gone, kept): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut manifest.areas)
+            .into_iter()
+            .partition(|a| {
+                a.piece
+                    .as_ref()
+                    .is_some_and(|p| p.job == job && cells.contains(&p.index))
+            });
+    let removed: std::collections::BTreeSet<u32> = gone
+        .iter()
+        .flat_map(|a| &a.piece)
+        .map(|p| p.index)
+        .collect();
+    manifest.areas = kept;
+    if let Some(j) = manifest.jobs.iter_mut().find(|j| j.name == job) {
+        j.status.done = j.status.done.saturating_sub(removed.len() as u32);
+        j.status.finished = false;
+    }
+    // First: should a delete fail, the world shows the cell as not built, and a rebuild
+    // writes over what is left.
+    manifest.save(world_dir)?;
+
+    let mut report = RemoveReport {
+        job: job.clone(),
+        removed: removed.iter().copied().collect(),
+        not_built: cells
+            .iter()
+            .copied()
+            .filter(|c| !removed.contains(c))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        ..Default::default()
+    };
+    let rel = |p: &Path| {
+        let r = p.strip_prefix(world_dir).unwrap_or(p);
+        r.to_string_lossy().replace('\\', "/")
+    };
+    let mut delete = |path: PathBuf| -> Result<(), String> {
+        if path.is_file() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {e}", path.display()))?;
+            report.deleted.push(rel(&path));
+        }
+        Ok(())
+    };
+    let others: std::collections::HashSet<(i32, i32)> =
+        manifest.areas.iter().flat_map(area_regions).collect();
+    let targets: std::collections::BTreeSet<(i32, i32)> =
+        gone.iter().flat_map(area_regions).collect();
+    let overworld = crate::world_utils::WorldLayout::of(world_dir).overworld_dir(world_dir);
+    let mut shared = Vec::new();
+    for (rx, rz) in targets {
+        let name = format!("r.{rx}.{rz}.mca");
+        if others.contains(&(rx, rz)) {
+            shared.push(rel(&overworld.join("region").join(&name)));
+            continue;
+        }
+        for folder in ["region", "entities", "poi"] {
+            delete(overworld.join(folder).join(&name))?;
+        }
+    }
+    let job_dir = world_dir.join(JOBS_DIR).join(&job);
+    for a in &gone {
+        if let Some(path) = a
+            .preview
+            .as_deref()
+            .and_then(|p| safe_preview_path(world_dir, p))
+        {
+            delete(path)?;
+        }
+        // The job's record of the cell, so a resume builds it again.
+        let index = a.piece.as_ref().map_or(0, |p| p.index);
+        let key = format!(
+            "done-r{}_{}_s",
+            a.min_x.div_euclid(512),
+            a.min_z.div_euclid(512)
+        );
+        for f in std::fs::read_dir(&job_dir).into_iter().flatten().flatten() {
+            let name = f.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&key) || name == format!("done-{index}.json") {
+                delete(f.path())?;
+            }
+        }
+    }
+    report.kept = shared;
+    Ok(report)
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1109,6 +1254,130 @@ mod tests {
     }
 
     const MUNICH: &str = "48.130,11.560,48.145,11.590";
+
+    /// A 3 x 3 grid of cells of 2 x 2 regions, the corner cell clipped mid-region, and one
+    /// plain area sharing a region with the middle cell: removing the middle and a corner
+    /// deletes exactly their files.
+    #[test]
+    fn removing_cells_deletes_only_their_region_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path();
+        let mut m = Manifest::new(&args_for(MUNICH, &[]), 48.13, 11.56);
+        let area = |id: u32, r: [i32; 4], piece: Option<u32>| GeneratedArea {
+            id,
+            generated_at: 0,
+            arnis_version: String::new(),
+            min_x: r[0],
+            min_z: r[1],
+            max_x: r[2],
+            max_z: r[3],
+            min_lat: 0.0,
+            min_lon: 0.0,
+            max_lat: 0.0,
+            max_lon: 0.0,
+            preview: Some(format!("{PREVIEW_DIR}/area-{id}.png")),
+            piece: piece.map(|index| PieceRef {
+                job: "J".into(),
+                index,
+            }),
+        };
+        // Cell `index` sits at grid (gx, gz), both in -1..=1.
+        let cell = |index: u32| {
+            let (gx, gz) = (index as i32 % 3 - 1, index as i32 / 3 - 1);
+            let mut r = [gx * 1024, gz * 1024, gx * 1024 + 1023, gz * 1024 + 1023];
+            if index == 0 {
+                r[0] += 100;
+                r[1] += 100;
+            }
+            r
+        };
+        for i in 0..9 {
+            m.areas.push(area(i + 1, cell(i), Some(i)));
+        }
+        // A plain run over region (1, 0), which the middle cell (regions 0..=1) also holds.
+        m.areas.push(area(20, [600, 10, 700, 90], None));
+        m.jobs.push(JobRecord {
+            name: "J".into(),
+            status: JobStatus {
+                done: 9,
+                total: 9,
+                finished: true,
+                last_run_ms: 1,
+            },
+            ..Default::default()
+        });
+        m.save(world).unwrap();
+        for d in ["region", "entities", PREVIEW_DIR] {
+            std::fs::create_dir_all(world.join(d)).unwrap();
+        }
+        let mut all = Vec::new();
+        for rz in -2..=3 {
+            for rx in -2..=3 {
+                all.push(format!("region/r.{rx}.{rz}.mca"));
+            }
+        }
+        all.extend(["entities/r.0.0.mca".into(), "entities/r.-2.-2.mca".into()]);
+        all.extend((1..=9).map(|id| format!("{PREVIEW_DIR}/area-{id}.png")));
+        for f in &all {
+            std::fs::write(world.join(f), b"x").unwrap();
+        }
+        let jobs = world.join(JOBS_DIR).join("J");
+        std::fs::create_dir_all(&jobs).unwrap();
+        for f in [
+            "done-r0_0_s2.json",
+            "done-r-2_-2_s2.json",
+            "done-r2_2_s2.json",
+        ] {
+            std::fs::write(jobs.join(f), "{}").unwrap();
+        }
+
+        // Refused while the world is locked.
+        let held = SessionLock::acquire(world).unwrap();
+        let err = remove_cells(world, None, &[4, 0]).unwrap_err();
+        assert!(err.contains("in use"), "{err}");
+        drop(held);
+
+        let report = remove_cells(world, None, &[4, 0, 0, 12]).unwrap();
+        assert_eq!(report.job, "J");
+        assert_eq!(report.removed, [0, 4]);
+        assert_eq!(report.not_built, [12]);
+        assert_eq!(report.kept, ["region/r.1.0.mca"]);
+        let mut gone: Vec<String> = [
+            "region/r.-2.-2.mca",
+            "region/r.-1.-2.mca",
+            "region/r.-2.-1.mca",
+            "region/r.-1.-1.mca",
+            "entities/r.-2.-2.mca",
+            "region/r.0.0.mca",
+            "entities/r.0.0.mca",
+            "region/r.0.1.mca",
+            "region/r.1.1.mca",
+            &format!("{PREVIEW_DIR}/area-1.png"),
+            &format!("{PREVIEW_DIR}/area-5.png"),
+            &format!("{JOBS_DIR}/J/done-r0_0_s2.json"),
+            &format!("{JOBS_DIR}/J/done-r-2_-2_s2.json"),
+        ]
+        .map(String::from)
+        .to_vec();
+        let mut deleted = report.deleted.clone();
+        gone.sort();
+        deleted.sort();
+        assert_eq!(deleted, gone);
+        for f in &all {
+            assert_eq!(world.join(f).exists(), !gone.contains(f), "{f}");
+        }
+        assert!(jobs.join("done-r2_2_s2.json").exists());
+        let m = Manifest::load(world).unwrap().unwrap();
+        assert_eq!(m.areas.len(), 8);
+        assert!(m
+            .areas
+            .iter()
+            .all(|a| a.piece.as_ref().is_none_or(|p| ![0, 4].contains(&p.index))));
+        assert_eq!(
+            (m.jobs[0].status.done, m.jobs[0].status.finished),
+            (7, false)
+        );
+    }
 
     fn rect(args: &Args, s: &Session) -> XZBBox {
         crate::projection::ProjectionSpec::from_args(args)
