@@ -528,12 +528,19 @@ pub fn plan_line(
         name,
     } = plan(&proj, requested, args, size)?;
     let mut existing = 0;
-    let workers = crate::scale::budget::sizing(
-        args,
-        units.len(),
-        units.iter().map(|u| u.regions).max().unwrap_or(1),
-    )
-    .workers;
+    // The runner's own decision: Auto below the break-even is one plain run, so one worker.
+    let single =
+        crate::scale::budget::builds_single(args, requested.area_km2() * args.scale * args.scale);
+    let workers = if single {
+        1
+    } else {
+        crate::scale::budget::sizing(
+            args,
+            units.len(),
+            units.iter().map(|u| u.regions).max().unwrap_or(1),
+        )
+        .workers
+    };
     let (job_estimate, warnings) = job_estimate(&units, args, workers, world_dir);
     let units: Vec<_> = units
         .iter()
@@ -574,6 +581,9 @@ pub fn plan_line(
         },
         "rect": [world.min_x(), world.min_z(), world.max_x(), world.max_z()],
         "requested": [asked.min_x(), asked.min_z(), asked.max_x(), asked.max_z()],
+        // True when the job runs as one plain run; `units` still draws the cells it covers.
+        "single": single,
+        "pieces": if single { 1 } else { units.len() },
         "units": units,
         "existing_chunks": existing,
         "estimate": job_estimate,

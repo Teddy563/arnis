@@ -62,12 +62,11 @@ fn reserve_mb(total_mb: u64) -> u64 {
 /// 3% faster), 256 km² 72.7 vs 64.9 s; set a bit above 200.
 pub const AUTO_SINGLE_BELOW_KM2: f64 = 220.0;
 
-/// `--unit-regions auto --one-world-workers auto` on a selection smaller than
-/// `AUTO_SINGLE_BELOW_KM2`, with no other job flag: drops both, so the One World is
-/// built in one plain run, which is faster there.
-pub fn single_below_break_even(args: &mut Args) {
+/// Whether `single_below_break_even` builds a selection of `km2` (ground at scale 1 times
+/// scale squared) in one plain run; the window's plan asks the same.
+pub fn builds_single(args: &Args, km2: f64) -> bool {
     let u = &args.units;
-    let plain_auto = u.unit_regions == Some(UnitSize::Auto)
+    u.unit_regions == Some(UnitSize::Auto)
         && u.one_world_workers == Some(Workers::Auto)
         && u.one_world_unit.is_none()
         && u.only_pieces.is_none()
@@ -78,11 +77,18 @@ pub fn single_below_break_even(args: &mut Args) {
         && !u.skip_built
         && !u.stitch_map
         && !args.prewarm
-        && !args.prewarm_first;
+        && !args.prewarm_first
+        && km2 < AUTO_SINGLE_BELOW_KM2
+}
+
+/// `--unit-regions auto --one-world-workers auto` on a selection smaller than
+/// `AUTO_SINGLE_BELOW_KM2`, with no other job flag: drops both, so the One World is
+/// built in one plain run, which is faster there.
+pub fn single_below_break_even(args: &mut Args) {
     let km2 = args
         .bbox
         .map_or(f64::INFINITY, |b| b.area_km2() * args.scale * args.scale);
-    if plain_auto && km2 < AUTO_SINGLE_BELOW_KM2 {
+    if builds_single(args, km2) {
         println!(
             "One World: {km2:.0} km² is below {AUTO_SINGLE_BELOW_KM2:.0} km², built in one run"
         );
@@ -410,5 +416,34 @@ mod tests {
         assert!(pieces(s8, "auto", &["--margin-regions", "1"]));
         assert!(pieces(s8, "auto", &["--prewarm-first"]));
         assert!(pieces(s8, "4", &[]));
+    }
+
+    #[test]
+    fn builds_single_matches_the_runner() {
+        let args = |workers: &str, units: &str| {
+            let cmd = [
+                "arnis",
+                "--output-dir",
+                ".",
+                "--bbox",
+                "44.3909,26.0522,44.4627,26.1528",
+                "--one-world",
+                "--unit-regions",
+                units,
+                "--one-world-workers",
+                workers,
+            ];
+            <Args as clap::Parser>::parse_from(cmd)
+        };
+        let auto = args("auto", "auto");
+        assert!(builds_single(&auto, AUTO_SINGLE_BELOW_KM2 - 1.0));
+        assert!(!builds_single(&auto, AUTO_SINGLE_BELOW_KM2));
+        assert!(!builds_single(&args("4", "auto"), 10.0));
+        assert!(!builds_single(&args("auto", "4"), 10.0));
+        // The runner's drop agrees with the plan's answer.
+        let mut a = args("auto", "auto");
+        a.bbox = None;
+        single_below_break_even(&mut a);
+        assert!(a.units.coordinates()); // no bbox: infinite km2, not single
     }
 }
