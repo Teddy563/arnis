@@ -60,6 +60,20 @@ fn ring_area(nodes: &[ProcessedNode]) -> f64 {
     (twice_area / 2.0).abs()
 }
 
+/// Whether `--no-buildings` leaves this element out: building ways and relations, and the
+/// door and entrance nodes that open into them.
+fn is_building_element(element: &ProcessedElement) -> bool {
+    let tags = element.tags();
+    match element {
+        ProcessedElement::Node(_) => tags.contains_key("door") || tags.contains_key("entrance"),
+        _ => {
+            tags.contains_key("building")
+                || tags.contains_key("building:part")
+                || tags.get("type").map(String::as_str) == Some("building")
+        }
+    }
+}
+
 /// Footprint of a ground-filling way, or `None` if it does not reach a ground-fill handler.
 /// Mirrors the landuse/natural/leisure/place arms of `process_element`; keep both in sync.
 fn way_ground_fill_area(way: &ProcessedWay) -> Option<f64> {
@@ -835,6 +849,11 @@ pub fn generate_world_with_options(
         );
     }
 
+    // Before anything reads a footprint, so the ground under them stays open.
+    if !args.buildings {
+        elements.retain(|e| !is_building_element(e));
+    }
+
     // Before anything reads a footprint: nothing is built on a runway.
     let dropped = highways::drop_buildings_on_aircraft_pavement(&mut elements, args.scale);
     if dropped > 0 {
@@ -844,6 +863,13 @@ pub fn generate_world_with_options(
     waterfront::drop_paths_on_piers(&mut elements, args.scale, args.timeout.as_ref());
     // A peak's summit cross that is also mapped on its own stands once, as the mapped one.
     man_made::drop_doubled_summit_crosses(&mut elements, args.scale);
+
+    crate::element_processing::surfaces::set_patches(args.surface_patches);
+
+    // --road-detail compact leaves the minor ways out before anything sees them.
+    if args.road_detail != road_detail::RoadDetail::Max {
+        elements.retain(|element| !args.road_detail.drops_element(element));
+    }
 
     // Create editor with appropriate format
     let mut editor: WorldEditor = if options.format == WorldFormat::LuantiWorld {
@@ -889,7 +915,7 @@ pub fn generate_world_with_options(
         // rewrites it when it reaches that region; one it misses would stay a grass square.
         crate::world_utils::remove_untouched_template_region(&output_path);
     }
-    editor.set_place_schematics(args.use_3d);
+    editor.set_props(args.props());
     editor.set_game_settings(args.gamemode, args.world_time, args.mob_spawning);
     editor.set_start_with_map(args.map_item);
     editor.set_size_options(crate::world_utils::WorldSizeOptions::of(args));
@@ -1150,7 +1176,14 @@ pub fn generate_world_with_options(
         (llbbox.min().lat() + llbbox.max().lat()) / 2.0,
         (llbbox.min().lng() + llbbox.max().lng()) / 2.0,
     );
-    let road_markings = road_markings::RoadMarkingIndex::build(&elements, args.scale, sign_region);
+    let road_markings = road_markings::RoadMarkingIndex::build_with(
+        &elements,
+        args.scale,
+        sign_region,
+        args.road_detail.paints_crossings(),
+        // A One World piece sees only its clipped share of the signalised crossings.
+        one_world.is_none() || args.road_detail == road_detail::RoadDetail::Max,
+    );
     // What the world format runs is settled here, so the uses below need no format checks.
     let mut extras = crate::datapack::Extras::from_args(args).for_format(world_format);
 
@@ -1707,7 +1740,7 @@ pub fn generate_world_with_options(
             tile_editor.set_ground_origin(xzbbox.min_x(), xzbbox.min_z());
             // Ground generation runs on tile editors, so they need the real scale.
             tile_editor.set_projection_info(&args.projection.to_string(), args.scale);
-            tile_editor.set_place_schematics(args.use_3d);
+            tile_editor.set_props(args.props());
             tile_editor.set_map_decals(world_format == WorldFormat::JavaAnvil);
             if let Some(ref tp) = tree_pack {
                 tile_editor.set_tree_pack(Arc::clone(tp));
@@ -2965,6 +2998,37 @@ mod tests {
 
     fn ids(elements: &[ProcessedElement]) -> Vec<u64> {
         elements.iter().map(|e| e.id()).collect()
+    }
+
+    #[test]
+    fn no_buildings_keeps_roads_and_water() {
+        let node = |id, tags: &[(&str, &str)]| {
+            ProcessedElement::Node(ProcessedNode {
+                id,
+                tags: tags
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                x: 0,
+                z: 0,
+            })
+        };
+        let mut elements = vec![
+            way(1, 10, &[("building", "yes")]),
+            way(2, 10, &[("building:part", "yes")]),
+            relation(3, 10, &[("type", "building")]),
+            relation(4, 10, &[("type", "multipolygon"), ("building", "house")]),
+            node(5, &[("entrance", "main")]),
+            node(6, &[("door", "hinged")]),
+            way(7, 10, &[("highway", "residential")]),
+            way(8, 10, &[("railway", "rail")]),
+            way(9, 10, &[("natural", "water")]),
+            relation(10, 10, &[("type", "multipolygon"), ("landuse", "grass")]),
+            node(11, &[("amenity", "bench")]),
+            node(12, &[("natural", "tree")]),
+        ];
+        elements.retain(|e| !is_building_element(e));
+        assert_eq!(ids(&elements), vec![7, 8, 9, 10, 11, 12]);
     }
 
     #[test]

@@ -1960,6 +1960,19 @@ const WINDOW_FLAGS: &[&str] = &[
     "seed",
     "min-y",
     "max-y",
+    "road-detail",
+    "surface-patches",
+    "no-buildings",
+    "props",
+    "rocks",
+    "rock-density",
+    "bushes",
+    "bush-density",
+    "tree-realm",
+    "tree-pack-dir",
+    "tree-pack-mode",
+    "cave-style",
+    "cave-ores",
     "river-bed",
     "water-detail",
     "climate-mode",
@@ -2688,6 +2701,23 @@ fn gui_start_generation(
                 min_y: None,
                 max_y: None,
                 seed: None,
+                scatter: Default::default(),
+                tree_realm: None,
+                tree_size_weights: None,
+                tree_pack_dir: None,
+                tree_pack_mode: Default::default(),
+                export_tree_packs: None,
+                cave_style: None,
+                cave_ores: None,
+                cave_seed: None,
+                cave_datum_y: None,
+                road_detail: crate::element_processing::road_detail::RoadDetail::Max,
+                surface_patches: false,
+                buildings: true,
+                props: None,
+                props_min_scale: None,
+                loot_table: None,
+                dump_loot_table: None,
             };
             // Same helper the CLI uses. Anything read before this point (the world prep
             // above) has to apply the body rules on its own.
@@ -3352,6 +3382,16 @@ mod tests {
             "--seed=7",
             "--min-y=-64",
             "--max-y=319",
+            "--road-detail=compact",
+            "--no-buildings",
+            "--props=none",
+            "--rocks",
+            "--bushes",
+            "--tree-realm=vanilla-plus",
+            "--tree-pack-dir=trees",
+            "--tree-pack-mode=replace",
+            "--cave-style=more-mix",
+            "--cave-ores=more",
             "--river-bed=v1",
             "--water-detail=scaled",
             "--climate-mode=per-position",
@@ -3359,6 +3399,8 @@ mod tests {
             "--region-format=blinear",
             "--ram-budget-mb=4096",
             "--threads=4",
+            "--rock-density=0.1",
+            "--bush-density=0.2",
             "--blinear-level=9",
             "--osm-pbf=geofabrik",
             "--osm-pbf-url=https://example.org/x.osm.pbf",
@@ -3369,7 +3411,7 @@ mod tests {
         .map(String::from)
         .to_vec();
         let extra = confluence_args(&flags, false, "java", true).unwrap();
-        assert!(extra.threads == Some(4) && extra.ram_budget_mb == Some(4096));
+        assert!(!extra.buildings && extra.world_border && extra.disable_height_limit);
         assert!(extra.offline && extra.overpass_url.len() == 2 && extra.osm_pbf.is_some());
         let one = ["--origin=44.4,26.1".to_string()];
         assert!(confluence_args(&one, true, "java", false)

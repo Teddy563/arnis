@@ -38,6 +38,7 @@ mod grid_ops;
 mod ground;
 mod ground_decoration;
 mod ground_generation;
+mod ground_scatter;
 mod land_cover;
 mod landmarks;
 mod live;
@@ -265,6 +266,44 @@ fn run_cli() {
     if let Err(e) = args::refuse_live_extras(&args) {
         eprintln!("{}: {}", "Error".red().bold(), e);
         std::process::exit(1);
+    }
+    if let Some(dir) = &args.export_tree_packs {
+        match trees::pack_dir::export(dir)
+            .map(|n| format!("{n} tree schematics exported to {}.", dir.display()))
+        {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if let Some(path) = &args.dump_loot_table {
+        if let Err(e) = fs::write(
+            path,
+            element_processing::subprocessor::buildings_loot::BUILT_IN_JSON,
+        ) {
+            eprintln!(
+                "{} Cannot write {}: {e}",
+                "Error:".red().bold(),
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Some(path) = &args.loot_table {
+        match element_processing::subprocessor::buildings_loot::load_loot_table(path) {
+            Ok(table) => {
+                element_processing::subprocessor::buildings_loot::set_loot_table(Some(table))
+            }
+            Err(e) => eprintln!(
+                "{} --loot-table {}: {e}; using the built-in loot table",
+                "Warning:".yellow().bold(),
+                path.display()
+            ),
+        }
     }
     // Configure thread pool with 90% CPU cap to keep system responsive
     match args.thread_count() {

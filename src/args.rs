@@ -1,4 +1,5 @@
 use crate::coordinate_system::geographic::LLBBox;
+use crate::element_processing::road_detail::RoadDetail;
 use clap::builder::FalseyValueParser;
 use clap::{ArgAction, Parser};
 use std::path::PathBuf;
@@ -552,6 +553,107 @@ pub struct Args {
     #[arg(long, value_name = "SEED")]
     pub seed: Option<u64>,
     // --- end confluence:terrain ---
+    // --- confluence:nature ---
+    #[command(flatten)]
+    pub scatter: ScatterArgs,
+
+    /// Force a tree realm instead of picking one from the area's location: auto, afr, asn,
+    /// aus, ena, eur, fl, ind, sam, wna or vanilla-plus. A forced realm skips the ecoregion
+    /// mixes and keeps its palms.
+    #[arg(long, value_name = "REALM", value_parser = clap::builder::PossibleValuesParser::new(crate::trees::tree_pack::REALMS))]
+    pub tree_realm: Option<String>,
+
+    /// Relative popularity of the schematic tree sizes, as name=percent pairs
+    /// (small, medium, big, tall, giant; 0-200, omitted ones stay 100). 0 turns a
+    /// size off. Measured canopy heights still pick their own size.
+    /// Example: --tree-size-weights big=150,tall=50,giant=0
+    #[arg(long, value_name = "LIST", value_parser = crate::trees::size_weights::SizeWeights::parse)]
+    pub tree_size_weights: Option<crate::trees::size_weights::SizeWeights>,
+
+    /// Experimental. A folder of your own tree schematics, laid out like the
+    /// bundled packs: <realm>/<community>/<tree type>/[<size>/]<any name>.schem.
+    /// The folders say what a file is; the size folder (small, medium, big,
+    /// tall, giant) is optional and otherwise measured from the height. A file
+    /// that does not load is skipped with a warning.
+    #[arg(long, value_name = "FOLDER")]
+    pub tree_pack_dir: Option<PathBuf>,
+
+    /// With --tree-pack-dir: add the folder's trees to the built-in ones, or
+    /// replace a realm's built-in trees wherever the folder has any for it.
+    #[arg(long, value_enum, default_value_t = crate::trees::pack_dir::TreePackMode::Add)]
+    pub tree_pack_mode: crate::trees::pack_dir::TreePackMode,
+
+    /// Write every bundled tree schematic into the --tree-pack-dir layout in
+    /// FOLDER, to edit or adapt, and exit.
+    #[arg(long, value_name = "FOLDER")]
+    pub export_tree_packs: Option<PathBuf>,
+
+    /// How much of the underground the themed cave biomes take: vanilla (plain caves only),
+    /// more-vanilla (about 30% themed), all-mix (every theme at its default amount, about 77%
+    /// themed, the default) or more-mix (about 89% themed). --cave-biomes amounts override the
+    /// style's per theme.
+    #[arg(long = "cave-style", value_enum)]
+    pub cave_style: Option<crate::caves::CaveStyle>,
+
+    /// Ore veins in --caves: normal (vanilla's ore table, the default) or more (twice the
+    /// veins of every metal and gem ore, at vanilla's heights).
+    #[arg(long = "cave-ores", value_enum)]
+    pub cave_ores: Option<crate::caves::CaveOres>,
+
+    /// Seed for --caves and --cave-zone-map: each seed gives the same area a different cave
+    /// layout. Omitted keeps the built-in seed, so an area always gets the same caves.
+    #[arg(long = "cave-seed", value_name = "SEED")]
+    pub cave_seed: Option<u64>,
+
+    /// Y that stands for vanilla's world floor in the cave passes, a multiple of 16 from
+    /// -2032 to 2016. One value for every run makes caves, the lava sea and the deepslate
+    /// line continuous across them, and plans pools, rivers and geodes past the run's edge.
+    #[arg(long = "cave-datum-y", value_name = "Y", allow_hyphen_values = true)]
+    pub cave_datum_y: Option<i32>,
+    // --- end confluence:nature ---
+    // --- confluence:build ---
+    /// How much road marking and how many minor ways to build: max (every marking and
+    /// way, as mapped); clean (removes lane dividers on two-way roads and on one-way roads
+    /// 5 blocks wide or less, every line on service and pedestrian ways, parking aisles and
+    /// roads under 4 blocks wide, and paints zebra and give-way bars 2 blocks apart); or
+    /// compact (clean, plus dashes and gaps of at least 4 blocks, and removes footways,
+    /// paths, cycleways, steps, service roads, tracks, crossings and their paint, so
+    /// sidewalks go at every scale).
+    #[arg(long, value_enum, default_value_t = RoadDetail::Max)]
+    pub road_detail: RoadDetail,
+
+    /// Lay asphalt, concrete and paving mixes and built-up stone ground in patches a few
+    /// blocks across instead of a per-block speckle, and give pitched clay roofs a full
+    /// block in their stairs' colour, so no single block stands out as a dot.
+    #[arg(long)]
+    pub surface_patches: bool,
+
+    /// Leave out buildings: OSM buildings, building parts, doors and entrances, and the
+    /// Overture footprints. Roads, rail, water, land cover and terrain are built as usual.
+    #[arg(long = "no-buildings", default_value_t = true, action = ArgAction::SetFalse)]
+    pub buildings: bool,
+
+    /// Which 3D props to place: all, none, or a list of boat, car, crane, excavator,
+    /// fountain, helicopter, jetbridge, landmark, lighthouse, plane, playground, starship,
+    /// tombstone, tractor and windturbine. Given, it decides the props whatever --no-3d
+    /// says; left out, they follow --no-3d.
+    #[arg(long, value_parser = crate::structures::PropSet::parse)]
+    pub props: Option<crate::structures::PropSet>,
+
+    /// Leave out every schematic prop below this world scale. Props keep their block size
+    /// at any scale, so on a small-scale world they tower over the buildings around them.
+    #[arg(long, value_parser = parse_props_min_scale)]
+    pub props_min_scale: Option<f64>,
+
+    /// Chest loot table (JSON) for --interior, in place of the built-in one. A file that
+    /// cannot be read or fails validation is reported and the built-in table is used.
+    #[arg(long, value_name = "FILE")]
+    pub loot_table: Option<PathBuf>,
+
+    /// Write the built-in chest loot table to FILE as JSON to start from, and exit.
+    #[arg(long, value_name = "FILE")]
+    pub dump_loot_table: Option<PathBuf>,
+    // --- end confluence:build ---
     // --- confluence:data ---
     /// Read OpenStreetMap from an .osm.pbf file, or from `geofabrik` for the smallest Geofabrik region holding the area, instead of the tile archive.
     #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
@@ -611,6 +713,47 @@ impl WaterArgs {
             detail: self.water_detail,
             scale,
         }
+    }
+}
+
+/// Rocks and bushes on open land. Off unless asked for.
+#[derive(clap::Args, Debug)]
+pub struct ScatterArgs {
+    /// Scatter small andesite and tuff rocks over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub rocks: bool,
+
+    /// Share of 16x16 chunks that get a rock with --rocks, from 0.0 to 1.0.
+    #[arg(long, default_value_t = 0.02, value_parser = parse_density)]
+    pub rock_density: f64,
+
+    /// Scatter small bushes of ten species over open grassland and cropland.
+    /// Needs land cover.
+    #[arg(long)]
+    pub bushes: bool,
+
+    /// Share of 16x16 chunks that get a bush with --bushes, from 0.0 to 1.0.
+    /// Where a chunk rolls both, the rock wins.
+    #[arg(long, default_value_t = 0.05, value_parser = parse_density)]
+    pub bush_density: f64,
+}
+
+impl Default for ScatterArgs {
+    fn default() -> Self {
+        Self {
+            rocks: false,
+            rock_density: 0.02,
+            bushes: false,
+            bush_density: 0.05,
+        }
+    }
+}
+
+fn parse_density(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if (0.0..=1.0).contains(&v) => Ok(v),
+        _ => Err(format!("{s}: expected a share from 0.0 to 1.0")),
     }
 }
 
@@ -820,13 +963,13 @@ pub fn refuse_extras_in_pieces(args: &Args) -> Result<(), String> {
 }
 
 /// Live tiles build with upstream's settings only, so `--live` refuses every 3.5 flag that
-/// would be dropped on its tiles. `--seed` travels in the world's manifest;
-/// `--no-update-check` and `--no-cache-sweep` act on this process only.
+/// would be dropped on its tiles. `--seed`, `--cave-seed` and `--cave-datum-y` travel in the
+/// world's manifest; `--no-update-check` and `--no-cache-sweep` act on this process only.
 pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
     if !args.live.live {
         return Ok(());
     }
-    let (u, w) = (&args.units, &args.water);
+    let (u, w, sc) = (&args.units, &args.water, &args.scatter);
     let used: Vec<&str> = [
         (args.progress.is_some(), "--progress"),
         (args.threads.is_some(), "--threads"),
@@ -862,6 +1005,33 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (args.climate_map.is_some(), "--climate-map"),
         (args.min_y.is_some(), "--min-y"),
         (args.max_y.is_some(), "--max-y"),
+        (sc.rocks, "--rocks"),
+        (
+            sc.rock_density != ScatterArgs::default().rock_density,
+            "--rock-density",
+        ),
+        (sc.bushes, "--bushes"),
+        (
+            sc.bush_density != ScatterArgs::default().bush_density,
+            "--bush-density",
+        ),
+        (args.tree_realm.is_some(), "--tree-realm"),
+        (args.tree_size_weights.is_some(), "--tree-size-weights"),
+        (args.tree_pack_dir.is_some(), "--tree-pack-dir"),
+        (
+            args.tree_pack_mode != Default::default(),
+            "--tree-pack-mode",
+        ),
+        (args.export_tree_packs.is_some(), "--export-tree-packs"),
+        (args.cave_style.is_some(), "--cave-style"),
+        (args.cave_ores.is_some(), "--cave-ores"),
+        (args.road_detail != RoadDetail::Max, "--road-detail"),
+        (args.surface_patches, "--surface-patches"),
+        (!args.buildings, "--no-buildings"),
+        (args.props.is_some(), "--props"),
+        (args.props_min_scale.is_some(), "--props-min-scale"),
+        (args.loot_table.is_some(), "--loot-table"),
+        (args.dump_loot_table.is_some(), "--dump-loot-table"),
         (args.osm_pbf.is_some(), "--osm-pbf"),
         (args.osm_pbf_url.is_some(), "--osm-pbf-url"),
         (!args.overpass_url.is_empty(), "--overpass-url"),
@@ -1140,6 +1310,20 @@ impl Args {
         self.mode.skip_objects() || self.scale < OBJECT_SKIP_SCALE
     }
 
+    /// The prop families this run places: `--props`, else all or none by `--no-3d`;
+    /// none below `--props-min-scale`.
+    pub fn props(&self) -> crate::structures::PropSet {
+        use crate::structures::PropSet;
+        if self.props_min_scale.is_some_and(|min| self.scale < min) {
+            return PropSet::NONE;
+        }
+        self.props.unwrap_or(if self.use_3d {
+            PropSet::ALL
+        } else {
+            PropSet::NONE
+        })
+    }
+
     /// Whether objects are being skipped only because the scale is below `OBJECT_SKIP_SCALE`.
     pub fn skip_objects_due_to_scale(&self) -> bool {
         !self.mode.skip_objects() && self.scale < OBJECT_SKIP_SCALE
@@ -1344,6 +1528,8 @@ pub const DISASTER_GROUND_LEVEL: i32 = -40;
 /// beside Animals, and need mob griefing for their meteors to crater, so both keep natural
 /// spawning off.
 pub fn apply_feature_needs(args: &mut Args) {
+    // Overture only adds buildings, so --no-buildings has nothing to fetch.
+    args.overture &= args.buildings;
     if args.caves || args.disasters {
         args.fillground = true;
     }
@@ -1352,6 +1538,13 @@ pub fn apply_feature_needs(args: &mut Args) {
     }
     if args.zombie_outbreak || args.disasters {
         args.mob_spawning = MobSpawning::Off;
+    }
+}
+
+fn parse_props_min_scale(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err(format!("{s}: expected a scale of 0 or more")),
     }
 }
 
@@ -1451,6 +1644,25 @@ pub fn resolve_shapes(args: &mut Args) -> Result<(), String> {
 }
 
 pub fn validate_args(args: &Args) -> Result<(), String> {
+    // --- confluence:nature ---
+    let cave_preview = args.cave_zone_map.is_some();
+    if (args.cave_style.is_some() || args.cave_seed.is_some()) && !args.caves && !cave_preview {
+        return Err(
+            "--cave-style and --cave-seed only apply to --caves or --cave-zone-map.".to_string(),
+        );
+    }
+    if args.cave_ores.is_some() && !args.caves {
+        return Err("--cave-ores only applies to --caves.".to_string());
+    }
+    if let Some(y) = args.cave_datum_y {
+        if !args.caves {
+            return Err("--cave-datum-y only applies to --caves.".to_string());
+        }
+        if y.rem_euclid(16) != 0 || !(-2032..=2016).contains(&y) {
+            return Err("--cave-datum-y must be a multiple of 16 from -2032 to 2016.".to_string());
+        }
+    }
+    // --- end confluence:nature ---
     // --- confluence:core ---
     if !args.one_world
         && (args.units.plan_units.is_some()
@@ -2941,12 +3153,24 @@ mod tests {
             cmd.extend_from_slice(extra);
             Args::parse_from(cmd.iter())
         };
-        // Flags that act on this process only stay allowed.
-        let plain = parse(&["--no-update-check", "--no-cache-sweep"]);
+        // Harmless or manifest-borne flags stay allowed.
+        let plain = parse(&["--seed", "7", "--cave-seed", "3", "--no-update-check"]);
         assert!(refuse_live_extras(&plain).is_ok());
-        let err =
-            refuse_live_extras(&parse(&["--progress", "json", "--threads", "4"])).unwrap_err();
-        for name in ["--progress", "--threads"] {
+        let err = refuse_live_extras(&parse(&[
+            "--river-bed",
+            "v1",
+            "--no-buildings",
+            "--surface-patches",
+            "--threads",
+            "4",
+        ]))
+        .unwrap_err();
+        for name in [
+            "--river-bed",
+            "--no-buildings",
+            "--surface-patches",
+            "--threads",
+        ] {
             assert!(err.contains(name), "{err}");
         }
         assert!(!err.contains("--offline"), "{err}");
@@ -2956,7 +3180,7 @@ mod tests {
             "{err}"
         );
         // Without --live nothing changes.
-        let off = Args::parse_from(["arnis", "--threads", "4"]);
+        let off = Args::parse_from(["arnis", "--river-bed", "v1"]);
         assert!(refuse_live_extras(&off).is_ok());
     }
 
@@ -3042,6 +3266,49 @@ mod tests {
         );
         let dh_only = Args::parse_from(["arnis", "--one-world", "--dh-lod-only"]);
         assert!(crate::output_args::validate(&dh_only).is_ok());
+    }
+
+    #[test]
+    fn no_buildings_skips_overture_fetch() {
+        let fetched = |extra: &[&str]| {
+            let mut args = Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra));
+            apply_feature_needs(&mut args);
+            args.overture
+        };
+        assert!(fetched(&[]));
+        assert!(!fetched(&["--no-buildings"]));
+    }
+
+    #[test]
+    fn props_override_no_3d() {
+        use crate::structures::{Prop, PropSet};
+        let parse =
+            |extra: &[&str]| Args::parse_from(["arnis", "--bbox", "1,2,3,4"].iter().chain(extra));
+        assert_eq!(parse(&[]).props(), PropSet::ALL);
+        assert_eq!(parse(&["--no-3d"]).props(), PropSet::NONE);
+        let car = parse(&["--no-3d", "--props", "car"]).props();
+        assert!(car.has(Prop::Car) && !car.has(Prop::Boat));
+        assert_eq!(parse(&["--props", "none"]).props(), PropSet::NONE);
+    }
+
+    #[test]
+    fn below_min_scale_no_props() {
+        use crate::structures::PropSet;
+        let at = |scale: &str| {
+            Args::parse_from([
+                "arnis",
+                "--bbox",
+                "1,2,3,4",
+                "--scale",
+                scale,
+                "--props-min-scale",
+                "0.5",
+            ])
+            .props()
+        };
+        assert_eq!(at("0.4"), PropSet::NONE);
+        assert_eq!(at("0.5"), PropSet::ALL);
+        assert!(Args::try_parse_from(["arnis", "--props-min-scale", "-1"]).is_err());
     }
 
     #[test]
