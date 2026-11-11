@@ -201,6 +201,7 @@ pub fn run_gui() -> Result<(), String> {
             gui_one_world_info,
             gui_list_one_worlds,
             gui_world_thumbnail,
+            gui_set_place_name,
             gui_one_world_overlap,
             gui_get_one_world_overlays,
             gui_plan_job,
@@ -1449,6 +1450,20 @@ fn gui_world_thumbnail(world_path: String) -> Result<Option<String>, String> {
         "data:image/png;base64,{}",
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
     )))
+}
+
+/// What a world in use is refused with: Minecraft or a generation holds its session.lock.
+const WORLD_IN_USE: &str = "The world is in use; close it in Minecraft or wait for the run.";
+
+/// Stores the place the world shows; an empty name clears it.
+#[tauri::command(async)]
+fn gui_set_place_name(world_path: String, place_name: String) -> Result<(), String> {
+    let world = PathBuf::from(world_path);
+    let mut manifest = crate::one_world::Manifest::load(&world)?.ok_or("Not a One World.")?;
+    let _lock = SessionLock::acquire(&world).map_err(|_| WORLD_IN_USE.to_string())?;
+    let name = place_name.trim();
+    manifest.place_name = (!name.is_empty()).then(|| name.to_string());
+    manifest.save(&world)
 }
 
 #[derive(serde::Serialize)]
@@ -3917,6 +3932,34 @@ mod tests {
             made,
             "kept"
         );
+    }
+
+    /// A place name is stored, cleared by an empty one, and refused while the world is in use.
+    #[test]
+    fn a_place_name_is_set_and_cleared() {
+        let tmp = tempfile::tempdir().unwrap();
+        let world = tmp.path().join("w");
+        {
+            use clap::Parser;
+            let mut args = Args::parse_from(["arnis", "--output-dir", "."]);
+            crate::one_world::create_empty(&world, &mut args, 40.0, -74.0).unwrap();
+        }
+        let path = world.display().to_string();
+        let place = || {
+            gui_list_one_worlds(tmp.path().display().to_string()).unwrap()[0]
+                .place_name
+                .clone()
+        };
+        gui_set_place_name(path.clone(), " Bucharest ".into()).unwrap();
+        assert_eq!(place().as_deref(), Some("Bucharest"));
+        let held = SessionLock::acquire(&world).unwrap();
+        assert_eq!(
+            gui_set_place_name(path.clone(), "Paris".into()),
+            Err(WORLD_IN_USE.to_string())
+        );
+        drop(held);
+        gui_set_place_name(path, String::new()).unwrap();
+        assert_eq!(place(), None);
     }
 
     /// An old world lists with no place and no jobs; a recorded job lists with its settings.
