@@ -508,6 +508,50 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub dh_lod_only: bool,
     // --- end confluence:output ---
+    // --- confluence:terrain ---
+    #[command(flatten)]
+    pub water: WaterArgs,
+
+    /// Experimental. Where the Köppen climate behind surfaces and biomes is read:
+    /// origin (once, at the bbox centre or the One World origin, default) or
+    /// per-position (at every block, with organic borders, so a large world
+    /// crosses climate zones; biome latitude follows each block too).
+    #[arg(long, value_enum, default_value_t = crate::climate_field::ClimateMode::Origin)]
+    pub climate_mode: crate::climate_field::ClimateMode,
+
+    /// Experimental. Render the per-position Köppen climate layout for --bbox to
+    /// `<PREFIX>.png` and exit without generating a world; prints a
+    /// `CLIMATEMAP {json}` line with each climate's share.
+    #[arg(long = "climate-map", value_name = "PREFIX")]
+    pub climate_map: Option<PathBuf>,
+
+    /// Lowest Y of the extended-height world, a multiple of 16 from -2032 to -64. Needs
+    /// --disable-height-limit; the default is the pack's -2032.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub min_y: Option<i32>,
+
+    /// Highest Y of the extended-height world, one less than a multiple of 16 from 319 to
+    /// 2031. Needs --disable-height-limit; the default is the pack's 2031.
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "vanilla_height"
+    )]
+    pub max_y: Option<i32>,
+
+    /// EXPERIMENTAL. World seed mixed into every per-element and per-block random choice
+    /// (trees, rocks, flowers, building variety), so the same area can be rebuilt with a
+    /// different but repeatable look. Omitted or 0 keeps the default look. A One World
+    /// keeps the seed its first area was built with.
+    #[arg(long, value_name = "SEED")]
+    pub seed: Option<u64>,
+    // --- end confluence:terrain ---
     // --- confluence:data ---
     /// Read OpenStreetMap from an .osm.pbf file, or from `geofabrik` for the smallest Geofabrik region holding the area, instead of the tile archive.
     #[arg(long, value_name = "PATH|geofabrik", conflicts_with = "file")]
@@ -538,6 +582,36 @@ pub struct Args {
     #[arg(long, conflicts_with = "offline")]
     pub prewarm_first: bool,
     // --- end confluence:data ---
+}
+
+/// Water options. Off unless asked for, so the GUI runs on `WaterArgs::default()`.
+#[derive(clap::Args, Debug, Default)]
+pub struct WaterArgs {
+    /// River bed shape. `v1` gives mapped rivers, canals and streams a smooth U-shaped
+    /// bed that deepens with their width; lakes and the sea keep their bed.
+    #[arg(long, value_enum, default_value_t = crate::river_bed::RiverBed::Off)]
+    pub river_bed: crate::river_bed::RiverBed,
+
+    /// Water detail. `scaled` rounds bed depths instead of flooring them and, on small
+    /// maps, carves narrow bodies as bowls, narrows streams and lets water flow over
+    /// roads not tagged as bridges.
+    #[arg(long, value_enum, default_value_t = crate::water_detail::WaterDetail::Default)]
+    pub water_detail: crate::water_detail::WaterDetail,
+}
+
+impl WaterArgs {
+    /// How far these options can carve beyond the land-cover estimate.
+    pub fn carve_depth(&self, scale: f64) -> crate::water_detail::CarveDepth {
+        crate::water_detail::CarveDepth {
+            floor: if self.river_bed == crate::river_bed::RiverBed::Off {
+                0
+            } else {
+                crate::water_depth::MAX_WATER_DEPTH
+            },
+            detail: self.water_detail,
+            scale,
+        }
+    }
 }
 
 /// Large One World jobs cut into region-group pieces.
@@ -746,13 +820,13 @@ pub fn refuse_extras_in_pieces(args: &Args) -> Result<(), String> {
 }
 
 /// Live tiles build with upstream's settings only, so `--live` refuses every 3.5 flag that
-/// would be dropped on its tiles. `--no-update-check` and `--no-cache-sweep` act on this
-/// process only.
+/// would be dropped on its tiles. `--seed` travels in the world's manifest;
+/// `--no-update-check` and `--no-cache-sweep` act on this process only.
 pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
     if !args.live.live {
         return Ok(());
     }
-    let u = &args.units;
+    let (u, w) = (&args.units, &args.water);
     let used: Vec<&str> = [
         (args.progress.is_some(), "--progress"),
         (args.threads.is_some(), "--threads"),
@@ -782,6 +856,12 @@ pub fn refuse_live_extras(args: &Args) -> Result<(), String> {
         (args.world_border, "--world-border"),
         (args.map_item_only, "--map-item-only"),
         (args.dh_lod_only, "--dh-lod-only"),
+        (w.river_bed != Default::default(), "--river-bed"),
+        (w.water_detail != Default::default(), "--water-detail"),
+        (args.climate_mode != Default::default(), "--climate-mode"),
+        (args.climate_map.is_some(), "--climate-map"),
+        (args.min_y.is_some(), "--min-y"),
+        (args.max_y.is_some(), "--max-y"),
         (args.osm_pbf.is_some(), "--osm-pbf"),
         (args.osm_pbf_url.is_some(), "--osm-pbf-url"),
         (!args.overpass_url.is_empty(), "--overpass-url"),
@@ -1422,6 +1502,16 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
     // --- confluence:output ---
     crate::output_args::validate(args)?;
     // --- end confluence:output ---
+    // --- confluence:terrain ---
+    if args.climate_map.is_some() && args.bbox.is_none() {
+        return Err("--climate-map needs --bbox.".to_string());
+    }
+    // Rotation resamples the ground grids, which the per-position climate does not follow.
+    if args.climate_mode == crate::climate_field::ClimateMode::PerPosition && args.rotation != 0.0 {
+        return Err("--climate-mode per-position does not support --rotation.".to_string());
+    }
+    crate::y_bounds::check(args)?;
+    // --- end confluence:terrain ---
     // --- confluence:data ---
     if args.prewarm_first && !args.units.coordinates() {
         return Err(
@@ -1677,9 +1767,9 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 return Err(format!("Path is not a directory: {}", path.display()));
             }
         }
-    } else if args.mapillary_probe || cave_preview || args.prewarm {
-        // The probe, the cave preview and a prewarm write no world, so they need no output
-        // directory.
+    } else if args.mapillary_probe || cave_preview || args.climate_map.is_some() || args.prewarm {
+        // The probe, the cave preview, the climate map and a prewarm write no world, so they need
+        // no output directory.
     } else {
         // Java: path is required. If it exists, it must be a directory.
         // If it doesn't exist, create_new_world will create it.
