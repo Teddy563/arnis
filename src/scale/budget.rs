@@ -15,7 +15,7 @@
 //! RAM starts from `estimate_piece_mb` and, once pieces finish, follows the
 //! largest peak they reported (`Sizing::cap_for`).
 
-use crate::args::{Args, Workers};
+use crate::args::{Args, UnitSize, Workers};
 use std::ffi::OsString;
 
 /// Threads below which a piece is not worth its own process.
@@ -54,6 +54,41 @@ pub fn auto_max_regions(args: &Args) -> i32 {
 /// Memory kept free for the system and everything else running.
 fn reserve_mb(total_mb: u64) -> u64 {
     (total_mb / 10).max(2048)
+}
+
+/// Ground at scale 1, km², below which `auto` builds one plain run instead of pieces. B3
+/// (Bucharest, warm caches, 24 threads), median wall of one run vs 8 x 8 pieces x 4:
+/// 100 km² 23.4 vs 28.5 s, 150 km² 35.6 vs 36.5 s, 200 km² 45.7 vs 42.6 s (pieces first
+/// 3% faster), 256 km² 72.7 vs 64.9 s; set a bit above 200.
+pub const AUTO_SINGLE_BELOW_KM2: f64 = 220.0;
+
+/// `--unit-regions auto --one-world-workers auto` on a selection smaller than
+/// `AUTO_SINGLE_BELOW_KM2`, with no other job flag: drops both, so the One World is
+/// built in one plain run, which is faster there.
+pub fn single_below_break_even(args: &mut Args) {
+    let u = &args.units;
+    let plain_auto = u.unit_regions == Some(UnitSize::Auto)
+        && u.one_world_workers == Some(Workers::Auto)
+        && u.one_world_unit.is_none()
+        && u.only_pieces.is_none()
+        && u.plan_mask.is_none()
+        && u.snap_regions.is_none()
+        && u.margin_regions == 0
+        && u.piece_order.is_none()
+        && !u.skip_built
+        && !u.stitch_map
+        && !args.prewarm
+        && !args.prewarm_first;
+    let km2 = args
+        .bbox
+        .map_or(f64::INFINITY, |b| b.area_km2() * args.scale * args.scale);
+    if plain_auto && km2 < AUTO_SINGLE_BELOW_KM2 {
+        println!(
+            "One World: {km2:.0} km² is below {AUTO_SINGLE_BELOW_KM2:.0} km², built in one run"
+        );
+        args.units.unit_regions = None;
+        args.units.one_world_workers = None;
+    }
 }
 
 /// W and T for `auto`. Never fewer than two workers: a job worth cutting in
@@ -352,5 +387,28 @@ mod tests {
             ),
             (2, 1)
         );
+    }
+
+    #[test]
+    fn auto_builds_a_small_selection_in_one_run() {
+        let (s8, s16) = (
+            "44.3909,26.0522,44.4627,26.1528",
+            "44.3549,26.0019,44.4987,26.2031",
+        );
+        let pieces = |bbox: &str, workers: &str, extra: &[&str]| {
+            let mut cmd = vec!["arnis", "--output-dir", ".", "--bbox", bbox, "--one-world"];
+            cmd.extend(["--unit-regions", "auto", "--one-world-workers", workers]);
+            cmd.extend_from_slice(extra);
+            let mut args = <Args as clap::Parser>::parse_from(cmd);
+            single_below_break_even(&mut args);
+            args.units.coordinates()
+        };
+        // S8 (64 km2) in one run, S16 (256 km2) in pieces.
+        assert!(!pieces(s8, "auto", &[]));
+        assert!(pieces(s16, "auto", &[]));
+        // Another job flag or a fixed count keeps the pieces.
+        assert!(pieces(s8, "auto", &["--margin-regions", "1"]));
+        assert!(pieces(s8, "auto", &["--prewarm-first"]));
+        assert!(pieces(s8, "4", &[]));
     }
 }

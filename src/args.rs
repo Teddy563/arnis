@@ -766,7 +766,8 @@ pub struct UnitArgs {
     pub plan_units: Option<UnitSize>,
 
     /// Piece size of a --one-world job, at most N x N regions. auto takes 8 x 8 pieces, or 4 x 4
-    /// or 2 x 2 short of memory, split smaller along a --plan-mask.
+    /// or 2 x 2 short of memory, split smaller along a --plan-mask; with --one-world-workers
+    /// auto a small selection is built in one run.
     #[arg(long, value_name = "auto|N", value_parser = parse_unit_size)]
     pub unit_regions: Option<UnitSize>,
 
