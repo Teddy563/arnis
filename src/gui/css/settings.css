@@ -1184,14 +1184,14 @@ body.meld-off .meld-only {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 14px;
-  padding: 10px 14px;
+  gap: 6px 10px;
+  padding: 10px 12px;
   border: 1px solid var(--ui-tile-border);
   border-radius: 12px;
 }
 
 .settings-page .projects-title {
-  flex: 1 1 160px;
+  flex: 1 1 110px;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
@@ -1297,30 +1297,25 @@ body.meld-off .meld-only {
 /* Grid: cards, thumbnail on top */
 .settings-page .projects-list.is-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
   gap: 12px;
 }
 
 .settings-page .is-grid .projects-row {
-  flex-direction: column;
-  align-items: stretch;
-  flex-wrap: nowrap;
+  align-content: flex-start;
   min-width: 0;
   padding: 10px;
 }
 
 .settings-page .is-grid .projects-thumb {
+  flex-basis: 100%;
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 10;
 }
 
 .settings-page .is-grid .projects-title {
-  flex: 0 0 auto;
-}
-
-.settings-page .is-grid .projects-row .settings-action-button {
-  align-self: flex-start;
+  flex: 1 1 100%;
 }
 
 .settings-page .projects-meta {
@@ -1340,8 +1335,8 @@ body.meld-off .meld-only {
 }
 
 .settings-page .projects-row .settings-action-button {
-  height: 32px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
 }
 
 .settings-page .projects-row .settings-action-button:disabled {
