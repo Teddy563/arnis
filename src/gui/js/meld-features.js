@@ -1214,9 +1214,8 @@ export function initProjects({ invoke, savePath, scale, open, available = () => 
         if (Date.now() - (misses()[path] || 0) < MISS_MS) continue;
         let name = '';
         try {
-          const areas = ((await invoke('gui_get_one_world_overlays', { worldPath: path })) || {}).areas || [];
-          if (areas.length) {
-            const b = [Math.min(...areas.map((a) => a.min_lat)), Math.min(...areas.map((a) => a.min_lon)), Math.max(...areas.map((a) => a.max_lat)), Math.max(...areas.map((a) => a.max_lon))];
+          const b = Array.isArray(w.bbox) && w.bbox.length === 4 && w.bbox.every(Number.isFinite) ? w.bbox : null;
+          if (b) {
             if (!first) await pause(1100);
             first = false;
             name = await geocode((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, placeZoom(b));

@@ -65,11 +65,10 @@ assert.strictEqual(placeForRun(null, '44.40 26.00 44.50 26.20'), '');
 // A world with place_name null is looked up once at its centre; a failure is not retried.
 store.clear();
 calls.length = 0;
-const gone = [{ name: 'Old', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Old', place_name: null }, { name: 'Done', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Done', place_name: 'Rome' }];
-const areas = { areas: [{ min_lat: 44, max_lat: 44.2, min_lon: 26, max_lon: 26.2 }] };
+const gone = [{ name: 'Old', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Old', place_name: null, bbox: [44, 26, 44.2, 26.2] }, { name: 'Done', area_count: 1, scale: 1, locked: false, modified_ms: 1, world_path: '/s/Done', place_name: 'Rome' }];
 const asked2 = [];
 const place = (geocode) => initProjects({
-  invoke: async (cmd, args) => { calls.push([cmd, args]); return cmd === 'gui_list_one_worlds' ? gone : cmd === 'gui_get_one_world_overlays' ? areas : null; },
+  invoke: async (cmd, args) => { calls.push([cmd, args]); return cmd === 'gui_list_one_worlds' ? gone : null; },
   savePath: () => '/s', scale: () => 1, open: async () => {}, geocode, pause: async () => {},
 });
 const settle = () => new Promise((r) => setTimeout(r, 5));
@@ -77,6 +76,7 @@ await place(async (lat, lon, zoom) => { asked2.push([lat, lon, zoom]); return 'B
 await settle();
 assert.strictEqual(asked2.length, 1, 'one lookup, for the world without a name');
 assert.ok(Math.abs(asked2[0][0] - 44.1) < 1e-9 && Math.abs(asked2[0][1] - 26.1) < 1e-9 && asked2[0][2] === 10, 'at the centre, city zoom');
+assert.ok(!calls.some((c) => c[0] === 'gui_get_one_world_overlays'), 'no overlay files are read');
 assert.deepStrictEqual(calls.find((c) => c[0] === 'gui_set_place_name'), ['gui_set_place_name', { worldPath: '/s/Old', placeName: 'Bucharest' }]);
 store.clear();
 asked2.length = 0;
