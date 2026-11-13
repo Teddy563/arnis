@@ -9,7 +9,16 @@ import {
   cancelSettingsResetConfirm,
   flushSettingsStore,
 } from './settings-store.js';
+import { initPreviews } from './preview-popover.js';
 import { initSettingsLayout, syncSettingsLayout } from './settings-layout.js';
+import {
+  t as oneWorldText,
+  initMeldFeatures, meldFlags, cellsKey, generationTarget, generationShapes, progressText, holdsNotice,
+  initRunControls, initCellMenu, notePiece, clearPieces, dropStalePieces, resetPieces, showRunControls,
+  initJobPlan, schedulePlan, planPieces, planPending, isPiecesJob, selectWithRing,
+  setPlanMask, hasPlanMask, refreshStretch,
+  initDataPanel, initProjects, resumeJob, placeForRun,
+} from './meld-features.js';
 
 let invoke;
 if (window.__TAURI__) {
@@ -17,7 +26,8 @@ if (window.__TAURI__) {
 } else {
   function dummyFunc() { }
   window.__TAURI__ = { event: { listen: dummyFunc } };
-  invoke = dummyFunc;
+  // A plain browser preview: callers chain .then on invoke.
+  invoke = async () => undefined;
 }
 
 const DEFAULT_LOCALE_PATH = `./locales/en.json`;
@@ -25,11 +35,23 @@ const DEFAULT_LOCALE_PATH = `./locales/en.json`;
 // Track current bbox selection info localization key for language changes
 let currentBboxSelectionKey = "select_area_prompt";
 let currentBboxSelectionColor = "#ffffff";
+let currentBboxSelectionVars = null;
+
+// "{n}"-style values of the current bbox line (area_pieces_info), kept for language changes.
+function fillBboxSelectionVars(element) {
+  for (const k in (currentBboxSelectionVars || {})) {
+    element.textContent = element.textContent.split('{' + k + '}').join(currentBboxSelectionVars[k]);
+  }
+}
 
 // Helper function to set bbox selection info text and track it for language changes
-async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color) {
+async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color, vars) {
+  // Only a size warning brings the Advanced link back (displayBboxSizeStatus).
+  const cta = document.getElementById('bbox-features-cta');
+  if (cta) cta.hidden = true;
   currentBboxSelectionKey = localizationKey;
   currentBboxSelectionColor = color;
+  currentBboxSelectionVars = vars || null;
   
   // Ensure localization is available
   let localization = window.localization;
@@ -38,11 +60,15 @@ async function setBboxSelectionInfo(bboxSelectionElement, localizationKey, color
   }
   
   localizeElement(localization, { element: bboxSelectionElement }, localizationKey);
+  fillBboxSelectionVars(bboxSelectionElement);
   bboxSelectionElement.style.color = color;
+  // The map-first card says the pieces in its plan block; this line would repeat them.
+  bboxSelectionElement.classList.toggle('is-plan', localizationKey === 'area_pieces_info' || localizationKey === 'area_single_info');
 }
 
 // Initialize elements and start the demo progress
 window.addEventListener("DOMContentLoaded", async () => {
+  applyStoredLayout();
   registerMessageEvent();
   window.startGeneration = startGeneration;
   setupProgressListener();
@@ -55,12 +81,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   initCavesFillCoupling();
   initDisastersCoupling();
   initMobSpawningLockout();
+  initAdvancedRows();
   refreshHeightLimitRow();
   refreshGameplayRows();
   // After initSettings(), so the slider label and rotation handlers exist
   // before restored values are applied. Labels get localized a few lines below.
   initSettingsStore({ resetWorldFormat: () => setWorldFormat('java') });
   syncDiscordStatus();
+  initOfflineModeSync();
   // The store's restore fired the toggle's change event before the save path
   // and the world name were known; read the world once more with both in hand.
   refreshOneWorldState();
@@ -69,14 +97,25 @@ window.addEventListener("DOMContentLoaded", async () => {
   initClearCacheButton();
   initPrecomputeFacadesButton();
   initTooltips();
+  initPreviews();
   handleBboxInput();
   const localization = await getLocalization();
   await applyLocalization(localization);
   updateFormatToggleUI(selectedWorldFormat);
-  initFooter();
   initEasterEggs();
   checkForUpdates();
 });
+
+// The stored Main Page Layout, before the first await: the store restores it only later, and a
+// Map first page would show as Classic until then (meld-features.js keeps it from there).
+function applyStoredLayout() {
+  try {
+    const values = JSON.parse(localStorage.getItem('arnis-settings') || '{}').values || {};
+    // Auto is the default, so it is not stored.
+    const mode = values['layout-select'] || 'auto';
+    document.body.classList.toggle('map-first', mode === 'map' || (mode === 'auto' && values['advanced-meld-features-toggle'] === true));
+  } catch (_) { /* the store's own restore sets it */ }
+}
 
 // Expose language functions to window for use by language-selector.js
 window.fetchLanguage = fetchLanguage;
@@ -129,6 +168,9 @@ async function localizeElement(json, elementObject, localizedStringKey) {
 async function applyLocalization(localization) {
   const localizationElements = {
     "#start-button > span[data-localize='start_generation']": "start_generation",
+    // Advanced features: the size warning's way out and the One World's Expand.
+    "#bbox-features-cta": "meld_use_pieces",
+    "#plan-expand-button": "plan_expand",
     "#world-name-label[data-placeholder]": "no_world_generated_yet",
     "input[id='world-name-input']": "placeholder_world_name",
     // DEPRECATED: Ground level localization removed
@@ -149,8 +191,23 @@ async function applyLocalization(localization) {
   // several appear more than once (a section name is in the sidebar and on the
   // section itself), so they are localized in one pass rather than selector by
   // selector.
-  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize]").forEach((element) => {
+  document.querySelectorAll("#settings-modal [data-localize], .dialog [data-localize], #run-controls [data-localize], #run-confirm [data-localize], #cells-confirm [data-localize]").forEach((element) => {
     localizeElement(localization, { element }, element.dataset.localize);
+  });
+
+  // Attributes: tooltips (English stays in data-tooltip as the fallback) and
+  // title / aria-label, anywhere on the page.
+  const loc = (key, fallback) => localization[key] ?? fallback;
+  document.querySelectorAll("[data-tooltip-key]").forEach((el) => {
+    const text = loc(el.dataset.tooltipKey, el.dataset.tooltip);
+    el.dataset.tooltip = text;
+    el.setAttribute("aria-label", text);
+  });
+  document.querySelectorAll("[data-localize-title]").forEach((el) => {
+    el.title = loc(el.dataset.localizeTitle, el.title);
+  });
+  document.querySelectorAll("[data-localize-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", loc(el.dataset.localizeAriaLabel, el.getAttribute("aria-label")));
   });
 
   // settings-store.js creates these buttons and owns their text.
@@ -160,6 +217,7 @@ async function applyLocalization(localization) {
   const bboxSelectionInfo = document.getElementById("bbox-selection-info");
   if (bboxSelectionInfo && currentBboxSelectionKey) {
     localizeElement(localization, { element: bboxSelectionInfo }, currentBboxSelectionKey);
+    fillBboxSelectionVars(bboxSelectionInfo);
     bboxSelectionInfo.style.color = currentBboxSelectionColor;
   }
 
@@ -167,6 +225,11 @@ async function applyLocalization(localization) {
   window.localization = localization;
   renderOneWorldStatus();
   refreshStartButton();
+  // An open Projects list is built in the language it was drawn in.
+  redrawProjects();
+  window.dispatchEvent(new Event('arnis-localized'));
+  // The plan block is built in the language it was drawn in.
+  schedulePlan(true);
   labelLiveViewDistances();
   fillLiveVersions();
   // liveStatus stays "stopped" after a session, which must not take over a normal run's line.
@@ -187,6 +250,9 @@ async function applyLocalization(localization) {
   // The line above has just written the idle label over a button that may be
   // saying Cancel, so put the running state back.
   refreshPrecomputeButton();
+  // The pass wrote the footer's raw template ("{year}", "{version}") back; every
+  // pass fills it in, whoever started it.
+  initFooter();
 }
 
 // Function to initialize the footer with the current year and version
@@ -215,6 +281,8 @@ async function initFooter() {
       .replace("{year}", currentYear)
       .replace("{version}", version);
 
+    // The map-first page shows the version under the logo on hover.
+    document.getElementById("arnis-logo")?.closest("a")?.setAttribute("data-version", `v${version}`);
     // The About section of the settings page repeats the same line.
     const aboutVersion = document.getElementById("about-version");
     if (aboutVersion) aboutVersion.textContent = footerElement.textContent;
@@ -774,6 +842,18 @@ function setCelestialBody(body) {
   refreshBboxSelectionInfo();
 }
 
+// The last search result used for a selection, and { name, path } of the run that builds a One
+// World's first land, taken when it starts.
+let searchedPlace = null;
+let runPlace = null;
+
+// That world is named after the search result once the run is done.
+async function rememberRunPlace() {
+  const run = runPlace;
+  runPlace = null;
+  if (run) await invoke('gui_set_place_name', { worldPath: run.path, placeName: run.name }).catch(() => {});
+}
+
 // Function to register the event listener for bbox updates from iframe
 function registerMessageEvent() {
   window.addEventListener('message', function (event) {
@@ -784,6 +864,21 @@ function registerMessageEvent() {
     if (bboxText && !event.data.type) {
       console.log("Updated BBOX Coordinates:", bboxText);
       displayBboxInfoText(bboxText, event.data.shapes);
+    }
+
+    // "Select this area" on a search result: the area and, in a One World, a ring of regions around it.
+    if (event.data && event.data.type === 'selectArea' && event.source === getMapFrame()?.contentWindow) {
+      selectWithRing(event.data.bounds, isOneWorldEnabled());
+    }
+
+    // The search result the selection came from: its name goes to the world a build makes.
+    if (event.data && event.data.type === 'searchPlace' && event.source === getMapFrame()?.contentWindow) {
+      searchedPlace = { name: String(event.data.name), lat: Number(event.data.lat), lon: Number(event.data.lon) };
+    }
+
+    // The outline the selection was made from (shape tool or "Use outline"), or null.
+    if (event.data && event.data.type === 'planMask' && event.source === getMapFrame()?.contentWindow) {
+      noteOutline(event.data.geojson);
     }
 
     // World toggled on the map toolbar
@@ -893,7 +988,7 @@ function resetEta() {
   const el = document.getElementById("progress-eta");
   if (el) {
     el.classList.remove("visible");
-    el.textContent = "";
+    setEtaText(el, "");
     el.removeAttribute("aria-label");
   }
 }
@@ -908,19 +1003,24 @@ function formatEtaDuration(sec) {
   return `${h}h ${m % 60}m`;
 }
 
+// The estimate's label is two stacked copies (white over the fill, dark over the track; styles.css).
+function setEtaText(el, text) {
+  for (const span of el.children) span.textContent = text;
+}
+
 function renderEta() {
   const el = document.getElementById("progress-eta");
   if (!el) return;
   // Show nothing until we actually have an estimate (no "…" placeholder).
   if (!eta || eta.shown == null) {
     el.classList.remove("visible");
-    el.textContent = "";
+    setEtaText(el, "");
     el.removeAttribute("aria-label");
     return;
   }
   // Floor at 1s so it never reads "0s" before Done.
   const value = formatEtaDuration(Math.max(1, eta.shown));
-  el.textContent = value; // duration only on the bar; no "~" prefix
+  setEtaText(el, value); // duration only on the bar; no "~" prefix
   // Screen-reader context (the visible pill is just the duration). Hardcoded
   // English to match the rest of the progress messages, which aren't localized.
   el.setAttribute("aria-label", `Time remaining: ${value}`);
@@ -1051,9 +1151,22 @@ function resetProgressUi(message) {
   if (info) {
     info.textContent = message;
     info.style.color = "#ececec";
+    info.classList.remove("is-notice");
   }
+  noticeSince = 0;
+  prefetchDone = false;
   resetEta();
 }
+
+// A finished Download now leaves "Done!" and a full bar, which say nothing about a new selection
+// or plan; they go once the plan underneath changes. An error stays until the next run.
+let prefetchDone = false;
+function clearPrefetchDone() {
+  if (prefetchDone && generationButtonEnabled) resetProgressUi("");
+}
+
+// When the status line last showed a fallback notice (0: none).
+let noticeSince = 0;
 
 // Function to set up the progress bar listener
 function setupProgressListener() {
@@ -1062,6 +1175,11 @@ function setupProgressListener() {
   const progressDetail = document.getElementById("progress-detail");
 
   window.__TAURI__.event.listen("progress-update", (event) => {
+    if (event.payload.piece) {
+      notePiece(event.payload.piece);
+      showRunControls(!generationButtonEnabled);
+      return;
+    }
     const { progress, message, streaming } = event.payload;
 
     if (progress != -1) {
@@ -1071,9 +1189,21 @@ function setupProgressListener() {
     }
 
     if (message != "") {
-      progressInfo.textContent = message;
+      const shown = progressText(event.payload);
+      // A fallback notice outlasts the stage lines that follow it.
+      if (!holdsNotice(shown, message, noticeSince, Date.now())) {
+        progressInfo.textContent = shown.text;
+        progressInfo.title = shown.title;
+        progressInfo.classList.toggle("is-notice", shown.notice);
+        noticeSince = shown.notice ? Date.now() : 0;
+      }
+      if (shown.log) window.arnisLog?.(shown.notice ? "warn" : "error", shown.log);
 
-      if (message.startsWith("Error!")) {
+      if (bakeRunning && generationButtonEnabled && /^(Error!|Done!)/.test(message)) {
+        // A bake's end is not a run's: no world name, facades or Discord prompt follow it.
+        progressInfo.style.color = message.startsWith("Done!") ? "#7bd864" : "#fa7878";
+        resetEta();
+      } else if (message.startsWith("Error!")) {
         progressInfo.style.color = "#fa7878";
         setGenerationButtonEnabled(true);
         window.arnisPreview3D?.setGenerationRunning(false);
@@ -1081,7 +1211,7 @@ function setupProgressListener() {
           // The world keeps its name; the status line carries the reason.
           setWorldNameLabel(oneWorldDisplayName());
           if (isOneWorldEnabled()) setOneWorldStatus(message.replace(/^Error!\s*/, ''), 'error');
-        } else {
+        } else if (!lastRunPrewarm) {
           setWorldNameLabel("");
         }
         resetEta();
@@ -1093,12 +1223,26 @@ function setupProgressListener() {
         // The world just grew by one area: reload its status and overlays.
         if (lastRunOneWorld) {
           oneWorldOverlayKey = null;
-          refreshOneWorldState();
+          refreshOneWorldState().then(rememberRunPlace);
         }
         // A generation just built facades into the same cache, so the preview
         // has something new to say.
-        window.arnisPreview3D?.refreshFacades();
-        noteGenerationDone();
+        if (lastRunPrewarm) {
+          prefetchDone = true;
+        } else {
+          window.arnisPreview3D?.refreshFacades();
+          noteGenerationDone();
+        }
+      } else if (message.startsWith("Stopped.") || message.startsWith("The retried cells are built")) {
+        // A job in pieces ends here when stopped or when only some pieces were asked for.
+        progressInfo.style.color = "#ececec";
+        setGenerationButtonEnabled(true);
+        window.arnisPreview3D?.setGenerationRunning(false);
+        resetEta();
+        if (lastRunOneWorld) {
+          oneWorldOverlayKey = null;
+          refreshOneWorldState();
+        }
       } else {
         progressInfo.style.color = "#ececec";
       }
@@ -1147,6 +1291,11 @@ function initEasterEggs() {
 
   // 5 rapid clicks on progress bar
   const progressBar = document.querySelector('.progress-bar-container');
+  // The estimate's two copies are clipped at the fill's edge: follow the fill's width (also while it animates).
+  const fill = document.getElementById('progress-bar');
+  if (fill && window.ResizeObserver) {
+    new ResizeObserver(() => progressBar.style.setProperty('--p', `${fill.offsetWidth}px`)).observe(fill);
+  }
   let clicks = [];
   progressBar.addEventListener('click', () => {
     const now = Date.now();
@@ -1194,8 +1343,15 @@ function initSettings() {
   // Where focus goes back to once the page closes.
   let focusBeforeSettings = null;
 
+  let refreshProjects = null;
+  // Open and Expand follow the format, the body, Live and a run while the page is open; with
+  // Advanced features off the page is hidden and its list is never read.
+  const projectsShown = () => refreshProjects && document.getElementById('advanced-meld-features-toggle').checked;
+  redrawProjects = () => { if (projectsShown() && settingsModal.style.display === "flex") refreshProjects(); };
+
   // Open the settings page
   function openSettings() {
+    if (projectsShown()) refreshProjects();
     focusBeforeSettings = document.activeElement;
     settingsModal.style.display = "flex";
     syncSettingsLayout();
@@ -1280,14 +1436,151 @@ function initSettings() {
   refreshHeightDisplay();
 
   // Segmented controls whose click only moves the active segment
-  ["gamemode-group", "world-type-group", "mob-spawning-group", "signage-group"].forEach((id) => {
-    const group = document.getElementById(id);
+  document.querySelectorAll('#gamemode-group, #world-type-group, #mob-spawning-group, #signage-group, .segmented-control[id^="meld-"]').forEach((group) => {
     group.querySelectorAll(".segment").forEach((btn) => {
       btn.addEventListener("click", () => {
         group.querySelectorAll(".segment").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
       });
     });
+  });
+
+  initMeldFeatures();
+  initRunControls({
+    invoke,
+    post: (message) => getMapFrame()?.contentWindow?.postMessage(message, '*'),
+    // A retry was asked for on the map or with Retry: it starts without the hold.
+    start: () => startGeneration(true),
+    localize: (element, key) => localizeElement(window.localization, { element }, key),
+    // The flags that cut the job into pieces are part of it: --only-pieces numbers its pieces.
+    key: () => cellsKey(selectedBBox, isOneWorldEnabled() ? oneWorldFolderName() : ''),
+    map: () => getMapFrame()?.contentWindow,
+    // Remove and Rebuild in the cell menu work on the open One World, then read it again.
+    world: () => oneWorldInfo?.world_path || '',
+    refreshWorld: () => { oneWorldOverlayKey = null; refreshOneWorldState(); },
+    // Start refuses during a bake or a Mapillary precompute: a Rebuild must not remove cells then.
+    ready: () => !bakeRunning && !precomputeRunning,
+  });
+  initCellMenu();
+  document.getElementById("bbox-features-cta").addEventListener("click", useMeldPieces);
+  initJobPlan({
+    // A new plan, or none: the line under the buttons says how the selection is built, and
+    // the hold to start waits for the plan it starts.
+    changed: () => {
+      clearPrefetchDone();
+      refreshBboxSelectionInfo();
+      refreshStartButton();
+      const plan = planPieces();
+      document.getElementById('run-confirm-hold').disabled = !plan;
+      // The hold is the one question: it says what the replace dialog would have asked.
+      const overlap = document.getElementById('run-confirm-overlap');
+      overlap.hidden = !plan?.overlap;
+      overlap.textContent = plan?.overlap ? oneWorldText('plan_confirm_overlap', '{n} cells overlap land already built and will be rebuilt. Anything built there in Minecraft is replaced.', { n: plan.overlap }) : '';
+      if (!isPiecesJob()) document.getElementById('run-confirm').hidden = true;
+    },
+    // A job in pieces of a One World with a selection, as the run decides it: Live, Bedrock,
+    // the Moon and Mars build no pieces.
+    request: () => {
+      const bbox = selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : "";
+      if (!bbox || !isOneWorldEnabled() || isLiveMode() || !savePath || !document.getElementById('meld-workers-select').value) return null;
+      return { savePath, worldName: oneWorldFolderName(), bboxText: bbox, worldScale: readGenerationSettings(true).worldScale };
+    },
+    // A One World's selection against the latitude its blocks per metre were fixed at: the
+    // world's origin, else --origin, else the selection's centre (what the first area sets).
+    stretch: () => {
+      const [a, b, c, d] = (selectedBBox || '').split(/[\s,]+/).map(Number);
+      if (!isOneWorldEnabled() || !(a || c)) return null;
+      const world = oneWorldInfo && oneWorldInfo.exists ? oneWorldInfo : null;
+      const typed = parseFloat(document.getElementById('meld-origin-input').value);
+      const origin = world ? world.origin_lat : Number.isFinite(typed) ? typed : (a + c) / 2;
+      return { origin, knee: world ? world.knee_m : null, south: Math.min(a, c), north: Math.max(a, c), lon: (b + d) / 2 };
+    },
+  });
+  // The map offers "Select this area" on a country or region, the edge handles and the size
+  // readout only with Advanced features on; the readout counts regions at the world scale.
+  const meldToggle = document.getElementById('advanced-meld-features-toggle');
+  const pushMeldToMap = () => postToMap({ type: 'meldFeatures', on: meldToggle.checked, scale: readGenerationSettings(true).worldScale, snap: Boolean(document.querySelector('#meld-snap-group .segment.active:not([data-v="off"])')), mapFirst: document.body.classList.contains('map-first') });
+  document.addEventListener('change', pushMeldToMap);
+  // Advanced off: a finished One World's name is no longer the world under Start.
+  meldToggle.addEventListener('change', () => {
+    if (!meldToggle.checked && (lastRunOneWorld || oneWorldPicked)) setWorldNameLabel("");
+    // A world picked in Projects is the target only with the switch on: read the target again.
+    oneWorldOverlayKey = null;
+    refreshOneWorldState();
+  });
+  document.getElementById('meld-snap-group')?.addEventListener('click', () => setTimeout(pushMeldToMap));
+  getMapFrame()?.addEventListener('load', pushMeldToMap);
+  pushMeldToMap();
+  // A One World's built land, and a ring of regions around it to build next.
+  document.getElementById('plan-expand-button').addEventListener('click', () => {
+    if (!builtAreas.length) return;
+    const pick = (f, key) => f(...builtAreas.map((a) => a[key]));
+    selectWithRing([pick(Math.min, 'min_lat'), pick(Math.min, 'min_lon'), pick(Math.max, 'max_lat'), pick(Math.max, 'max_lon')], isOneWorldEnabled(), true);
+    askRunConfirm();
+  });
+  // Cancel (or Escape) closes the panel and gives the focus back to Start.
+  const cancelConfirm = () => {
+    document.getElementById('run-confirm').hidden = true;
+    document.getElementById('start-button').focus();
+  };
+  document.getElementById('run-confirm-cancel').addEventListener('click', cancelConfirm);
+  document.getElementById('run-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cancelConfirm();
+  });
+  document.getElementById('run-confirm-docs').addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal(e.currentTarget.href);
+  });
+  holdToConfirm(document.getElementById('run-confirm-hold'), () => {
+    document.getElementById('run-confirm').hidden = true;
+    startGeneration(true);
+  });
+  refreshProjects = initProjects({
+    invoke,
+    savePath: () => savePath,
+    scale: () => readGenerationSettings(true).worldScale,
+    available: () => isOneWorldAvailable() && !liveActive(),
+    busy: () => !generationButtonEnabled || bakeRunning,
+    canRun: () => !isLiveMode(),
+    renamed: (from, to) => worldRenamed(from, to),
+    open: async (name, expand) => {
+      oneWorldName = name;
+      oneWorldPicked = true;
+      clearPrefetchDone();
+      if (oneWorldMode() === 'off') document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+      oneWorldOverlayKey = null;
+      oneWorldRefit = true; // Open on the world already shown refits the map too
+      await refreshOneWorldState();
+      oneWorldRefit = false;
+      closeSettings();
+      if (expand) document.getElementById('plan-expand-button').click();
+    },
+    // Resume and Rebuild: the job's settings and area go back in, and the same run starts. Resume
+    // asks with Start's hold; Rebuild was held already.
+    resume: (world, job, rebuild) => resumeJob(job, rebuild, {
+      current: () => selectedBBox,
+      start: () => startGeneration(rebuild),
+      noArea: () => setBboxSelectionInfo(document.getElementById('bbox-selection-info'), 'select_area_prompt', '#ffffff'),
+    }),
+  });
+  initDataPanel({
+    invoke,
+    baking: (on) => { bakeRunning = on; redrawProjects(); },
+    prefetch: () => startGeneration(true, true),
+    area: () => (selectedBBox && selectedBBox !== "0.000000 0.000000 0.000000 0.000000" ? selectedBBox : ""),
+    plan: () => {
+      const mode = document.getElementById("generation-mode-select").value;
+      return {
+        worldScale: parseFloat(document.getElementById("scale-value-slider").value),
+        terrainEnabled: mode === "geo-terrain" || mode === "terrain-only",
+        skipOsmObjects: mode === "terrain-only",
+        canopyHeightEnabled: document.getElementById("canopy-height-toggle").checked,
+        overtureEnabled: document.getElementById("overture-toggle").checked,
+        awsOnlyElevation: document.getElementById("aws-only-elevation-toggle").checked,
+        // A plan's flags: the next run's pending retry and skipped cells stay.
+        flags: meldFlags({ oneWorld: false, java: true, caves: false, extendHeight: false, lods: false, plan: true }),
+      };
+    },
   });
 
   // Blueprint greys out the traffic lights.
@@ -1848,6 +2141,7 @@ function setSegmentedRowAvailable(groupId, available) {
 // there are no roads or places, and gravity only differs there. Blueprint builds no
 // signal heads, so there are no lights to run.
 function refreshGameplayRows(format) {
+  setTimeout(refreshAdvancedRows, 0);
   // The effective state: a ticked One World is off on the Moon and Mars, and greyed out there.
   const current = format || selectedWorldFormat;
   const pack = current === 'java' && !isOneWorldEnabled();
@@ -1938,6 +2232,8 @@ function updateFormatToggleUI(format) {
   refreshWorldNameEditUI();
   // One World is Java-only too: its status and pins follow the format.
   refreshOneWorldState();
+  // The size warning's Advanced features link is Java-only.
+  refreshBboxSelectionInfo();
 }
 
 // Expose to window for onclick handlers
@@ -1948,6 +2244,19 @@ function syncDiscordStatus() {
   const toggle = document.getElementById("discord-status-toggle");
   const enabled = !!(toggle && toggle.checked);
   Promise.resolve(invoke('gui_set_discord_status', { enabled })).catch(() => {});
+}
+
+// The backend is told Offline Mode once the store has restored it, and on every change: while
+// it is on it leaves old cached tiles alone and sends no telemetry or update check. Off with
+// the Advanced switch, as the flag is.
+function initOfflineModeSync() {
+  const toggles = ['advanced-meld-features-toggle', 'meld-offline-toggle'].map((id) => document.getElementById(id));
+  const sync = () => {
+    const offline = toggles.every((t) => t && t.checked);
+    Promise.resolve(invoke('gui_set_offline_mode', { offline })).catch(() => {});
+  };
+  toggles.forEach((t) => t && t.addEventListener('change', sync));
+  sync();
 }
 
 // The backend only reports crashes and errors while it holds a consent of true,
@@ -2504,6 +2813,7 @@ function handleBboxInput() {
       customBBoxValid = false;
       bboxInputError = false;
       selectedBBox = mapSelectedBBox;
+      dropStalePieces(selectedBBox);
       
       // Clear the info text only if no map selection exists
       if (!mapSelectedBBox) {
@@ -2558,6 +2868,7 @@ function handleBboxInput() {
         customBBoxValid = true;
         bboxInputError = false;
         selectedBBox = bboxText.replace(/,/g, ' '); // Convert to space format for consistency
+        dropStalePieces(selectedBBox);
         setBboxSelectionInfo(bboxSelectionInfo, "custom_selection_confirmed", "#7bd864");
 
         // Reset rotation when bbox changes via manual input
@@ -2655,15 +2966,54 @@ let bboxInputError = false;  // The coordinate field holds input that did not va
 function displayBboxSizeStatus(bboxSelectionElement, selectedSize) {
   const t = AREA_THRESHOLDS[selectedCelestialBody] || AREA_THRESHOLDS.earth;
   selectedSize *= earthScaleFactor();
-  if (selectedSize > t.extreme) {
+  // Advanced features: built in pieces, the size is no longer a worry; say how instead.
+  const pieces = planPieces();
+  let warned = false;
+  if (planPending()) {
+    // The plan is being recomputed: neither warn nor offer pieces until it answers.
+    setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
+  } else if (pieces) {
+    // The plan under the button says how it is built; this line stays what it always was.
+    setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
+  } else if ((hasPlanMask() || outline) && !selectedShapes) {
+    // An outline only leaves pieces out: a build in one go (One World off too) builds the whole box.
+    setBboxSelectionInfo(bboxSelectionElement, "area_outline_needs_pieces", "#fecc44");
+    warned = true;
+  } else if (selectedSize > t.extreme) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extreme", "#ff4444");
+    warned = true;
   } else if (selectedSize > t.large) {
     setBboxSelectionInfo(bboxSelectionElement, "area_too_large", "#fa7878");
+    warned = true;
   } else if (selectedSize > t.extensive) {
     setBboxSelectionInfo(bboxSelectionElement, "area_extensive", "#fecc44");
+    warned = true;
+  } else if (selectedShapes && isOneWorldEnabled() && meldOn()) {
+    setBboxSelectionInfo(bboxSelectionElement, "shapes_one_world", "#fecc44");
   } else {
     setBboxSelectionInfo(bboxSelectionElement, "selection_confirmed", "#7bd864");
   }
+  // The warning's way out (Advanced features off or no pieces yet): build it in cells, a One World
+  // so Java on Earth only.
+  document.getElementById("bbox-features-cta").hidden = !(warned && isOneWorldAvailable());
+}
+
+// Turns on Advanced features, One World and parallel pieces, and shows the Scale card.
+function useMeldPieces() {
+  window.openSettings();
+  const meld = document.getElementById("advanced-meld-features-toggle");
+  if (!meld.checked) {
+    meld.checked = true;
+    meld.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (oneWorldMode() !== "on") document.querySelector('#one-world-group .segment[data-one-world="on"]')?.click();
+  const workers = document.getElementById("meld-workers-select");
+  if (!workers.value) {
+    workers.value = "auto";
+    workers.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  // Once the page is up and the section is shown: the sidebar's own jump, so the entry lights up too.
+  setTimeout(() => document.querySelector('.settings-nav-item[data-target="settings-section-scale"]')?.click(), 80);
 }
 
 // Blocks, and so memory, grow with the square of the scale; Moon and Mars use a fixed one.
@@ -2684,9 +3034,55 @@ function refreshBboxSelectionInfo() {
   );
 }
 
+// The outline the map reports (Use outline, a drawn shape). Only a One World job in pieces reads
+// it, so the file is written for that alone; when the backend cannot write it the map drops it.
+let outline = null;
+let outlineWritten = false;
+let outlineFailed = false;
+async function noteOutline(geojson) {
+  outline = geojson;
+  // The map answers a dropped outline with null: that must not wipe the reason.
+  if (!geojson && outlineFailed) { outlineFailed = false; return; }
+  outlineWritten = Boolean(geojson) && isOneWorldEnabled();
+  const error = outlineWritten ? await setPlanMask(geojson) : (await setPlanMask(null), '');
+  if (error) {
+    outlineFailed = true;
+    postToMap({ type: 'planMask', geojson: null });
+    const info = document.getElementById('bbox-selection-info');
+    info.textContent = error;
+    info.style.color = "#fa7878";
+    return;
+  }
+  refreshBboxSelectionInfo();
+}
+
+function meldOn() {
+  return Boolean(document.getElementById('advanced-meld-features-toggle')?.checked);
+}
+
+// Drawn shapes are the outline a job in pieces keeps its pieces in (--plan-mask); written when
+// One World and Advanced features are on, cleared otherwise. Called on a new selection and when
+// either changes.
+let shapesWritten = false;
+const wantsShapesMask = () => isOneWorldEnabled() && meldOn();
+function writeShapesMask() {
+  shapesWritten = Boolean(selectedShapes) && wantsShapesMask();
+  if (shapesWritten) {
+    setPlanMask({
+      type: 'MultiPolygon',
+      coordinates: selectedShapes.map((ring) => [ring.concat([ring[0]]).map(([lat, lng]) => [lng, lat])])
+    });
+  } else {
+    setPlanMask(null);
+  }
+}
+
 // Function to handle incoming bbox data
 function displayBboxInfoText(bboxText, shapes) {
+  clearPrefetchDone();
+  const hadShapes = Boolean(selectedShapes);
   selectedShapes = Array.isArray(shapes) && shapes.length ? shapes : null;
+  if (selectedShapes || hadShapes) writeShapesMask();
   // Two producers, two separators: the map posts formatBounds output, which is
   // space separated, while manual coordinate entry synthesizes a comma
   // separated string. Splitting on " " alone turned the manual one into a
@@ -2705,6 +3101,12 @@ function displayBboxInfoText(bboxText, shapes) {
 
   // Map selection always takes priority - clear custom input and update selectedBBox
   selectedBBox = mapSelectedBBox;
+  dropStalePieces(selectedBBox);
+  // Advanced features: a single run's preview belongs to that run's area; a new selection drops it
+  // (a One World keeps showing its own areas).
+  if (document.getElementById('advanced-meld-features-toggle').checked && currentWorldMapData && !lastRunOneWorld) {
+    notifyWorldChanged();
+  }
   customBBoxValid = false;
   bboxInputError = false;
 
@@ -2773,10 +3175,13 @@ function renderWorldNameLabel() {
   if (!label) return;
   const pending = pendingWorldName();
   const text = pending || worldLabelName;
+  // The world under Start can be renamed by clicking its name.
+  const renamable = !pending && !!text && !!renamableWorld();
   label.toggleAttribute('data-pending', !!pending);
+  label.toggleAttribute('data-renamable', renamable);
   label.title = pending
     ? (window.localization && window.localization.placeholder_world_name) || 'Name of the next world'
-    : '';
+    : renamable ? oneWorldText('world_rename_tip', 'Click to rename this world') : '';
   if (text) {
     label.removeAttribute('data-placeholder');
     label.textContent = text;
@@ -2795,6 +3200,74 @@ function renderWorldNameLabel() {
 function basenameFromPath(p) {
   if (!p) return "";
   return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+}
+
+/* Renaming the world on disk: click its name under Start, or the pencil in Projects */
+
+// Folder name of the world a click on the name would rename, or "": the One World shown, or the
+// Java world the last run made, once nothing is running and Advanced features are on.
+function renamableWorld() {
+  if (!savePath || document.body.classList.contains('meld-off') || selectedWorldFormat !== 'java' || !generationButtonEnabled || liveActive()) return "";
+  if (isOneWorldEnabled()) return oneWorldInfo && oneWorldInfo.exists && !oneWorldInfo.locked ? basenameFromPath(oneWorldInfo.world_path) : "";
+  // The rename goes by name in the saves folder: a world made in another one is not it.
+  return inSavesFolder(worldPath) ? basenameFromPath(worldPath) : "";
+}
+
+function inSavesFolder(path) {
+  const norm = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  return Boolean(path) && norm(path).replace(/\/[^/]*$/, '') === norm(savePath);
+}
+
+// What the window remembers of a world's name once its folder has been renamed.
+function worldRenamed(from, to) {
+  if (inSavesFolder(worldPath) && basenameFromPath(worldPath) === from) worldPath = worldPath.replace(/[^\\/]+([\\/]*)$/, (_, tail) => to + tail);
+  // A One World keeps being the one under Start, now picked by its new name.
+  if (oneWorldName === from || (oneWorldInfo && basenameFromPath(oneWorldInfo.world_path) === from)) {
+    oneWorldName = to;
+    oneWorldPicked = true;
+    localStorage.setItem(ONE_WORLD_NAME_KEY, to);
+    localStorage.setItem('arnis-one-world-picked', '1');
+  }
+  if (worldLabelName === from) setWorldNameLabel(to);
+  oneWorldOverlayKey = null;
+  refreshOneWorldState();
+}
+
+// The name under Start becomes the editor; Enter renames, Escape leaves it.
+let renamingWorld = "";
+function startWorldRename(event) {
+  const from = renamableWorld();
+  if (!from || !worldLabelName) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const label = document.getElementById('world-name-label');
+  const input = document.getElementById('world-name-input');
+  if (!label || !input) return;
+  renamingWorld = from;
+  input.value = from;
+  label.style.display = 'none';
+  const editButton = document.getElementById('world-name-edit-button');
+  if (editButton) editButton.style.display = 'none';
+  input.style.display = '';
+  updateWorldNameLimitState();
+  input.focus();
+  input.select();
+}
+
+async function commitWorldRename(input) {
+  const from = renamingWorld;
+  const to = input.value.trim();
+  endWorldNameEdit();
+  if (!to || to === from) return;
+  try {
+    const folder = (await invoke('gui_rename_world', { savePath: savePath, oldName: from, newName: to })) || to;
+    worldRenamed(from, folder);
+  } catch (error) {
+    // The engine says why (a clash, a path character, a world in use).
+    const info = document.getElementById('progress-info');
+    info.textContent = String((error && error.message) || error);
+    info.style.color = "#fa7878";
+  }
 }
 
 /* Custom world name (Java only, opt-in via Settings > Custom World Name) */
@@ -2842,7 +3315,9 @@ function refreshWorldNameEditUI() {
   const editButton = document.getElementById('world-name-edit-button');
   if (editButton) {
     editButton.style.display = canEditCustomWorldName() ? '' : 'none';
-    const title = isOneWorldEnabled() ? 'Choose the One World to extend or create' : 'Name the next world';
+    const title = isOneWorldEnabled()
+      ? oneWorldText('world_name_edit_one_world', 'Choose the One World to extend or create')
+      : oneWorldText('world_name_edit_title', 'Name the next world');
     editButton.title = title;
     editButton.setAttribute('aria-label', title);
   }
@@ -2895,6 +3370,10 @@ function commitWorldNameEdit() {
     endWorldNameEdit();
     return;
   }
+  if (renamingWorld) {
+    commitWorldRename(input);
+    return;
+  }
   const newName = input.value.trim();
 
   // One World: the name picks the world to extend or create. Nothing is renamed.
@@ -2923,6 +3402,7 @@ function endWorldNameEdit() {
   const label = document.getElementById('world-name-label');
   const input = document.getElementById('world-name-input');
   const editButton = document.getElementById('world-name-edit-button');
+  renamingWorld = "";
   if (!input || input.style.display === 'none') return;
   // Only when the input still holds focus: a teardown reached *from* the blur
   // handler must not arm this, or it would swallow the next real blur.
@@ -2943,6 +3423,10 @@ function initCustomWorldNameToggle() {
   // (both dispatch a real "change" event), as long as this listener is
   // attached before initSettingsStore() runs its restore().
   toggle.addEventListener('change', refreshWorldNameEditUI);
+
+  document.getElementById('world-name-label')?.addEventListener('click', (event) => {
+    if (document.getElementById('world-name-label').hasAttribute('data-renamable')) startWorldRename(event);
+  });
 
   if (editButton) {
     editButton.addEventListener('click', startWorldNameEdit);
@@ -2996,7 +3480,11 @@ let oneWorldPinned = false;
 let oneWorldOverlayKey = null;
 // Whether the running (or last) generation was a One World run.
 let lastRunOneWorld = false;
+// Whether it only filled the caches (Download now).
+let lastRunPrewarm = false;
 let oneWorldName = localStorage.getItem(ONE_WORLD_NAME_KEY) || '';
+// Set by Settings > Projects > Open: the name above is then used with or without Custom World Name.
+let oneWorldPicked = localStorage.getItem('arnis-one-world-picked') === '1';
 
 function isOneWorldAvailable() {
   return selectedWorldFormat === 'java' && selectedCelestialBody === 'earth';
@@ -3059,7 +3547,7 @@ function refreshWorldRulesRows() {
 
 // The name picks the world; it never renames one on disk.
 function oneWorldFolderName() {
-  if (isCustomWorldNameFeatureEnabled() && oneWorldName) return oneWorldName;
+  if (oneWorldName && (isCustomWorldNameFeatureEnabled() || (oneWorldPicked && !document.body.classList.contains('meld-off')))) return oneWorldName;
   return ONE_WORLD_DEFAULT_NAME;
 }
 
@@ -3070,17 +3558,15 @@ function oneWorldDisplayName() {
 
 function setOneWorldName(name) {
   oneWorldName = name;
+  oneWorldPicked = false;
+  localStorage.removeItem('arnis-one-world-picked');
   if (name) localStorage.setItem(ONE_WORLD_NAME_KEY, name);
   else localStorage.removeItem(ONE_WORLD_NAME_KEY);
 }
 
-function oneWorldText(key, fallback, vars) {
-  let text = (window.localization && window.localization[key]) || fallback;
-  for (const k in (vars || {})) text = text.split('{' + k + '}').join(vars[k]);
-  return text;
-}
-
 function setOneWorldStatus(text, tone) {
+  // Every read of the world ends here: the stretch view follows its origin.
+  refreshStretch();
   const el = document.getElementById('one-world-status');
   if (!el) return;
   el.style.display = text ? '' : 'none';
@@ -3140,6 +3626,56 @@ function setSettingsRowAvailable(inputId, available) {
     row.classList.toggle('settings-row-unavailable', !available);
     row.toggleAttribute('inert', !available);
   }
+}
+
+// Advanced settings that only work with another one grey out while it is off, as the gameplay rows do,
+// so no two settings contradict each other and nothing is set that a run would ignore.
+function refreshAdvancedRows() {
+  const val = (id) => document.getElementById(id)?.value || '';
+  const on = (id) => { const el = document.getElementById(id); return !!(el && el.checked && !el.disabled); };
+  const seg = (id) => document.querySelector(`#${id} .segment.active`)?.dataset.v || '';
+  // Live builds with standard settings, so nothing here applies while it is the mode.
+  const live = isLiveMode();
+  const row = (id, ok) => setSettingsRowAvailable(id, ok && !live);
+  const group = (id, ok) => { row(id, ok); setSegmentedRowAvailable(id, ok && !live); };
+  const java = selectedWorldFormat === 'java';
+  const earth = selectedCelestialBody === 'earth';
+  const oneWorld = isOneWorldEnabled();
+  const cells = oneWorld && !!val('meld-workers-select');
+  row('meld-rocks-toggle', earth);
+  row('meld-bushes-toggle', earth);
+  row('meld-workers-select', oneWorld);
+  group('meld-piece-size-group', cells);
+  group('meld-snap-group', cells);
+  for (const id of ['meld-margin-input', 'meld-piece-order-select', 'meld-skip-built-toggle', 'meld-stitch-map-toggle']) row(id, cells);
+  row('meld-origin-input', oneWorld);
+  row('meld-stretch-toggle', oneWorld);
+  const ownHeight = java && !oneWorld && on('disable-height-limit-toggle');
+  row('meld-min-y-input', ownHeight);
+  row('meld-max-y-input', ownHeight);
+  row('meld-world-border-toggle', java);
+  const ownFormat = java && !oneWorld && !on('voxy-lod-toggle') && !on('dh-lod-toggle');
+  group('meld-region-format-group', ownFormat);
+  row('meld-blinear-level-input', ownFormat && seg('meld-region-format-group') === 'blinear');
+  row('meld-rock-density-input', earth && on('meld-rocks-toggle'));
+  row('meld-bush-density-input', earth && on('meld-bushes-toggle'));
+  group('meld-tree-pack-mode-group', !!val('meld-tree-pack-dir-input').trim());
+  row('meld-cave-style-select', on('caves-toggle'));
+  group('meld-cave-ores-group', on('caves-toggle'));
+  row('meld-archive-folder-input', seg('meld-osm-source-group') === 'archive');
+  row('meld-pbf-url-input', seg('meld-osm-source-group') === 'region');
+  for (const id of ['meld-seed-input', 'meld-surface-patches-toggle', 'meld-buildings-toggle', 'meld-tree-realm-select',
+    'meld-tree-pack-dir-input', 'meld-overpass-input', 'meld-offline-toggle', 'meld-ram-budget-input', 'meld-threads-input']) row(id, true);
+  for (const id of ['meld-road-detail-group', 'meld-props-group', 'meld-river-bed-group', 'meld-water-detail-group',
+    'meld-climate-mode-group', 'meld-osm-source-group']) group(id, true);
+}
+
+function initAdvancedRows() {
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return;
+  // Any change in Settings can be the one a row depends on; the check is cheap.
+  for (const ev of ['change', 'input', 'click']) modal.addEventListener(ev, () => setTimeout(refreshAdvancedRows, 0));
+  refreshAdvancedRows();
 }
 
 function readOneWorldRestore() {
@@ -3209,6 +3745,7 @@ function applyOneWorldPins(info) {
   setSettingsRowAvailable('voxy-lod-toggle', false);
   setSettingsRowAvailable('dh-lod-toggle', false);
   postToMap({ type: 'setRotationLocked', locked: true });
+  syncShapesRect();
 
   const exists = !!(info && info.exists);
   pinControl('scale-value-slider', exists && typeof info.scale === 'number' ? info.scale : null);
@@ -3236,9 +3773,29 @@ function releaseOneWorldPins() {
   setSettingsRowAvailable('rotation-angle-input', true);
   restoreNaturalRows();
   postToMap({ type: 'setRotationLocked', locked: false });
+  postToMap({ type: 'setShapesMode', mode: '' });
+}
+
+// A One World takes rectangles only. With Advanced features it builds the rectangle around the
+// drawn shapes (the map outlines it), and in pieces the shapes are the plan mask.
+function syncShapesRect() {
+  const meld = meldOn();
+  const pieces = meld && document.getElementById('meld-workers-select').value;
+  if (oneWorldPinned) postToMap({ type: 'setShapesMode', mode: !meld ? 'locked' : pieces ? 'pieces' : 'rect' });
+  if (!outline && selectedShapes && wantsShapesMask() !== shapesWritten) writeShapesMask();
+  refreshBboxSelectionInfo();
+}
+document.addEventListener('change', syncShapesRect);
+
+// The areas of the One World on the map, which "Expand" rings.
+let builtAreas = [];
+function setBuiltAreas(areas) {
+  builtAreas = areas;
+  document.getElementById('plan-expand-button').hidden = !areas.length;
 }
 
 function clearOneWorldOverlays() {
+  setBuiltAreas([]);
   if (oneWorldOverlayKey === null) return;
   oneWorldOverlayKey = null;
   postToMap({ type: 'oneWorldOverlays', areas: [] });
@@ -3256,10 +3813,16 @@ async function fetchOneWorldInfo() {
 // Re-reads the world the next area joins. Call whenever something that picks
 // the world changes: toggle, name, save path, format, body, window focus.
 let oneWorldRefreshSeq = 0;
+let oneWorldRefit = false;
+let redrawProjects = () => {};
 async function refreshOneWorldState() {
   const seq = ++oneWorldRefreshSeq;
+  // An outline picked while One World was off is written once it is on.
+  if (outline && isOneWorldEnabled() !== outlineWritten) noteOutline(outline);
+  if (!outline && selectedShapes && wantsShapesMask() !== shapesWritten) writeShapesMask();
   refreshLuantiAvailability();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
+  redrawProjects();
   refreshLiveRows();
   refreshStartButton();
   if (!isOneWorldEnabled()) {
@@ -3291,6 +3854,11 @@ async function refreshOneWorldState() {
     return;
   }
   if (seq !== oneWorldRefreshSeq) return;
+  if (oneWorldPicked && oneWorldFolderName() === oneWorldName && info && !info.exists) {
+    // The world picked in Projects is gone (deleted outside Arnis): back to the default name.
+    setOneWorldName('');
+    return refreshOneWorldState();
+  }
   oneWorldInfo = info;
   applyOneWorldPins(info);
   refreshWorldRulesRows();
@@ -3307,9 +3875,11 @@ async function refreshOneWorldState() {
     const overlays = await invoke('gui_get_one_world_overlays', { worldPath: info.world_path });
     if (seq !== oneWorldRefreshSeq) return;
     oneWorldOverlayKey = key;
+    setBuiltAreas((overlays && overlays.areas) || []);
     postToMap({
       type: 'oneWorldOverlays',
       world_path: info.world_path,
+      refit: oneWorldRefit,
       areas: (overlays && overlays.areas) || [],
       origin_lat: overlays ? overlays.origin_lat : 0,
       origin_lon: overlays ? overlays.origin_lon : 0,
@@ -3356,7 +3926,8 @@ function confirmOneWorldOverlap(count) {
 }
 
 // Checks the world right before a run. Returns false when the run must not start.
-async function prepareOneWorldRun() {
+// `held`: the hold to start already said what gets rebuilt, so no second question.
+async function prepareOneWorldRun(held = false) {
   if (!savePath) {
     renderOneWorldStatus();
     return false;
@@ -3378,7 +3949,7 @@ async function prepareOneWorldRun() {
       oneWorldText('one_world_locked', 'open in Minecraft'), 'error');
     return false;
   }
-  if (!info.exists) return true;
+  if (!info.exists || held) return true;
   let overlap = 0;
   try {
     overlap = await invoke('gui_one_world_overlap', {
@@ -3492,6 +4063,9 @@ function refreshStartButton() {
   if (!label) return;
   let key = 'start_generation';
   let fallback = 'Start Generation';
+  let vars;
+  // A job in pieces an earlier run built part of says how much.
+  const plan = planPieces();
   const stopping = liveActive() && liveStatus.phase === 'stopping';
   if (stopping) {
     key = 'live_stopping_button';
@@ -3502,9 +4076,13 @@ function refreshStartButton() {
   } else if (isLiveMode()) {
     key = 'live_play';
     fallback = 'Play Live';
+  } else if (plan && plan.done && plan.done < plan.n) {
+    key = 'plan_resume';
+    fallback = 'Resume ({n} of {m})';
+    vars = { n: plan.done, m: plan.n };
   }
   label.dataset.localize = key;
-  label.textContent = oneWorldText(key, fallback);
+  label.textContent = oneWorldText(key, fallback, vars);
   const wrap = button.closest('.start-button-wrap');
   if (wrap) {
     wrap.classList.toggle('is-live', liveActive() && !stopping);
@@ -3741,6 +4319,7 @@ function onLiveStatus() {
   if (!isWorldNameEditing()) refreshWorldNameEditUI();
   refreshLiveRows();
   setSegmentedRowAvailable('one-world-group', isOneWorldAvailable() && !liveActive());
+  redrawProjects();
   const bedrockBtn = document.getElementById('format-bedrock');
   if (bedrockBtn) bedrockBtn.disabled = liveActive();
   renderOneWorldStatus();
@@ -3865,12 +4444,17 @@ function handleWorldSelectionError(errorCode) {
 }
 
 let generationButtonEnabled = true;
+// A Download & Bake is under way (Data Sources): Start waits for it.
+let bakeRunning = false;
 
 // Central setter so every place that toggles generation state also
 // refreshes the world-name pencil (hidden/blocked while a generation, or a
 // rename, is in flight - see canEditCustomWorldName()).
 function setGenerationButtonEnabled(enabled) {
   generationButtonEnabled = enabled;
+  if (!enabled) document.getElementById('run-confirm').hidden = true;
+  showRunControls(!enabled);
+  redrawProjects();
   refreshWorldNameEditUI();
   // The two jobs exclude each other in the backend, so the other one greys out.
   refreshPrecomputeButton();
@@ -3944,21 +4528,50 @@ function readGenerationSettings(oneWorld) {
   };
 }
 
-async function startGeneration() {
-  // In Live the button starts and stops the session instead.
-  if (liveActive()) {
+// A job in pieces runs for long and takes most of the machine: Start (and Expand) first show
+// its plan and the warnings, and only a held button starts it.
+function askRunConfirm() {
+  const box = document.getElementById('run-confirm');
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+  document.getElementById('run-confirm-hold').focus();
+}
+
+// Calls `done` once the button has been held for HOLD_MS (pointer, or Space/Enter); letting go
+// earlier cancels (arnisHold, piece-style.js). The fill is CSS (.run-hold.is-holding), timed to the same HOLD_MS.
+const HOLD_MS = 1500;
+function holdToConfirm(button, done) {
+  globalThis.arnisHold(button, done, HOLD_MS);
+}
+
+// `confirmed`: the hold (or a retry) already said yes to a job in pieces.
+// `prewarm`: Download Plan's "Download now", a run that only fills the caches.
+// Returns whether a run started.
+async function startGeneration(confirmed = false, prewarm = false) {
+  // In Live the button starts and stops the session instead; a prewarm is never a Live session.
+  if (!prewarm && liveActive()) {
     stopLive();
     return;
   }
   if (generationButtonEnabled === false) {
     return;
   }
-  // One World and Live keep their areas as rectangles of whole chunks.
-  if (selectedShapes && (isLiveMode() || isOneWorldEnabled())) {
-    setBboxSelectionInfo(document.getElementById('bbox-selection-info'), "shapes_one_world", "#fa7878");
+  // The backend refuses a run during a bake only after a new world was made for it.
+  if (bakeRunning) {
+    const info = document.getElementById('progress-info');
+    if (info) {
+      info.textContent = oneWorldText('meld_baking', 'Baking: the progress is on the main bar.');
+      info.style.color = "#fecc44";
+    }
     return;
   }
-  if (isLiveMode()) {
+  // One World and Live keep their areas as rectangles of whole chunks; Advanced features build
+  // the rectangle around the shapes.
+  if (selectedShapes && (isLiveMode() || isOneWorldEnabled()) && !meldOn()) {
+    setBboxSelectionInfo(document.getElementById('bbox-selection-info'), "shapes_rectangles_only", "#fa7878");
+    return;
+  }
+  if (!prewarm && isLiveMode()) {
     startLive();
     return;
   }
@@ -3973,6 +4586,13 @@ async function startGeneration() {
     }
     return;
   }
+  const cells = isPiecesJob();
+  if (confirmed !== true && cells) {
+    askRunConfirm();
+    return;
+  }
+  // The hold names the cells built again; a start that is no job in cells gets main's question.
+  const held = confirmed === true && cells && !planPieces()?.single;
   // Claim the guard before the first await. gui_create_world and gui_start_generation are
   // both awaited round-trips, so leaving the claim until after them lets a second click
   // through and starts a parallel run against the same process-global world floor.
@@ -3988,19 +4608,24 @@ async function startGeneration() {
 
     // Past every synchronous refusal, so from here the click is a real start.
     resetProgressUi(STARTING_MESSAGE);
+    if (!prewarm) clearPieces();
 
     const oneWorld = isOneWorldEnabled();
     const oneWorldBBox = selectedBBox;
     // The overlap dialog leaves the page live, so the body, format or area may have changed under it.
-    if (oneWorld && (!(await prepareOneWorldRun()) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
+    if (oneWorld && (!(await prepareOneWorldRun(held || prewarm)) || !isOneWorldEnabled() || selectedBBox !== oneWorldBBox)) {
       const info = document.getElementById('progress-info');
       if (info && info.textContent === STARTING_MESSAGE) info.textContent = "";
       return;
     }
     lastRunOneWorld = oneWorld;
+    lastRunPrewarm = prewarm;
+    const place = oneWorld && !prewarm && document.getElementById('advanced-meld-features-toggle').checked
+      ? placeForRun(searchedPlace, selectedBBox) : '';
+    runPlace = place && oneWorldInfo && !oneWorldInfo.area_count ? { name: place, path: oneWorldInfo.world_path } : null;
 
     // Auto-create world for Java format (a One World is resolved by the backend)
-    if (selectedWorldFormat === 'java' && !oneWorld) {
+    if (selectedWorldFormat === 'java' && !oneWorld && !prewarm) {
       if (!savePath) {
         console.warn("Cannot create world: save path not set");
         return;
@@ -4023,7 +4648,7 @@ async function startGeneration() {
 
     // Clear any existing world preview since we're generating a new one.
     // A One World keeps its areas on the map; the new one joins them at the end.
-    if (!oneWorld) notifyWorldChanged();
+    if (!oneWorld && !prewarm) notifyWorldChanged();
     if (oneWorld) setWorldNameLabel(oneWorldFolderName());
 
     // Get the map iframe reference
@@ -4047,14 +4672,24 @@ async function startGeneration() {
     // Get rotation angle
     var rotationAngle = oneWorld ? 0 : (parseFloat(document.getElementById("rotation-angle-input").value) || 0);
 
+    const flags = meldFlags({
+      oneWorld: oneWorld,
+      java: getEffectiveWorldFormat() === "java",
+      caves: settings.cavesEnabled,
+      extendHeight: settings.disableHeightLimit && !oneWorld && getEffectiveWorldFormat() === "java",
+      lods: settings.voxyLodEnabled || settings.dhLodEnabled,
+      prewarm
+    });
+    // Held or retried as a job in cells: it runs as one, or not at all.
+    if (cells && !prewarm && !flags.some((f) => f.startsWith('--one-world-workers='))) return;
+
     // Pass the selected options to the Rust backend
     await invoke("gui_start_generation", {
         ...settings,
         bboxText: selectedBBox,
-        selectedWorld: oneWorld ? savePath : worldPath,
+        ...generationTarget({ prewarm, oneWorld, savePath, worldPath }),
         bedrockSavePath: bedrockSavePath,
         luantiSavePath: luantiSavePath,
-        isNewWorld: true,
         spawnPoint: spawnPoint,
         telemetryConsent: telemetryConsent || false,
         worldFormat: getEffectiveWorldFormat(),
@@ -4070,7 +4705,8 @@ async function startGeneration() {
         bodyGravity: gameplayToggle('body-gravity-toggle'),
         oneWorld: oneWorld,
         oneWorldName: oneWorld ? oneWorldFolderName() : "",
-        selectionShapes: oneWorld ? null : selectedShapes
+        flags: [...flags, ...(prewarm ? ["--prewarm"] : [])],
+        selectionShapes: generationShapes({ oneWorld, shapes: selectedShapes })
     });
 
     console.log("Generation process started.");
@@ -4094,6 +4730,7 @@ async function startGeneration() {
     }
     refreshPrecomputeButton();
   }
+  return started;
 }
 
 // World preview overlay state
@@ -4130,6 +4767,7 @@ async function showWorldPreviewButton() {
  */
 function notifyWorldChanged() {
   currentWorldMapData = null;
+  resetPieces();
   const mapFrame = document.querySelector('.map-container');
   if (mapFrame && mapFrame.contentWindow) {
     mapFrame.contentWindow.postMessage({
